@@ -121,12 +121,25 @@ function createHost(options: ts.CompilerOptions, overlay: Map<string, string>): 
 
   const originalGetSourceFile = host.getSourceFile.bind(host);
   host.getSourceFile = (fileName, langVersion, onError, shouldCreate) => {
+    // Overlay always wins, and is always re-parsed: it is per-control content.
     const hit = byAbs.get(norm(fileName));
     if (hit !== undefined) {
+      analysisStats.overlayFilesParsed++;
       return ts.createSourceFile(fileName, hit, langVersion, true,
         /\.tsx$/.test(fileName) ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
     }
-    return originalGetSourceFile(fileName, langVersion, onError, shouldCreate);
+    // On-disk files are immutable for these fixed options: parse once, reuse.
+    const key = canonicalKey(fileName);
+    const cached = diskSourceFiles.get(key);
+    if (cached) { analysisStats.diskCacheHits++; return cached; }
+    const parsed = originalGetSourceFile(fileName, langVersion, onError, shouldCreate);
+    if (parsed) {
+      diskSourceFiles.set(key, parsed);
+      analysisStats.diskFilesParsed++;
+      diskFilesSeen.add(key);
+      analysisStats.distinctDiskFiles = diskFilesSeen.size;
+    }
+    return parsed;
   };
   const originalFileExists = host.fileExists.bind(host);
   host.fileExists = (fileName) => byAbs.has(norm(fileName)) || originalFileExists(fileName);
@@ -163,14 +176,70 @@ function createHost(options: ts.CompilerOptions, overlay: Map<string, string>): 
   return host;
 }
 
+/**
+ * ── CROSS-ANALYSIS REUSE ────────────────────────────────────────────
+ *
+ * Each analysis builds its own Program — it must, because every control needs
+ * its own overlay shadowing disk. What it must NOT do is re-READ the world.
+ * Originally every call handed `ts.createProgram` a fresh compiler host, so the
+ * whole transitive closure (including the multi-megabyte `lib.*.d.ts`) was
+ * re-parsed once per control. Across this suite's analyses that dominated the
+ * file's runtime and measurably starved other suites on an 8-core host.
+ *
+ * The parsed form of an on-disk file is immutable for a fixed set of compiler
+ * options, so it is parsed ONCE and shared by every subsequent Program — the
+ * same reuse the TypeScript LanguageService performs through a DocumentRegistry.
+ * Overlay files are deliberately NEVER cached: they are synthetic, differ per
+ * control, and must shadow disk on every single analysis.
+ *
+ * Nothing here changes what is analysed. The traversal, the symbol resolution
+ * and the sink classification are untouched; only the cost of obtaining the
+ * ASTs changes.
+ */
+export interface AnalysisStats {
+  /** analyzeFacilityAuthorityReach() invocations. */
+  analyses: number;
+  /** analyses that supplied an overlay (the synthetic controls). */
+  overlayAnalyses: number;
+  /** ts.Program instances constructed (one per analysis, by necessity). */
+  programBuilds: number;
+  /** on-disk files actually parsed. Equals distinctDiskFiles when reuse works. */
+  diskFilesParsed: number;
+  /** distinct on-disk files ever requested. */
+  distinctDiskFiles: number;
+  /** on-disk parses avoided by reuse. */
+  diskCacheHits: number;
+  /** synthetic overlay files parsed (correctly re-parsed every analysis). */
+  overlayFilesParsed: number;
+}
+
+export const analysisStats: AnalysisStats = {
+  analyses: 0, overlayAnalyses: 0, programBuilds: 0,
+  diskFilesParsed: 0, distinctDiskFiles: 0, diskCacheHits: 0, overlayFilesParsed: 0,
+};
+
+/** Canonical key for a path, matching the platform's file-name case semantics. */
+const canonicalKey = (p: string): string => {
+  const n = resolve(p).replace(/\\/g, '/');
+  return ts.sys.useCaseSensitiveFileNames ? n : n.toLowerCase();
+};
+
+/** Parsed on-disk SourceFiles, shared across every analysis in this process. */
+const diskSourceFiles = new Map<string, ts.SourceFile>();
+const diskFilesSeen = new Set<string>();
+
 /** Compiler options mirroring tsconfig.app.json, so `@/…` resolves the way the
- *  application actually resolves it rather than by hand-written guessing. */
+ *  application actually resolves it rather than by hand-written guessing.
+ *  Resolved once: the tsconfig does not change during a run. */
+let cachedCompilerOptions: ts.CompilerOptions | undefined;
 function compilerOptions(): ts.CompilerOptions {
+  if (cachedCompilerOptions) return cachedCompilerOptions;
   const configPath = join(REPO_ROOT, 'tsconfig.app.json');
   const raw = ts.readConfigFile(configPath, ts.sys.readFile);
   if (raw.error) throw new Error(`cannot read tsconfig.app.json: ${raw.error.messageText}`);
   const parsed = ts.parseJsonConfigFileContent(raw.config, ts.sys, REPO_ROOT);
-  return { ...parsed.options, noEmit: true, skipLibCheck: true, skipDefaultLibCheck: true };
+  cachedCompilerOptions = { ...parsed.options, noEmit: true, skipLibCheck: true, skipDefaultLibCheck: true };
+  return cachedCompilerOptions;
 }
 
 const isProductionFile = (p: string): boolean => {
@@ -315,8 +384,11 @@ function tableWriteOf(call: ts.CallExpression): string | null {
  */
 export function analyzeFacilityAuthorityReach(options: AnalyzeOptions = {}): AnalyzeResult {
   const overlay = new Map<string, string>(Object.entries(options.overlay ?? {}));
+  analysisStats.analyses++;
+  if (overlay.size) analysisStats.overlayAnalyses++;
   const opts = compilerOptions();
   const rootNames = [abs(SCREEN_ACCESS), abs(SCREEN_REGISTRY), ...[...overlay.keys()].map(abs)];
+  analysisStats.programBuilds++;
   const program = ts.createProgram({ rootNames, options: opts, host: createHost(opts, overlay) });
   const checker = program.getTypeChecker();
 

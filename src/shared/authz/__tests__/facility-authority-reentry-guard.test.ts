@@ -23,7 +23,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   analyzeFacilityAuthorityReach, tupleKey, renderTuple, repoRel, REPO_ROOT,
-  PRESENTATION_ONLY_RPCS, DIRECT_WRITE_OPS,
+  PRESENTATION_ONLY_RPCS, DIRECT_WRITE_OPS, analysisStats,
   type AuthorityTuple,
 } from './facility-authority-reentry-guard.helper';
 
@@ -415,6 +415,38 @@ describe('U3 · guard wiring and non-vacuity', () => {
   it('the analysis actually traversed a substantial graph', () => {
     expect(base.reachableFiles.length).toBeGreaterThan(50);
     expect(base.visitedSymbols).toBeGreaterThan(1000);
+  });
+
+  /**
+   * PERFORMANCE REGRESSION GUARD — structural, never wall-clock.
+   *
+   * Each control legitimately needs its OWN ts.Program, because its overlay has
+   * to shadow disk. What must never repeat is READING the project. Originally
+   * every analysis handed createProgram a fresh compiler host, so the entire
+   * transitive closure — lib.*.d.ts included — was re-parsed per control. That
+   * cost ~152s in this one file, roughly doubled the whole repository suite's
+   * CPU load, and starved a 5000ms-budgeted subprocess test on an 8-core host
+   * into a timeout. This asserts the reuse structurally, so the regression
+   * cannot silently return; a timing assertion would be flaky and is not used.
+   */
+  it('performs the canonical full-project analysis ONCE, however many controls run', () => {
+    const s = analysisStats;
+    expect(s.analyses, 'no analysis ran — this guard would be vacuous').toBeGreaterThan(1);
+    // Exactly one Program per analysis: necessary (per-control overlay), never more.
+    expect(s.programBuilds).toBe(s.analyses);
+    // A real project closure, not a stub that would make the invariant trivial.
+    expect(s.distinctDiskFiles).toBeGreaterThan(100);
+    // THE INVARIANT: no on-disk source is ever parsed a second time.
+    expect(
+      s.diskFilesParsed,
+      `canonical project sources were re-parsed: ${s.diskFilesParsed} parses for ` +
+      `${s.distinctDiskFiles} distinct on-disk files. Full-project analysis must ` +
+      `happen ONCE and be shared by every overlay control.`,
+    ).toBe(s.distinctDiskFiles);
+    // …and the reuse is load-bearing rather than vacuously satisfied.
+    expect(s.diskCacheHits).toBeGreaterThan(s.distinctDiskFiles);
+    // Overlay files are correctly re-parsed every analysis: they differ per control.
+    expect(s.overlayFilesParsed).toBeGreaterThanOrEqual(s.overlayAnalyses);
   });
 
   it('BOTH new U3 files are registered in the A7.2.4 exact-path approved-diff registry', () => {
