@@ -57,16 +57,86 @@ jobs:
         with:
           version: latest
 
-      - name: Exclude prepared-only cutover migrations (mirrors tools/pg-rig/rig.mjs's own PREPARED_ONLY_SKIP)
-        # 085_phoenix_revoke_manual_availability_writers.sql is deliberately
-        # fail-closed: it RAISEs unless an operator sets an explicit
-        # production-cutover attestation. `supabase start` has no equivalent
-        # skip mechanism (unlike tools/pg-rig/rig.mjs, which this same
-        # migration set already documents skipping for exactly this reason),
-        # so it would abort the entire migration replay and nothing past 084
-        # would exist. This ephemeral runner's checkout is discarded at job
-        # end, so moving the file out here has zero effect on the repository.
-        run: mkdir -p /tmp/prepared-only-skip && mv supabase/migrations/085_phoenix_revoke_manual_availability_writers.sql /tmp/prepared-only-skip/
+      - name: Supply migration 085's historical cutover attestation (transaction-local, ephemeral checkout only)
+        # M085-ATTESTED-EPHEMERAL-PREPARATION
+        #
+        # This step USED to move 085 out of the migration directory, on the
+        # belief — mirrored from tools/pg-rig/rig.mjs's since-retired
+        # PREPARED_ONLY_SKIP — that 085 had never been applied anywhere. Live
+        # read-only inspection of Production disproved that:
+        # supabase_migrations.schema_migrations records version 085
+        # (phoenix_revoke_manual_availability_writers) once, its stored payload
+        # carries both writer REVOKEs, and the live functions carry 085's own
+        # COMMENT text with authenticated EXECUTE = NO. Production APPLIED it.
+        #
+        # Skipping it here made this disposable stack diverge from ACTUAL
+        # Production history, exactly as the rig did. The canonical rig now
+        # replays 085 with its attestation, so this job must too.
+        #
+        # 085's own source stays fail-closed and its REPOSITORY BYTES ARE NEVER
+        # MODIFIED. Only this ephemeral runner's discarded checkout is
+        # transformed, and only by inserting a TRANSACTION-LOCAL attestation
+        # immediately after the migration's own BEGIN;. SET LOCAL is used
+        # deliberately: it lives and dies with 085's own transaction, so it
+        # cannot leak into 086+ and cannot be observed by any later connection
+        # (asserted after startup by the M085/M194 security proof step below).
+        #
+        # The transform is fail-closed: it verifies 085's exact SHA-256 first,
+        # requires exactly one BEGIN; insertion point, and requires the
+        # attestation to be inserted exactly once. Any structural drift aborts
+        # the job rather than silently producing a differently-shaped 085.
+        run: |
+          node - <<'NODE'
+          const { readFileSync, writeFileSync } = require('node:fs');
+          const { createHash } = require('node:crypto');
+
+          const PATH = 'supabase/migrations/085_phoenix_revoke_manual_availability_writers.sql';
+          const EXPECTED_SHA256 = 'b69326713c273f468bd53b8d66430ac907aff54f27c06ab9149427833eb20ab0';
+          const ATTESTATION = "SET LOCAL phoenix.availability_cutover_attested = 'true';";
+
+          const raw = readFileSync(PATH);
+          const sha = createHash('sha256').update(raw).digest('hex');
+          if (sha !== EXPECTED_SHA256) {
+            console.error(`::error::085 SHA-256 mismatch. expected ${EXPECTED_SHA256}, got ${sha}. ` +
+              'Migration 085 is IMMUTABLE — refusing to transform an unexpected file.');
+            process.exit(1);
+          }
+
+          const text = raw.toString('utf8');
+          const begins = text.match(/^BEGIN;$/gm) ?? [];
+          if (begins.length !== 1) {
+            console.error(`::error::expected exactly one standalone "BEGIN;" in 085, found ${begins.length}`);
+            process.exit(1);
+          }
+          // Match the EXACT statement we insert, never a loose substring:
+          // 085's own RAISE message legitimately contains
+          // `SET phoenix.availability_cutover_attested = ''true''` as operator
+          // guidance, which a broader check mistakes for an existing insertion.
+          if (text.includes(ATTESTATION)) {
+            console.error('::error::085 already contains the SET LOCAL attestation — refusing to double-insert');
+            process.exit(1);
+          }
+
+          const out = text.replace(/^BEGIN;$/m,
+            'BEGIN;\n' +
+            '-- E2E-CI-ONLY (this ephemeral checkout only — never committed).\n' +
+            '-- Historical cutover attestation for the migration Production already\n' +
+            '-- applied. SET LOCAL keeps it inside THIS transaction only.\n' +
+            ATTESTATION);
+
+          const inserted = (out.match(/SET LOCAL phoenix\.availability_cutover_attested = 'true';/g) ?? []).length;
+          if (inserted !== 1) {
+            console.error(`::error::attestation inserted ${inserted} times, expected exactly 1`);
+            process.exit(1);
+          }
+          if (!/^BEGIN;\n-- E2E-CI-ONLY/m.test(out)) {
+            console.error('::error::attestation was not inserted at the expected BEGIN; insertion point');
+            process.exit(1);
+          }
+
+          writeFileSync(PATH, out);
+          console.log('085 prepared: transaction-local attestation inserted exactly once, after its own BEGIN;.');
+          NODE
 
       - name: Apply the migration-023 replay shim (mirrors tools/pg-rig/rig.mjs's shimSql — documented, already-proven, repo file never touched)
         # 023_phoenix_live_profile_role_resolution_fix.sql's own verification
@@ -113,8 +183,16 @@ jobs:
             echo "-- tools/pg-rig/bootstrap.sql's identical statements, run"
             echo "-- BEFORE any table exists so every table this repo's"
             echo "-- migrations create — including 001's own — inherits it."
+            echo "-- E2E-PLATFORM-BASELINE-MIRROR (keep in sync with tools/pg-rig/bootstrap.sql)"
             echo "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES    TO authenticated, service_role;"
             echo "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO authenticated, service_role;"
+            echo "-- H-23: the two platform facts this mirror used to omit. Without"
+            echo "-- them no function created before migration 109 inherits the"
+            echo "-- service_role EXECUTE that Production grants (315/349), and"
+            echo "-- migration 194 correctly fail-closes on its service_role"
+            echo "-- precondition. Measured from Production, not assumed."
+            echo "GRANT CREATE ON SCHEMA public TO service_role;"
+            echo "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT EXECUTE ON FUNCTIONS TO service_role;"
             echo ""
             cat supabase/migrations/001_phoenix_core_schema.sql
           } > /tmp/001_prepended.sql
@@ -187,6 +265,82 @@ jobs:
             exit 1
           fi
           echo "Migration ceiling confirmed: 152 read model and 136 dispense prerequisite present."
+
+      - name: Verify the M085 / M194 authorization boundary in the disposable stack
+        # M085-M194-E2E-SECURITY-PROOF
+        # Read-only. Proves the disposable stack actually reproduces the
+        # Production authorization posture this PR converges on — rather than
+        # merely starting without error — and that the ephemeral 085
+        # attestation did NOT leak beyond its own transaction. Runs on a NEW
+        # connection, after every migration has committed.
+        run: |
+          node - <<'NODE'
+          const { Client } = require('pg');
+          const { readFileSync } = require('node:fs');
+
+          const UPSERT = 'public.phoenix_upsert_availability(uuid,text,text,text,text,integer,text,date,text,text,text,numeric,text)';
+          const MOVEMENT = 'public.phoenix_apply_availability_movement(uuid,text,integer,text,text)';
+          const fail = (m) => { console.error(`::error::${m}`); process.exitCode = 1; };
+
+          (async () => {
+            const c = new Client({ connectionString: readFileSync('/tmp/sb-db-url.txt', 'utf8').trim() });
+            await c.connect();
+
+            // 1. The attestation must NOT be visible on a fresh connection.
+            const leak = await c.query("SELECT current_setting('phoenix.availability_cutover_attested', true) AS v");
+            const v = leak.rows[0].v;
+            if (v !== null && v !== '' && v !== 'false') {
+              fail(`085 attestation leaked beyond its transaction: current_setting = ${JSON.stringify(v)}`);
+            } else {
+              console.log('attestation leak check: OK (not set on a new connection)');
+            }
+
+            // 2. M085's security boundary is LIVE.
+            for (const sig of [UPSERT, MOVEMENT]) {
+              const r = await c.query(
+                `SELECT has_function_privilege('authenticated', $1::regprocedure, 'EXECUTE') AS auth_exec,
+                        has_function_privilege('service_role',  $1::regprocedure, 'EXECUTE') AS svc_exec`, [sig]);
+              const { auth_exec, svc_exec } = r.rows[0];
+              if (auth_exec !== false) fail(`M085 boundary missing: authenticated can EXECUTE ${sig}`);
+              if (svc_exec !== true) fail(`service_role lost EXECUTE on ${sig}`);
+            }
+            console.log('M085 writer boundary: authenticated NO / service_role YES on both writers');
+
+            // 3. M194's converged authenticated direct-write surface.
+            const writes = await c.query(`
+              SELECT c.relname || ' ' || pr.p AS tuple
+                FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+                CROSS JOIN (SELECT unnest(ARRAY['INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER','MAINTAIN']) AS p) pr
+               WHERE n.nspname = 'public' AND c.relkind IN ('r','v','m','p','f')
+                 AND NOT EXISTS (SELECT 1 FROM pg_depend d
+                                  WHERE d.classid='pg_class'::regclass AND d.objid=c.oid AND d.deptype='e')
+                 AND has_table_privilege('authenticated', c.oid, pr.p)
+               ORDER BY 1`);
+            const actual = writes.rows.map((r) => r.tuple);
+            const expected = [
+              'distribution_points INSERT', 'distribution_points UPDATE',
+              'organizations INSERT', 'organizations UPDATE',
+            ];
+            if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+              fail(`M194 authenticated direct-write surface is ${JSON.stringify(actual)}, expected ${JSON.stringify(expected)}`);
+            } else {
+              console.log('M194 authenticated direct-write surface: exactly the contracted 4 tuples');
+            }
+
+            // 4. MAINTAIN is fully converged.
+            const maintain = await c.query(`
+              SELECT count(*)::int AS n
+                FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+               WHERE n.nspname='public' AND c.relkind IN ('r','v','m','p','f')
+                 AND NOT EXISTS (SELECT 1 FROM pg_depend d
+                                  WHERE d.classid='pg_class'::regclass AND d.objid=c.oid AND d.deptype='e')
+                 AND has_table_privilege('authenticated', c.oid, 'MAINTAIN')`);
+            if (maintain.rows[0].n !== 0) fail(`authenticated MAINTAIN relations = ${maintain.rows[0].n}, expected 0`);
+            else console.log('authenticated MAINTAIN relations: 0');
+
+            await c.end();
+          })().catch((e) => { console.error(`::error::${e.message}`); process.exit(1); });
+          NODE
 
       - name: Seed disposable fixtures (orgs, real Auth users, outlet stock — never Production)
         env:
