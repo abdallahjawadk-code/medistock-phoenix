@@ -182,6 +182,13 @@ run('E7-2 · Stage-E application wiring (dynamic)',()=>{
       // "Stage E still ends at 171" remains true. Listed by exact filename so
       // the guard stays exhaustive and fails closed.
       '194_phoenix_authorization_surface_reproducibility_convergence.sql',
+      // H UNIT 4 / M195: schema-qualifies `profiles` as `public.profiles` inside
+      // the two foundational auth helpers (phoenix_my_role, phoenix_my_org). It
+      // forward-replaces those two function bodies only; it introduces no
+      // migration numbered <= 171 and adds no Stage-E corridor or supply
+      // semantics, so Stage E still ends at 171. Exact filename is listed to keep
+      // this successor guard exhaustive and fail-closed on any unlisted new file.
+      '195_phoenix_auth_helper_profile_schema_qualification.sql',
     ];
     it('Stage E still ends at 171 — E7-2 introduced no new SQL',()=>{
       const files=readdirSync(join(__dirname,'..')).filter(f=>/^\d{3}_.*\.sql$/.test(f));
