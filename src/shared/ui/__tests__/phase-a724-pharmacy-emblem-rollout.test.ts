@@ -329,7 +329,19 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
       // no migration, no policy and no runtime code — it only reads the
       // workflow file. Registered by EXACT filename; every other file under
       // supabase/ still fails this guard closed.
-      'supabase/migrations/__tests__/e2e-workflow-platform-mirror.test.ts'
+      'supabase/migrations/__tests__/e2e-workflow-platform-mirror.test.ts',
+      // …and H Unit 3's facility-authority re-entry guard, which lives under the
+      // WATCHED src/shared/authz prefix. It is TEST-ONLY: it reads committed
+      // source with the TypeScript compiler API to prove that no UNREVIEWED
+      // authority sink is reachable from a facility-safe (L2) screen, and adds
+      // no migration, no policy, no dependency and no runtime code. Registered
+      // here by EXACT filename before the files are committed — an untracked
+      // file is invisible to `git diff --name-only <BASE>`, which is exactly
+      // how the U2 registration was missed and broke CI. No wildcard and no
+      // directory exemption: every other file under src/shared/authz still
+      // fails this guard closed.
+      'src/shared/authz/__tests__/facility-authority-reentry-guard.helper.ts',
+      'src/shared/authz/__tests__/facility-authority-reentry-guard.test.ts'
     ];
     const changed=execSync(`git diff --name-only ${BASE}`,{cwd:ROOT,encoding:'utf8'}).split('\n').map(l=>l.trim()).filter(Boolean);
     const prohibited=changed.filter(f=>WATCHED.some(p=>f===p||f.startsWith(p+'/'))&&!EXCLUDED.includes(f));
