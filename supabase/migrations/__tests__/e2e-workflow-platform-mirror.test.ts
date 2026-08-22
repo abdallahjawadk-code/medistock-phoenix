@@ -145,6 +145,69 @@ describe('E2E workflow · platform baseline mirror', () => {
   });
 });
 
+/**
+ * The local Supabase CLI provisions a public-schema TABLE default ACL granting
+ * `anon` MAINTAIN/REFERENCES/TRIGGER/TRUNCATE on every future postgres-owned
+ * table. Measured directly on a pristine CLI stack with zero Phoenix
+ * migrations:
+ *
+ *     postgres | public | table | anon | MAINTAIN,REFERENCES,TRIGGER,TRUNCATE
+ *
+ * Production does not have it (`ANON_PUBLIC_RELATION_PRIVILEGES = {}`) and
+ * neither does tools/pg-rig/bootstrap.sql. Left alone it produced 81 anon
+ * relation tuples over 27 relations at ceiling 193 — every one of them an
+ * explicit ACL row inherited at CREATE time, none from PUBLIC and none from
+ * role membership — which migration 194 correctly refused.
+ *
+ * The CONTRACT these assertions defend is "zero final anon relation
+ * privileges", not the number 81. They pin the normalization's exact shape so
+ * that a future edit cannot silently re-open the source.
+ */
+describe('E2E workflow · anon platform normalization', () => {
+  const NORMALIZATION =
+    'ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public REVOKE MAINTAIN, REFERENCES, TRIGGER, TRUNCATE ON TABLES FROM anon;';
+
+  it('revokes the exact proven default privileges, from the exact proven principal', () => {
+    expect(WORKFLOW).toContain(NORMALIZATION);
+    expect(WORKFLOW).toContain('E2E-ANON-PLATFORM-NORMALIZATION');
+  });
+
+  it('is scoped to the proven owner, schema and object type', () => {
+    // FOR ROLE postgres — the owner of every Phoenix relation; IN SCHEMA public;
+    // ON TABLES. A global or wrong-owner revoke would not remove this entry.
+    expect(NORMALIZATION).toMatch(/FOR ROLE postgres/);
+    expect(NORMALIZATION).toMatch(/IN SCHEMA public/);
+    expect(NORMALIZATION).toMatch(/ON TABLES FROM anon;$/);
+  });
+
+  it('does not over-revoke: no blanket REVOKE ALL from anon or PUBLIC', () => {
+    // §I: minimum privilege set only. SELECT/INSERT/UPDATE/DELETE were never
+    // granted to anon by this default, so naming them would be guesswork.
+    expect(EXEC_WORKFLOW).not.toMatch(/REVOKE ALL[^\n;]*ON TABLES FROM anon/i);
+    expect(EXEC_WORKFLOW).not.toMatch(/REVOKE[^\n;]*ON TABLES FROM PUBLIC/i);
+    expect(NORMALIZATION).not.toMatch(/\bSELECT\b|\bINSERT\b|\bUPDATE\b|\bDELETE\b/);
+  });
+
+  it('does not disturb the authenticated / service_role platform baseline', () => {
+    // The anon revoke must not be widened to the roles whose baseline the
+    // mirror deliberately installs.
+    expect(NORMALIZATION).not.toMatch(/authenticated|service_role/);
+    for (const stmt of PLATFORM_BASELINE_STATEMENTS) expect(WORKFLOW).toContain(stmt);
+  });
+
+  it('runs BEFORE migration 001 creates any Phoenix table', () => {
+    // Default ACLs are prospective only: after 001 it would be far too late.
+    const normIdx = WORKFLOW.indexOf('E2E-ANON-PLATFORM-NORMALIZATION');
+    const catIdx = WORKFLOW.indexOf('cat supabase/migrations/001_phoenix_core_schema.sql');
+    expect(normIdx).toBeGreaterThan(-1);
+    expect(catIdx).toBeGreaterThan(normIdx);
+  });
+
+  it('the post-start proof asserts the anon surface is empty', () => {
+    expect(WORKFLOW).toMatch(/anon holds|has_table_privilege\('anon'/);
+  });
+});
+
 describe('E2E workflow · post-start authorization proof', () => {
   it('asserts the M085 boundary and the M194 surface after startup', () => {
     expect(WORKFLOW).toContain('M085-M194-E2E-SECURITY-PROOF');

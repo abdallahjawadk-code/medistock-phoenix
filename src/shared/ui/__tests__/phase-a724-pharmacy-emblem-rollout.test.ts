@@ -320,7 +320,16 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
       // new dynamic suite is added to prove the attested replay and the
       // still-fail-closed raw apply.
       'supabase/migrations/__tests__/085-revoke-manual-availability-writers.test.ts',
-      'supabase/migrations/__tests__/085-canonical-replay-attested.dynamic.test.ts'
+      'supabase/migrations/__tests__/085-canonical-replay-attested.dynamic.test.ts',
+      // …and H Unit 2's E2E/pg-rig mirror regression guard. The authenticated
+      // E2E workflow hand-mirrors tools/pg-rig/bootstrap.sql's platform
+      // baseline and tools/pg-rig/rig.mjs's replay policy; both silently went
+      // stale during this unit and broke CI. This test pins the mirror so that
+      // divergence fails locally instead of in a 30-minute remote job. It adds
+      // no migration, no policy and no runtime code — it only reads the
+      // workflow file. Registered by EXACT filename; every other file under
+      // supabase/ still fails this guard closed.
+      'supabase/migrations/__tests__/e2e-workflow-platform-mirror.test.ts'
     ];
     const changed=execSync(`git diff --name-only ${BASE}`,{cwd:ROOT,encoding:'utf8'}).split('\n').map(l=>l.trim()).filter(Boolean);
     const prohibited=changed.filter(f=>WATCHED.some(p=>f===p||f.startsWith(p+'/'))&&!EXCLUDED.includes(f));

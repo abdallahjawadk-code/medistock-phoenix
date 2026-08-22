@@ -183,6 +183,25 @@ jobs:
             echo "-- tools/pg-rig/bootstrap.sql's identical statements, run"
             echo "-- BEFORE any table exists so every table this repo's"
             echo "-- migrations create — including 001's own — inherits it."
+            echo "-- E2E-ANON-PLATFORM-NORMALIZATION"
+            echo "-- The local Supabase CLI provisions a public-schema TABLE default"
+            echo "-- ACL that grants anon MAINTAIN, REFERENCES, TRIGGER, TRUNCATE on"
+            echo "-- every future postgres-owned table. Measured on a pristine CLI"
+            echo "-- stack with ZERO Phoenix migrations:"
+            echo "--     postgres | public | table | anon | MAINTAIN,REFERENCES,TRIGGER,TRUNCATE"
+            echo "-- Neither Production nor tools/pg-rig/bootstrap.sql has it: Production's"
+            echo "-- verified contract is ANON_PUBLIC_RELATION_PRIVILEGES = {}. Left in"
+            echo "-- place, every table created before migration 109 inherits those four"
+            echo "-- privileges at CREATE time; 109 removes the default but cannot act"
+            echo "-- retroactively, and 108 only clears 15 tables — leaving 81 anon"
+            echo "-- tuples over 27 relations, which migration 194 correctly refuses."
+            echo "-- Normalize the PLATFORM here rather than patching Phoenix objects"
+            echo "-- afterwards: exact owner (postgres), exact scope (schema public,"
+            echo "-- TABLES), exact principal (anon), exact proven privilege list."
+            echo "-- SELECT/INSERT/UPDATE/DELETE are NOT named because the CLI default"
+            echo "-- never granted them to anon (proven: migration 191's anon-SELECT"
+            echo "-- assertion passes untouched)."
+            echo "ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public REVOKE MAINTAIN, REFERENCES, TRIGGER, TRUNCATE ON TABLES FROM anon;"
             echo "-- E2E-PLATFORM-BASELINE-MIRROR (keep in sync with tools/pg-rig/bootstrap.sql)"
             echo "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES    TO authenticated, service_role;"
             echo "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO authenticated, service_role;"
@@ -325,6 +344,26 @@ jobs:
               fail(`M194 authenticated direct-write surface is ${JSON.stringify(actual)}, expected ${JSON.stringify(expected)}`);
             } else {
               console.log('M194 authenticated direct-write surface: exactly the contracted 4 tuples');
+            }
+
+            // 3b. anon holds NO public relation privilege at all. Production's
+            //     verified contract is ANON_PUBLIC_RELATION_PRIVILEGES = {};
+            //     the local CLI platform default would otherwise leave 81
+            //     inherited tuples here (MAINTAIN/REFERENCES/TRIGGER/TRUNCATE).
+            const anonRel = await c.query(`
+              SELECT c.relname || ' ' || pr.p AS tuple
+                FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+                CROSS JOIN (SELECT unnest(ARRAY['SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER','MAINTAIN']) AS p) pr
+               WHERE n.nspname = 'public' AND c.relkind IN ('r','v','m','p','f')
+                 AND NOT EXISTS (SELECT 1 FROM pg_depend d
+                                  WHERE d.classid='pg_class'::regclass AND d.objid=c.oid AND d.deptype='e')
+                 AND has_table_privilege('anon', c.oid, pr.p)
+               ORDER BY 1`);
+            if (anonRel.rows.length !== 0) {
+              fail(`anon holds ${anonRel.rows.length} public relation privileges (expected none): ` +
+                JSON.stringify(anonRel.rows.slice(0, 12).map((r) => r.tuple)));
+            } else {
+              console.log('anon public relation privileges: {}');
             }
 
             // 4. MAINTAIN is fully converged.
