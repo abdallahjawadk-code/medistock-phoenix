@@ -341,7 +341,14 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
       // directory exemption: every other file under src/shared/authz still
       // fails this guard closed.
       'src/shared/authz/__tests__/facility-authority-reentry-guard.helper.ts',
-      'src/shared/authz/__tests__/facility-authority-reentry-guard.test.ts'
+      'src/shared/authz/__tests__/facility-authority-reentry-guard.test.ts',
+      // …and H Unit 4's forward-only Migration 195, which schema-qualifies the
+      // two SECURITY DEFINER identity helpers (profiles -> public.profiles) and
+      // changes nothing else: no grant, no ACL, no search_path, no RLS, no
+      // runtime code. Proven on a disposable replay as a zero authorization
+      // delta. Registered by EXACT filename; every other file under
+      // supabase/ still fails this guard closed.
+      'supabase/migrations/195_phoenix_auth_helper_profile_schema_qualification.sql'
     ];
     const changed=execSync(`git diff --name-only ${BASE}`,{cwd:ROOT,encoding:'utf8'}).split('\n').map(l=>l.trim()).filter(Boolean);
     const prohibited=changed.filter(f=>WATCHED.some(p=>f===p||f.startsWith(p+'/'))&&!EXCLUDED.includes(f));

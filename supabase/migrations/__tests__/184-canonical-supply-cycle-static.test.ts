@@ -69,7 +69,7 @@ describe('184 · registration and file hygiene', () => {
   // reviewed migration. The guard is not weakened — it is re-pointed by EXACT
   // filename at the new ceiling, and 192 takes over the fail-closed role 191
   // used to play.
-  it('is followed by exactly 185 through 194, with 194 highest reviewed', () => {
+  it('is followed by exactly 185 through 195, with 195 highest reviewed', () => {
     const NEXT = '185_phoenix_return_quarantine_recall_parity.sql';
     const NEXT_2 = '186_phoenix_correction_reason_code_wrapper_parity.sql';
     const NEXT_3 = '187_phoenix_delegated_operational_access.sql';
@@ -80,10 +80,11 @@ describe('184 · registration and file hygiene', () => {
     const NEXT_8 = '192_phoenix_anonymous_read_surface_convergence.sql';
     const NEXT_9 = '193_phoenix_inter_org_alert_command_surface_hardening.sql';
     const NEXT_10 = '194_phoenix_authorization_surface_reproducibility_convergence.sql';
+    const NEXT_11 = '195_phoenix_auth_helper_profile_schema_qualification.sql';
     const numbers = REVIEWED_MIGRATION_FILES
       .map(f => Number(f.slice(0, 3)))
       .filter(n => Number.isFinite(n));
-    expect(Math.max(...numbers)).toBe(194);
+    expect(Math.max(...numbers)).toBe(195);
     expect(REVIEWED_MIGRATION_FILES.filter(f => f.startsWith('184_'))).toHaveLength(1);
     expect(REVIEWED_MIGRATION_FILES.filter(f => f.startsWith('185_'))).toEqual([NEXT]);
     expect(REVIEWED_MIGRATION_FILES.filter(f => f.startsWith('186_'))).toEqual([NEXT_2]);
@@ -95,10 +96,11 @@ describe('184 · registration and file hygiene', () => {
     expect(REVIEWED_MIGRATION_FILES.filter(f => f.startsWith('192_'))).toEqual([NEXT_8]);
     expect(REVIEWED_MIGRATION_FILES.filter(f => f.startsWith('193_'))).toEqual([NEXT_9]);
     expect(REVIEWED_MIGRATION_FILES.filter(f => f.startsWith('194_'))).toEqual([NEXT_10]);
+    expect(REVIEWED_MIGRATION_FILES.filter(f => f.startsWith('195_'))).toEqual([NEXT_11]);
     const i = REVIEWED_MIGRATION_FILES.indexOf(NAME);
-    expect(REVIEWED_MIGRATION_FILES.slice(i + 1)).toEqual([NEXT, NEXT_2, NEXT_3, NEXT_4, NEXT_5, NEXT_6, NEXT_7, NEXT_8, NEXT_9, NEXT_10]);
-    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1]).toBe(NEXT_10);
-    expect(REVIEWED_MIGRATION_FILES.filter(f => /^195_/.test(f))).toHaveLength(0);
+    expect(REVIEWED_MIGRATION_FILES.slice(i + 1)).toEqual([NEXT, NEXT_2, NEXT_3, NEXT_4, NEXT_5, NEXT_6, NEXT_7, NEXT_8, NEXT_9, NEXT_10, NEXT_11]);
+    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1]).toBe(NEXT_11);
+    expect(REVIEWED_MIGRATION_FILES.filter(f => /^196_/.test(f))).toHaveLength(0);
   });
 
   it('carries no CR bytes', () => {
