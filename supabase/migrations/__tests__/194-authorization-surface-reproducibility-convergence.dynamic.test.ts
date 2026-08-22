@@ -342,6 +342,188 @@ run('194 · dynamic · Production-shaped environment accepts M194 as a no-op', (
 });
 
 // ===========================================================================
+// BODY-FINGERPRINT LINE-ENDING PORTABILITY
+//
+// Production stores the two manual availability writer bodies with CRLF; a
+// canonical disposable replay of the same immutable migration files stores the
+// identical text with LF. A raw md5(prosrc) precondition therefore disagreed
+// between the two environments and fail-closed the Production preflight, even
+// though no body byte had semantically changed:
+//
+//   phoenix_upsert_availability          raw(CRLF) 72aa2261086d8d8683a26491d6819a3b
+//                                        LF-norm   cf66c61734c5d1ecc2f54822efbb56ed
+//   phoenix_apply_availability_movement  raw(CRLF) ed6a5a9dd53c5a565e61c7bb6eef01ba
+//                                        LF-norm   1229dfd36bebaac947f65c1852a9912d
+//
+// M194 now hashes `replace(prosrc, E'\r\n', E'\n')` for those two checks only.
+// These cases pin that the normalization is REPRESENTATION-only: a CRLF-only
+// difference is accepted, a real body change is still refused.
+// ===========================================================================
+run('194 · dynamic · writer body fingerprint is line-ending portable, not lax', () => {
+  const UPSERT = 'public.phoenix_upsert_availability(uuid,text,text,text,text,integer,text,date,text,text,text,numeric,text)';
+  const MOVEMENT = 'public.phoenix_apply_availability_movement(uuid,text,integer,text,text)';
+
+  /** Re-store a function with CRLF newlines, preserving definition semantics. */
+  const restoreWithCrlf = async (rig: any, sig: string): Promise<void> => {
+    await rig.asAdmin(async (c: any) => {
+      const r = await c.query(`SELECT pg_get_functiondef($1::regprocedure) AS def`, [sig]);
+      const crlf = r.rows[0].def.replace(/\r\n/g, '\n').replace(/\n/g, '\r\n');
+      await c.query(crlf);
+    });
+  };
+
+  it('CASE 1 · canonical LF bodies — M194 applies', async () => {
+    const rig = await buildRig({ upTo: 193 });
+    try {
+      const before = await rig.asAdmin((c: any) => c.query(
+        `SELECT md5(prosrc) AS raw, md5(replace(prosrc, E'\\r\\n', E'\\n')) AS lf
+           FROM pg_proc WHERE oid = $1::regprocedure`, [UPSERT]));
+      // On the canonical rig the two agree: there are no CRLF pairs at all.
+      expect(before.rows[0].raw).toBe('cf66c61734c5d1ecc2f54822efbb56ed');
+      expect(before.rows[0].lf).toBe('cf66c61734c5d1ecc2f54822efbb56ed');
+      await expect(rig.asAdmin((c: any) => c.query(M194_SQL))).resolves.toBeTruthy();
+    } finally { await rig.end(); }
+  }, 300000);
+
+  it('CASE 2 · identical bodies stored with CRLF — M194 still applies', async () => {
+    const rig = await buildRig({ upTo: 193 });
+    try {
+      await restoreWithCrlf(rig, UPSERT);
+      await restoreWithCrlf(rig, MOVEMENT);
+
+      // The representation really did change, and only the representation.
+      const r = await rig.asAdmin((c: any) => c.query(`
+        SELECT $1::text AS sig,
+               md5(prosrc) AS raw,
+               md5(replace(prosrc, E'\\r\\n', E'\\n')) AS lf,
+               (length(prosrc) - length(replace(prosrc, E'\\r\\n', E'\\n'))) AS crlf_count
+          FROM pg_proc WHERE oid = $1::regprocedure
+        UNION ALL
+        SELECT $2::text, md5(prosrc), md5(replace(prosrc, E'\\r\\n', E'\\n')),
+               (length(prosrc) - length(replace(prosrc, E'\\r\\n', E'\\n')))
+          FROM pg_proc WHERE oid = $2::regprocedure`, [UPSERT, MOVEMENT]));
+
+      const up = r.rows.find((x: any) => x.sig === UPSERT);
+      const mv = r.rows.find((x: any) => x.sig === MOVEMENT);
+      expect(Number(up.crlf_count), 'upsert must now hold CRLF pairs').toBeGreaterThan(0);
+      expect(Number(mv.crlf_count), 'movement must now hold CRLF pairs').toBeGreaterThan(0);
+      expect(up.raw, 'raw hash must diverge under CRLF').not.toBe('cf66c61734c5d1ecc2f54822efbb56ed');
+      expect(mv.raw, 'raw hash must diverge under CRLF').not.toBe('1229dfd36bebaac947f65c1852a9912d');
+      // …but the normalized hashes are exactly the reviewed ones.
+      expect(up.lf).toBe('cf66c61734c5d1ecc2f54822efbb56ed');
+      expect(mv.lf).toBe('1229dfd36bebaac947f65c1852a9912d');
+
+      // CRLF_ONLY_DIFFERENCE_ACCEPTED = YES
+      await expect(rig.asAdmin((c: any) => c.query(M194_SQL))).resolves.toBeTruthy();
+
+      // …and the converged surface is identical to the LF case.
+      const s = await surfaceOf(rig);
+      expect(setDifference(s.tuples, CONTRACT_TUPLES)).toEqual([]);
+      expect(setDifference(CONTRACT_TUPLES, s.tuples)).toEqual([]);
+    } finally { await rig.end(); }
+  }, 300000);
+
+  it('CASE 3 · a real body change is still refused after normalization', async () => {
+    const rig = await buildRig({ upTo: 193 });
+    try {
+      // Mutate actual body CONTENT — an added executable statement, not a
+      // line-ending difference — and keep LF endings so normalization cannot
+      // mask it.
+      await rig.asAdmin(async (c: any) => {
+        const r = await c.query(`SELECT pg_get_functiondef($1::regprocedure) AS def`, [UPSERT]);
+        const def: string = r.rows[0].def;
+        const marker = /\bBEGIN\b/;
+        expect(marker.test(def), 'expected a BEGIN in the function definition').toBe(true);
+        await c.query(def.replace(marker, 'BEGIN\n  PERFORM 1;'));
+      });
+
+      const after = await rig.asAdmin((c: any) => c.query(
+        `SELECT md5(prosrc) AS raw, md5(replace(prosrc, E'\\r\\n', E'\\n')) AS lf,
+                (length(prosrc) - length(replace(prosrc, E'\\r\\n', E'\\n'))) AS crlf_count
+           FROM pg_proc WHERE oid = $1::regprocedure`, [UPSERT]));
+      // No CRLF involved: this is a genuine content change.
+      expect(Number(after.rows[0].crlf_count)).toBe(0);
+      expect(after.rows[0].lf).not.toBe('cf66c61734c5d1ecc2f54822efbb56ed');
+
+      // SEMANTIC_BODY_DIFFERENCE_ACCEPTED = NO
+      await expect(rig.asAdmin((c: any) => c.query(M194_SQL)))
+        .rejects.toThrow(/phoenix_upsert_availability LF-normalized body md5 is .* reviewed state has drifted/);
+    } finally { await rig.end(); }
+  }, 300000);
+
+  it('PRODUCTION-SHAPED + CRLF · M194 is a no-op and preserves bodies byte-for-byte', async () => {
+    // The exact preflight shape: an already-hardened environment (Production's
+    // authorization posture) whose two writer bodies are stored with CRLF.
+    const rig = await buildRig({ upTo: 193 });
+    try {
+      // 1. Shape authorization to Production, from the CONTRACT.
+      await rig.asAdmin(async (c: any) => {
+        const pre = await readAuthorizationSurface((sql, p) => c.query(sql, p));
+        for (const t of setDifference(pre.tuples, CONTRACT_TUPLES)) {
+          const [kind, role, object, priv] = t.split('|');
+          if (kind === 'RELATION') {
+            await c.query(`REVOKE ${priv} ON TABLE public."${object}" FROM ${role}`);
+          } else if (kind === 'FUNCTION') {
+            await c.query(`REVOKE EXECUTE ON FUNCTION public."${object.slice(0, object.indexOf('('))}"(${
+              object.slice(object.indexOf('(') + 1, -1)}) FROM ${role}`);
+          }
+        }
+      });
+      // 2. Store both writer bodies with CRLF, as Production does.
+      await restoreWithCrlf(rig, UPSERT);
+      await restoreWithCrlf(rig, MOVEMENT);
+
+      const shaped = await surfaceOf(rig);
+      expect(setDifference(shaped.tuples, CONTRACT_TUPLES)).toEqual([]);
+      expect(setDifference(CONTRACT_TUPLES, shaped.tuples)).toEqual([]);
+
+      const fnBefore = await rig.asAdmin((c: any) => c.query(`
+        SELECT p.proname, md5(p.prosrc) AS raw_md5, p.prosecdef,
+               pg_get_userbyid(p.proowner) AS owner,
+               COALESCE(array_to_string(p.proconfig, ','), '') AS cfg
+          FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+         WHERE n.nspname = 'public' ORDER BY 1, 2`));
+
+      // 3. M194 must apply and change nothing.
+      await expect(rig.asAdmin((c: any) => c.query(M194_SQL))).resolves.toBeTruthy();
+
+      const after = await surfaceOf(rig);
+      expect(setDifference(shaped.tuples, after.tuples), 'M194 revoked something Production has').toEqual([]);
+      expect(setDifference(after.tuples, shaped.tuples), 'M194 granted something Production lacks').toEqual([]);
+      expect(after.default_acl).toEqual(shaped.default_acl);
+      expect(after.role_attributes).toEqual(shaped.role_attributes);
+
+      // 4. RAW bodies byte-for-byte identical — CRLF still CRLF afterwards —
+      //    plus owner, prosecdef and search_path preserved for EVERY function.
+      const fnAfter = await rig.asAdmin((c: any) => c.query(`
+        SELECT p.proname, md5(p.prosrc) AS raw_md5, p.prosecdef,
+               pg_get_userbyid(p.proowner) AS owner,
+               COALESCE(array_to_string(p.proconfig, ','), '') AS cfg
+          FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+         WHERE n.nspname = 'public' ORDER BY 1, 2`));
+      expect(fnAfter.rows).toEqual(fnBefore.rows);
+
+      const crlf = await rig.asAdmin((c: any) => c.query(`
+        SELECT (length(prosrc) - length(replace(prosrc, E'\\r\\n', E'\\n'))) AS n
+          FROM pg_proc WHERE oid = $1::regprocedure`, [UPSERT]));
+      expect(Number(crlf.rows[0].n), 'CRLF representation must survive M194').toBeGreaterThan(0);
+    } finally { await rig.end(); }
+  }, 300000);
+
+  it('the preservation image still uses RAW prosrc hashes', () => {
+    // Representation portability belongs ONLY to the reviewed-state
+    // precondition. The in-transaction before/after proof must stay raw: it
+    // compares one database against itself, where representation cannot vary,
+    // and its job is to prove M194 changed zero body bytes.
+    const exec = M194_SQL.replace(/--.*$/gm, '');
+    expect(exec).toMatch(/md5\(p\.prosrc\)\s+AS body_md5/);
+    expect(exec).toMatch(/md5\(p\.prosrc\)\s*=\s*\(SELECT body_md5 FROM _m194_before_functions/);
+    // Exactly two normalized checks — the two manual writers, nothing else.
+    expect((exec.match(/md5\(replace\(prosrc, E'\\r\\n', E'\\n'\)\)/g) ?? [])).toHaveLength(2);
+  });
+});
+
+// ===========================================================================
 // §30 — NEGATIVE CONTROLS
 // ===========================================================================
 run('194 · dynamic · negative controls prove the baseline contract is non-vacuous', () => {

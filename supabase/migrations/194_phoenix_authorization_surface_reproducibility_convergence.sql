@@ -311,13 +311,33 @@ BEGIN
   -- 1d. Their bodies must be the reviewed bodies. This migration changes only
   --     privileges; if a body has drifted, the reviewed security analysis no
   --     longer applies and we must stop rather than revoke blind.
-  SELECT md5(prosrc) INTO v_md5 FROM pg_proc WHERE oid = v_upsert_oid;
+  --
+  --     LINE-ENDING PORTABILITY. These two historical bodies are stored in
+  --     Production with CRLF line endings, while a canonical disposable replay
+  --     of the same immutable migration files stores them with LF. The TEXT IS
+  --     IDENTICAL; only the newline representation differs, so a raw
+  --     md5(prosrc) fingerprint disagrees between the two environments:
+  --
+  --       phoenix_upsert_availability          raw(CRLF) 72aa2261086d8d8683a26491d6819a3b
+  --       phoenix_apply_availability_movement  raw(CRLF) ed6a5a9dd53c5a565e61c7bb6eef01ba
+  --
+  --     Normalizing CRLF -> LF before hashing makes both environments agree on
+  --     the reviewed hashes below. This is REPRESENTATION PORTABILITY, not
+  --     semantic tolerance: nothing else is normalized — no whitespace
+  --     collapsing, no case folding, no token rewriting, no parsing — so any
+  --     real change to the body text still fails this guard closed.
+  --
+  --     The transaction-local BEFORE/AFTER preservation image below
+  --     deliberately keeps RAW md5(prosrc): that comparison happens inside one
+  --     database, where representation cannot vary, and its job is to prove
+  --     this migration changed zero bytes of any function body.
+  SELECT md5(replace(prosrc, E'\r\n', E'\n')) INTO v_md5 FROM pg_proc WHERE oid = v_upsert_oid;
   IF v_md5 <> 'cf66c61734c5d1ecc2f54822efbb56ed' THEN
-    RAISE EXCEPTION 'M194 precondition failed: phoenix_upsert_availability body md5 is % (expected cf66c61734c5d1ecc2f54822efbb56ed) — reviewed state has drifted', v_md5;
+    RAISE EXCEPTION 'M194 precondition failed: phoenix_upsert_availability LF-normalized body md5 is % (expected cf66c61734c5d1ecc2f54822efbb56ed) — reviewed state has drifted', v_md5;
   END IF;
-  SELECT md5(prosrc) INTO v_md5 FROM pg_proc WHERE oid = v_movement_oid;
+  SELECT md5(replace(prosrc, E'\r\n', E'\n')) INTO v_md5 FROM pg_proc WHERE oid = v_movement_oid;
   IF v_md5 <> '1229dfd36bebaac947f65c1852a9912d' THEN
-    RAISE EXCEPTION 'M194 precondition failed: phoenix_apply_availability_movement body md5 is % (expected 1229dfd36bebaac947f65c1852a9912d) — reviewed state has drifted', v_md5;
+    RAISE EXCEPTION 'M194 precondition failed: phoenix_apply_availability_movement LF-normalized body md5 is % (expected 1229dfd36bebaac947f65c1852a9912d) — reviewed state has drifted', v_md5;
   END IF;
 
   -- Both are SECURITY DEFINER internals and stay that way; service_role must
