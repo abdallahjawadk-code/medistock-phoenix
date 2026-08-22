@@ -104,6 +104,10 @@ export interface AnalyzeResult {
   presentation: AuthorityTuple[];
   visitedSymbols: number;
   reachableFiles: string[];
+  /** safe screens whose traversal ran to completion in THIS analysis. */
+  screensTraversed: number;
+  /** macrotask yields performed during THIS analysis. */
+  eventLoopYields: number;
 }
 
 export interface AnalyzeOptions {
@@ -201,6 +205,9 @@ export interface AnalysisStats {
   analyses: number;
   /** analyses that supplied an overlay (the synthetic controls). */
   overlayAnalyses: number;
+  /** analyses that ran to completion. Lower than `analyses` when one fails
+   *  closed before traversal — which the screen-999 control deliberately does. */
+  analysesCompleted: number;
   /** ts.Program instances constructed (one per analysis, by necessity). */
   programBuilds: number;
   /** on-disk files actually parsed. Equals distinctDiskFiles when reuse works. */
@@ -211,12 +218,49 @@ export interface AnalysisStats {
   diskCacheHits: number;
   /** synthetic overlay files parsed (correctly re-parsed every analysis). */
   overlayFilesParsed: number;
+  /** macrotask yields performed, across all analyses. */
+  eventLoopYields: number;
+  /** safe-screen traversals carried to completion, across all analyses. */
+  screenTraversalsCompleted: number;
 }
 
 export const analysisStats: AnalysisStats = {
-  analyses: 0, overlayAnalyses: 0, programBuilds: 0,
+  analyses: 0, overlayAnalyses: 0, analysesCompleted: 0, programBuilds: 0,
   diskFilesParsed: 0, distinctDiskFiles: 0, diskCacheHits: 0, overlayFilesParsed: 0,
+  eventLoopYields: 0, screenTraversalsCompleted: 0,
 };
+
+/**
+ * ── WORKER RESPONSIVENESS ───────────────────────────────────────────
+ *
+ * The analysis is CPU-bound TypeScript work. Run as one uninterrupted
+ * synchronous block it pinned its Vitest worker's event loop for tens of
+ * seconds, so the reporter's `onTaskUpdate` RPC to that worker timed out and
+ * the run exited non-zero even though every test passed. The pristine base
+ * never produced that error; every run carrying this guard produced exactly
+ * one.
+ *
+ * The fix is cooperative scheduling, not less analysis: the work is divided
+ * into bounded, deterministic phases with a real MACROTASK yield between them.
+ * A microtask (`await Promise.resolve()`) is deliberately not used — it drains
+ * the microtask queue without ever servicing pending I/O, which is precisely
+ * what the worker RPC needs.
+ *
+ * Nothing about ordering or results changes: screens are still traversed one
+ * at a time, in the same deterministic order, with no concurrency introduced.
+ */
+const yieldToEventLoop = (): Promise<void> =>
+  new Promise<void>((resolve) => {
+    // setImmediate is the true macrotask boundary; setTimeout(0) is the
+    // equivalent fallback if a test environment does not expose it.
+    if (typeof setImmediate === 'function') setImmediate(() => resolve());
+    else setTimeout(() => resolve(), 0);
+  });
+
+/** Declarations processed between cooperative yields inside one traversal.
+ *  Screen-level yields alone are too coarse: a single screen can dominate an
+ *  analysis, so the boundary must also exist INSIDE the traversal. */
+const YIELD_EVERY_N_DECLARATIONS = 1000;
 
 /** Canonical key for a path, matching the platform's file-name case semantics. */
 const canonicalKey = (p: string): string => {
@@ -382,28 +426,51 @@ function tableWriteOf(call: ts.CallExpression): string | null {
  * Walk the authority reachable from every facility-safe screen, at symbol
  * granularity.
  */
-export function analyzeFacilityAuthorityReach(options: AnalyzeOptions = {}): AnalyzeResult {
+export async function analyzeFacilityAuthorityReach(
+  options: AnalyzeOptions = {},
+): Promise<AnalyzeResult> {
   const overlay = new Map<string, string>(Object.entries(options.overlay ?? {}));
   analysisStats.analyses++;
   if (overlay.size) analysisStats.overlayAnalyses++;
   const opts = compilerOptions();
   const rootNames = [abs(SCREEN_ACCESS), abs(SCREEN_REGISTRY), ...[...overlay.keys()].map(abs)];
+
+  let eventLoopYields = 0;
+  const cooperate = async (): Promise<void> => {
+    await yieldToEventLoop();
+    eventLoopYields++;
+    analysisStats.eventLoopYields++;
+  };
+
+  // PHASE 1 — Program construction. Unavoidably one synchronous block, but it
+  // is bounded and, thanks to the shared SourceFile cache, no longer re-reads
+  // the project. Yield immediately afterwards.
   analysisStats.programBuilds++;
   const program = ts.createProgram({ rootNames, options: opts, host: createHost(opts, overlay) });
   const checker = program.getTypeChecker();
+  await cooperate();
 
+  // PHASE 2 — entrypoint derivation from the canonical declarations.
   const screens = readFacilitySafeScreens(program);
   const entries = deriveEntrypoints(program, checker, screens);
+  await cooperate();
 
   const authority: AuthorityTuple[] = [];
   const presentation: AuthorityTuple[] = [];
   const reachableFiles = new Set<string>();
   let visitedSymbols = 0;
+  let screensTraversed = 0;
 
+  // PHASE 3..n — one traversal per safe screen, sequentially and in the same
+  // deterministic order as before. No concurrency is introduced.
   for (const [screen, entry] of entries) {
     const seen = new Set<ts.Node>();
     const stack: ts.Node[] = [entry.decl];
+    let sinceYield = 0;
     while (stack.length) {
+      // …and a cooperative boundary INSIDE the traversal, because a single
+      // screen can otherwise hold the worker for seconds on its own.
+      if (++sinceYield >= YIELD_EVERY_N_DECLARATIONS) { sinceYield = 0; await cooperate(); }
       const decl = stack.pop()!;
       if (seen.has(decl)) continue;
       seen.add(decl);
@@ -449,7 +516,12 @@ export function analyzeFacilityAuthorityReach(options: AnalyzeOptions = {}): Ana
       };
       scan(decl);
     }
+    screensTraversed++;
+    analysisStats.screenTraversalsCompleted++;
+    await cooperate();
   }
+
+  analysisStats.analysesCompleted++;
 
   const dedupe = (list: AuthorityTuple[]): AuthorityTuple[] =>
     [...new Map(list.map((t) => [tupleKey(t), t])).values()]
@@ -462,6 +534,8 @@ export function analyzeFacilityAuthorityReach(options: AnalyzeOptions = {}): Ana
     presentation: dedupe(presentation),
     visitedSymbols,
     reachableFiles: [...reachableFiles].sort(),
+    screensTraversed,
+    eventLoopYields,
   };
 }
 

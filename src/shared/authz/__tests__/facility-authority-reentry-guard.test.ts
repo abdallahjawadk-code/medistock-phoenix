@@ -18,13 +18,13 @@
  * committed source with the TypeScript compiler API; the negative controls run
  * entirely against in-memory overlays and never touch disk.
  */
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeAll } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   analyzeFacilityAuthorityReach, tupleKey, renderTuple, repoRel, REPO_ROOT,
   PRESENTATION_ONLY_RPCS, DIRECT_WRITE_OPS, analysisStats,
-  type AuthorityTuple,
+  type AuthorityTuple, type AnalyzeResult,
 } from './facility-authority-reentry-guard.helper';
 
 vi.setConfig({ testTimeout: 300000, hookTimeout: 300000 });
@@ -112,7 +112,13 @@ const REVIEWED: readonly ReviewedTuple[] = [
 ];
 
 const REVIEWED_KEYS = new Set(REVIEWED.map(tupleKey));
-const base = analyzeFacilityAuthorityReach();
+/**
+ * The analysis is now cooperative (async), so the canonical baseline is awaited
+ * once in a file-scoped hook rather than computed at module load. Every suite
+ * below runs after it, and nothing here holds a floating Promise.
+ */
+let base: AnalyzeResult;
+beforeAll(async () => { base = await analyzeFacilityAuthorityReach(); });
 
 describe('U3 · entrypoints are derived, never hard-coded', () => {
   it('derives the safe screens from the canonical FACILITY_SAFE_SCREENS declaration', () => {
@@ -126,7 +132,7 @@ describe('U3 · entrypoints are derived, never hard-coded', () => {
     expect(base.entrypoints.size).toBe(base.screens.length);
   });
 
-  it('fails closed when a safe screen has no resolvable entry component', () => {
+  it('fails closed when a safe screen has no resolvable entry component', async () => {
     // Adding an id to FACILITY_SAFE_SCREENS must widen this guard's roots, not
     // silently escape it.
     const src = readFileSync(join(REPO_ROOT, 'src/shared/authz/screen-access.ts'), 'utf8');
@@ -135,9 +141,9 @@ describe('U3 · entrypoints are derived, never hard-coded', () => {
       'FACILITY_SAFE_SCREENS: readonly number[] = [3, 6, 15, 18, 999]',
     );
     expect(widened).not.toBe(src);
-    expect(() => analyzeFacilityAuthorityReach({
+    await expect(analyzeFacilityAuthorityReach({
       overlay: { 'src/shared/authz/screen-access.ts': widened },
-    })).toThrow(/screen 999 has no resolvable production entry component/);
+    })).rejects.toThrow(/screen 999 has no resolvable production entry component/);
   });
 
   it('traverses production source only', () => {
@@ -235,11 +241,12 @@ export function InventoryCenterScreen(): unknown {
 }
 `;
 
-const runOverlay = (overlay: Record<string, string>) => {
-  const r = analyzeFacilityAuthorityReach({ overlay });
+const runOverlay = async (overlay: Record<string, string>) => {
+  const r = await analyzeFacilityAuthorityReach({ overlay });
   return { ...r, extras: r.authority.filter((x) => !REVIEWED_KEYS.has(tupleKey(x))) };
 };
-const extrasOf = (overlay: Record<string, string>): AuthorityTuple[] => runOverlay(overlay).extras;
+const extrasOf = async (overlay: Record<string, string>): Promise<AuthorityTuple[]> =>
+  (await runOverlay(overlay)).extras;
 
 /**
  * Assert a pass-control is NOT vacuous.
@@ -255,8 +262,8 @@ const expectReached = (reachableFiles: readonly string[], file: string): void =>
 };
 
 describe('U3 · negative controls — future re-entry must FAIL', () => {
-  it('CONTROL 1 · a new NESTED helper reachable from safe screen 3 that calls an authority service', () => {
-    const extras = extrasOf({
+  it('CONTROL 1 · a new NESTED helper reachable from safe screen 3 that calls an authority service', async () => {
+    const extras = await extrasOf({
       'src/features/inventory/__u3_synth__/nested/reentry.ts': `
         import { supabase } from '@/shared/supabase/client';
         export async function nestedReentry() {
@@ -269,10 +276,10 @@ describe('U3 · negative controls — future re-entry must FAIL', () => {
     expect(extras.some((x) => x.callsiteFile.includes('__u3_synth__/nested/reentry'))).toBe(true);
   });
 
-  it('CONTROL 2 · the SAME rpc sink reached from a different callsite symbol', () => {
+  it('CONTROL 2 · the SAME rpc sink reached from a different callsite symbol', async () => {
     // Proves the tuple key is not the RPC name: this sink is already reviewed
     // for screen 3, but only via outlet-stock.service::approveOutletStockCorrection.
-    const extras = extrasOf({
+    const extras = await extrasOf({
       'src/features/inventory/__u3_synth__/moved.ts': `
         import { supabase } from '@/shared/supabase/client';
         export async function movedApprovalWriter() {
@@ -286,8 +293,8 @@ describe('U3 · negative controls — future re-entry must FAIL', () => {
     expect(hit!.callsiteSymbol).toBe('movedApprovalWriter');
   });
 
-  it('CONTROL 3 · screen → component → hook → service → rpc writer', () => {
-    const extras = extrasOf({
+  it('CONTROL 3 · screen → component → hook → service → rpc writer', async () => {
+    const extras = await extrasOf({
       'src/features/inventory/__u3_synth__/chain.service.ts': `
         import { supabase } from '@/shared/supabase/client';
         export async function chainWriter() { return supabase.rpc('phoenix_admin_grant_delegated_scope', {}); }`,
@@ -303,8 +310,8 @@ describe('U3 · negative controls — future re-entry must FAIL', () => {
     expect(extras.map((x) => x.sink)).toContain('phoenix_admin_grant_delegated_scope');
   });
 
-  it('CONTROL 4 · a direct PostgREST relation write behind a safe screen', () => {
-    const extras = extrasOf({
+  it('CONTROL 4 · a direct PostgREST relation write behind a safe screen', async () => {
+    const extras = await extrasOf({
       'src/features/inventory/__u3_synth__/writer.ts': `
         import { supabase } from '@/shared/supabase/client';
         export async function directWriter() {
@@ -318,9 +325,9 @@ describe('U3 · negative controls — future re-entry must FAIL', () => {
     expect(w!.sink).toBe('profiles.update');
   });
 
-  it('CONTROL 5 · a NEW, entirely unknown rpc name fails by default', () => {
+  it('CONTROL 5 · a NEW, entirely unknown rpc name fails by default', async () => {
     // The old guard could not see this: the RPC is in no catalogue at all.
-    const extras = extrasOf({
+    const extras = await extrasOf({
       'src/features/inventory/__u3_synth__/future.ts': `
         import { supabase } from '@/shared/supabase/client';
         export async function futureWriter() {
@@ -340,8 +347,8 @@ describe('U3 · negative controls — future re-entry must FAIL', () => {
 // synthetic component replaces that screen.
 // ===========================================================================
 describe('U3 · pass controls — read-only surfaces stay clean', () => {
-  it('CONTROL 6 · an RLS-filtered read/search path introduces no authority', () => {
-    const r = runOverlay({
+  it('CONTROL 6 · an RLS-filtered read/search path introduces no authority', async () => {
+    const r = await runOverlay({
       'src/features/inventory/__u3_synth__/search.ts': `
         import { supabase } from '@/shared/supabase/client';
         export async function searchThings(term: string) {
@@ -354,10 +361,10 @@ describe('U3 · pass controls — read-only surfaces stay clean', () => {
     expect(r.extras).toEqual([]);
   });
 
-  it('CONTROL 7 · importing ONE read symbol from a mixed module does not reach its admin writers', () => {
+  it('CONTROL 7 · importing ONE read symbol from a mixed module does not reach its admin writers', async () => {
     // The proven module-granularity false positive: organizations.service.ts
     // exports getOrganizations AND assignProfileRole.
-    const r = runOverlay({
+    const r = await runOverlay({
       [SCREEN3]: syntheticScreen3(
         `import { getOrganizations } from '@/shared/supabase/services/organizations.service';`,
         'getOrganizations()'),
@@ -377,8 +384,8 @@ describe('U3 · pass controls — read-only surfaces stay clean', () => {
     }
   });
 
-  it('CONTROL 8 · a pure reporting/export path introduces no authority', () => {
-    const r = runOverlay({
+  it('CONTROL 8 · a pure reporting/export path introduces no authority', async () => {
+    const r = await runOverlay({
       'src/features/inventory/__u3_synth__/report.ts': `
         export function buildReport(rows: readonly { n: number }[]) {
           return rows.map(r => r.n).reduce((a, b) => a + b, 0);
@@ -390,9 +397,9 @@ describe('U3 · pass controls — read-only surfaces stay clean', () => {
     expect(r.extras).toEqual([]);
   });
 
-  it('CONTROL 9 · the three reviewed read-only RPCs are not treated as authority', () => {
+  it('CONTROL 9 · the three reviewed read-only RPCs are not treated as authority', async () => {
     for (const rpc of PRESENTATION_ONLY_RPCS.keys()) {
-      const r = runOverlay({
+      const r = await runOverlay({
         'src/features/inventory/__u3_synth__/readonly.ts': `
           import { supabase } from '@/shared/supabase/client';
           export async function readOnlyCall() { return supabase.rpc('${rpc}', {}); }`,
@@ -429,6 +436,45 @@ describe('U3 · guard wiring and non-vacuity', () => {
    * into a timeout. This asserts the reuse structurally, so the regression
    * cannot silently return; a timing assertion would be flaky and is not used.
    */
+  /**
+   * WORKER RESPONSIVENESS GUARD — structural, never timing-based.
+   *
+   * The analysis is CPU-bound. Run as one uninterrupted synchronous block it
+   * pinned its Vitest worker's event loop, so the reporter's `onTaskUpdate` RPC
+   * timed out and the run exited non-zero even with every test passing. These
+   * assertions pin the cooperative scheduling that fixes it, and — just as
+   * importantly — pin that yielding did not come at the cost of doing less
+   * work: the four safe screens are still each traversed to completion.
+   */
+  it('yields to the event loop DURING analysis, without traversing less', async () => {
+    // The canonical baseline yielded, and still traversed all four safe screens.
+    expect(base.screensTraversed, 'every safe screen must be traversed').toBe(4);
+    expect(base.eventLoopYields, 'the baseline analysis must yield').toBeGreaterThan(0);
+    // Yields are not merely one-per-screen: the boundary also exists INSIDE a
+    // traversal, which is what actually services the worker during a long screen.
+    expect(
+      base.eventLoopYields,
+      'yielding must be finer-grained than one yield per screen',
+    ).toBeGreaterThan(base.screensTraversed + 2);
+
+    // An overlay control is a real analysis too: it yields AND traverses fully.
+    const r = await runOverlay({
+      'src/features/inventory/__u3_synth__/probe.ts': 'export const probe = 1;',
+    });
+    expect(r.screensTraversed, 'a control must not traverse fewer screens').toBe(4);
+    expect(r.eventLoopYields, 'a control must yield too').toBeGreaterThan(0);
+    // …and it genuinely re-ran rather than returning a cached final answer.
+    expect(r.reachableFiles.length).toBe(base.reachableFiles.length);
+    expect(r.visitedSymbols).toBeGreaterThan(1000);
+
+    // Cumulative counters agree with per-analysis facts.
+    // Note `analysesCompleted`, not `analyses`: the screen-999 control fails
+    // closed BEFORE traversal, so it must not be counted as four traversals.
+    expect(analysisStats.screenTraversalsCompleted).toBe(analysisStats.analysesCompleted * 4);
+    expect(analysisStats.analysesCompleted).toBeLessThan(analysisStats.analyses);
+    expect(analysisStats.eventLoopYields).toBeGreaterThanOrEqual(base.eventLoopYields);
+  });
+
   it('performs the canonical full-project analysis ONCE, however many controls run', () => {
     const s = analysisStats;
     expect(s.analyses, 'no analysis ran — this guard would be vacuous').toBeGreaterThan(1);
