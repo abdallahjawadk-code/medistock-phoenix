@@ -372,6 +372,26 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
       'supabase/migrations/197_phoenix_public_execute_convergence.sql',
       'supabase/migrations/__tests__/197-public-execute-convergence-static.test.ts',
       'supabase/migrations/__tests__/197-public-execute-convergence.dynamic.test.ts',
+      // …and Stage I / I-5's M198, which converges the function-level
+      // search_path of thirty first-party SECURITY DEFINER routines from
+      // `public` to `public, pg_temp` — the setting their 291 siblings already
+      // carry — plus its two proof suites. M198 is SEARCH_PATH-ONLY: it issues
+      // no CREATE OR REPLACE and alters no body, OID, signature, owner, ACL,
+      // table, policy, RLS, trigger or default privilege, and mutates no
+      // business data; its own VERIFY block proves each of those on the live
+      // catalog and additionally re-proves that M197's PUBLIC EXECUTE
+      // convergence is untouched. Naming pg_temp LAST is a hardening: an
+      // unnamed pg_temp is searched FIRST, so this removes an implicit
+      // shadowing path rather than widening anything.
+      //
+      // Registered by EXACT filename BEFORE the commit that lands them,
+      // because `git diff --name-only <BASE>` cannot see an untracked file —
+      // the trap documented three times above, which caught Stage-I I-2 on its
+      // first CI run. No wildcard and no directory exemption: every other file
+      // under supabase/ still fails this guard closed.
+      'supabase/migrations/198_phoenix_secdef_search_path_convergence.sql',
+      'supabase/migrations/__tests__/198-secdef-search-path-convergence-static.test.ts',
+      'supabase/migrations/__tests__/198-secdef-search-path-convergence.dynamic.test.ts',
       // …and Stage I / I-2's pinned Production migration executor contract
       // test, which lives under the WATCHED src/shared/supabase prefix. It is
       // TEST-ONLY: it reads .github/workflows/apply-production-migration.yml
