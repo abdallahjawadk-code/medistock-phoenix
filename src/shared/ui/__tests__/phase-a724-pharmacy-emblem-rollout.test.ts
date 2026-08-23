@@ -348,7 +348,26 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
       // runtime code. Proven on a disposable replay as a zero authorization
       // delta. Registered by EXACT filename; every other file under
       // supabase/ still fails this guard closed.
-      'supabase/migrations/195_phoenix_auth_helper_profile_schema_qualification.sql'
+      'supabase/migrations/195_phoenix_auth_helper_profile_schema_qualification.sql',
+      // …and Stage I / I-2's pinned Production migration executor contract
+      // test, which lives under the WATCHED src/shared/supabase prefix. It is
+      // TEST-ONLY: it reads .github/workflows/apply-production-migration.yml
+      // and the executor's tools/phoenix-demo scripts as TEXT and asserts their
+      // shape. It adds no migration, no policy, no dependency, no runtime code,
+      // and makes no Supabase client call. The executor it guards performs no
+      // Production mutation on merge — it is workflow_dispatch-only.
+      //
+      // Registered AFTER this unit's first CI run caught the omission, not
+      // before: the file was UNTRACKED while the local suite ran, and
+      // `git diff --name-only <BASE>` never lists an untracked file, so the
+      // local run went green while CI correctly failed closed. That is exactly
+      // the trap documented twice above — recorded here rather than tidied
+      // away, because the same trap will be waiting for I-3, I-4 and I-5.
+      //
+      // Registered by EXACT filename; no wildcard and no directory exemption,
+      // so every other file under src/shared/supabase still fails this guard
+      // closed.
+      'src/shared/supabase/__tests__/production-migration-executor-contract.test.ts'
     ];
     const changed=execSync(`git diff --name-only ${BASE}`,{cwd:ROOT,encoding:'utf8'}).split('\n').map(l=>l.trim()).filter(Boolean);
     const prohibited=changed.filter(f=>WATCHED.some(p=>f===p||f.startsWith(p+'/'))&&!EXCLUDED.includes(f));
