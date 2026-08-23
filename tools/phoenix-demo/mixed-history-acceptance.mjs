@@ -49,6 +49,37 @@ const NUMERIC_ERA = 172;
 const TIMESTAMP_ERA = 24;
 const TARGET_REMOTE_VERSION = '20260823181015';
 
+// ---------------------------------------------------------------------------
+// PRODUCTION'S REAL TIMESTAMP-ERA SHAPE.
+//
+// Versions and names below are the shape live Production actually carries, not
+// a generated approximation. The earlier fixture wrote the full canonical stem
+// for all 24 rows, which made the acceptance agree with the code by
+// construction and let a real defect through: executor run 32667193982 refused
+// against Production on canonical 173, whose recorded name has NO `173_`
+// prefix, while this acceptance was green.
+//
+// 23 of the 24 rows DO carry the prefix. 173 is the single exception, and it is
+// written out literally rather than derived from expectedRemoteName() -- a
+// fixture that asks the code under test what to expect proves nothing.
+// ---------------------------------------------------------------------------
+const REAL_REMOTE_VERSIONS = new Map([
+  [173, '20260810200846'],
+  [174, '20260810220715'],
+  [196, '20260823131150'],
+]);
+const REAL_REMOTE_NAMES = new Map([
+  [173, 'phoenix_database_security_surface_hardening'],
+]);
+
+/** 175..195 are stepped 12h from 2026-08-11, strictly between 174 and 196. */
+const remoteVersionFor = (canonical) => REAL_REMOTE_VERSIONS.get(canonical)
+  ?? new Date(Date.UTC(2026, 7, 11, 0, 0, 0) + (canonical - 175) * 43_200_000)
+    .toISOString().replace(/[-:TZ.]/g, '').slice(0, 14);
+
+const remoteNameFor = (canonical, filename) => REAL_REMOTE_NAMES.get(canonical)
+  ?? filename.replace(/\.sql$/, '');
+
 const fail = (m) => { throw new Error(m); };
 const ok = (m) => console.log(`  PASS  ${m}`);
 
@@ -135,16 +166,25 @@ async function main() {
     await c.query('INSERT INTO supabase_migrations.schema_migrations(version,name) VALUES($1,$2)',
       [String(i).padStart(3, '0'), `legacy_${i}`]);
   }
-  const stampBase = Date.UTC(2026, 7, 10, 20, 8, 46);
+  let unprefixedSeeded = 0;
+  let previousVersion = '';
   for (let k = 0; k < TIMESTAMP_ERA; k++) {
-    const version14 = new Date(stampBase + k * 7_200_000).toISOString().replace(/[-:TZ.]/g, '').slice(0, 14);
     const canonical = NUMERIC_ERA + k + 1;
-    const stem = local.find((m) => m.version === canonical).filename.replace(/\.sql$/, '');
-    await c.query('INSERT INTO supabase_migrations.schema_migrations(version,name) VALUES($1,$2)', [version14, stem]);
+    const { filename } = local.find((m) => m.version === canonical);
+    const version14 = remoteVersionFor(canonical);
+    const name = remoteNameFor(canonical, filename);
+    if (version14 <= previousVersion) fail(`fixture versions are not strictly increasing at canonical ${canonical} (${version14}).`);
+    previousVersion = version14;
+    if (!name.startsWith(`${String(canonical).padStart(3, '0')}_`)) unprefixedSeeded += 1;
+    await c.query('INSERT INTO supabase_migrations.schema_migrations(version,name) VALUES($1,$2)', [version14, name]);
+  }
+  // The fixture is only worth running if it really carries the mixed shape.
+  if (unprefixedSeeded !== 1) {
+    fail(`fixture seeded ${unprefixedSeeded} unprefixed timestamp names, expected exactly 1 (canonical 173).`);
   }
   let rows = await readHistory(c);
   if (rows.length !== NUMERIC_ERA + TIMESTAMP_ERA) fail(`seeded ${rows.length} rows, expected ${NUMERIC_ERA + TIMESTAMP_ERA}.`);
-  ok(`${rows.length} rows seeded (${NUMERIC_ERA} three-digit + ${TIMESTAMP_ERA} timestamp)`);
+  ok(`${rows.length} rows seeded (${NUMERIC_ERA} three-digit + ${TIMESTAMP_ERA} timestamp, 23 prefixed + 1 historical unprefixed)`);
 
   console.log('== 3. PROOF A — canonical reconciliation ==');
   const targetCanonical = NUMERIC_ERA + TIMESTAMP_ERA + 1;

@@ -12,9 +12,11 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
+  HISTORICAL_REMOTE_NAME_EXCEPTIONS,
   MigrationHistoryRefusal,
   assertRemoteHistoryVersionUsable,
   canonicalStem,
+  expectedRemoteName,
   isValidTimestampVersion,
   reconcileMigrationHistory,
 } from '../production-migration-history.mjs';
@@ -192,5 +194,126 @@ describe('timestamp validity helper', () => {
     expect(isValidTimestampVersion('20261301000000')).toBe(false); // month 13
     expect(isValidTimestampVersion('20260810206046')).toBe(false); // minute 60
     expect(isValidTimestampVersion('123')).toBe(false);
+  });
+});
+
+
+// ===========================================================================
+// PRODUCTION'S REAL TIMESTAMP-ERA NAMING.
+//
+// 23 of Production's 24 timestamp rows record the FULL canonical stem. Exactly
+// one -- canonical 173 -- records `phoenix_database_security_surface_hardening`
+// with no `173_` prefix, because its original filename's timestamp replaced the
+// prefix rather than preceding it. Executor run 32667193982 refused on that row.
+//
+// The fix must accept that ONE row and nothing else. These tests pin both
+// halves: the exception is honoured, and every neighbouring form still refuses.
+// ===========================================================================
+const M173_FILENAME = '173_phoenix_database_security_surface_hardening.sql';
+const M173_NAME = 'phoenix_database_security_surface_hardening';
+const M174_FILENAME = '174_phoenix_authenticated_rpc_surface_hardening.sql';
+
+/** LOCAL, but with 173 and 174 carrying their REAL repository filenames. */
+const REAL_LOCAL = LOCAL.map((m) => {
+  if (m.version === 173) return { version: 173, filename: M173_FILENAME };
+  if (m.version === 174) return { version: 174, filename: M174_FILENAME };
+  return m;
+});
+
+/** Production's real shape; `overrides` replaces a canonical row's fields. */
+function realShapedRows(overrides: Record<number, { version?: string; name?: string }> = {}) {
+  const rows: { version: string; name: string }[] = [];
+  for (let i = 1; i <= 172; i++) rows.push({ version: String(i).padStart(3, '0'), name: `legacy_name_${i}` });
+  for (let k = 0; k < 24; k++) {
+    const canonical = 172 + k + 1;
+    const local = REAL_LOCAL[canonical - 1];
+    rows.push({
+      version: stamp(k),
+      name: canonical === 173 ? M173_NAME : canonicalStem(local.filename),
+      ...(overrides[canonical] ?? {}),
+    });
+  }
+  return rows;
+}
+
+describe('historical remote-name exception — canonical 173 only', () => {
+  it('stamp(0) is the real Production version for canonical 173', () => {
+    expect(stamp(0)).toBe('20260810200846');
+  });
+
+  it('reconciles the real shape: 173 unprefixed, 174-196 prefixed', () => {
+    const r = reconcileMigrationHistory(realShapedRows(), REAL_LOCAL);
+    expect(r.canonicalCeiling).toBe(196);
+    expect(r.pendingCanonical).toEqual([197]);
+    const m173 = r.mapping.find((m) => m.canonical === 173);
+    const m174 = r.mapping.find((m) => m.canonical === 174);
+    expect(m173?.remoteName).toBe(M173_NAME);
+    expect(m173?.remoteVersion).toBe('20260810200846');
+    expect(m174?.remoteName).toBe('174_phoenix_authenticated_rpc_surface_hardening');
+  });
+
+  it('REFUSES when 174 loses its canonical prefix — the exception is not a rule', () => {
+    expectRefusal(
+      () => reconcileMigrationHistory(
+        realShapedRows({ 174: { name: 'phoenix_authenticated_rpc_surface_hardening' } }), REAL_LOCAL),
+      'REMOTE_NAME_MISMATCH',
+    );
+  });
+
+  it('REFUSES when 173 GAINS the canonical prefix — the exception is exact, not optional', () => {
+    expectRefusal(
+      () => reconcileMigrationHistory(
+        realShapedRows({ 173: { name: '173_phoenix_database_security_surface_hardening' } }), REAL_LOCAL),
+      'REMOTE_NAME_MISMATCH',
+    );
+  });
+
+  it('REFUSES an arbitrary alternative name for 173', () => {
+    for (const name of ['phoenix_database_security_surface_hardening_v2', 'database_security_surface_hardening', 'phoenix_step_173', '']) {
+      expectRefusal(
+        () => reconcileMigrationHistory(realShapedRows({ 173: { name } }), REAL_LOCAL),
+        name === '' ? 'REMOTE_NAME_MISSING' : 'REMOTE_NAME_MISMATCH',
+      );
+    }
+  });
+
+  it('does NOT silently accept a second unprefixed row', () => {
+    for (const canonical of [175, 180, 196]) {
+      const local = REAL_LOCAL[canonical - 1];
+      const stripped = canonicalStem(local.filename).replace(/^\d{3}_/, '');
+      expectRefusal(
+        () => reconcileMigrationHistory(realShapedRows({ [canonical]: { name: stripped } }), REAL_LOCAL),
+        'REMOTE_NAME_MISMATCH',
+      );
+    }
+  });
+
+  it('binds the exception to the exact canonical FILENAME, not merely to slot 173', () => {
+    // LOCAL's 173 is a different migration (173_phoenix_step_173.sql), so the
+    // exception must not transfer to it.
+    expect(expectedRemoteName(173, '173_phoenix_step_173.sql')).toBe('173_phoenix_step_173');
+    expectRefusal(
+      () => reconcileMigrationHistory(
+        productionShapedRows().map((r, i) => (i === 172 ? { ...r, name: 'phoenix_step_173' } : r)), LOCAL),
+      'REMOTE_NAME_MISMATCH',
+    );
+  });
+
+  it('expectedRemoteName returns the exception only for the exact pair', () => {
+    expect(expectedRemoteName(173, M173_FILENAME)).toBe(M173_NAME);
+    expect(expectedRemoteName(174, M174_FILENAME)).toBe('174_phoenix_authenticated_rpc_surface_hardening');
+    expect(expectedRemoteName(197, '197_phoenix_public_execute_convergence.sql'))
+      .toBe('197_phoenix_public_execute_convergence');
+  });
+
+  it('the exception table holds exactly one entry and is frozen', () => {
+    expect(HISTORICAL_REMOTE_NAME_EXCEPTIONS).toHaveLength(1);
+    expect(HISTORICAL_REMOTE_NAME_EXCEPTIONS[0]).toMatchObject({
+      canonical: 173,
+      canonicalFilename: M173_FILENAME,
+      remoteVersion: '20260810200846',
+      remoteName: M173_NAME,
+    });
+    expect(Object.isFrozen(HISTORICAL_REMOTE_NAME_EXCEPTIONS)).toBe(true);
   });
 });

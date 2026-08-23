@@ -60,6 +60,38 @@ describe('alias naming follows the CLI\'s own version/name split', () => {
     try { aliasFilenameFor('005', '007_phoenix_step_7.sql'); } catch (e) { thrown = e; }
     expect((thrown as ShadowWorkspaceRefusal).code).toBe('ALIAS_NUMERIC_PREFIX_MISMATCH');
   });
+
+  // Production's canonical 173 recorded `phoenix_database_security_surface_hardening`
+  // with NO `173_` prefix. An alias rebuilt from the canonical stem would
+  // describe a history Production does not have, so the RECORDED name wins.
+  it('timestamp era: an applied row aliases to the name Production really recorded', () => {
+    expect(aliasFilenameFor(
+      '20260810200846',
+      '173_phoenix_database_security_surface_hardening.sql',
+      'phoenix_database_security_surface_hardening',
+    )).toBe('20260810200846_phoenix_database_security_surface_hardening.sql');
+  });
+
+  it('timestamp era: a prefixed recorded name is reproduced verbatim too', () => {
+    expect(aliasFilenameFor(
+      '20260810220715',
+      '174_phoenix_authenticated_rpc_surface_hardening.sql',
+      '174_phoenix_authenticated_rpc_surface_hardening',
+    )).toBe('20260810220715_174_phoenix_authenticated_rpc_surface_hardening.sql');
+  });
+
+  it('the NEW target carries its FULL canonical stem — 197 keeps its prefix', () => {
+    // No recorded name exists yet, so the canonical stem is used and Production
+    // records 197_phoenix_public_execute_convergence, matching 174-196.
+    expect(aliasFilenameFor('20260824010203', '197_phoenix_public_execute_convergence.sql'))
+      .toBe('20260824010203_197_phoenix_public_execute_convergence.sql');
+  });
+
+  it('refuses an applied timestamp row whose recorded name is empty', () => {
+    let thrown: unknown;
+    try { aliasFilenameFor('20260810200846', '173_phoenix_x.sql', ''); } catch (e) { thrown = e; }
+    expect((thrown as ShadowWorkspaceRefusal).code).toBe('ALIAS_REMOTE_NAME_EMPTY');
+  });
 });
 
 describe('workspace construction', () => {
@@ -179,5 +211,48 @@ describe('dry-run output is parsed mechanically, never inferred', () => {
   it('returns an empty list when nothing is pending', () => {
     expect(parseDryRunPending('Remote database is up to date.')).toEqual([]);
     expect(parseDryRunPending('')).toEqual([]);
+  });
+});
+
+describe("the workspace reproduces Production's real mixed naming", () => {
+  it('writes an unprefixed alias for a historically unprefixed applied row', () => {
+    const { dir, local } = fixture();
+    // The mapping is built by hand rather than via reconcileMigrationHistory,
+    // because the reconciler deliberately refuses an unprefixed name for any
+    // migration other than the real canonical 173 (see the history suite).
+    // What is under test here is narrower: given a mapping that says Production
+    // recorded THIS name, the workspace must write THAT name.
+    const mapping = [
+      ...[1, 2, 3, 4, 5].map((n) => ({
+        canonical: n, remoteVersion: String(n).padStart(3, '0'), remoteName: `legacy_${n}`, era: 'numeric',
+      })),
+      { canonical: 6, remoteVersion: '20260810200846', remoteName: 'phoenix_step_6', era: 'timestamp' },
+      { canonical: 7, remoteVersion: '20260810220846', remoteName: '007_phoenix_step_7', era: 'timestamp' },
+      { canonical: 8, remoteVersion: '20260811000846', remoteName: '008_phoenix_step_8', era: 'timestamp' },
+    ];
+    const built = buildShadowMigrationWorkspace({
+      migrationsDir: dir,
+      mapping,
+      localMigrations: local,
+      target: { canonicalVersion: 9, filename: '009_phoenix_step_9.sql', remoteHistoryVersion: '20260824010203' },
+    });
+    scratch.push(built.workspaceDir);
+    const written = readdirSync(built.migrationsDir).sort();
+
+    // the unprefixed row is reproduced exactly as Production holds it
+    expect(written).toContain('20260810200846_phoenix_step_6.sql');
+    expect(written).not.toContain('20260810200846_006_phoenix_step_6.sql');
+    // its prefixed neighbours are untouched
+    expect(written).toContain('20260810220846_007_phoenix_step_7.sql');
+    expect(written).toContain('20260811000846_008_phoenix_step_8.sql');
+    // the three-digit era still aliases to the canonical filename verbatim
+    expect(written).toContain('001_phoenix_step_1.sql');
+    // the NEW target keeps its full canonical stem
+    expect(built.targetAliasFilename).toBe('20260824010203_009_phoenix_step_9.sql');
+    expect(built.totalMigrations).toBe(9);
+
+    // every alias carries the exact bytes of its canonical migration
+    const six = readFileSync(join(built.migrationsDir, '20260810200846_phoenix_step_6.sql'));
+    expect(sha(six)).toBe(sha(readFileSync(join(dir, '006_phoenix_step_6.sql'))));
   });
 });
