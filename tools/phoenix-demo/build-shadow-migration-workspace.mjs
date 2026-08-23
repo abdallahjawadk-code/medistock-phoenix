@@ -40,12 +40,25 @@ const sha256 = (buf) => createHash('sha256').update(buf).digest('hex');
 
 /**
  * The CLI derives a migration's version from the leading digits of its
- * filename and its name from the remainder. An alias is therefore just
- * `<remoteVersion>_<canonicalStem>.sql` — except in the three-digit era, where
- * the remote version already IS the canonical prefix and the alias filename is
- * the canonical filename verbatim.
+ * filename and its name from the remainder. An alias is therefore
+ * `<remoteVersion>_<name>.sql` -- except in the three-digit era, where the
+ * remote version already IS the canonical prefix and the alias filename is the
+ * canonical filename verbatim.
+ *
+ * `remoteName` is REQUIRED for an already-applied timestamp row and must be the
+ * name Production actually recorded, taken from the reconciled mapping. Most of
+ * Production's timestamp rows carry the full canonical stem, but canonical 173
+ * carries `phoenix_database_security_surface_hardening` with no `173_` prefix
+ * (see HISTORICAL_REMOTE_NAME_EXCEPTIONS). Rebuilding that alias from the
+ * canonical stem instead would hand the CLI a workspace describing a history
+ * Production does not have.
+ *
+ * It is omitted only for the NEW pending target, which has no recorded name
+ * yet and is written under its full canonical stem -- so migration 197 is
+ * recorded as `197_phoenix_public_execute_convergence`, keeping the prefixed
+ * convention that 174 through 196 already follow.
  */
-export function aliasFilenameFor(remoteVersion, canonicalFilename) {
+export function aliasFilenameFor(remoteVersion, canonicalFilename, remoteName) {
   const stem = canonicalStem(canonicalFilename);
   if (/^\d{3}$/.test(remoteVersion)) {
     if (!stem.startsWith(`${remoteVersion}_`)) {
@@ -54,7 +67,13 @@ export function aliasFilenameFor(remoteVersion, canonicalFilename) {
     }
     return `${stem}.sql`;
   }
-  return `${remoteVersion}_${stem}.sql`;
+  if (remoteName === undefined || remoteName === null) return `${remoteVersion}_${stem}.sql`;
+  const name = String(remoteName);
+  if (name === '') {
+    refuse('ALIAS_REMOTE_NAME_EMPTY',
+      `Applied timestamp row ${remoteVersion} has an empty recorded name; refusing to invent one.`);
+  }
+  return `${remoteVersion}_${name}.sql`;
 }
 
 /**
@@ -105,7 +124,9 @@ export function buildShadowMigrationWorkspace({
     seenVersion.add(m.remoteVersion);
 
     const bytes = readFileSync(join(migrationsDir, local.filename));
-    const aliasName = aliasFilenameFor(m.remoteVersion, local.filename);
+    // The alias reproduces the name Production really recorded, not the name
+    // the canonical filename implies -- they differ for canonical 173.
+    const aliasName = aliasFilenameFor(m.remoteVersion, local.filename, m.remoteName);
     writeFileSync(join(migDir, aliasName), bytes);
     aliases.push({ canonical: m.canonical, remoteVersion: m.remoteVersion, aliasName, sha256: sha256(bytes) });
   }
