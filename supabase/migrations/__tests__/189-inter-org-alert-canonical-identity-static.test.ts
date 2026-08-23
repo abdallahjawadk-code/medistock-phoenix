@@ -65,25 +65,27 @@ describe('189 · registration and file hygiene', () => {
   // reviewed migration. 189 is no longer the ceiling, so this guard is
   // re-pointed by EXACT filename rather than weakened: 190 then 191 are the
   // only successors, and 192 takes over the fail-closed role.
-  it('is followed by exactly 190, 191, 192, 193, 194 then 195, the new ceiling, and 196 stays absent', () => {
+  it('is followed by exactly 190 through 196, the new ceiling, and 197 stays absent', () => {
     const NEXT = '190_phoenix_inter_org_alert_cqrs_boundary.sql';
     const NEXT_2 = '191_phoenix_canonical_scope_topology_read_contract.sql';
     const NEXT_3 = '192_phoenix_anonymous_read_surface_convergence.sql';
     const NEXT_4 = '193_phoenix_inter_org_alert_command_surface_hardening.sql';
     const NEXT_5 = '194_phoenix_authorization_surface_reproducibility_convergence.sql';
     const NEXT_6 = '195_phoenix_auth_helper_profile_schema_qualification.sql';
+    const NEXT_7 = '196_phoenix_secdef_relation_schema_qualification.sql';
     const numbers = REVIEWED_MIGRATION_FILES.map(f => Number(f.slice(0, 3))).filter(Number.isFinite);
-    expect(Math.max(...numbers)).toBe(195);
+    expect(Math.max(...numbers)).toBe(196);
     const i = REVIEWED_MIGRATION_FILES.indexOf(NAME);
-    expect(REVIEWED_MIGRATION_FILES.slice(i + 1)).toEqual([NEXT, NEXT_2, NEXT_3, NEXT_4, NEXT_5, NEXT_6]);
-    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1]).toBe(NEXT_6);
+    expect(REVIEWED_MIGRATION_FILES.slice(i + 1)).toEqual([NEXT, NEXT_2, NEXT_3, NEXT_4, NEXT_5, NEXT_6, NEXT_7]);
+    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1]).toBe(NEXT_7);
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^190_/.test(f))).toEqual([NEXT]);
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^191_/.test(f))).toEqual([NEXT_2]);
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^192_/.test(f))).toEqual([NEXT_3]);
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^193_/.test(f))).toEqual([NEXT_4]);
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^194_/.test(f))).toEqual([NEXT_5]);
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^195_/.test(f))).toEqual([NEXT_6]);
-    expect(REVIEWED_MIGRATION_FILES.filter(f => /^196_/.test(f))).toHaveLength(0);
+    expect(REVIEWED_MIGRATION_FILES.filter(f => /^196_/.test(f))).toEqual([NEXT_7]);
+    expect(REVIEWED_MIGRATION_FILES.filter(f => /^197_/.test(f))).toHaveLength(0);
   });
 });
 

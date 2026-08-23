@@ -349,6 +349,13 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
       // delta. Registered by EXACT filename; every other file under
       // supabase/ still fails this guard closed.
       'supabase/migrations/195_phoenix_auth_helper_profile_schema_qualification.sql',
+      // Stage I / I-3: forward-only schema qualification of the audited 22
+      // SECURITY DEFINER bodies, plus exact static and disposable-rig proofs.
+      // Registered by exact filename so this watched-prefix guard remains
+      // fail-closed for every other Stage-I file.
+      'supabase/migrations/196_phoenix_secdef_relation_schema_qualification.sql',
+      'supabase/migrations/__tests__/196-secdef-relation-schema-qualification-static.test.ts',
+      'supabase/migrations/__tests__/196-secdef-relation-schema-qualification.dynamic.test.ts',
       // …and Stage I / I-2's pinned Production migration executor contract
       // test, which lives under the WATCHED src/shared/supabase prefix. It is
       // TEST-ONLY: it reads .github/workflows/apply-production-migration.yml
