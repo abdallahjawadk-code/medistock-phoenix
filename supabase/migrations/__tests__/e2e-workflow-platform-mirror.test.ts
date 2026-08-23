@@ -24,8 +24,10 @@
  * divergence does. Static only: no database, no network.
  */
 import { describe, it, expect } from 'vitest';
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { shimSql } from '../../../tools/pg-rig/rig.mjs';
 
 const ROOT = join(__dirname, '../../../');
 const WORKFLOW_PATH = '.github/workflows/e2e-authenticated.yml';
@@ -35,6 +37,44 @@ const RIG = readFileSync(join(ROOT, 'tools/pg-rig/rig.mjs'), 'utf8');
 
 const M085 = '085_phoenix_revoke_manual_availability_writers.sql';
 const M085_SHA256 = 'b69326713c273f468bd53b8d66430ac907aff54f27c06ab9149427833eb20ab0';
+const M182 = '182_phoenix_health_center_facility_scoped_rbac.sql';
+const M182_PATH = join(ROOT, 'supabase/migrations', M182);
+const M182_RAW = readFileSync(M182_PATH, 'utf8');
+const M182_NORMALIZED = shimSql(M182, M182_RAW);
+const sha256 = (text: string): string => createHash('sha256').update(text, 'utf8').digest('hex');
+
+const M182_FUNCTIONS = [
+  {
+    signature: 'CREATE OR REPLACE FUNCTION public.get_effective_permissions(p_profile_id uuid)',
+    rawHash: 'ffaee56895dcd70fca9c7235984b526b5c17cc6f4673c8c01223c23bf46f0510',
+    productionHash: 'c7c67a94feaef3e8dd7efe8b86db32e93ab949418f18dafc90bc91a3936f3406',
+  },
+  {
+    signature: 'CREATE OR REPLACE FUNCTION public.phoenix_profile_has_permission(p_profile_id uuid, p_key text)',
+    rawHash: '73f1faf21d3d6990237c65f4def57a45ecf9459e8952f5d395d334e8a71e0d64',
+    productionHash: '7fb2f8b311ab181b0189fb3ec6e13f2b068bc3ec588343a56be8c4df672f5188',
+  },
+] as const;
+
+function functionBody(sql: string, signature: string): string {
+  const signatureStart = sql.indexOf(signature);
+  expect(signatureStart, signature).toBeGreaterThanOrEqual(0);
+  expect(sql.indexOf(signature, signatureStart + signature.length), signature).toBe(-1);
+  const open = sql.indexOf('AS $function$', signatureStart);
+  const close = sql.indexOf('$function$;', open + 'AS $function$'.length);
+  expect(open, signature).toBeGreaterThanOrEqual(0);
+  expect(close, signature).toBeGreaterThan(open);
+  return sql.slice(open + 'AS $function$'.length, close);
+}
+
+function maskM182TargetBodies(sql: string): string {
+  let out = sql;
+  for (const { signature } of M182_FUNCTIONS) {
+    const body = functionBody(out, signature);
+    out = out.replace(body, `\n<M182_REPLAY_BODY:${signature}>\n`);
+  }
+  return out;
+}
 
 /**
  * The workflow with commentary removed — YAML `#` lines and the JS `//` lines
@@ -142,6 +182,48 @@ describe('E2E workflow · platform baseline mirror', () => {
     const catIdx = WORKFLOW.indexOf('cat supabase/migrations/001_phoenix_core_schema.sql');
     expect(prependIdx).toBeGreaterThan(-1);
     expect(catIdx).toBeGreaterThan(prependIdx);
+  });
+});
+
+describe('M182 · Production-recorded function-body replay parity', () => {
+  it('pins the immutable repository source and both known source body forms', () => {
+    expect(sha256(M182_RAW)).toBe('5915832037c6ca08c2d873a10eb4896884abe72667f4b7e71c27768572734fb0');
+    for (const contract of M182_FUNCTIONS) {
+      expect(sha256(functionBody(M182_RAW, contract.signature)), contract.signature)
+        .toBe(contract.rawHash);
+      expect(sha256(functionBody(M182_NORMALIZED, contract.signature)), contract.signature)
+        .toBe(contract.productionHash);
+    }
+  });
+
+  it('normalizes exactly the two body representations and no other M182 byte', () => {
+    expect(M182_NORMALIZED).not.toBe(M182_RAW);
+    expect(maskM182TargetBodies(M182_NORMALIZED)).toBe(maskM182TargetBodies(M182_RAW));
+  });
+
+  it('fails closed on historical source drift instead of guessing a transform', () => {
+    expect(() => shimSql(M182, `${M182_RAW}\n`)).toThrow(/immutable source SHA-256 mismatch/);
+    expect(shimSql('181_unrelated.sql', M182_RAW)).toBe(M182_RAW);
+  });
+
+  it('the E2E workflow invokes the canonical helper before local Supabase starts', () => {
+    const marker = WORKFLOW.indexOf('M182-PRODUCTION-BODY-REPLAY-NORMALIZATION');
+    const start = WORKFLOW.indexOf('- name: Start local Supabase');
+    expect(marker).toBeGreaterThan(-1);
+    expect(WORKFLOW).toContain("import { shimSql } from './tools/pg-rig/rig.mjs';");
+    expect(WORKFLOW).toContain(`const NAME = '${M182}';`);
+    expect(WORKFLOW).toContain('writeFileSync(PATH, normalized');
+    expect(marker).toBeLessThan(start);
+  });
+
+  it('the canonical helper pins every measured hash and never touches Production', () => {
+    expect(RIG).toContain('M182_SOURCE_SHA256');
+    for (const contract of M182_FUNCTIONS) {
+      expect(RIG).toContain(contract.rawHash);
+      expect(RIG).toContain(contract.productionHash);
+    }
+    expect(WORKFLOW).toMatch(/disposable runner checkout|ephemeral replay only/i);
+    expect(WORKFLOW).toContain('remain untouched');
   });
 });
 
