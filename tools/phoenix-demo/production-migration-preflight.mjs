@@ -4,25 +4,27 @@
 //
 // Gathers the three sources of truth — the operator's pinned inputs, this
 // checkout's supabase/migrations directory, and Production's applied
-// supabase_migrations.schema_migrations — and hands them to the pure contract
-// in production-migration-contract.mjs. It makes no decision itself and it
-// NEVER writes to Production.
+// supabase_migrations.schema_migrations — reconciles the last of those into
+// canonical numbering, and hands the result to the pure contract. It makes no
+// decision itself and it NEVER writes to Production.
 //
-// Emits `decision=APPLY|ALREADY_APPLIED` to $GITHUB_OUTPUT so the workflow can
-// gate its apply step on a value this script produced from measured reality
-// rather than from an operator's claim.
+// TWO NAMESPACES, NOT ONE
+// -----------------------
+// Production's history is NOT this repository's canonical numbering. It holds
+// 172 three-digit versions followed by 14-digit Supabase CLI timestamps. The
+// previous version of this file ran `SELECT version::int`, which fails outright
+// on a timestamp (`value "20260810200846" is out of range for type integer`)
+// and would still have been wrong widened, because the single-pending proof
+// depended on contiguous ordinals. Versions are now read as TEXT and
+// reconciled by production-migration-history.mjs.
 //
-// Usage (every variable is required):
-//   PHOENIX_PRODUCTION_DATABASE_URL=...   \
-//   PHOENIX_BRANCH=master                 \
-//   PHOENIX_HEAD_SHA=<40 hex>             \
-//   PHOENIX_CONFIRM_SHA=<40 hex>          \
-//   PHOENIX_CONFIRMATION=APPLY_PRODUCTION_MIGRATION \
-//   PHOENIX_MIGRATION_FILENAME=196_....sql \
-//   PHOENIX_MIGRATION_SHA256=<64 hex>     \
-//   PHOENIX_EXPECTED_CURRENT_CEILING=195  \
-//   PHOENIX_EXPECTED_NEXT_CEILING=196     \
-//     node tools/phoenix-demo/production-migration-preflight.mjs
+// It also builds the temporary shadow workspace the CLI will be pointed at, so
+// that `supabase db push` sees Production's own version namespace rather than
+// the canonical directory — where it would compute a pending set of every
+// migration from 173 onward.
+//
+// Emits to $GITHUB_OUTPUT: decision, target_version, shadow_workspace,
+// target_alias, remote_history_version.
 // ===========================================================================
 import { appendFileSync, readFileSync, readdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
@@ -35,8 +37,14 @@ import {
   decideProductionMigrationApply,
   parseMigrationVersion,
 } from './production-migration-contract.mjs';
+import {
+  assertRemoteHistoryVersionUsable,
+  reconcileMigrationHistory,
+} from './production-migration-history.mjs';
+import { buildShadowMigrationWorkspace } from './build-shadow-migration-workspace.mjs';
 
-const MIGRATIONS_DIR = join(process.cwd(), 'supabase', 'migrations');
+const REPO_ROOT = process.cwd();
+const MIGRATIONS_DIR = join(REPO_ROOT, 'supabase', 'migrations');
 
 /** Every migration in this checkout, with its version and exact byte hash. */
 function readLocalMigrations() {
@@ -60,16 +68,23 @@ function readLocalMigrations() {
     .sort((a, b) => a.version - b.version);
 }
 
-async function readRemoteVersions(connectionString) {
+/**
+ * Read applied history. version stays TEXT — never cast. `name` is read too,
+ * because it is the second, order-independent proof of a timestamp row's
+ * canonical identity.
+ */
+async function readRemoteHistory(connectionString) {
   const io = await buildRemoteIo({ connectionString });
   try {
-    let versions;
+    let rows;
     await io.asAdmin(async (c) => {
       const r = await c.query(
-        `SELECT version::int v FROM supabase_migrations.schema_migrations ORDER BY version::int`);
-      versions = r.rows.map((row) => row.v);
+        `SELECT version::text AS version, name::text AS name
+           FROM supabase_migrations.schema_migrations
+          ORDER BY version::text`);
+      rows = r.rows;
     });
-    return versions;
+    return rows;
   } finally {
     await io.end();
   }
@@ -81,8 +96,18 @@ async function main() {
   assertProjectRefPinned(connectionString, PINNED_PROJECT_REF);
 
   const localMigrations = readLocalMigrations();
-  const remoteVersions = await readRemoteVersions(connectionString);
+  const remoteRows = await readRemoteHistory(connectionString);
 
+  // ---- reconcile the two namespaces --------------------------------------
+  const remoteCanonical = reconcileMigrationHistory(remoteRows, localMigrations);
+  console.log(
+    `History reconciled: ${remoteRows.length} remote rows ` +
+      `(${remoteCanonical.numericRowCount} three-digit + ${remoteCanonical.timestampRowCount} timestamp) ` +
+      `-> canonical ceiling ${remoteCanonical.canonicalCeiling}; ` +
+      `era transition at ${remoteCanonical.transitionVersion ?? 'n/a'}.`,
+  );
+
+  // ---- PROOF A: the Phoenix canonical single-pending proof ----------------
   const outcome = decideProductionMigrationApply({
     branch: process.env.PHOENIX_BRANCH,
     headSha: process.env.PHOENIX_HEAD_SHA,
@@ -94,18 +119,54 @@ async function main() {
     migrationFilename: process.env.PHOENIX_MIGRATION_FILENAME,
     migrationSha256: process.env.PHOENIX_MIGRATION_SHA256,
     localMigrations,
-    remoteVersions,
+    remoteCanonical,
   });
 
   console.log(
-    `Preflight PASS: local ceiling ${outcome.localCeiling}, Production ceiling ${outcome.remoteCeiling}, ` +
-      `pending [${outcome.pendingVersions.join(', ')}], decision ${outcome.decision} for migration ` +
-      `${process.env.PHOENIX_MIGRATION_FILENAME}.`,
+    `Preflight PASS: local canonical ceiling ${outcome.localCeiling}, Production canonical ceiling ` +
+      `${outcome.remoteCeiling}, canonical pending [${outcome.pendingVersions.join(', ')}], decision ` +
+      `${outcome.decision} for ${process.env.PHOENIX_MIGRATION_FILENAME}.`,
+  );
+
+  // ---- the shadow workspace the CLI will actually be pointed at ------------
+  // Built even on the resume-safe path, so the workflow can run its second
+  // dry-run proof and confirm zero pending without special-casing.
+  const remoteHistoryVersion = assertRemoteHistoryVersionUsable(
+    process.env.PHOENIX_REMOTE_HISTORY_VERSION,
+    outcome.decision === 'ALREADY_APPLIED'
+      // On resume the target row already exists, so it must be excluded from
+      // the "must be absent" check while still proving it is the newest.
+      ? remoteRows.filter((r) => String(r.version) !== String(process.env.PHOENIX_REMOTE_HISTORY_VERSION))
+      : remoteRows,
+  );
+
+  const shadow = buildShadowMigrationWorkspace({
+    migrationsDir: MIGRATIONS_DIR,
+    mapping: outcome.decision === 'ALREADY_APPLIED'
+      ? remoteCanonical.mapping.filter((m) => m.canonical !== outcome.targetVersion)
+      : remoteCanonical.mapping,
+    localMigrations,
+    repoRoot: REPO_ROOT,
+    target: {
+      canonicalVersion: outcome.targetVersion,
+      filename: process.env.PHOENIX_MIGRATION_FILENAME,
+      sha256: process.env.PHOENIX_MIGRATION_SHA256,
+      remoteHistoryVersion,
+    },
+  });
+
+  console.log(
+    `Shadow workspace: ${shadow.aliasCount} applied aliases + 1 target = ${shadow.totalMigrations} migrations; ` +
+      `target alias ${shadow.targetAliasFilename} (sha256 ${shadow.targetAliasSha256}).`,
   );
 
   if (process.env.GITHUB_OUTPUT) {
     appendFileSync(process.env.GITHUB_OUTPUT, `decision=${outcome.decision}\n`);
     appendFileSync(process.env.GITHUB_OUTPUT, `target_version=${outcome.targetVersion}\n`);
+    appendFileSync(process.env.GITHUB_OUTPUT, `shadow_workspace=${shadow.workspaceDir}\n`);
+    appendFileSync(process.env.GITHUB_OUTPUT, `target_alias=${shadow.targetAliasFilename}\n`);
+    appendFileSync(process.env.GITHUB_OUTPUT, `remote_history_version=${remoteHistoryVersion}\n`);
+    appendFileSync(process.env.GITHUB_OUTPUT, `remote_row_count=${remoteRows.length}\n`);
   }
 }
 

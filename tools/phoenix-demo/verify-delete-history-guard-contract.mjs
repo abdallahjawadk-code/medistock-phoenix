@@ -25,16 +25,48 @@
 // ===========================================================================
 import { buildRemoteIo } from '../pg-rig/remote-io.mjs';
 
+import { readdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { reconcileMigrationHistory } from './production-migration-history.mjs';
+
+// Production's history is NOT this repository's canonical numbering: it holds
+// three-digit versions followed by 14-digit Supabase CLI timestamps. Casting
+// `version::int` fails outright on a timestamp, so versions are read as TEXT
+// and the canonical ceiling is RECONCILED. See production-migration-history.mjs.
+function localManifest() {
+  return readdirSync(join(process.cwd(), 'supabase', 'migrations'))
+    .filter((f) => f.endsWith('.sql'))
+    .map((filename) => {
+      const m = /^(\d{3})_/.exec(filename);
+      return m ? { version: parseInt(m[1], 10), filename } : null;
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.version - b.version);
+}
+
+async function readCanonicalHistory(io) {
+  let rows;
+  await io.asAdmin(async (c) => {
+    const r = await c.query(
+      `SELECT version::text AS version, name::text AS name
+         FROM supabase_migrations.schema_migrations
+        ORDER BY version::text`);
+    rows = r.rows;
+  });
+  return reconcileMigrationHistory(rows, localManifest());
+}
+
+
 async function main() {
   const io = await buildRemoteIo({ connectionString: process.env.PHOENIX_PRODUCTION_DATABASE_URL });
   try {
     await io.asAdmin(async (c) => {
-      const r = await c.query(
-        `SELECT version::int v FROM supabase_migrations.schema_migrations ORDER BY version::int`);
-      const versions = r.rows.map((row) => row.v);
-      const highest = versions.length ? versions[versions.length - 1] : null;
+      // Canonical ceiling, reconciled from Production's mixed version
+      // namespaces — never `version::int`, which overflows on a timestamp.
+      const reconciled = await readCanonicalHistory({ asAdmin: async (fn) => fn(c) });
+      const highest = reconciled.canonicalCeiling;
       if (highest !== 147) {
-        throw new Error(`Production migration history highest version is ${highest === null ? '(none)' : highest}, expected exactly 147.`);
+        throw new Error(`Production canonical migration ceiling is ${highest}, expected exactly 147.`);
       }
 
       await c.query(`

@@ -42,8 +42,19 @@ function localSet(ceiling: number, overrides: Record<number, { filename?: string
   return out;
 }
 
-/** A contiguous applied history 1..ceiling. */
-const remoteSet = (ceiling: number) => Array.from({ length: ceiling }, (_, i) => i + 1);
+/**
+ * A reconciled remote history at `ceiling`, as production-migration-history.mjs
+ * would return it. The contract no longer sees raw remote versions at all:
+ * Production's two namespaces (172 three-digit rows then 14-digit Supabase
+ * timestamps) are reconciled first, and the shape/ordering/duplicate/gap
+ * refusals that used to live here are proven in
+ * production-migration-history.test.ts instead.
+ */
+const canon = (ceiling: number, localCeiling = 196) => ({
+  canonicalCeiling: ceiling,
+  appliedCanonical: Array.from({ length: ceiling }, (_, i) => i + 1),
+  pendingCanonical: Array.from({ length: Math.max(0, localCeiling - ceiling) }, (_, i) => ceiling + 1 + i),
+});
 
 const baseline = () => ({
   branch: 'master',
@@ -56,7 +67,7 @@ const baseline = () => ({
   migrationFilename: TARGET_FILE,
   migrationSha256: TARGET_SHA,
   localMigrations: localSet(196),
-  remoteVersions: remoteSet(195),
+  remoteCanonical: canon(195),
 });
 
 /** Assert the call refuses, and refuses with exactly this code. */
@@ -90,7 +101,7 @@ describe('production migration executor — the happy path is exactly one pendin
   });
 
   it('is RESUME-SAFE: re-dispatching after a successful apply reports ALREADY_APPLIED instead of pushing again', () => {
-    const out = decideProductionMigrationApply({ ...baseline(), remoteVersions: remoteSet(196) } as never);
+    const out = decideProductionMigrationApply({ ...baseline(), remoteCanonical: canon(196) } as never);
     expect(out.decision).toBe('ALREADY_APPLIED');
     expect(out.pendingVersions).toEqual([]);
     expect(out.remoteCeiling).toBe(196);
@@ -178,7 +189,7 @@ describe('production migration executor — negative controls (every one must fa
 
   it('two pending migrations — a checkout carrying 197 as well can never push "just" 196', () => {
     const r = expectRefusal(
-      { ...baseline(), localMigrations: localSet(197), remoteVersions: remoteSet(195) },
+      { ...baseline(), localMigrations: localSet(197), remoteCanonical: canon(195, 197) },
       'LOCAL_CEILING_MISMATCH',
     );
     expect(r.message).toContain('could push more than one migration');
@@ -193,12 +204,12 @@ describe('production migration executor — negative controls (every one must fa
   });
 
   it('unexpected Production future migration — this checkout is behind Production', () => {
-    const r = expectRefusal({ ...baseline(), remoteVersions: remoteSet(197) }, 'REMOTE_FUTURE_MIGRATION');
+    const r = expectRefusal({ ...baseline(), remoteCanonical: canon(197) }, 'REMOTE_FUTURE_MIGRATION');
     expect(r.message).toContain('197');
   });
 
   it('wrong current ceiling — Production is not where the operator claimed it was', () => {
-    const r = expectRefusal({ ...baseline(), remoteVersions: remoteSet(194) }, 'UNEXPLAINED_STATE');
+    const r = expectRefusal({ ...baseline(), remoteCanonical: canon(194) }, 'UNEXPLAINED_STATE');
     expect(r.message).toContain('194');
     expect(r.message).toContain('without applying, retrying, or repairing');
   });
@@ -208,18 +219,21 @@ describe('production migration executor — negative controls (every one must fa
     expectRefusal({ ...baseline(), localMigrations: gapped }, 'LOCAL_HISTORY_GAP');
   });
 
-  it('migration number gap — in Production', () => {
-    const gapped = remoteSet(195).filter((v) => v !== 100);
-    expectRefusal({ ...baseline(), remoteVersions: gapped }, 'REMOTE_HISTORY_GAP');
-  });
-
-  it('duplicated Production history version', () => {
-    expectRefusal({ ...baseline(), remoteVersions: [...remoteSet(195), 195] }, 'REMOTE_HISTORY_NOT_INCREASING');
+  // A gap or duplicate in Production's raw history is now refused upstream by
+  // reconcileMigrationHistory (REMOTE_NUMERIC_GAP / REMOTE_DUPLICATE_VERSION,
+  // covered in production-migration-history.test.ts) — the contract can no
+  // longer be reached with an unsound history. What it still guards is an
+  // internally inconsistent reconciliation result.
+  it('an internally inconsistent reconciled history', () => {
+    expectRefusal(
+      { ...baseline(), remoteCanonical: { canonicalCeiling: 195, appliedCanonical: [1, 2, 3], pendingCanonical: [196] } },
+      'REMOTE_HISTORY_NOT_INCREASING',
+    );
   });
 
   it('empty histories', () => {
     expectRefusal({ ...baseline(), localMigrations: [] }, 'LOCAL_HISTORY_EMPTY');
-    expectRefusal({ ...baseline(), remoteVersions: [] }, 'REMOTE_HISTORY_EMPTY');
+    expectRefusal({ ...baseline(), remoteCanonical: undefined }, 'REMOTE_HISTORY_EMPTY');
   });
 
   // PENDING_SET_NOT_SINGLE is a deliberate defensive backstop rather than a
