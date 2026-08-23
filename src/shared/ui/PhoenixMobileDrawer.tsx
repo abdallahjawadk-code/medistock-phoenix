@@ -152,7 +152,7 @@ export function PhoenixMobileDrawer({ currentScreen, onNavigate, onClose, onLogo
         width: 'min(var(--sw), 88vw)',
         background: 'var(--surface)',
         height: '100%',
-        overflowY: 'auto',
+        overflowY: 'hidden',
         display: 'flex',
         flexDirection: 'column',
         gap: '2px',
@@ -193,7 +193,7 @@ export function PhoenixMobileDrawer({ currentScreen, onNavigate, onClose, onLogo
           </div>
         </div>
 
-        <nav className="premium-drawer-nav" style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '2px', overflowY: 'auto' }} aria-label={t('shell_primary_nav', lang)}>
+        <nav className="premium-drawer-nav" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: '2px', overflowY: 'auto' }} aria-label={t('shell_primary_nav', lang)}>
           {primaryItems.map(item => {
             const s = ns(item.screen);
             return (

@@ -18,13 +18,23 @@ vi.mock('../NotificationBell', () => ({ NotificationBell: () => null }));
 import { PhoenixMobileDrawer } from '../PhoenixMobileDrawer';
 import { PhoenixTopbar } from '../PhoenixTopbar';
 
-function DrawerHarness() {
+interface DrawerHarnessProps {
+  currentScreen?: number;
+  onNavigate?: (screen: number) => void;
+  onLogout?: () => void;
+}
+
+function DrawerHarness({
+  currentScreen = 21,
+  onNavigate = () => undefined,
+  onLogout = () => undefined,
+}: DrawerHarnessProps) {
   const [open, setOpen] = useState(false);
   return (
     <div>
       <button onClick={() => setOpen(true)}>open drawer</button>
       <main><a href="#background">background link</a></main>
-      {open && <PhoenixMobileDrawer currentScreen={21} onNavigate={() => undefined} onClose={() => setOpen(false)} onLogout={() => undefined} />}
+      {open && <PhoenixMobileDrawer currentScreen={currentScreen} onNavigate={onNavigate} onClose={() => setOpen(false)} onLogout={onLogout} />}
     </div>
   );
 }
@@ -62,6 +72,46 @@ describe('PHASE B5 — mobile drawer keyboard and semantics', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(opener).toHaveFocus();
     expect(document.querySelector('main')).not.toHaveAttribute('inert');
+  });
+
+  it('closes from both the close control and the backdrop', () => {
+    render(<DrawerHarness />);
+    const opener = screen.getByRole('button', { name: 'open drawer' });
+
+    fireEvent.click(opener);
+    expect(screen.getByRole('dialog')).toHaveAttribute('dir', 'ltr');
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+
+    fireEvent.click(opener);
+    const backdrop = document.querySelector('.premium-drawer-backdrop');
+    expect(backdrop).not.toBeNull();
+    fireEvent.click(backdrop!);
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('navigates, closes, and keeps the current item explicit', () => {
+    const onNavigate = vi.fn();
+    render(<DrawerHarness currentScreen={21} onNavigate={onNavigate} />);
+    fireEvent.click(screen.getByRole('button', { name: 'open drawer' }));
+
+    const active = document.querySelector('.premium-nav-item[aria-current="page"]');
+    expect(active).toHaveAttribute('data-active', 'true');
+
+    const target = document.querySelector('.premium-nav-item:not([aria-current])');
+    expect(target).not.toBeNull();
+    fireEvent.click(target!);
+    expect(onNavigate).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('logs out once and closes the drawer', () => {
+    const onLogout = vi.fn();
+    render(<DrawerHarness onLogout={onLogout} />);
+    fireEvent.click(screen.getByRole('button', { name: 'open drawer' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+    expect(onLogout).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 
   it('uses bilingual labels and direction', () => {

@@ -573,6 +573,39 @@ html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .premium-sidebar
 html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .premium-mobile-drawer { outline: 1px solid color-mix(in srgb, var(--phoenix-gold) 32%, var(--phoenix-sidebar-border)); outline-offset: -1px; filter: drop-shadow(28px 0 40px color-mix(in srgb, var(--phoenix-sidebar-bg-2) 52%, transparent)); }
 html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .premium-drawer-backdrop { background: color-mix(in srgb, var(--phoenix-sidebar-bg) 54%, transparent); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); }
 
+/* MOBILE-DRAWER-PERFORMANCE-HOTFIX-A:
+   The phone drawer is a full-height moving layer. Live blur on both that layer
+   and its viewport-sized backdrop forced the GPU to re-sample most of the
+   screen on every opening frame; the decorative filter drop-shadow added a
+   second off-screen raster pass. Keep the solid institutional drawer surface
+   and its ordinary box-shadow, but make the mobile opening path compositor-only.
+   Desktop glass surfaces are deliberately outside this breakpoint. */
+@media (max-width: 767px) {
+  html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] body {
+    background-attachment: scroll;
+  }
+
+  html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .premium-mobile-drawer {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    filter: none;
+    will-change: transform, opacity;
+    overscroll-behavior: contain;
+  }
+
+  html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .premium-drawer-backdrop {
+    background: color-mix(in srgb, var(--phoenix-sidebar-bg) 68%, transparent);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .premium-drawer-nav {
+    min-block-size: 0;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
 html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-loading__mark { filter: drop-shadow(0 12px 22px color-mix(in srgb, var(--phoenix-gold) 18%, transparent)); }
 html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .nexus-loading__orbit { border-color: color-mix(in srgb, var(--teal) 22%, transparent); border-block-start-color: var(--phoenix-gold); box-shadow: 0 0 18px color-mix(in srgb, var(--teal) 12%, transparent); }
 html[data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .premium-pwa-install { border-color: color-mix(in srgb, var(--phoenix-gold) 25%, var(--brd)); background: color-mix(in srgb, var(--surface) 94%, transparent); box-shadow: 0 24px 58px color-mix(in srgb, var(--phoenix-sidebar-bg-2) 18%, transparent), inset 0 1px color-mix(in srgb, var(--surface) 60%, transparent); }
