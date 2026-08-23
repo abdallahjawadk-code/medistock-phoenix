@@ -27,12 +27,17 @@ const SIX = [
 ];
 
 describe('M197 static — identity and placement', () => {
-  it('is the single next migration, numbered 197, with no 198+ present', () => {
+  it('is registered at 197, immediately below the 198 ceiling, with no 199+ present', () => {
+    // I-5 landed 198 (SECDEF search_path convergence) directly after this
+    // migration, so 197 is no longer the newest file. It must still exist
+    // exactly once, still sit at index 196, and 198 must be the ONLY thing
+    // above it — a second unreviewed migration would still fail this closed.
     const files = readdirSync(MIGRATIONS).filter((f) => /^\d{3}_.*\.sql$/.test(f)).sort();
     expect(files).toContain(FILENAME);
-    expect(files[files.length - 1]).toBe(FILENAME);
-    expect(files.filter((f) => /^(19[89]|[2-9]\d\d)_/.test(f))).toEqual([]);
-    expect(files).toHaveLength(197);
+    expect(files.indexOf(FILENAME)).toBe(196);
+    expect(files.slice(197)).toEqual(['198_phoenix_secdef_search_path_convergence.sql']);
+    expect(files.filter((f) => /^(199|[2-9]\d\d)_/.test(f))).toEqual([]);
+    expect(files).toHaveLength(198);
   });
 
   it('carries no MANUAL APPLY ONLY banner, so the pinned executor will accept it', () => {
