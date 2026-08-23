@@ -85,6 +85,11 @@ on:
         description: 'Type APPLY_PRODUCTION_MIGRATION exactly'
         required: true
         type: string
+      diagnostic_only:
+        description: 'BRANCH DIAGNOSTIC ONLY. true = skip the apply job entirely and run a pure local secret-STRUCTURE check that makes no network connection.'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -102,6 +107,11 @@ env:
 jobs:
   apply:
     name: Apply exactly one pinned migration to Production
+    # Structural kill-switch: in diagnostic mode this job never starts, so no
+    # step of it can reach Production. github.event.inputs.* is always a STRING
+    # for workflow_dispatch, so this is an unambiguous string comparison rather
+    # than a boolean/number coercion.
+    if: ${{ github.event.inputs.diagnostic_only != 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     environment: production
@@ -229,3 +239,94 @@ jobs:
           echo "  AMBIGUOUS       — anything else, including an unreadable history."
           echo "Do NOT re-dispatch this workflow until the state is classified and the classification is recorded."
           exit 1
+
+  # ==========================================================================
+  # BRANCH-ONLY DIAGNOSTIC. Distinguishes a structurally malformed
+  # PHOENIX_PRODUCTION_DATABASE_URL from a structurally valid URI whose
+  # password Postgres rejects. It resolves the secret through the SAME
+  # `environment: production` context as the real executor, then inspects the
+  # STRING ONLY.
+  #
+  # It makes ZERO network connections: no checkout, no npm install, no pg, no
+  # pg-connection-string, no Supabase CLI, no psql, no curl, no fetch, and it
+  # imports no Node module at all (URL is a global).
+  #
+  # It emits ONLY named booleans. It never emits the URI, the username text,
+  # the password, any substring, any length, or any digest.
+  # ==========================================================================
+  diagnose_secret_structure:
+    name: Diagnose Production secret STRUCTURE (no network, booleans only)
+    if: ${{ github.event.inputs.diagnostic_only == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    environment: production
+    permissions: {}
+
+    steps:
+      - name: Structure-only diagnostic
+        env:
+          PHOENIX_PRODUCTION_DATABASE_URL: ${{ secrets.PHOENIX_PRODUCTION_DATABASE_URL }}
+        run: |
+          cat <<'NODE' > "$RUNNER_TEMP/diag.cjs"
+          'use strict';
+          const s = process.env.PHOENIX_PRODUCTION_DATABASE_URL || '';
+
+          const EXPECTED_USER = 'postgres.eyrzxgfkvqybjdgyphap';
+          const EXPECTED_HOST = 'aws-1-ap-south-1.pooler.supabase.com';
+          const EXPECTED_PORT = '5432';
+          const EXPECTED_PATH = '/postgres';
+          const EXPECTED_REF  = 'eyrzxgfkvqybjdgyphap';
+
+          const R = {};
+          R.SECRET_PRESENT = s.length > 0;
+          R.NO_LEADING_OR_TRAILING_WHITESPACE = s === s.trim();
+          R.NO_CR_OR_LF = s.indexOf(String.fromCharCode(13)) === -1 &&
+                          s.indexOf(String.fromCharCode(10)) === -1;
+          R.NO_LITERAL_BACKSLASH = s.indexOf(String.fromCharCode(92)) === -1;
+
+          // The exception is deliberately swallowed: Node embeds the input in
+          // URL parse errors, so printing it would leak the secret.
+          let u = null;
+          try { u = new URL(s); } catch (_e) { u = null; }
+          R.URL_PARSE_SUCCESS = u !== null;
+
+          const dec = (v) => { try { return decodeURIComponent(v); } catch (_e) { return null; } };
+          const user = u ? dec(u.username) : null;
+          const pass = u ? dec(u.password) : null;
+
+          R.PROTOCOL_IS_POSTGRESQL = !!u && (u.protocol === 'postgresql:' || u.protocol === 'postgres:');
+          R.USERNAME_IS_EXPECTED_SESSION_POOLER_FORM = user === EXPECTED_USER;
+          R.HOST_IS_EXPECTED_SESSION_POOLER_HOST = !!u && u.hostname === EXPECTED_HOST;
+          R.PORT_IS_5432 = !!u && u.port === EXPECTED_PORT;
+          R.DATABASE_PATH_IS_POSTGRES = !!u && u.pathname === EXPECTED_PATH;
+          R.PASSWORD_PRESENT = typeof pass === 'string' && pass.length > 0;
+          R.PASSWORD_IS_ALPHANUMERIC_ONLY = typeof pass === 'string' && /^[A-Za-z0-9]+$/.test(pass);
+          R.URL_ROUNDTRIP_IDENTICAL = !!u && u.toString() === s;
+
+          // Replicates remote-io.mjs's ssl-param strip WITHOUT importing it,
+          // then compares the security-relevant components. Booleans only.
+          let sane = false;
+          if (u) {
+            try {
+              const v = new URL(s);
+              for (const k of [...v.searchParams.keys()]) if (/^ssl/i.test(k)) v.searchParams.delete(k);
+              const w = new URL(v.toString());
+              sane = dec(w.username) === user && dec(w.password) === pass &&
+                     w.hostname === u.hostname && w.port === u.port && w.pathname === u.pathname;
+            } catch (_e) { sane = false; }
+          }
+          R.SANITIZED_URL_SEMANTICALLY_IDENTICAL = sane;
+
+          // "unexpected" = any query parameter the executor does not already strip.
+          R.NO_UNEXPECTED_QUERY_PARAMETERS =
+            !!u && [...u.searchParams.keys()].filter((k) => !/^ssl/i.test(k)).length === 0;
+
+          R.PROJECT_REF_IS_EXPECTED =
+            (typeof user === 'string' && user.endsWith('.' + EXPECTED_REF)) ||
+            (!!u && u.hostname.includes(EXPECTED_REF));
+
+          R.ALL_STRUCTURE_CHECKS_PASS = Object.keys(R).every((k) => R[k] === true);
+
+          for (const k of Object.keys(R)) console.log(k + ' = ' + (R[k] ? 'TRUE' : 'FALSE'));
+          NODE
+          node "$RUNNER_TEMP/diag.cjs"
