@@ -54,9 +54,13 @@ describe('Production migration executor — dispatch envelope', () => {
     expect(WORKFLOW).toContain('cancel-in-progress: false');
   });
 
-  it('accepts exactly six pinned inputs — no SQL, no script path, no project ref, no range', () => {
+  it('accepts exactly seven pinned inputs — no SQL, no script path, no project ref, no range', () => {
     const inputsBlock = WORKFLOW.slice(WORKFLOW.indexOf('    inputs:'), WORKFLOW.indexOf('permissions:'));
     const declared = [...inputsBlock.matchAll(/^ {6}([a-z0-9_]+):$/gm)].map((m) => m[1]).sort();
+    // remote_history_version is the 14-digit Supabase history version this
+    // migration will be recorded under. It is PINNED per invocation, never
+    // derived at run time, because Production's history namespace is not this
+    // repository's canonical numbering.
     expect(declared).toEqual([
       'confirm_sha',
       'confirmation',
@@ -64,6 +68,7 @@ describe('Production migration executor — dispatch envelope', () => {
       'expected_next_ceiling',
       'migration_filename',
       'migration_sha256',
+      'remote_history_version',
     ]);
     // Nothing that could smuggle in arbitrary work.
     for (const forbidden of ['sql', 'script', 'project_ref', 'range', 'from_version', 'to_version', 'force', 'skip']) {
@@ -100,17 +105,38 @@ describe('Production migration executor — the single-pending proof', () => {
     }
   });
 
-  it('issues exactly two db-push commands — one dry-run, one apply — and never a sweep', () => {
+  it('issues exactly three db-push commands — two read-only dry-runs and one apply — and never a sweep', () => {
     // Only real command lines, never the header prose that explains why
     // `supabase db push` is bounded the way it is.
     const pushes = WORKFLOW.split('\n')
       .map((l) => l.trim())
       .filter((l) => l.startsWith('supabase db push') || l.startsWith('run: supabase db push'))
       .map((l) => l.replace(/^run: /, ''));
+    // Both run from the SHADOW workspace via --workdir, never from the
+    // canonical migrations directory — pointed there, the CLI would compute a
+    // pending set of every migration from 173 onward, because local `173` does
+    // not match remote `20260810200846`.
+    // The third is the post-apply proof: unconditional, read-only, and
+    // expected to report ZERO pending on both the APPLY and the resume-safe
+    // ALREADY_APPLIED paths.
     expect(pushes).toEqual([
-      'supabase db push --db-url "$PHOENIX_PRODUCTION_DATABASE_URL" --dry-run 2>&1 | tee /tmp/db-push-dry-run.txt',
-      'supabase db push --db-url "$PHOENIX_PRODUCTION_DATABASE_URL"',
+      'supabase db push --yes --dry-run --db-url "$PHOENIX_PRODUCTION_DATABASE_URL" --workdir "${{ steps.preflight.outputs.shadow_workspace }}" 2>&1 | tee /tmp/db-push-dry-run.txt',
+      'supabase db push --yes --db-url "$PHOENIX_PRODUCTION_DATABASE_URL" --workdir "${{ steps.preflight.outputs.shadow_workspace }}"',
+      'supabase db push --yes --dry-run --db-url "$PHOENIX_PRODUCTION_DATABASE_URL" --workdir "${{ steps.preflight.outputs.shadow_workspace }}" 2>&1 | tee /tmp/db-push-post-apply.txt',
     ]);
+    // Exactly ONE of the three mutates Production: the apply. The other two
+    // carry --dry-run.
+    expect(pushes.filter((c) => !c.includes('--dry-run'))).toHaveLength(1);
+    const wf = WORKFLOW;
+    expect((wf.match(/--workdir "\$\{\{ steps\.preflight\.outputs\.shadow_workspace \}\}"/g) ?? []))
+      .toHaveLength(3);
+    // No COMMAND may pass --debug. The word appears in a comment explaining
+    // why (releases 2.101.0-2.109.1 disabled TLS under --debug), so the check
+    // is against command lines rather than the whole file.
+    for (const cmd of pushes) expect(cmd).not.toContain('--debug');
+    const commandLines = wf.split(/\r?\n/).map((l) => l.trim())
+      .filter((l) => l.startsWith('supabase ') || l.startsWith('run: supabase '));
+    for (const l of commandLines) expect(l).not.toContain('--debug');
     // Checked against the COMMAND lines, not the prose: the header comment
     // legitimately names --include-all as something this executor refuses.
     for (const cmd of pushes) {

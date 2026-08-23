@@ -181,7 +181,7 @@ export function decideProductionMigrationApply({
   migrationFilename,
   migrationSha256,
   localMigrations,
-  remoteVersions,
+  remoteCanonical,
 } = {}) {
   // ---- 1. Authorization envelope -----------------------------------------
   if (branch !== 'master') {
@@ -272,25 +272,28 @@ export function decideProductionMigrationApply({
     );
   }
 
-  // ---- 5. Production history ---------------------------------------------
-  const remoteSorted = [...(remoteVersions ?? [])].sort((a, b) => a - b);
-  const remoteCeiling = assertSoundHistory(
-    remoteSorted,
-    'Production migration history',
-    { empty: 'REMOTE_HISTORY_EMPTY', notIncreasing: 'REMOTE_HISTORY_NOT_INCREASING', gap: 'REMOTE_HISTORY_GAP' },
-  );
-  const future = remoteSorted.filter((v) => v > next);
-  if (future.length > 0) {
+  // ---- 5. Production history, already reconciled --------------------------
+  // remoteCanonical comes from reconcileMigrationHistory(): a total, one-to-one
+  // canonical<->remote mapping, or that function has already refused.
+  if (!remoteCanonical || !Number.isInteger(remoteCanonical.canonicalCeiling)) {
+    refuse('REMOTE_HISTORY_EMPTY', 'No reconciled Production history was supplied.');
+  }
+  const remoteCeiling = remoteCanonical.canonicalCeiling;
+  const remoteSet = new Set(remoteCanonical.appliedCanonical ?? []);
+  if (remoteSet.size !== remoteCeiling) {
+    refuse('REMOTE_HISTORY_NOT_INCREASING',
+      `Reconciled history reports canonical ceiling ${remoteCeiling} but ${remoteSet.size} applied migrations.`);
+  }
+  if (remoteCeiling > next) {
     refuse(
       'REMOTE_FUTURE_MIGRATION',
-      `Production already carries migration(s) beyond the pinned next version ${next}: ${future.join(', ')}. ` +
+      `Production is at canonical ${remoteCeiling}, beyond the pinned next version ${next}. ` +
         'This checkout is behind Production — refusing to act on an unexplained divergence.',
     );
   }
 
   // ---- 6. The pending set, proven to be exactly one ------------------------
-  const remoteSet = new Set(remoteSorted);
-  const pendingVersions = localSorted.map((m) => m.version).filter((v) => !remoteSet.has(v));
+  const pendingVersions = (remoteCanonical.pendingCanonical ?? []).slice().sort((a, b) => a - b);
 
   if (remoteCeiling === current && !remoteSet.has(next)) {
     if (pendingVersions.length !== 1 || pendingVersions[0] !== next) {

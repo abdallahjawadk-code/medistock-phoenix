@@ -81,6 +81,10 @@ on:
         description: 'Exact ceiling Production must reach after it (current + 1)'
         required: true
         type: string
+      remote_history_version:
+        description: 'Exact 14-digit Supabase history version to record this migration under (must be newer than every applied one)'
+        required: true
+        type: string
       confirmation:
         description: 'Type APPLY_PRODUCTION_MIGRATION exactly'
         required: true
@@ -158,10 +162,23 @@ jobs:
           fi
           echo "Local migration ceiling confirmed: $highest"
 
+      # PINNED, never `latest`. Releases 2.101.0-2.109.1 carried a defect where
+      # --debug disabled TLS; it was fixed in 2.111.0. A Production executor must
+      # not silently move between CLI releases, so the version is pinned and the
+      # resolved binary is then proven to match.
       - name: Set up Supabase CLI
         uses: supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520 # v3.0.0
         with:
-          version: latest
+          version: 2.115.0
+
+      - name: Prove the resolved Supabase CLI is exactly the pinned version
+        run: |
+          resolved="$(supabase --version)"
+          if [ "$resolved" != "2.115.0" ]; then
+            echo "::error::Supabase CLI resolved to $resolved, expected exactly 2.115.0."
+            exit 1
+          fi
+          echo "Supabase CLI $resolved (pinned)."
 
       # READ-ONLY. Proves the project ref, both histories, the pinned identity,
       # and that local-minus-remote is exactly one version. Emits the decision.
@@ -177,10 +194,16 @@ jobs:
           PHOENIX_MIGRATION_SHA256: ${{ inputs.migration_sha256 }}
           PHOENIX_EXPECTED_CURRENT_CEILING: ${{ inputs.expected_current_ceiling }}
           PHOENIX_EXPECTED_NEXT_CEILING: ${{ inputs.expected_next_ceiling }}
+          PHOENIX_REMOTE_HISTORY_VERSION: ${{ inputs.remote_history_version }}
         run: node tools/phoenix-demo/production-migration-preflight.mjs
 
       - name: Report the preflight decision
-        run: echo "Preflight decision = ${{ steps.preflight.outputs.decision }} (target version ${{ steps.preflight.outputs.target_version }})"
+        run: |
+          echo "Preflight decision      = ${{ steps.preflight.outputs.decision }}"
+          echo "Canonical target        = ${{ steps.preflight.outputs.target_version }}"
+          echo "Remote history version  = ${{ steps.preflight.outputs.remote_history_version }}"
+          echo "Shadow target alias     = ${{ steps.preflight.outputs.target_alias }}"
+          echo "Remote history rows     = ${{ steps.preflight.outputs.remote_row_count }}"
 
       - name: Preview the push (read-only dry-run)
         if: steps.preflight.outputs.decision == 'APPLY'
@@ -188,20 +211,43 @@ jobs:
           PHOENIX_PRODUCTION_DATABASE_URL: ${{ secrets.PHOENIX_PRODUCTION_DATABASE_URL }}
         run: |
           set -o pipefail
-          supabase db push --db-url "$PHOENIX_PRODUCTION_DATABASE_URL" --dry-run 2>&1 | tee /tmp/db-push-dry-run.txt
+          # --workdir points the CLI at the shadow workspace, whose filenames
+          # reproduce Production's OWN version namespace. Pointed at the
+          # canonical directory instead, the CLI would compute a pending set of
+          # every migration from 173 onward. Never --debug in Production.
+          supabase db push --yes --dry-run --db-url "$PHOENIX_PRODUCTION_DATABASE_URL" --workdir "${{ steps.preflight.outputs.shadow_workspace }}" 2>&1 | tee /tmp/db-push-dry-run.txt
 
       - name: Second single-pending proof — the CLI's own dry-run transcript
         if: steps.preflight.outputs.decision == 'APPLY'
         env:
-          PHOENIX_MIGRATION_FILENAME: ${{ inputs.migration_filename }}
+          PHOENIX_TARGET_ALIAS: ${{ steps.preflight.outputs.target_alias }}
           PHOENIX_DRY_RUN_TRANSCRIPT: /tmp/db-push-dry-run.txt
+          PHOENIX_EXPECT_PENDING: '1'
         run: node tools/phoenix-demo/assert-single-pending-dry-run.mjs
 
       - name: Apply the single pending migration
         if: steps.preflight.outputs.decision == 'APPLY'
         env:
           PHOENIX_PRODUCTION_DATABASE_URL: ${{ secrets.PHOENIX_PRODUCTION_DATABASE_URL }}
-        run: supabase db push --db-url "$PHOENIX_PRODUCTION_DATABASE_URL"
+        run: |
+          supabase db push --yes --db-url "$PHOENIX_PRODUCTION_DATABASE_URL" --workdir "${{ steps.preflight.outputs.shadow_workspace }}"
+
+      # Unconditional THIRD proof, and the CLI's own view of the end state.
+      # On the APPLY path it confirms the push consumed the one pending
+      # migration; on the resume-safe ALREADY_APPLIED path it confirms there
+      # was never anything left to push. Read-only, and no --debug.
+      - name: Post-apply dry-run — the CLI must report nothing pending
+        env:
+          PHOENIX_PRODUCTION_DATABASE_URL: ${{ secrets.PHOENIX_PRODUCTION_DATABASE_URL }}
+        run: |
+          set -o pipefail
+          supabase db push --yes --dry-run --db-url "$PHOENIX_PRODUCTION_DATABASE_URL" --workdir "${{ steps.preflight.outputs.shadow_workspace }}" 2>&1 | tee /tmp/db-push-post-apply.txt
+
+      - name: Assert the post-apply transcript shows zero pending
+        env:
+          PHOENIX_DRY_RUN_TRANSCRIPT: /tmp/db-push-post-apply.txt
+          PHOENIX_EXPECT_PENDING: '0'
+        run: node tools/phoenix-demo/assert-single-pending-dry-run.mjs
 
       # Unconditional: runs on the APPLY path AND the resume-safe
       # ALREADY_APPLIED path. A fresh connection re-measures the history rather
@@ -210,6 +256,8 @@ jobs:
         env:
           PHOENIX_PRODUCTION_DATABASE_URL: ${{ secrets.PHOENIX_PRODUCTION_DATABASE_URL }}
           PHOENIX_EXPECTED_NEXT_CEILING: ${{ inputs.expected_next_ceiling }}
+          PHOENIX_REMOTE_HISTORY_VERSION: ${{ inputs.remote_history_version }}
+          PHOENIX_MIGRATION_FILENAME: ${{ inputs.migration_filename }}
         run: node tools/phoenix-demo/verify-production-migration-applied.mjs
 
       # Unconditional fixed contract — the executor accepts no assertion input,

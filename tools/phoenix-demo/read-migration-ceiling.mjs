@@ -20,38 +20,66 @@
 import { appendFileSync } from 'node:fs';
 import { buildRemoteIo } from '../pg-rig/remote-io.mjs';
 
+import { readdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { reconcileMigrationHistory } from './production-migration-history.mjs';
+
+// Production's history is NOT this repository's canonical numbering: it holds
+// three-digit versions followed by 14-digit Supabase CLI timestamps. Casting
+// `version::int` fails outright on a timestamp, so versions are read as TEXT
+// and the canonical ceiling is RECONCILED. See production-migration-history.mjs.
+function localManifest() {
+  return readdirSync(join(process.cwd(), 'supabase', 'migrations'))
+    .filter((f) => f.endsWith('.sql'))
+    .map((filename) => {
+      const m = /^(\d{3})_/.exec(filename);
+      return m ? { version: parseInt(m[1], 10), filename } : null;
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.version - b.version);
+}
+
+async function readCanonicalHistory(io) {
+  let rows;
+  await io.asAdmin(async (c) => {
+    const r = await c.query(
+      `SELECT version::text AS version, name::text AS name
+         FROM supabase_migrations.schema_migrations
+        ORDER BY version::text`);
+    rows = r.rows;
+  });
+  return reconcileMigrationHistory(rows, localManifest());
+}
+
+
 async function main() {
   const io = await buildRemoteIo({ connectionString: process.env.PHOENIX_PRODUCTION_DATABASE_URL });
-  let versions;
+  let reconciled;
   try {
     await io.asAdmin(async (c) => {
-      const r = await c.query(
-        `SELECT version::int v FROM supabase_migrations.schema_migrations ORDER BY version::int`);
-      versions = r.rows.map((row) => row.v);
+      reconciled = await readCanonicalHistory({ asAdmin: async (fn) => fn(c) });
     });
   } finally {
     await io.end();
   }
 
-  if (!versions || versions.length === 0) {
-    throw new Error('No applied migrations found in Production at all — refusing to branch on an empty history.');
-  }
-  for (let i = 1; i < versions.length; i++) {
-    if (versions[i] <= versions[i - 1]) {
-      throw new Error(
-        `Migration history is not strictly increasing at index ${i} (${versions[i - 1]} -> ${versions[i]}) — refusing to branch on an inconsistent history.`,
-      );
-    }
-  }
-  const seen = new Set(versions);
-  const highest = versions[versions.length - 1];
+  // reconcileMigrationHistory has already refused an empty, duplicated,
+  // gapped, mis-ordered or unmappable history. This re-asserts the one
+  // property this script actually reports, at the boundary between the two
+  // modules: a ceiling only means anything if every canonical version below
+  // it is applied. A deploy workflow must never branch on a history with
+  // gaps, so that stays checked here rather than assumed from upstream.
+  const highest = reconciled.canonicalCeiling;
+  const seen = new Set(reconciled.appliedCanonical);
   const gaps = [];
   for (let n = 1; n <= highest; n++) if (!seen.has(n)) gaps.push(n);
   if (gaps.length > 0) {
-    throw new Error(`Migration history has gaps below its own highest applied version: ${gaps.join(', ')} — refusing to branch on a non-contiguous history.`);
+    throw new Error(`Migration history has gaps below its own canonical ceiling ${highest}: ${gaps.join(', ')} — refusing to branch on a non-contiguous history.`);
   }
-
-  console.log(`Production migration history: ${versions.length} applied, highest = ${highest}.`);
+  console.log(
+    `Production migration history: ${reconciled.appliedCanonical.length} applied ` +
+      `(${reconciled.numericRowCount} three-digit + ${reconciled.timestampRowCount} timestamp), ` +
+      `canonical ceiling = ${highest}.`);
   if (process.env.GITHUB_OUTPUT) {
     appendFileSync(process.env.GITHUB_OUTPUT, `ceiling=${highest}\n`);
   }

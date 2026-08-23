@@ -73,7 +73,7 @@ jobs:
   pg-rig:
     name: PostgreSQL pg-rig
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 35
 
     permissions:
       contents: read
@@ -134,3 +134,108 @@ jobs:
         env:
           PHOENIX_RIG_PG: postgres://postgres@localhost:55432/postgres
           TZ: Asia/Baghdad
+
+      # ══════════════════════════════════════════════════════════════════════
+      # MIXED-HISTORY / SHADOW-WORKSPACE ACCEPTANCE.
+      #
+      # Production's supabase_migrations.schema_migrations is NOT this
+      # repository's canonical numbering: 172 three-digit versions, then
+      # 14-digit Supabase CLI timestamps. The Production executor therefore
+      # reconciles the two namespaces and pushes from a temporary shadow
+      # workspace. That machinery is only trustworthy if it is exercised
+      # against the real shape, so it runs here — inside a REQUIRED check, not
+      # as an advisory job — against a throwaway PostgreSQL created for this
+      # job and destroyed with the runner.
+      #
+      # The server is TLS-ONLY for TCP: there is no plaintext `host` rule, so
+      # if the CLI connects at all the connection is TLS. That is asked of the
+      # server via pg_stat_ssl rather than inferred from configuration text.
+      # ══════════════════════════════════════════════════════════════════════
+      - name: Generate ephemeral TLS material for the acceptance database
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/tlspg
+          # The SANs and CA:TRUE are load-bearing. node-postgres 8.22 resolves
+          # `sslmode=require` to VERIFY-FULL semantics, so the acceptance's own
+          # connections validate this certificate and check the host against it
+          # rather than skipping the check. It is trusted for this job alone via
+          # NODE_EXTRA_CA_CERTS below, and is discarded with the runner.
+          openssl req -new -x509 -days 1 -nodes -text \
+            -out /tmp/tlspg/server.crt -keyout /tmp/tlspg/server.key \
+            -subj "/CN=phoenix-acceptance" \
+            -addext "subjectAltName=IP:127.0.0.1,DNS:localhost,DNS:phoenix-acceptance" \
+            -addext "basicConstraints=critical,CA:TRUE" 2>/dev/null
+          cat > /tmp/tlspg/pg_hba.conf <<'HBA'
+          # Unix socket only for the container's own startup/healthcheck.
+          local   all   all                 trust
+          # TCP is hostssl ONLY — no plaintext equivalent for any principal.
+          hostssl all   all   0.0.0.0/0     md5
+          hostssl all   all   ::/0          md5
+          HBA
+          sudo chown 999:999 /tmp/tlspg/server.key /tmp/tlspg/server.crt /tmp/tlspg/pg_hba.conf
+          sudo chmod 600 /tmp/tlspg/server.key
+          echo "ephemeral TLS material generated (1-day self-signed, discarded with the runner)"
+
+      - name: Start the TLS-only disposable PostgreSQL 17
+        run: |
+          set -euo pipefail
+          docker run -d --name phoenix-tlspg \
+            -e POSTGRES_PASSWORD=acceptance \
+            -e POSTGRES_DB=acceptance \
+            -p 55433:5432 \
+            -v /tmp/tlspg:/tls:ro \
+            postgres:17 \
+            -c ssl=on \
+            -c ssl_cert_file=/tls/server.crt \
+            -c ssl_key_file=/tls/server.key \
+            -c hba_file=/tls/pg_hba.conf
+          for i in $(seq 1 60); do
+            if docker exec phoenix-tlspg pg_isready -U postgres -d acceptance >/dev/null 2>&1; then
+              echo "acceptance database ready"; exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::the TLS-only acceptance database never became ready"
+          docker logs phoenix-tlspg | tail -40
+          exit 1
+
+      - name: Prove the acceptance database refuses plaintext TCP
+        run: |
+          set -uo pipefail
+          # sslmode=disable must be rejected: there is no `host` rule, only hostssl.
+          if PGPASSWORD=acceptance psql "postgresql://postgres@127.0.0.1:55433/acceptance?sslmode=disable" \
+            -c 'SELECT 1' >/dev/null 2>&1; then
+            echo "::error::plaintext TCP succeeded — the acceptance server is not TLS-only"
+            exit 1
+          fi
+          echo "plaintext TCP refused, as required"
+
+      - name: Set up the pinned Supabase CLI for acceptance
+        uses: supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520 # v3.0.0
+        with:
+          version: 2.115.0
+
+      # Migration 197 is REAL SQL: it GRANTs and REVOKEs EXECUTE on named
+      # functions with no IF EXISTS guard, and opens with a DO $m197_pre$
+      # precondition block. Pushed at an empty database it would abort on the
+      # first missing function, so the acceptance database first receives the
+      # canonical chain 001->196 — the same replay, and the same tooling, the
+      # required rig step above already uses. Only then does the shadow-
+      # workspace push of 197 mean what Production will mean.
+      - name: Replay migrations 001->196 onto the TLS-only acceptance database
+        env:
+          PHOENIX_RIG_PG: postgresql://postgres:acceptance@127.0.0.1:55433/postgres?sslmode=require
+          PHOENIX_RIG_DB: acceptance_rig
+          NODE_EXTRA_CA_CERTS: /tmp/tlspg/server.crt
+        run: node tools/pg-rig/apply.mjs 196
+
+      - name: Mixed-history / shadow-workspace acceptance (TLS-only, disposable)
+        env:
+          ACCEPTANCE_DB_URL: postgresql://postgres:acceptance@127.0.0.1:55433/acceptance_rig?sslmode=require
+          ACCEPTANCE_CLI_VERSION: 2.115.0
+          NODE_EXTRA_CA_CERTS: /tmp/tlspg/server.crt
+        run: node tools/phoenix-demo/mixed-history-acceptance.mjs
+
+      - name: Tear down the acceptance database
+        if: always()
+        run: docker rm -f phoenix-tlspg >/dev/null 2>&1 || true
