@@ -19,7 +19,6 @@ BEGIN;
 
 CREATE TEMP TABLE _m196_targets (
   proname text PRIMARY KEY,
-  expected_definition_sha256 text NOT NULL,
   expected_before_body_sha256 text NOT NULL,
   expected_after_body_sha256 text NOT NULL,
   expected_acl text NOT NULL,
@@ -28,29 +27,35 @@ CREATE TEMP TABLE _m196_targets (
 ) ON COMMIT DROP;
 
 INSERT INTO _m196_targets VALUES
-  ('archive_entity', 'e0de9642227a3f6a7b1dd2aec78112a45a72b72482525f228f59f47d6b81a675', '671b7d437ab036a73cec7f98dc33f74933a9b3ed1eef04b8e113c3cd822fefe2', 'eed7ad60346aa517d91fe2c9e46a8384bebcfa29ef39b1dd6c68140761a22fb2', '{postgres=X/postgres,service_role=X/postgres,authenticated=X/postgres}', 'search_path=public', 4),
-  ('assign_profile_permissions', '58fc49d11f5f8aaddaed76a580b52a4dc8a354841a5a46cbec97a0c4087f3594', '62593dc55c1beee446f667d41fb169a06de441498a4b79291a81466fd1ebbb36', '9a1966eb2bb94ddf3e105e8ca4f9a26e667262ad065a1ca22fc1450c99c6caad', '{postgres=X/postgres,service_role=X/postgres,authenticated=X/postgres}', 'search_path=public, pg_temp', 6),
-  ('assign_profile_role', '7fb93f8d46f547676b73e8c5c68c0d466fd321134491a056bb100abdfcfa760d', '539aa64934ada27785eade917726074afb16525fc2f5db302012d7b19712392c', 'eab65fc2c7b09be4655dd5ac07dad08abfeacd34264dfbf378f4f2c20f4179d4', '{postgres=X/postgres,service_role=X/postgres,authenticated=X/postgres}', 'search_path=public, pg_temp', 4),
-  ('clear_port_availability', '77c56972a97ca6504c53f69fbcecbac3311cbf9dfadbf8a008ecf1a490c969c4', '92e306358921298d2babe0eed4247afb9793c2d80ca6fbd3bb9bacac05f4b87b', '24106ec1c8abb3a4be5c2ffc3497953d73c087380418012f97622910c5c09c77', '{postgres=X/postgres,service_role=X/postgres,authenticated=X/postgres}', 'search_path=public, pg_temp', 7),
-  ('create_qr_for_target', '97e46de6bad0c2b9a8b04e38985b6b93622b2407e3bfab76f79ef805924f09ca', '19edf735465dcef1aa279cbc2b48d63c4392777e535f06f841ea9296d84dc4dc', '1fbe9b42623e0a1efedc05eddc0525d43439e9b801c46b82d74409d832a81cab', '{postgres=X/postgres,service_role=X/postgres,authenticated=X/postgres}', 'search_path=public', 11),
-  ('disable_qr_token', '3a0fdcd393bf49562a626daf05d330de56e7fc6a047af3fd46211c352069333c', 'ff74e6bb9237e6b0defa81b5528b31e06561fdb9bf55e50d832131f2499daf05', 'dd80b87c065b658bfefe6420ad7bd6b6faace1dd171d54d613d75a1500049bb0', '{postgres=X/postgres,service_role=X/postgres,authenticated=X/postgres}', 'search_path=public', 3),
-  ('get_effective_permissions', 'aaf22607a582088043065f3d7d6b7650815e6dad9f7e200542afd73a2df3d0b9', 'c7c67a94feaef3e8dd7efe8b86db32e93ab949418f18dafc90bc91a3936f3406', '2b3bbd879c22b8ea578532dee65ee7922163cbe925c2ae2093bfa48b3bacff96', '{postgres=X/postgres,service_role=X/postgres,authenticated=X/postgres}', 'search_path=public, pg_temp', 3),
-  ('get_entity_purge_impact', 'dc5c2918ae3660c044525e544397964e2906d3b81f8d2fd140d9174284c6d9f0', '93b013ce2f38eabb6f784e82d6c64f70e77f57c03d2472610e78680690bd3968', '81b4aea779f3c5e1bbd172751c5fc45375541b0bd9408ce816454c6716a8e86e', '{postgres=X/postgres,service_role=X/postgres,authenticated=X/postgres}', 'search_path=public', 18),
-  ('get_scoped_inter_institution_alerts', '22f7fdfb93541b69baf27f032b6459fb854bc952ae838fbd8029807484051e6e', '438e973cda4abf7cb505a82f2c10c2fe183aa26b4dce2a580b98876789638c0b', '45394ba8b24733ed227a14ba13b4de602a81d1c6843a95f8093492fc24d82279', '{postgres=X/postgres,service_role=X/postgres,authenticated=X/postgres}', 'search_path=public, pg_temp', 6),
-  ('phoenix_admin_assign_facility_scopes', 'b8b0234510b60ee12fc840a2ce7728598cf1b26c14255b399c2ed8935135765b', 'bfb6ce585a7e6759a88b6ded5faf8a196bf1564f17f16f39fadbe21be93241b5', '8f4fc3ce4de56dac190ff64c83ab88afce3cfe21389d8c57d5bbefaac47e52bb', '{postgres=X/postgres,service_role=X/postgres}', 'search_path=public, pg_temp', 1),
-  ('phoenix_assign_profile_scope', 'd292a218d4b92739101ace820928138c607126500e4f16bb528628a3b3377014', '4dc5e5605ea5aa44cabbae8d164fc4b42f29306c0e6124da1e9e95b3538c771f', '5f51621e7135498afa02e84973d7f7f545edf009a1f87f9b469a8ef9eb0aabc6', '{postgres=X/postgres,service_role=X/postgres,authenticated=X/postgres}', 'search_path=public, pg_temp', 1),
-  ('phoenix_create_supply_route', 'bb3f2eab4535aa6ff8afef9e74fa5dac10b507554d55dddec120a915f1cc2cfb', '85a88c099b70a34e64eedc5bebaa492b52aea6dfa124be526181fe4fbaec28f9', '1967f891a49ab0c2f3e27617e46685242ee84beec44ef88c2ecfdcfdc5979677', '{postgres=X/postgres,service_role=X/postgres,authenticated=X/postgres}', 'search_path=public, pg_temp', 1),
-  ('phoenix_create_warehouse', '675cdf5bdc4ab34009f0de68d5a82e3cb101250f9d14d6731c12b96e9c2b62e0', '3a203ccb4fa35c047e795a3e950f58323b9ef104d1281f4cea6c95b8b6e09082', 'c75094e77796fbc57de8ae556c57887b114e8593350b381efc4dc69f2a6d6525', '{postgres=X/postgres,service_role=X/postgres,authenticated=X/postgres}', 'search_path=public, pg_temp', 1),
-  ('phoenix_mark_password_changed', '0f14f85232e10539011be71f50ff8ebdb3302c2e64867a174192677f00773174', '35ca44270346fc6b5673a6571c626ed899ee6092596ddf45a0e7d771984a9e9f', '0a07672d1093c80f1c3c6b971c80d2b999b6d80dba1618c1013aa43d801f95e1', '{postgres=X/postgres,service_role=X/postgres,authenticated=X/postgres}', 'search_path=public, pg_temp', 1),
-  ('phoenix_profile_has_permission', '4a83652049373ff9ad9d118b1854637d72953ddc2507201d8eb76cf7d978bf45', '7fb2f8b311ab181b0189fb3ec6e13f2b068bc3ec588343a56be8c4df672f5188', '76ed65758ed5bdc389086f090b6907df85255852acff47968369111df1287f42', '{postgres=X/postgres,service_role=X/postgres,authenticated=X/postgres}', 'search_path=public, pg_temp', 3),
-  ('phoenix_revoke_profile_scope', '9028a7dca85da049c51e2a962cee1d0ac2ad97f48f30bc57db1da742d2d5d9b8', 'a2ba22b4bf66935cd50feb37cd627aa32f8d7cdb91fa0899bfc78bf4a80ff979', '68797a45601ed6405c6a07d0dd885b185588bf19e52afa6d8df7076e04662666', '{postgres=X/postgres,service_role=X/postgres,authenticated=X/postgres}', 'search_path=public, pg_temp', 1),
-  ('phoenix_set_supply_route_active', '87824343d3e091fa285e2702fb05f1302a888ea251d6d554bc2aba947939d601', '7713ce7adad8cba19c887ca003344dc1652cc55b74b1801cc73ce50d04150337', '66ff526db92169b4aea6e039ffcad4992976dc23121485590655c116e4c7fe5a', '{postgres=X/postgres,service_role=X/postgres,authenticated=X/postgres}', 'search_path=public, pg_temp', 1),
-  ('phoenix_set_warehouse_active', '4166790259e16a149eefdbee7a7eac0e3fcf2ce864887478790617c138a83602', 'f5f183392d2d7b49414be5667f7c605ec64e7dc49f12852b188289e369003c35', '6267a6b2d44c73b6d96410ec55c251c4c52143d1e7617e3d136a579b1b20db30', '{postgres=X/postgres,service_role=X/postgres,authenticated=X/postgres}', 'search_path=public, pg_temp', 1),
-  ('phoenix_update_supply_route', '36da4ce566a7f3a6010bdf041b403da3f2c223db8f10a55645464bc9919e4015', '7ad3897a76bdc861bd1d26efd9a1a0696e5ad60ba12c0529c7a4293379e0bad9', 'eaa63b1261d75c2af7d9d48d079c046feeb71072516152df37a546060a2c462d', '{postgres=X/postgres,service_role=X/postgres,authenticated=X/postgres}', 'search_path=public, pg_temp', 1),
-  ('phoenix_update_warehouse', 'b97ad58d8aeb7b96c612b575d723f99f3be581e3df38aee3a600ddbffbc4c25e', 'c4bc135efa34933035373e459cfa79bd40a189e07c146cee196bcb3b444e9cc5', 'dfb3d264469bc83222b9deacd52997a1e1eda7a02d9d6cf95f9652868782741a', '{postgres=X/postgres,service_role=X/postgres,authenticated=X/postgres}', 'search_path=public, pg_temp', 2),
-  ('purge_entity_with_all_data', '29c1700c1c8cb866066facfcc47d6da4536950cdcfc2b5ca5deb76fa62e3de43', '014d68c684f68b6ee426259c59b3088a0d7f9aa274a31d56715178adb6dc1350', '24cb92c70131aaa6e5c0b527d66851f1813c4b3c976aa8c84c90c2d3841c361f', '{postgres=X/postgres,service_role=X/postgres,authenticated=X/postgres}', 'search_path=public', 26),
-  ('reset_profile_permissions', 'c75ed6ce2b15c6e6c0bbc678aec7dbb27eb74becb0f8a535e0cb3198d5b04fbe', 'c17c833a5be33bcd9b0a0d1d3952edc4f879c35c2ed1006fc575e1d973dc8489', '03e9b611be1291e51270d7cc03a60bfe7c2e9418a96b3e3de4595064249f176a', '{postgres=X/postgres,service_role=X/postgres,authenticated=X/postgres}', 'search_path=public, pg_temp', 4);
+  ('archive_entity', '671b7d437ab036a73cec7f98dc33f74933a9b3ed1eef04b8e113c3cd822fefe2', 'eed7ad60346aa517d91fe2c9e46a8384bebcfa29ef39b1dd6c68140761a22fb2', '{postgres=X/postgres,service_role=X/postgres,authenticated=X/postgres}', 'search_path=public', 4),
+  ('assign_profile_permissions', '62593dc55c1beee446f667d41fb169a06de441498a4b79291a81466fd1ebbb36', '9a1966eb2bb94ddf3e105e8ca4f9a26e667262ad065a1ca22fc1450c99c6caad', '{postgres=X/postgres,service_role=X/postgres,authenticated=X/postgres}', 'search_path=public, pg_temp', 6),
+  ('assign_profile_role', '539aa64934ada27785eade917726074afb16525fc2f5db302012d7b19712392c', 'eab65fc2c7b09be4655dd5ac07dad08abfeacd34264dfbf378f4f2c20f4179d4', '{postgres=X/postgres,service_role=X/postgres,authenticated=X/postgres}', 'search_path=public, pg_temp', 4),
+  ('clear_port_availability', '92e306358921298d2babe0eed4247afb9793c2d80ca6fbd3bb9bacac05f4b87b', '24106ec1c8abb3a4be5c2ffc3497953d73c087380418012f97622910c5c09c77', '{postgres=X/postgres,service_role=X/postgres,authenticated=X/postgres}', 'search_path=public, pg_temp', 7),
+  ('create_qr_for_target', '19edf735465dcef1aa279cbc2b48d63c4392777e535f06f841ea9296d84dc4dc', '1fbe9b42623e0a1efedc05eddc0525d43439e9b801c46b82d74409d832a81cab', '{postgres=X/postgres,service_role=X/postgres,authenticated=X/postgres}', 'search_path=public', 11),
+  ('disable_qr_token', 'ff74e6bb9237e6b0defa81b5528b31e06561fdb9bf55e50d832131f2499daf05', 'dd80b87c065b658bfefe6420ad7bd6b6faace1dd171d54d613d75a1500049bb0', '{postgres=X/postgres,service_role=X/postgres,authenticated=X/postgres}', 'search_path=public', 3),
+  ('get_effective_permissions', 'c7c67a94feaef3e8dd7efe8b86db32e93ab949418f18dafc90bc91a3936f3406', '2b3bbd879c22b8ea578532dee65ee7922163cbe925c2ae2093bfa48b3bacff96', '{postgres=X/postgres,service_role=X/postgres,authenticated=X/postgres}', 'search_path=public, pg_temp', 3),
+  ('get_entity_purge_impact', '93b013ce2f38eabb6f784e82d6c64f70e77f57c03d2472610e78680690bd3968', '81b4aea779f3c5e1bbd172751c5fc45375541b0bd9408ce816454c6716a8e86e', '{postgres=X/postgres,service_role=X/postgres,authenticated=X/postgres}', 'search_path=public', 18),
+  ('get_scoped_inter_institution_alerts', '438e973cda4abf7cb505a82f2c10c2fe183aa26b4dce2a580b98876789638c0b', '45394ba8b24733ed227a14ba13b4de602a81d1c6843a95f8093492fc24d82279', '{postgres=X/postgres,service_role=X/postgres,authenticated=X/postgres}', 'search_path=public, pg_temp', 6),
+  ('phoenix_admin_assign_facility_scopes', 'bfb6ce585a7e6759a88b6ded5faf8a196bf1564f17f16f39fadbe21be93241b5', '8f4fc3ce4de56dac190ff64c83ab88afce3cfe21389d8c57d5bbefaac47e52bb', '{postgres=X/postgres,service_role=X/postgres}', 'search_path=public, pg_temp', 1),
+  ('phoenix_assign_profile_scope', '4dc5e5605ea5aa44cabbae8d164fc4b42f29306c0e6124da1e9e95b3538c771f', '5f51621e7135498afa02e84973d7f7f545edf009a1f87f9b469a8ef9eb0aabc6', '{postgres=X/postgres,service_role=X/postgres,authenticated=X/postgres}', 'search_path=public, pg_temp', 1),
+  ('phoenix_create_supply_route', '85a88c099b70a34e64eedc5bebaa492b52aea6dfa124be526181fe4fbaec28f9', '1967f891a49ab0c2f3e27617e46685242ee84beec44ef88c2ecfdcfdc5979677', '{postgres=X/postgres,service_role=X/postgres,authenticated=X/postgres}', 'search_path=public, pg_temp', 1),
+  ('phoenix_create_warehouse', '3a203ccb4fa35c047e795a3e950f58323b9ef104d1281f4cea6c95b8b6e09082', 'c75094e77796fbc57de8ae556c57887b114e8593350b381efc4dc69f2a6d6525', '{postgres=X/postgres,service_role=X/postgres,authenticated=X/postgres}', 'search_path=public, pg_temp', 1),
+  ('phoenix_mark_password_changed', '35ca44270346fc6b5673a6571c626ed899ee6092596ddf45a0e7d771984a9e9f', '0a07672d1093c80f1c3c6b971c80d2b999b6d80dba1618c1013aa43d801f95e1', '{postgres=X/postgres,service_role=X/postgres,authenticated=X/postgres}', 'search_path=public, pg_temp', 1),
+  ('phoenix_profile_has_permission', '7fb2f8b311ab181b0189fb3ec6e13f2b068bc3ec588343a56be8c4df672f5188', '76ed65758ed5bdc389086f090b6907df85255852acff47968369111df1287f42', '{postgres=X/postgres,service_role=X/postgres,authenticated=X/postgres}', 'search_path=public, pg_temp', 3),
+  ('phoenix_revoke_profile_scope', 'a2ba22b4bf66935cd50feb37cd627aa32f8d7cdb91fa0899bfc78bf4a80ff979', '68797a45601ed6405c6a07d0dd885b185588bf19e52afa6d8df7076e04662666', '{postgres=X/postgres,service_role=X/postgres,authenticated=X/postgres}', 'search_path=public, pg_temp', 1),
+  ('phoenix_set_supply_route_active', '7713ce7adad8cba19c887ca003344dc1652cc55b74b1801cc73ce50d04150337', '66ff526db92169b4aea6e039ffcad4992976dc23121485590655c116e4c7fe5a', '{postgres=X/postgres,service_role=X/postgres,authenticated=X/postgres}', 'search_path=public, pg_temp', 1),
+  ('phoenix_set_warehouse_active', 'f5f183392d2d7b49414be5667f7c605ec64e7dc49f12852b188289e369003c35', '6267a6b2d44c73b6d96410ec55c251c4c52143d1e7617e3d136a579b1b20db30', '{postgres=X/postgres,service_role=X/postgres,authenticated=X/postgres}', 'search_path=public, pg_temp', 1),
+  ('phoenix_update_supply_route', '7ad3897a76bdc861bd1d26efd9a1a0696e5ad60ba12c0529c7a4293379e0bad9', 'eaa63b1261d75c2af7d9d48d079c046feeb71072516152df37a546060a2c462d', '{postgres=X/postgres,service_role=X/postgres,authenticated=X/postgres}', 'search_path=public, pg_temp', 1),
+  ('phoenix_update_warehouse', 'c4bc135efa34933035373e459cfa79bd40a189e07c146cee196bcb3b444e9cc5', 'dfb3d264469bc83222b9deacd52997a1e1eda7a02d9d6cf95f9652868782741a', '{postgres=X/postgres,service_role=X/postgres,authenticated=X/postgres}', 'search_path=public, pg_temp', 2),
+  ('purge_entity_with_all_data', '014d68c684f68b6ee426259c59b3088a0d7f9aa274a31d56715178adb6dc1350', '24cb92c70131aaa6e5c0b527d66851f1813c4b3c976aa8c84c90c2d3841c361f', '{postgres=X/postgres,service_role=X/postgres,authenticated=X/postgres}', 'search_path=public', 26),
+  ('reset_profile_permissions', 'c17c833a5be33bcd9b0a0d1d3952edc4f879c35c2ed1006fc575e1d973dc8489', '03e9b611be1291e51270d7cc03a60bfe7c2e9418a96b3e3de4595064249f176a', '{postgres=X/postgres,service_role=X/postgres,authenticated=X/postgres}', 'search_path=public, pg_temp', 4);
 
+-- pg_get_functiondef() is deliberately not fingerprinted: its rendered text
+-- differs across supported PostgreSQL major versions for an otherwise identical
+-- SQL-language function. prosrc is the canonical body byte source, while every
+-- non-body contract field is snapshotted below and compared before/after inside
+-- this transaction. CREATE OR REPLACE either preserves that complete contract or
+-- M196 raises and rolls the entire transaction back.
 CREATE TEMP TABLE _m196_before ON COMMIT DROP AS
 SELECT p.oid,
        p.proname::text AS proname,
@@ -68,10 +73,11 @@ SELECT p.oid,
        COALESCE(array_to_string(p.proconfig, ','), '') AS cfg,
        pg_get_userbyid(p.proowner)::text AS owner,
        COALESCE(p.proacl::text, '') AS acl,
-       replace(pg_get_functiondef(p.oid), chr(13) || chr(10), chr(10)) AS definition_lf,
        replace(p.prosrc, chr(13) || chr(10), chr(10)) AS body_lf,
-       encode(extensions.digest(replace(pg_get_functiondef(p.oid), chr(13) || chr(10), chr(10)), 'sha256'), 'hex') AS definition_sha256,
-       encode(extensions.digest(replace(p.prosrc, chr(13) || chr(10), chr(10)), 'sha256'), 'hex') AS body_sha256
+       pg_catalog.encode(
+         pg_catalog.sha256(pg_catalog.convert_to(
+           replace(p.prosrc, chr(13) || chr(10), chr(10)), 'UTF8')),
+         'hex') AS body_sha256
 FROM pg_proc p
 JOIN pg_namespace n ON n.oid = p.pronamespace
 JOIN pg_language l ON l.oid = p.prolang
@@ -97,15 +103,11 @@ BEGIN
   END IF;
 
   FOR r IN
-    SELECT t.*, b.signature, b.definition_sha256, b.body_sha256,
+    SELECT t.*, b.signature, b.body_sha256,
            b.prokind, b.prosecdef, b.proisstrict, b.proparallel,
            b.proleakproof, b.cfg, b.owner, b.acl
     FROM _m196_targets t JOIN _m196_before b USING (proname)
   LOOP
-    IF r.definition_sha256 <> r.expected_definition_sha256 THEN
-      RAISE EXCEPTION 'M196 PRECONDITION: % definition drifted. expected %, found %',
-        r.proname, r.expected_definition_sha256, r.definition_sha256;
-    END IF;
     IF r.body_sha256 <> r.expected_before_body_sha256 THEN
       RAISE EXCEPTION 'M196 PRECONDITION: % body drifted. expected %, found %',
         r.proname, r.expected_before_body_sha256, r.body_sha256;
@@ -1769,7 +1771,10 @@ SELECT p.oid,
        pg_get_userbyid(p.proowner)::text AS owner,
        COALESCE(p.proacl::text, '') AS acl,
        replace(p.prosrc, chr(13) || chr(10), chr(10)) AS body_lf,
-       encode(extensions.digest(replace(p.prosrc, chr(13) || chr(10), chr(10)), 'sha256'), 'hex') AS body_sha256
+       pg_catalog.encode(
+         pg_catalog.sha256(pg_catalog.convert_to(
+           replace(p.prosrc, chr(13) || chr(10), chr(10)), 'UTF8')),
+         'hex') AS body_sha256
 FROM pg_proc p
 JOIN pg_namespace n ON n.oid = p.pronamespace
 JOIN pg_language l ON l.oid = p.prolang

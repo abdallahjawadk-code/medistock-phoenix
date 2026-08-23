@@ -70,7 +70,7 @@ describe('M196 · SECURITY DEFINER relation schema qualification · static', () 
     // counts fail closed against drift; the postcondition then requires zero
     // remaining unqualified target references.
     const measured = Object.fromEntries(
-      [...SQL.matchAll(/^  \('([a-z0-9_]+)', '[0-9a-f]{64}', '[0-9a-f]{64}', '[0-9a-f]{64}', '[^']*', '[^']*', (\d+)\)[,;]$/gm)]
+      [...SQL.matchAll(/^  \('([a-z0-9_]+)', '[0-9a-f]{64}', '[0-9a-f]{64}', '[^']*', '[^']*', (\d+)\)[,;]$/gm)]
         .map((m) => [m[1], Number(m[2])]),
     );
     expect(measured).toEqual(EXPECTED);
@@ -89,16 +89,36 @@ describe('M196 · SECURITY DEFINER relation schema qualification · static', () 
     expect(publicPgTemp).toHaveLength(17);
   });
 
-  it('contains exact fail-closed hashes and in-transaction identity/ACL verification', () => {
-    expect([...SQL.matchAll(/^  \('[a-z0-9_]+', '[0-9a-f]{64}', '[0-9a-f]{64}', '[0-9a-f]{64}',/gm)])
+  it('contains exact body hashes and complete in-transaction contract verification', () => {
+    expect([...SQL.matchAll(/^  \('[a-z0-9_]+', '[0-9a-f]{64}', '[0-9a-f]{64}',/gm)])
       .toHaveLength(22);
-    expect(SQL).toContain('definition_sha256 <> r.expected_definition_sha256');
     expect(SQL).toContain('body_sha256 <> r.expected_before_body_sha256');
     expect(SQL).toContain('r.body_sha256 <> r.expected_after_body_sha256');
     expect(SQL).toContain('FULL JOIN _m196_after a USING (oid)');
-    expect(SQL).toContain('b.acl b_acl, a.acl a_acl');
-    expect(SQL).toContain('b.cfg b_cfg, a.cfg a_cfg');
+    for (const field of [
+      'signature', 'ident_args', 'pronargs', 'prokind', 'language',
+      'result_type', 'provolatile', 'prosecdef', 'proisstrict', 'proparallel',
+      'proleakproof', 'cfg', 'owner', 'acl',
+    ]) {
+      expect(SQL).toMatch(new RegExp(`b\\.${field} b_[a-z]+, a\\.${field} a_[a-z]+`));
+    }
+    for (const alias of [
+      'sig', 'args', 'nargs', 'kind', 'lang', 'result', 'vol', 'sec', 'strict',
+      'parallel', 'leak', 'cfg', 'owner', 'acl',
+    ]) {
+      expect(SQL).toContain(`r.b_${alias} IS DISTINCT FROM r.a_${alias}`);
+    }
     expect(SQL).toContain("r.owner <> 'postgres'");
+  });
+
+  it('uses server-version-stable built-in SHA-256 for catalog fingerprints', () => {
+    expect(SQL).not.toMatch(/pg_get_functiondef\s*\(\s*p\.oid\s*\)/i);
+    expect([...SQL.matchAll(/pg_catalog\.sha256\(/g)]).toHaveLength(2);
+    expect([...SQL.matchAll(/pg_catalog\.convert_to\(/g)]).toHaveLength(2);
+    // The one remaining extensions.digest call is part of create_qr_for_target's
+    // frozen Production body, not M196's own precondition/verification machinery.
+    expect([...SQL.matchAll(/extensions\.digest\(/g)]).toHaveLength(1);
+    expect(REPLACEMENTS).toContain('extensions.digest(v_plain_token');
   });
 
   it('does not move grants, RLS, owners, tables, policies or the I-4/I-5 boundaries', () => {

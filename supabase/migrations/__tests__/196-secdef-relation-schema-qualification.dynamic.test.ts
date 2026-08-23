@@ -141,7 +141,7 @@ run('M196 · SECURITY DEFINER relation schema qualification · dynamic', () => {
 
   it('fails closed if re-applied; the second run is not a silent no-op', async () => {
     await rig.asAdmin(async (c: any) => {
-      await expect(c.query(SQL_196)).rejects.toThrow(/M196 PRECONDITION: .* definition drifted/);
+      await expect(c.query(SQL_196)).rejects.toThrow(/M196 PRECONDITION: .* body drifted/);
       await c.query('ROLLBACK');
     });
   });
