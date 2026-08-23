@@ -189,6 +189,10 @@ run('E7-2 · Stage-E application wiring (dynamic)',()=>{
       // semantics, so Stage E still ends at 171. Exact filename is listed to keep
       // this successor guard exhaustive and fail-closed on any unlisted new file.
       '195_phoenix_auth_helper_profile_schema_qualification.sql',
+      // Stage I / I-3 forward-replaces exactly 22 existing SECURITY DEFINER
+      // bodies to schema-qualify their audited relation references. It adds no
+      // Stage-E object or semantics; exact registration keeps this exhaustive.
+      '196_phoenix_secdef_relation_schema_qualification.sql',
     ];
     it('Stage E still ends at 171 — E7-2 introduced no new SQL',()=>{
       const files=readdirSync(join(__dirname,'..')).filter(f=>/^\d{3}_.*\.sql$/.test(f));

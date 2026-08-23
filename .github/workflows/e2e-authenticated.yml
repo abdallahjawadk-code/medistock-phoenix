@@ -160,6 +160,42 @@ jobs:
           sed -i -E 's/SELECT[[:space:]]+qual[[:space:]]+INTO/SELECT coalesce(qual, with_check) INTO/gi' \
             supabase/migrations/023_phoenix_live_profile_role_resolution_fix.sql
 
+      - name: Reproduce Production's recorded M182 function bodies (ephemeral replay only)
+        # M182-PRODUCTION-BODY-REPLAY-NORMALIZATION
+        #
+        # A read-only Production measurement proved that the payload recorded
+        # for migration 182 contains compact bodies for exactly these two
+        # functions, while the later repository representation of historical
+        # M182 contains expanded/comment-rich forms with the same behavior:
+        #   * get_effective_permissions(uuid)
+        #   * phoenix_profile_has_permission(uuid,text)
+        # Migration 196 correctly fingerprints Production's live bodies. A
+        # fresh local replay must therefore reproduce the recorded historical
+        # representation before reaching 196, or it is not a Production-faithful
+        # DR rehearsal.
+        #
+        # The canonical rig owns the correction and pins the exact M182 source
+        # SHA plus exact before/after body hashes. This workflow imports that
+        # same helper so there is no second SQL copy to drift. Only this
+        # disposable runner checkout is written; committed M182 and Production
+        # remain untouched. Any unexpected source/body shape aborts fail-closed.
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync, writeFileSync } from 'node:fs';
+          import { shimSql } from './tools/pg-rig/rig.mjs';
+
+          const NAME = '182_phoenix_health_center_facility_scoped_rbac.sql';
+          const PATH = `supabase/migrations/${NAME}`;
+          const raw = readFileSync(PATH, 'utf8');
+          const normalized = shimSql(NAME, raw);
+          if (normalized === raw) {
+            console.error('::error::M182 replay normalization made no change; refusing to continue');
+            process.exit(1);
+          }
+          writeFileSync(PATH, normalized, 'utf8');
+          console.log('M182 replay normalized to the two exact Production-recorded function bodies.');
+          NODE
+
       - name: Prepend the default-privileges bootstrap to migration 001 (mirrors tools/pg-rig/bootstrap.sql — must run BEFORE any CREATE TABLE, not after)
         # This step used to APPEND these two ALTER DEFAULT PRIVILEGES
         # statements to the end of 001, which only affects tables created

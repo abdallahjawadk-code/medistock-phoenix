@@ -5,11 +5,21 @@
 // order to a THROWAWAY database, so the real RPCs can be exercised dynamically.
 // NOTHING here ever touches production — it drops and recreates a local rig DB.
 //
-// The one in-memory shim: migration 023 asserts on pg_policies.qual for an
-// INSERT policy (dp_insert_perm), whose predicate actually lives in with_check.
-// qual is NULL there, so a fresh replay aborts. We read coalesce(qual,with_check)
-// IN MEMORY ONLY — the repository file 023 is never modified (repo policy), and
-// this documents precisely the DR gap that Phase 3 must close in a baseline.
+// The in-memory replay normalizations are narrowly pinned historical facts:
+//
+//   * migration 023 asserts on pg_policies.qual for an INSERT policy
+//     (dp_insert_perm), whose predicate actually lives in with_check. qual is
+//     NULL there, so a fresh replay aborts. We read coalesce(qual,with_check).
+//   * Production's recorded migration-182 payload contains compact bodies for
+//     get_effective_permissions and phoenix_profile_has_permission, while the
+//     later repository representation of 182 contains expanded, comment-rich
+//     forms with identical behavior. M196 fingerprints the bodies Production
+//     actually has, so disposable replay must reproduce those two recorded
+//     representations before it reaches M196.
+//
+// Both corrections happen IN MEMORY ONLY — historical repository migrations
+// are never modified. The M182 correction is fail-closed on the exact source
+// file hash and exact before/after body hashes.
 //
 // The one session-scoped attestation: migration 085 is a fail-closed CUTOVER
 // file that Production HAS applied (verified live). The rig supplies its
@@ -27,6 +37,7 @@
 // Postgres MAINTENANCE db, e.g. postgres://postgres@localhost:55432/postgres
 // ===========================================================================
 import pg from 'pg';
+import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -115,13 +126,93 @@ async function applyMigrationSql(client, file, sql) {
 
 export { applyMigrationSql };
 
-// The 023 in-memory shim, applied ONLY to that one file's text at load time.
-// Exported so the DR acceptance test can compare shimmed vs raw behaviour.
-export function shimSql(file, text) {
-  if (file.startsWith('023_')) {
-    return text.replace(/SELECT\s+qual\s+INTO/gi, 'SELECT coalesce(qual, with_check) INTO');
+const sha256 = (text) => createHash('sha256').update(text, 'utf8').digest('hex');
+
+const M182_FILE = '182_phoenix_health_center_facility_scoped_rbac.sql';
+const M182_SOURCE_SHA256 = '5915832037c6ca08c2d873a10eb4896884abe72667f4b7e71c27768572734fb0';
+const M182_REPLAY_BODIES = [
+  {
+    signature: 'CREATE OR REPLACE FUNCTION public.get_effective_permissions(p_profile_id uuid)',
+    sourceBodySha256: 'ffaee56895dcd70fca9c7235984b526b5c17cc6f4673c8c01223c23bf46f0510',
+    productionBodySha256: 'c7c67a94feaef3e8dd7efe8b86db32e93ab949418f18dafc90bc91a3936f3406',
+    productionBody: `
+declare v_actor uuid;v_role text;v_org uuid;v_target_org uuid;v_result jsonb;
+begin
+ v_actor:=auth.uid(); if v_actor is null then return jsonb_build_object('ok',false,'error','NOT_AUTHENTICATED'); end if;
+ select role,organization_id into v_role,v_org from profiles where id=v_actor;
+ select organization_id into v_target_org from profiles where id=p_profile_id; if not found then return jsonb_build_object('ok',false,'error','TARGET_NOT_FOUND'); end if;
+ if v_role<>'super_admin' and p_profile_id<>v_actor and v_target_org is distinct from v_org then return jsonb_build_object('ok',false,'error','OUT_OF_SCOPE'); end if;
+ if v_role='health_center_manager' and p_profile_id<>v_actor then return jsonb_build_object('ok',false,'error','OUT_OF_SCOPE'); end if;
+ select coalesce(jsonb_object_agg(k.key,phoenix_profile_has_permission(p_profile_id,k.key)),'{}'::jsonb) into v_result from permission_keys k;
+ return jsonb_build_object('ok',true,'permissions',v_result);
+end;`,
+  },
+  {
+    signature: 'CREATE OR REPLACE FUNCTION public.phoenix_profile_has_permission(p_profile_id uuid, p_key text)',
+    sourceBodySha256: '73f1faf21d3d6990237c65f4def57a45ecf9459e8952f5d395d334e8a71e0d64',
+    productionBodySha256: '7fb2f8b311ab181b0189fb3ec6e13f2b068bc3ec588343a56be8c4df672f5188',
+    productionBody: `
+ SELECT CASE WHEN public.phoenix_my_role()='health_center_manager' AND p_profile_id IS DISTINCT FROM auth.uid() THEN false ELSE coalesce(
+ (SELECT o.allowed FROM profile_permission_overrides o WHERE o.profile_id=p_profile_id AND o.permission_key=p_key AND o.allowed IS NOT NULL),
+ (SELECT d.allowed FROM role_permission_defaults d JOIN profiles pr ON pr.id=p_profile_id WHERE d.role=pr.role AND d.permission_key=p_key),false) END;
+`,
+  },
+];
+
+function replaceM182ReplayBody(sql, contract) {
+  const first = sql.indexOf(contract.signature);
+  const second = sql.indexOf(contract.signature, first + contract.signature.length);
+  if (first < 0 || second >= 0) {
+    throw new Error(`M182 replay normalization: expected exactly one ${contract.signature}`);
   }
-  return text;
+
+  const openToken = 'AS $function$';
+  const bodyStart = sql.indexOf(openToken, first);
+  const nextFunction = sql.indexOf('CREATE OR REPLACE FUNCTION', first + contract.signature.length);
+  const bodyEnd = sql.indexOf('$function$;', bodyStart + openToken.length);
+  if (bodyStart < 0 || bodyEnd < 0 || (nextFunction >= 0 && bodyEnd > nextFunction)) {
+    throw new Error(`M182 replay normalization: could not isolate ${contract.signature}`);
+  }
+
+  const contentStart = bodyStart + openToken.length;
+  const sourceBody = sql.slice(contentStart, bodyEnd);
+  const sourceHash = sha256(sourceBody);
+  if (sourceHash !== contract.sourceBodySha256) {
+    throw new Error(
+      `M182 replay normalization: source body drift for ${contract.signature}; ` +
+      `expected ${contract.sourceBodySha256}, got ${sourceHash}`,
+    );
+  }
+  const productionHash = sha256(contract.productionBody);
+  if (productionHash !== contract.productionBodySha256) {
+    throw new Error(
+      `M182 replay normalization: embedded Production body drift for ${contract.signature}; ` +
+      `expected ${contract.productionBodySha256}, got ${productionHash}`,
+    );
+  }
+  return sql.slice(0, contentStart) + contract.productionBody + sql.slice(bodyEnd);
+}
+
+// Exported so DR acceptance and the disposable Supabase workflow can use the
+// same fail-closed replay policy rather than maintaining a second SQL copy.
+export function shimSql(file, text) {
+  let out = text;
+  if (file.startsWith('023_')) {
+    out = out.replace(/SELECT\s+qual\s+INTO/gi, 'SELECT coalesce(qual, with_check) INTO');
+  }
+  if (file === M182_FILE) {
+    const sourceHash = sha256(out);
+    if (sourceHash !== M182_SOURCE_SHA256) {
+      throw new Error(
+        `M182 replay normalization: immutable source SHA-256 mismatch; ` +
+        `expected ${M182_SOURCE_SHA256}, got ${sourceHash}`,
+      );
+    }
+    for (const contract of M182_REPLAY_BODIES) {
+      out = replaceM182ReplayBody(out, contract);
+    }
+  }
+  return out;
 }
 
 export { MIGRATIONS_DIR };

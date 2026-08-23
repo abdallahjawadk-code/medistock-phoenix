@@ -52,7 +52,7 @@ describe('no client-side document-number sequence exists',()=>{
     const text=readFileSync(proposal,'utf8');
     expect(text).toMatch(/PROPOSAL ONLY/i); expect(text).toMatch(/not applied/i);
   });
-  it('179–195 introduce no numbering and no 196+ migration exists',()=>{
+  it('179–196 introduce no numbering and no 197+ migration exists',()=>{
     const migrations=readdirSync(join(ROOT,'supabase','migrations')).filter(f=>f.endsWith('.sql'));
     // P0 HOTFIX 178: adds SECURITY DEFINER to Migration 171's outlet
     // owner-kind guard so its FOR SHARE row lock stops failing with 42501 for
@@ -143,9 +143,15 @@ describe('no client-side document-number sequence exists',()=>{
     // counter, no max()+1 logic, no generated numeric identity and no document
     // number — it introduces no SQL object at all. Boundary moves to 195 so the
     // next unknown migration still fails closed.
-    const beyond=migrations.filter(f=>/^(1[89]\d|[2-9]\d\d)_/.test(f)&&!/^(179|180|181|182|183|184|185|186|187|188|189|190|191|192|193|194|195)_/.test(f));
+    // I-3 / M196: schema-qualifies the 106 audited relation references inside
+    // exactly 22 existing SECURITY DEFINER functions. It creates no table,
+    // sequence, counter, max()+1 logic, generated numeric identity or document
+    // number — it only replaces function bodies. Boundary moves to 196 so the
+    // next unknown migration still fails closed.
+    const beyond=migrations.filter(f=>/^(1[89]\d|[2-9]\d\d)_/.test(f)&&!/^(179|180|181|182|183|184|185|186|187|188|189|190|191|192|193|194|195|196)_/.test(f));
     expect(beyond).toEqual([]);
     for(const f of [
+      '196_phoenix_secdef_relation_schema_qualification.sql',
       '195_phoenix_auth_helper_profile_schema_qualification.sql',
       '194_phoenix_authorization_surface_reproducibility_convergence.sql',
       '193_phoenix_inter_org_alert_command_surface_hardening.sql',
