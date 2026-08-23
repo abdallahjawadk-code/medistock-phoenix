@@ -72,7 +72,7 @@ run('M196 · SECURITY DEFINER relation schema qualification · dynamic', () => {
     readAuthorizationSurface((sql, params) => c.query(sql, params)));
 
   const behavior = () => rig.asAdmin(async (c: any) => (await c.query(
-    `SELECT public.phoenix_profile_has_permission($1,'users.manage') allowed,
+    `SELECT public.phoenix_profile_has_permission($1,'users.manage_permissions') allowed,
             public.get_effective_permissions($1) permissions`,
     [rig.superAdminId])).rows[0]);
 
