@@ -33,7 +33,7 @@
 //   ACCEPTANCE_CLI_VERSION=2.115.0 \
 //     node tools/phoenix-demo/mixed-history-acceptance.mjs
 // ===========================================================================
-import { execFileSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import pg from 'pg';
@@ -61,16 +61,39 @@ const localManifest = () => readdirSync(MIGRATIONS_DIR)
   .filter(Boolean)
   .sort((a, b) => a.version - b.version);
 
-const connect = async () => { const c = new pg.Client({ connectionString: DB_URL }); await c.connect(); return c; };
+let client = null;
+const connect = async () => {
+  client = new pg.Client({ connectionString: DB_URL });
+  await client.connect();
+  return client;
+};
 
 const readHistory = async (c) => (await c.query(
   `SELECT version::text AS version, name::text AS name
      FROM supabase_migrations.schema_migrations ORDER BY version::text`)).rows;
 
+/** A pending-set mismatch is unreadable without the bytes it was derived from. */
+const showTranscript = (t) => `
+--- CLI transcript ---
+${t}
+--- end CLI transcript ---`;
+
+// The Supabase CLI writes its human-readable output -- the pending migration
+// list, and "Remote database is up to date." -- to STDERR, not stdout. The
+// Production executor already accounts for that: every db-push line in
+// apply-production-migration.yml is `... 2>&1 | tee <transcript>`. Capturing
+// stdout alone here produced an EMPTY transcript, so parseDryRunPending() saw
+// zero pending and this acceptance could never pass. Both streams are merged so
+// the acceptance parses exactly the bytes the executor parses.
 function cli(args, { debug = false } = {}) {
-  return execFileSync('supabase', debug ? [...args, '--debug'] : args, {
+  const argv = debug ? [...args, '--debug'] : args;
+  const run = spawnSync('supabase', argv, {
     encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 64 * 1024 * 1024,
   });
+  const transcript = `${run.stdout ?? ''}${run.stderr ?? ''}`;
+  if (run.error) fail(`supabase ${argv.join(' ')} could not be started: ${run.error.message}`);
+  if (run.status !== 0) fail(`supabase ${argv.join(' ')} exited ${run.status}.${showTranscript(transcript)}`);
+  return transcript;
 }
 
 async function main() {
@@ -145,15 +168,15 @@ async function main() {
   console.log('== 4. PROOF B — CLI dry-run, NO --debug ==');
   const dry = cli([...pushArgs, '--dry-run']);
   const pending = parseDryRunPending(dry);
-  if (pending.length !== 1) fail(`CLI reports ${pending.length} pending [${pending.join(', ')}], expected exactly 1.`);
-  if (pending[0] !== shadow.targetAliasFilename) fail(`CLI would push ${pending[0]}, expected ${shadow.targetAliasFilename}.`);
+  if (pending.length !== 1) fail(`CLI reports ${pending.length} pending [${pending.join(', ')}], expected exactly 1.${showTranscript(dry)}`);
+  if (pending[0] !== shadow.targetAliasFilename) fail(`CLI would push ${pending[0]}, expected ${shadow.targetAliasFilename}.${showTranscript(dry)}`);
   ok(`CLI pending = exactly [${pending[0]}]`);
 
   console.log('== 5. --debug regression: the pinned binary must agree ==');
   const dryDebug = cli([...pushArgs, '--dry-run'], { debug: true });
   const pendingDebug = parseDryRunPending(dryDebug);
   if (JSON.stringify(pendingDebug) !== JSON.stringify(pending)) {
-    fail(`--debug pending set ${JSON.stringify(pendingDebug)} differs from no-debug ${JSON.stringify(pending)}.`);
+    fail(`--debug pending set ${JSON.stringify(pendingDebug)} differs from no-debug ${JSON.stringify(pending)}.${showTranscript(dryDebug)}`);
   }
   ok('--debug and no-debug agree — the 2.101.0-2.109.1 TLS defect is absent');
 
@@ -170,7 +193,7 @@ async function main() {
   console.log('== 7. nothing pending afterwards ==');
   const dry2 = cli([...pushArgs, '--dry-run']);
   const pending2 = parseDryRunPending(dry2);
-  if (pending2.length !== 0) fail(`CLI still reports ${pending2.length} pending [${pending2.join(', ')}], expected 0.`);
+  if (pending2.length !== 0) fail(`CLI still reports ${pending2.length} pending [${pending2.join(', ')}], expected 0.${showTranscript(dry2)}`);
   ok('CLI reports nothing pending');
 
   console.log('== 8. resume-safe reconciliation ==');
@@ -183,7 +206,11 @@ async function main() {
   console.log('\nMIXED-HISTORY ACCEPTANCE: PASS');
 }
 
-main().catch((e) => {
+main().catch(async (e) => {
   console.error(`::error::mixed-history acceptance FAILED: ${e?.message ?? e}`);
-  process.exitCode = 1;
+  // An open pg client keeps the Node event loop alive. Without this the script
+  // printed its error and then sat idle until the job's 35-minute timeout
+  // cancelled it, hiding a two-second failure behind a half-hour red run.
+  try { await client?.end(); } catch { /* already closing */ }
+  process.exit(1);
 });
