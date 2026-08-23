@@ -65,7 +65,7 @@ describe('183 registration and shape', () => {
       .toBe('182_phoenix_health_center_facility_scoped_rbac.sql');
   });
 
-  it('is followed by exactly 184 through 196, and nothing beyond them', () => {
+  it('is followed by exactly 184 through 197, and nothing beyond them', () => {
     // M191 (G4.2 canonical facility/scope topology read contract) is the new
     // ceiling.
     // The successor list stays EXACT and the nothing-beyond regex is narrowed by
@@ -85,12 +85,13 @@ describe('183 registration and shape', () => {
       '194_phoenix_authorization_surface_reproducibility_convergence.sql',
       '195_phoenix_auth_helper_profile_schema_qualification.sql',
       '196_phoenix_secdef_relation_schema_qualification.sql',
+      '197_phoenix_public_execute_convergence.sql',
     ];
     const i = REVIEWED_MIGRATION_FILES.indexOf(NAME);
     expect(REVIEWED_MIGRATION_FILES.slice(i + 1)).toEqual(SUCCESSORS);
     expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1])
       .toBe(SUCCESSORS[SUCCESSORS.length - 1]);
-    expect(REVIEWED_MIGRATION_FILES.some(f => /^19[7-9]_|^[2-9]\d\d_/.test(f))).toBe(false);
+    expect(REVIEWED_MIGRATION_FILES.some(f => /^19[89]_|^[2-9]\d\d_/.test(f))).toBe(false);
   });
 
   it('is a single transaction, manual-apply only', () => {

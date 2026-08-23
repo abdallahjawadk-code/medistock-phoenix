@@ -72,14 +72,25 @@ run('175 · read-helper anonymous surface hardening (dynamic)', () => {
     expect(await canExecute('authenticated', 'public.get_public_qr_payload(text)')).toBe(true);
   });
 
-  it('leaves identity helpers and trigger functions out of this wave', async () => {
+  // M175's own wave deliberately left these alone. This suite replays to
+  // LATEST, so it reports the CURRENT anonymous surface, and Stage I / I-4's
+  // M197 has since converged the five SECURITY DEFINER routines below: it
+  // revoked the PostgreSQL PUBLIC pseudo-role grant that anon inherited, and
+  // granted the identity helpers explicitly to authenticated instead. The
+  // expectation therefore moves from true to FALSE — a strictly narrower
+  // anonymous surface, re-pinned exactly rather than relaxed.
+  it('still leaves the non-SECURITY-DEFINER helper out of every wave, while M197 has closed the five SECURITY DEFINER ones to anon', async () => {
     for (const fn of [
       'public.phoenix_my_role()',
       'public.phoenix_my_org()',
       'public.phoenix_guard_dp_archive_update()',
       'public.phoenix_handle_new_user()',
       'public.phoenix_populate_actor_snapshot()',
-      'public.phoenix_set_updated_at()',
-    ]) expect(await canExecute('anon', fn), fn).toBe(true);
+    ]) expect(await canExecute('anon', fn), fn).toBe(false);
+
+    // phoenix_set_updated_at() is NOT SECURITY DEFINER, so it was never in
+    // M197's scope and anon still reaches it through PUBLIC. Asserted
+    // explicitly so a future blanket revoke cannot pass unnoticed.
+    expect(await canExecute('anon', 'public.phoenix_set_updated_at()')).toBe(true);
   });
 });

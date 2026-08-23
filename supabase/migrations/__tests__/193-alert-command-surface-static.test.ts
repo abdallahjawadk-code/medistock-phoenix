@@ -68,19 +68,20 @@ describe('193 · registration and file hygiene', () => {
     expect(REVIEWED_MIGRATION_FILES.filter(f => f.startsWith('193_'))).toEqual([NAME]);
   });
 
-  it('is immediately followed by 194 through 196, the new ceiling, and 197 stays absent', () => {
-    expect(getMaximumReviewedMigrationNumber()).toBe(196);
-    expect(getNextUnreviewedMigrationNumber()).toBe(197);
+  it('is immediately followed by 194 through 197, the new ceiling, and 198 stays absent', () => {
+    expect(getMaximumReviewedMigrationNumber()).toBe(197);
+    expect(getNextUnreviewedMigrationNumber()).toBe(198);
     const NEXT = '194_phoenix_authorization_surface_reproducibility_convergence.sql';
     const NEXT_2 = '195_phoenix_auth_helper_profile_schema_qualification.sql';
     const NEXT_3 = '196_phoenix_secdef_relation_schema_qualification.sql';
+    const NEXT_4 = '197_phoenix_public_execute_convergence.sql';
     expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.indexOf(NAME) + 1]).toBe(NEXT);
     expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.indexOf(NAME) + 2]).toBe(NEXT_2);
     expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.indexOf(NAME) + 3]).toBe(NEXT_3);
-    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1]).toBe(NEXT_3);
-    expect(REVIEWED_MIGRATION_FILES.some(f => /^19[7-9]_|^[2-9]\d\d_/.test(f))).toBe(false);
-    expect(readdirSync(MIGRATIONS_DIR).some(f => /^(19[7-9]|[2-9]\d\d)_.*\.sql$/.test(f))).toBe(false);
-    expect(isReviewedMigrationFile('197_unreviewed_test_migration.sql')).toBe(false);
+    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1]).toBe(NEXT_4);
+    expect(REVIEWED_MIGRATION_FILES.some(f => /^19[89]_|^[2-9]\d\d_/.test(f))).toBe(false);
+    expect(readdirSync(MIGRATIONS_DIR).some(f => /^(19[89]|[2-9]\d\d)_.*\.sql$/.test(f))).toBe(false);
+    expect(isReviewedMigrationFile('198_unreviewed_test_migration.sql')).toBe(false);
   });
 
   it('carries no CR bytes', () => {
@@ -97,10 +98,10 @@ describe('193 · registration and file hygiene', () => {
   });
 
   it('edits no historical migration — it is self-contained', () => {
-    // 196 (I-3, SECDEF relation schema qualification) is the newest chain
-    // member; it edits nothing here, so this count moves by exactly one.
+    // 197 (I-4, PUBLIC EXECUTE convergence) is the newest chain member; it is
+    // ACL-only and edits nothing here, so this count moves by exactly one.
     const others = readdirSync(MIGRATIONS_DIR).filter(f => f.endsWith('.sql') && f !== NAME);
-    expect(others).toHaveLength(195);
+    expect(others).toHaveLength(196);
   });
 });
 

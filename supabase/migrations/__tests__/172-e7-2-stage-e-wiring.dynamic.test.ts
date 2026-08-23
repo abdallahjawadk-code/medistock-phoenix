@@ -193,6 +193,11 @@ run('E7-2 · Stage-E application wiring (dynamic)',()=>{
       // bodies to schema-qualify their audited relation references. It adds no
       // Stage-E object or semantics; exact registration keeps this exhaustive.
       '196_phoenix_secdef_relation_schema_qualification.sql',
+      // Stage I / I-4 converges the PostgreSQL PUBLIC pseudo-role EXECUTE
+      // grant on six SECURITY DEFINER routines into explicit role grants. It
+      // is ACL-only: no object, no body, no Stage-E corridor or semantics.
+      // Exact registration keeps this successor guard exhaustive.
+      '197_phoenix_public_execute_convergence.sql',
     ];
     it('Stage E still ends at 171 — E7-2 introduced no new SQL',()=>{
       const files=readdirSync(join(__dirname,'..')).filter(f=>/^\d{3}_.*\.sql$/.test(f));
