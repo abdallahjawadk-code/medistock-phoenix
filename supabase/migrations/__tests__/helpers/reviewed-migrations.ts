@@ -202,6 +202,7 @@ export const REVIEWED_MIGRATION_FILES: readonly string[] = Object.freeze([
   '194_phoenix_authorization_surface_reproducibility_convergence.sql',
   '195_phoenix_auth_helper_profile_schema_qualification.sql',
   '196_phoenix_secdef_relation_schema_qualification.sql',
+  '197_phoenix_public_execute_convergence.sql',
 ]);
 
 const REVIEWED_SET: ReadonlySet<string> = new Set(REVIEWED_MIGRATION_FILES);

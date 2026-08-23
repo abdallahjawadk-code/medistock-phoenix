@@ -356,6 +356,22 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
       'supabase/migrations/196_phoenix_secdef_relation_schema_qualification.sql',
       'supabase/migrations/__tests__/196-secdef-relation-schema-qualification-static.test.ts',
       'supabase/migrations/__tests__/196-secdef-relation-schema-qualification.dynamic.test.ts',
+      // …and Stage I / I-4's M197, which converges the PostgreSQL PUBLIC
+      // pseudo-role EXECUTE grant on six SECURITY DEFINER routines into
+      // explicit role grants, plus its two proof suites. M197 is ACL-ONLY: it
+      // issues no CREATE OR REPLACE and alters no body, OID, signature, owner,
+      // search_path, table, policy, RLS or default privilege, and mutates no
+      // business data — its own VERIFY block proves each of those on the live
+      // catalog. The anonymous QR portal is unaffected because
+      // get_public_qr_payload(text) keeps its EXPLICIT anon grant; only the
+      // inheritance path is removed. Registered by EXACT filename BEFORE the
+      // commit that lands them, because `git diff --name-only <BASE>` cannot
+      // see an untracked file — the trap documented three times above. No
+      // wildcard and no directory exemption: every other file under supabase/
+      // still fails this guard closed.
+      'supabase/migrations/197_phoenix_public_execute_convergence.sql',
+      'supabase/migrations/__tests__/197-public-execute-convergence-static.test.ts',
+      'supabase/migrations/__tests__/197-public-execute-convergence.dynamic.test.ts',
       // …and Stage I / I-2's pinned Production migration executor contract
       // test, which lives under the WATCHED src/shared/supabase prefix. It is
       // TEST-ONLY: it reads .github/workflows/apply-production-migration.yml
