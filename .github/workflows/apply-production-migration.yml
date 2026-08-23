@@ -1,0 +1,231 @@
+name: Apply Production migration (pinned)
+
+# PINNED REUSABLE PRODUCTION MIGRATION EXECUTOR — Stage I / I-2.
+#
+# WHY THIS EXISTS
+# ---------------
+# Before this workflow, the only routes that could apply a migration to
+# Production were deploy-admin-user-lifecycle.yml (hardcoded 146 -> 147),
+# deploy-admin-create-user.yml and production-demo-seed.yml (both pinned at
+# ceiling 146). None of them can carry migration 196 or anything after it, and
+# weakening them into a generic `supabase db push` would have destroyed the
+# very property that makes them safe. They are left exactly as they are — they
+# remain historical evidence of what was applied and how.
+#
+# This workflow is the replacement route, and it is generic ONLY in the sense
+# that it takes the migration identity as input. Every invocation is still
+# fully pinned: one exact commit, one exact filename, one exact SHA-256, one
+# exact current ceiling, one exact next ceiling, one exact Production project.
+#
+# WHAT IT CANNOT DO
+# -----------------
+#   - it cannot accept SQL, a script path, or an assertion to run
+#   - it cannot accept a project ref (PROJECT_REF below is the only one)
+#   - it cannot accept a migration RANGE, a wildcard, or --include-all
+#   - it cannot apply a migration that is not exactly currentCeiling + 1
+#   - it cannot run when more or fewer than one migration is pending
+#   - it cannot seed, purge, reset, or otherwise touch business data
+#   - it cannot retry: a failed apply ends the run, full stop
+#   - it cannot skip its post-apply verification
+#
+# THE SINGLE-PENDING PROOF
+# ------------------------
+# `supabase db push` applies EVERY pending migration and has no "only this one"
+# flag, so this workflow never relies on the push to bound itself. It proves the
+# pending set is exactly one migration TWICE, independently, before the real
+# push runs:
+#   (1) tools/phoenix-demo/production-migration-preflight.mjs computes
+#       local-minus-remote from supabase/migrations and Production's
+#       supabase_migrations.schema_migrations, requiring both histories to be
+#       contiguous and the difference to be exactly the pinned version; and
+#   (2) tools/phoenix-demo/assert-single-pending-dry-run.mjs re-derives the same
+#       conclusion from `supabase db push --dry-run`'s own transcript.
+# If the two ever disagree, the run stops.
+#
+# RESUME SAFETY
+# -------------
+# If Production already carries exactly the pinned migration and nothing beyond
+# it, preflight returns ALREADY_APPLIED: the dry-run and apply steps are skipped
+# and the run proceeds straight to verification. Re-dispatching an invocation
+# that already succeeded is therefore safe and non-mutating. Any other state —
+# a lower ceiling, a higher ceiling, a gap, a duplicate — is an unexplained
+# divergence and the run refuses without repairing anything.
+#
+# TRANSACTION HONESTY
+# -------------------
+# Migrations in this repository open their own BEGIN;/COMMIT;, so the migration
+# body and the schema_migrations history row are NOT provably one atomic unit
+# from outside the CLI. This workflow therefore does not treat a zero exit code
+# as proof; it re-measures the history on a fresh connection afterwards.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_sha:
+        description: 'Exact master commit SHA to apply from (40 hex)'
+        required: true
+        type: string
+      migration_filename:
+        description: 'Exact migration filename, e.g. 196_phoenix_example.sql'
+        required: true
+        type: string
+      migration_sha256:
+        description: 'Exact SHA-256 of that migration file (64 lowercase hex)'
+        required: true
+        type: string
+      expected_current_ceiling:
+        description: "Production's exact CURRENT migration ceiling before this apply"
+        required: true
+        type: string
+      expected_next_ceiling:
+        description: 'Exact ceiling Production must reach after it (current + 1)'
+        required: true
+        type: string
+      confirmation:
+        description: 'Type APPLY_PRODUCTION_MIGRATION exactly'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+# Serialized: two concurrent applies against one Production database could
+# interleave a push with another run's history read. Never cancel a run that
+# may already be mid-apply.
+concurrency:
+  group: production-migration-apply
+  cancel-in-progress: false
+
+env:
+  PROJECT_REF: eyrzxgfkvqybjdgyphap
+
+jobs:
+  apply:
+    name: Apply exactly one pinned migration to Production
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: production
+
+    steps:
+      - name: Verify explicit Production authorization
+        run: |
+          if [ "${{ github.ref_name }}" != "master" ]; then
+            echo "::error::This executor may run from master only."
+            exit 1
+          fi
+          if [ "${{ github.sha }}" != "${{ inputs.confirm_sha }}" ]; then
+            echo "::error::SHA mismatch. Refusing to apply from an unintended commit."
+            exit 1
+          fi
+          if [ "${{ inputs.confirmation }}" != "APPLY_PRODUCTION_MIGRATION" ]; then
+            echo "::error::Confirmation phrase mismatch."
+            exit 1
+          fi
+
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Verify required secret is configured
+        env:
+          PHOENIX_PRODUCTION_DATABASE_URL: ${{ secrets.PHOENIX_PRODUCTION_DATABASE_URL }}
+        run: |
+          if [ -z "$PHOENIX_PRODUCTION_DATABASE_URL" ]; then
+            echo "::error::PHOENIX_PRODUCTION_DATABASE_URL is not configured for the production environment."
+            exit 1
+          fi
+          echo "Production connection secret is present."
+
+      # Cheap local guard before anything touches Production: this checkout's
+      # own ceiling must already be the pinned next version. The preflight
+      # re-proves this rigorously, hashes included.
+      - name: Verify this checkout's migration ceiling is exactly the pinned next version
+        run: |
+          highest=$(ls supabase/migrations | grep -oE '^[0-9]{3}' | sort -n | tail -1)
+          if [ "$highest" != "${{ inputs.expected_next_ceiling }}" ]; then
+            echo "::error::This checkout's migration ceiling is $highest, expected exactly ${{ inputs.expected_next_ceiling }}."
+            exit 1
+          fi
+          echo "Local migration ceiling confirmed: $highest"
+
+      - name: Set up Supabase CLI
+        uses: supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520 # v3.0.0
+        with:
+          version: latest
+
+      # READ-ONLY. Proves the project ref, both histories, the pinned identity,
+      # and that local-minus-remote is exactly one version. Emits the decision.
+      - name: Preflight — prove exactly one pending migration (read-only)
+        id: preflight
+        env:
+          PHOENIX_PRODUCTION_DATABASE_URL: ${{ secrets.PHOENIX_PRODUCTION_DATABASE_URL }}
+          PHOENIX_BRANCH: ${{ github.ref_name }}
+          PHOENIX_HEAD_SHA: ${{ github.sha }}
+          PHOENIX_CONFIRM_SHA: ${{ inputs.confirm_sha }}
+          PHOENIX_CONFIRMATION: ${{ inputs.confirmation }}
+          PHOENIX_MIGRATION_FILENAME: ${{ inputs.migration_filename }}
+          PHOENIX_MIGRATION_SHA256: ${{ inputs.migration_sha256 }}
+          PHOENIX_EXPECTED_CURRENT_CEILING: ${{ inputs.expected_current_ceiling }}
+          PHOENIX_EXPECTED_NEXT_CEILING: ${{ inputs.expected_next_ceiling }}
+        run: node tools/phoenix-demo/production-migration-preflight.mjs
+
+      - name: Report the preflight decision
+        run: echo "Preflight decision = ${{ steps.preflight.outputs.decision }} (target version ${{ steps.preflight.outputs.target_version }})"
+
+      - name: Preview the push (read-only dry-run)
+        if: steps.preflight.outputs.decision == 'APPLY'
+        env:
+          PHOENIX_PRODUCTION_DATABASE_URL: ${{ secrets.PHOENIX_PRODUCTION_DATABASE_URL }}
+        run: |
+          set -o pipefail
+          supabase db push --db-url "$PHOENIX_PRODUCTION_DATABASE_URL" --dry-run 2>&1 | tee /tmp/db-push-dry-run.txt
+
+      - name: Second single-pending proof — the CLI's own dry-run transcript
+        if: steps.preflight.outputs.decision == 'APPLY'
+        env:
+          PHOENIX_MIGRATION_FILENAME: ${{ inputs.migration_filename }}
+          PHOENIX_DRY_RUN_TRANSCRIPT: /tmp/db-push-dry-run.txt
+        run: node tools/phoenix-demo/assert-single-pending-dry-run.mjs
+
+      - name: Apply the single pending migration
+        if: steps.preflight.outputs.decision == 'APPLY'
+        env:
+          PHOENIX_PRODUCTION_DATABASE_URL: ${{ secrets.PHOENIX_PRODUCTION_DATABASE_URL }}
+        run: supabase db push --db-url "$PHOENIX_PRODUCTION_DATABASE_URL"
+
+      # Unconditional: runs on the APPLY path AND the resume-safe
+      # ALREADY_APPLIED path. A fresh connection re-measures the history rather
+      # than trusting the push's exit code.
+      - name: Verify Production migration history reached exactly the pinned ceiling
+        env:
+          PHOENIX_PRODUCTION_DATABASE_URL: ${{ secrets.PHOENIX_PRODUCTION_DATABASE_URL }}
+          PHOENIX_EXPECTED_NEXT_CEILING: ${{ inputs.expected_next_ceiling }}
+        run: node tools/phoenix-demo/verify-production-migration-applied.mjs
+
+      # Unconditional fixed contract — the executor accepts no assertion input,
+      # so no dispatch can select a weaker post-apply check than this one.
+      - name: Verify the Major-H authorization invariants still hold
+        env:
+          PHOENIX_PRODUCTION_DATABASE_URL: ${{ secrets.PHOENIX_PRODUCTION_DATABASE_URL }}
+        run: node tools/phoenix-demo/verify-production-authorization-invariants.mjs
+
+      - name: Classify an apply failure without retrying or repairing
+        if: failure()
+        run: |
+          echo "::error::Production migration run FAILED. Nothing has been retried, rolled back, or repaired."
+          echo "Classify before acting, using READ-ONLY inspection only:"
+          echo "  FAILED_CLEAN    — Production ceiling is still ${{ inputs.expected_current_ceiling }} and the migration's objects are absent."
+          echo "  FAILED_PARTIAL  — the migration's objects exist wholly or partly but the history row is absent (or the reverse)."
+          echo "  AMBIGUOUS       — anything else, including an unreadable history."
+          echo "Do NOT re-dispatch this workflow until the state is classified and the classification is recorded."
+          exit 1
