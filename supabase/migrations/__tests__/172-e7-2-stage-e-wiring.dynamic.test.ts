@@ -198,6 +198,12 @@ run('E7-2 · Stage-E application wiring (dynamic)',()=>{
       // is ACL-only: no object, no body, no Stage-E corridor or semantics.
       // Exact registration keeps this successor guard exhaustive.
       '197_phoenix_public_execute_convergence.sql',
+      // Stage I / I-5 converges the function-level search_path of thirty
+      // SECURITY DEFINER routines from `public` to `public, pg_temp`. It is
+      // search_path-only: one ALTER FUNCTION per target, no object, no body, no
+      // Stage-E corridor or semantics. Exact registration keeps this successor
+      // guard exhaustive.
+      '198_phoenix_secdef_search_path_convergence.sql',
     ];
     it('Stage E still ends at 171 — E7-2 introduced no new SQL',()=>{
       const files=readdirSync(join(__dirname,'..')).filter(f=>/^\d{3}_.*\.sql$/.test(f));
