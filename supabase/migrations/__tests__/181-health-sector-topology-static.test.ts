@@ -47,7 +47,7 @@ describe('181 registration and shape', () => {
   // R1.1-U added 182 and R1.2C added 183, so 181 is no longer last. The guard
   // stays EXHAUSTIVE rather than being deleted: every successor is named by
   // EXACT filename, and anything beyond the last of them still fails closed.
-  it('is followed by exactly 182 through 197, and nothing beyond them', () => {
+  it('is followed by exactly 182 through 198, and nothing beyond them', () => {
     // M191 (G4.2 canonical facility/scope topology read contract) is the new
     // ceiling.
     // The successor list stays EXACT and the nothing-beyond regex is narrowed by
@@ -70,10 +70,11 @@ describe('181 registration and shape', () => {
       '195_phoenix_auth_helper_profile_schema_qualification.sql',
       '196_phoenix_secdef_relation_schema_qualification.sql',
       '197_phoenix_public_execute_convergence.sql',
+      '198_phoenix_secdef_search_path_convergence.sql',
     ];
     const i = REVIEWED_MIGRATION_FILES.indexOf(NAME);
     expect(REVIEWED_MIGRATION_FILES.slice(i + 1)).toEqual(SUCCESSORS);
-    expect(REVIEWED_MIGRATION_FILES.some(f => /^19[89]_|^[2-9]\d\d_/.test(f))).toBe(false);
+    expect(REVIEWED_MIGRATION_FILES.some(f => /^199_|^[2-9]\d\d_/.test(f))).toBe(false);
   });
 
   it('is a single transaction, manual-apply only, through Supabase.apply_migration', () => {

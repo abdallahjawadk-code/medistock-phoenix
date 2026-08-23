@@ -52,7 +52,7 @@ describe('no client-side document-number sequence exists',()=>{
     const text=readFileSync(proposal,'utf8');
     expect(text).toMatch(/PROPOSAL ONLY/i); expect(text).toMatch(/not applied/i);
   });
-  it('179–197 introduce no numbering and no 198+ migration exists',()=>{
+  it('179–198 introduce no numbering and no 199+ migration exists',()=>{
     const migrations=readdirSync(join(ROOT,'supabase','migrations')).filter(f=>f.endsWith('.sql'));
     // P0 HOTFIX 178: adds SECURITY DEFINER to Migration 171's outlet
     // owner-kind guard so its FOR SHARE row lock stops failing with 42501 for
@@ -151,11 +151,18 @@ describe('no client-side document-number sequence exists',()=>{
     // I-4 / M197: converges PUBLIC EXECUTE on six SECURITY DEFINER routines
     // into explicit role grants. It is ACL-only — no table, sequence,
     // counter, max()+1 logic, generated identity or document number, and no
-    // function body at all. Boundary moves to 197 so the next unknown
-    // migration still fails closed.
-    const beyond=migrations.filter(f=>/^(1[89]\d|[2-9]\d\d)_/.test(f)&&!/^(179|180|181|182|183|184|185|186|187|188|189|190|191|192|193|194|195|196|197)_/.test(f));
+    // function body at all.
+    // I-5 / M198: converges the function-level search_path of thirty SECURITY
+    // DEFINER routines from `public` to `public, pg_temp`. It is
+    // search_path-only — one ALTER FUNCTION per target, no table, sequence,
+    // counter, max()+1 logic, generated identity, document number or function
+    // body. Boundary moves to 198 so the next unknown migration still fails
+    // closed.
+    const beyond=migrations.filter(f=>/^(1[89]\d|[2-9]\d\d)_/.test(f)&&!/^(179|180|181|182|183|184|185|186|187|188|189|190|191|192|193|194|195|196|197|198)_/.test(f));
     expect(beyond).toEqual([]);
     for(const f of [
+      '198_phoenix_secdef_search_path_convergence.sql',
+      '197_phoenix_public_execute_convergence.sql',
       '196_phoenix_secdef_relation_schema_qualification.sql',
       '195_phoenix_auth_helper_profile_schema_qualification.sql',
       '194_phoenix_authorization_surface_reproducibility_convergence.sql',

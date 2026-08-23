@@ -56,22 +56,25 @@ describe('192 · registration and file hygiene', () => {
     expect(REVIEWED_MIGRATION_FILES.filter(f => f.startsWith('192_'))).toEqual([NAME]);
   });
 
-  it('is immediately followed by 193 through 197, the new ceiling, and 198 stays absent', () => {
+  it('is immediately followed by 193 through 198, the new ceiling, and 199 stays absent', () => {
     const NEXT = '193_phoenix_inter_org_alert_command_surface_hardening.sql';
     const NEXT_2 = '194_phoenix_authorization_surface_reproducibility_convergence.sql';
     const NEXT_3 = '195_phoenix_auth_helper_profile_schema_qualification.sql';
     const NEXT_4 = '196_phoenix_secdef_relation_schema_qualification.sql';
     const NEXT_5 = '197_phoenix_public_execute_convergence.sql';
-    expect(getMaximumReviewedMigrationNumber()).toBe(197);
-    expect(getNextUnreviewedMigrationNumber()).toBe(198);
-    expect(REVIEWED_MIGRATION_FILES.slice(REVIEWED_MIGRATION_FILES.indexOf(NAME) + 1)).toEqual([NEXT, NEXT_2, NEXT_3, NEXT_4, NEXT_5]);
-    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1]).toBe(NEXT_5);
+    const NEXT_6 = '198_phoenix_secdef_search_path_convergence.sql';
+    expect(getMaximumReviewedMigrationNumber()).toBe(198);
+    expect(getNextUnreviewedMigrationNumber()).toBe(199);
+    expect(REVIEWED_MIGRATION_FILES.slice(REVIEWED_MIGRATION_FILES.indexOf(NAME) + 1)).toEqual([NEXT, NEXT_2, NEXT_3, NEXT_4, NEXT_5, NEXT_6]);
+    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1]).toBe(NEXT_6);
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^193_/.test(f))).toEqual([NEXT]);
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^194_/.test(f))).toEqual([NEXT_2]);
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^195_/.test(f))).toEqual([NEXT_3]);
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^196_/.test(f))).toEqual([NEXT_4]);
-    expect(REVIEWED_MIGRATION_FILES.some(f => /^19[89]_|^[2-9]\d\d_/.test(f))).toBe(false);
-    expect(isReviewedMigrationFile('198_unreviewed_test_migration.sql')).toBe(false);
+    expect(REVIEWED_MIGRATION_FILES.filter(f => /^197_/.test(f))).toEqual([NEXT_5]);
+    expect(REVIEWED_MIGRATION_FILES.filter(f => /^198_/.test(f))).toEqual([NEXT_6]);
+    expect(REVIEWED_MIGRATION_FILES.some(f => /^199_|^[2-9]\d\d_/.test(f))).toBe(false);
+    expect(isReviewedMigrationFile('199_unreviewed_test_migration.sql')).toBe(false);
   });
 
   it('carries no CR bytes', () => {
@@ -86,10 +89,11 @@ describe('192 · registration and file hygiene', () => {
   });
 
   it('edits no historical migration — it is self-contained', () => {
-    // 197 (I-4, PUBLIC EXECUTE convergence) is the newest chain member; it is
-    // ACL-only and edits nothing here, so this count moves by exactly one.
+    // 198 (I-5, SECDEF search_path convergence) is the newest chain member; it
+    // is search_path-only and edits nothing here, so this count moves by
+    // exactly one.
     const others = readdirSync(MIGRATIONS_DIR).filter(f => f.endsWith('.sql') && f !== NAME);
-    expect(others).toHaveLength(196);
+    expect(others).toHaveLength(197);
   });
 });
 
