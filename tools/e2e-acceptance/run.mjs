@@ -1397,6 +1397,12 @@ async function main() {
           .then(() => true).catch(() => false);
         record(`${vp.name}: mobile drawer opens`, drawerVisible);
         if (drawerVisible) {
+          // "visible" is true on the first frame of the 200ms si/si-rtl enter
+          // animation. Geometry acceptance is about the settled surface, so
+          // wait for this element's own finite enter animation to finish.
+          await drawer.evaluate(async el => {
+            await Promise.all(el.getAnimations().map(animation => animation.finished.catch(() => undefined)));
+          });
           const drawerRect = await drawer.evaluate(el => {
             const r = el.getBoundingClientRect();
             return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, innerWidth: window.innerWidth, innerHeight: window.innerHeight };
@@ -1458,6 +1464,13 @@ async function main() {
       record('small-320x568: PhoenixDialog is visible', dialogVisible);
 
       if (dialogVisible) {
+        const dialogPanel = dialogOverlay.locator('.premium-dialog-panel').first();
+        // PhoenixDialog's su animation begins at translateY(28px). Waiting for
+        // visibility alone measures that transient first frame and can report
+        // a false bottom overflow even though the settled panel is bounded.
+        await dialogPanel.evaluate(async el => {
+          await Promise.all(el.getAnimations().map(animation => animation.finished.catch(() => undefined)));
+        });
         const dialogGeometry = await dialogOverlay.evaluate(el => {
           const panel = el.querySelector('.premium-dialog-panel');
           if (!(panel instanceof HTMLElement)) return null;
