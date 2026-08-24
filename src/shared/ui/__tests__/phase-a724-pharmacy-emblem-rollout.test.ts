@@ -392,6 +392,17 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
       'supabase/migrations/198_phoenix_secdef_search_path_convergence.sql',
       'supabase/migrations/__tests__/198-secdef-search-path-convergence-static.test.ts',
       'supabase/migrations/__tests__/198-secdef-search-path-convergence.dynamic.test.ts',
+      // …and Stage I / I-6's Windows ops-coverage fix, which converts the ONE
+      // early-return platform guard in the release-engine contract file into
+      // it.runIf(canRun). That guard made vitest record a PASSED test that
+      // asserted nothing whenever the run was not on Windows; it now records
+      // SKIPPED, and .github/workflows/ops-windows-acceptance.yml executes those
+      // assertions for real on windows-latest and fails if any were skipped.
+      // TEST-ONLY: it adds no migration, no policy, no RLS, no dependency and
+      // no runtime code, and changes no assertion's strength — the
+      // platform-neutral ASCII and smart-quote byte guards stay ungated so
+      // Linux still proves them.
+      'supabase/migrations/__tests__/ops-purge-runner-compatibility.test.ts',
       // …and Stage I / I-2's pinned Production migration executor contract
       // test, which lives under the WATCHED src/shared/supabase prefix. It is
       // TEST-ONLY: it reads .github/workflows/apply-production-migration.yml
