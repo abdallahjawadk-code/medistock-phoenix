@@ -29,6 +29,7 @@ const directSupply = read('features/network/DirectSupplyOperations.tsx');
 const facilityManagement = read('features/institutions/FacilityManagementPanel.tsx');
 const myAccount = read('features/account/MyAccountScreen.tsx');
 const thresholdModal = read('features/inventory/InventoryThresholdModal.tsx');
+const broadcastAdmin = read('features/platform-broadcast/PlatformBroadcastAdminPanel.tsx');
 
 describe('shared dialog geometry is bounded by the usable mobile viewport', () => {
   it('uses the modal z-layer, all four safe-area edges and responsive padding', () => {
@@ -162,6 +163,7 @@ describe('narrow-phone forms collapse fixed desktop columns', () => {
     expect((facilityManagement.match(/nexus-responsive-two-col/g) ?? []).length).toBe(2);
     expect(myAccount).toContain('nexus-responsive-two-col');
     expect(thresholdModal).toContain('nexus-responsive-two-col');
+    expect(broadcastAdmin).toContain('nexus-responsive-two-col');
     expect(directSupply).toContain('nexus-responsive-action-grid');
     expect(nexus).toContain('.nexus-responsive-two-col');
     expect(nexus).toContain('.nexus-responsive-action-grid');
