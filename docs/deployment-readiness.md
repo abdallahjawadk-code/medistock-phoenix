@@ -7,11 +7,20 @@ Hosting: **Vercel** (frontend) + **Supabase** (database/auth).
 > explicitly approved. Deployment is performed by pushing to GitHub `master`
 > (Vercel auto-builds) — never with `vercel --prod` directly.
 
-> 🚫 **OPEN HARD BLOCKER — do not deploy.** The manual warehouse
-> accumulating-receipt path can silently double-post the ledger across devices.
-> It is fail-closed in production builds by `warehouse-intake-safety.ts` until a
-> server expected-generation precondition lands. See
+> ✅ **The migration-065 concurrency blocker is CLOSED.** The server
+> expected-generation precondition
+> (`078_phoenix_warehouse_receipt_expected_generation.sql`) is part of the
+> canonical chain and is applied to Production, and
+> `MIGRATION_065_CONCURRENCY_RESOLVED` is `true` in
+> `warehouse-intake-safety.ts`, asserted by a test so it cannot regress
+> silently. Verified state and the one condition NOT re-derived here are
+> recorded in [`phoenix/OPERATIONS.md` §13](phoenix/OPERATIONS.md). Background:
 > [`blocker-migration-065-accumulating-receipt-concurrency.md`](blocker-migration-065-accumulating-receipt-concurrency.md).
+>
+> Operational procedures — incident severity, migration-failure response,
+> rollback decision tree, post-deployment verification, evidence capture and
+> the Go/No-Go checklist — live in
+> [`phoenix/OPERATIONS.md`](phoenix/OPERATIONS.md).
 
 ---
 

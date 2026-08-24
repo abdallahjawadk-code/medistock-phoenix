@@ -1,6 +1,12 @@
 # BLOCKER — migration-065 accumulating-receipt cross-device concurrency
 
-Status: **OPEN — HARD PRE-DEPLOYMENT BLOCKER. Server contract AUTHORED, NOT APPLIED.**
+Status: **CLOSED.** Migration 078 is applied to Production (it is part of the
+canonical chain, and Production's applied set reconciles as contiguous
+canonical 1..198), and `MIGRATION_065_CONCURRENCY_RESOLVED` is `true`,
+asserted by `warehouse-expected-generation.test.ts`. The narrative below is
+retained as the design record of the defect and its contract; it is no longer
+a deployment blocker. Verified state, and the one condition not re-derived,
+are in [`phoenix/OPERATIONS.md` §13](phoenix/OPERATIONS.md).
 
 > **Where this stands.** Migration
 > `078_phoenix_warehouse_receipt_expected_generation.sql` implements the §2
