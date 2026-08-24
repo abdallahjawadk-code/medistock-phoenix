@@ -31,6 +31,7 @@ const myAccount = read('features/account/MyAccountScreen.tsx');
 const thresholdModal = read('features/inventory/InventoryThresholdModal.tsx');
 const broadcastAdmin = read('features/platform-broadcast/PlatformBroadcastAdminPanel.tsx');
 const commandPalette = read('shared/ui/CommandPalette.tsx');
+const publicQr = read('features/qr/PublicQrScreen.tsx');
 
 describe('shared dialog geometry is bounded by the usable mobile viewport', () => {
   it('uses the modal z-layer, all four safe-area edges and responsive padding', () => {
@@ -143,6 +144,15 @@ describe('authenticated shell keeps landscape content outside side cutouts', () 
     expect(nexus).toContain('.premium-dialog-panel .phoenix-button');
     expect(nexus).toContain('white-space: normal !important;');
     expect(nexus).toContain('overflow-wrap: anywhere;');
+  });
+});
+
+describe('public QR shell respects phone cutouts without authenticated AppShell', () => {
+  it('uses dynamic height and all four safe-area insets', () => {
+    expect(publicQr).toContain("minHeight: '100dvh'");
+    for (const edge of ['top', 'right', 'bottom', 'left']) {
+      expect(publicQr).toContain(`safe-area-inset-${edge}`);
+    }
   });
 });
 
