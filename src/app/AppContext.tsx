@@ -16,6 +16,12 @@ import {
   type SessionLoad,
   type SignInResult,
 } from '@/shared/supabase/services/auth.service';
+import {
+  AUTH_BOOTSTRAP_DEADLINE_MS,
+  AUTH_PROFILE_DEADLINE_MS,
+  isDeadlineExceeded,
+  withDeadline,
+} from '@/shared/lib/deadline';
 import { getEffectivePermissions } from '@/shared/supabase/services/users.service';
 import {
   createAuthorizationService, createRbacObservability,
@@ -148,16 +154,29 @@ const AppContext = createContext<AppState | null>(null);
  * unhandled rejection that leaves the app booting forever.
  */
 async function readSessionOutcome(): Promise<SessionLoad> {
+  // MAJOR-J COLD-START: try/catch converts a REJECTION into a stated failure.
+  // It does nothing for a request that never answers at all -- `await` simply
+  // never returns and the app renders the loading emblem forever. That is the
+  // shape a dropped Android cold-start request takes: not an error, silence.
+  // The deadline turns silence into `failed`, which is the state that offers a
+  // retry. It is NOT reported as `no_session`: a timeout is not proof that
+  // nobody is signed in.
   try {
-    return await getSessionResult();
+    const res = await withDeadline(getSessionResult(), AUTH_BOOTSTRAP_DEADLINE_MS);
+    // A late answer arriving after this point is discarded by withDeadline and
+    // never reaches the state machine, so no stale session can be restored.
+    return isDeadlineExceeded(res) ? { status: 'failed' } : res;
   } catch {
     return { status: 'failed' };
   }
 }
 
 async function readProfileOutcome(): Promise<ProfileLoad> {
+  // Same bound as the session read. Without it `profileStatus` stays 'loading'
+  // forever and the shell never renders -- the second way the cold start hung.
   try {
-    return await getMyProfileResult();
+    const res = await withDeadline(getMyProfileResult(), AUTH_PROFILE_DEADLINE_MS);
+    return isDeadlineExceeded(res) ? { status: 'failed' } : res;
   } catch {
     return { status: 'failed' };
   }
@@ -286,11 +305,24 @@ export function AppProvider({ children, skipAuthBootstrap = false }: AppProvider
   // itself cannot be cancelled — the resolution order alone decided who won.
   const readPermissions = useCallback(async (
     p: Profile | null,
-  ): Promise<{ perms: Set<string>; migrationMissing: boolean }> => {
+  ): Promise<{ perms: Set<string>; migrationMissing: boolean; timedOut: boolean }> => {
     if (!p) {
-      return { perms: new Set<string>(), migrationMissing: false };
+      return { perms: new Set<string>(), migrationMissing: false, timedOut: false };
     }
-    const res = await getEffectivePermissions(p.id);
+    // MAJOR-J COLD-START: the third way the cold start hung. A permission RPC
+    // that never answers left profileStatus 'loading' forever, because this
+    // await sits between the profile read and 'ready'.
+    //
+    // A timeout must NOT fall through to the roleDefaults fallback below. That
+    // fallback exists for a PROVEN migration-missing database, where the RPC
+    // answered and said so. A transport timeout proves nothing about the
+    // database, and silently granting role defaults on silence would hand out
+    // permissions the server never confirmed. It fails closed instead.
+    const bounded = await withDeadline(getEffectivePermissions(p.id), AUTH_PROFILE_DEADLINE_MS);
+    if (isDeadlineExceeded(bounded)) {
+      return { perms: new Set<string>(), migrationMissing: false, timedOut: true };
+    }
+    const res = bounded;
     if (res.permissions) {
       const perms = new Set(Object.entries(res.permissions).filter(([, v]) => v).map(([k]) => k));
       // super_admin always has every key in the frontend catalog regardless of DB state
@@ -310,7 +342,7 @@ export function AppProvider({ children, skipAuthBootstrap = false }: AppProvider
           source: 'rpc',
         });
       }
-      return { perms, migrationMissing: false };
+      return { perms, migrationMissing: false, timedOut: false };
     }
     const fallback = roleDefaults(p.role);
     if (import.meta.env.DEV) {
@@ -323,7 +355,7 @@ export function AppProvider({ children, skipAuthBootstrap = false }: AppProvider
         source: 'fallback',
       });
     }
-    return { perms: fallback, migrationMissing: res.migrationMissing };
+    return { perms: fallback, migrationMissing: res.migrationMissing, timedOut: false };
   }, []);
 
   /** Read and apply. Used where there is no session race to lose. */
@@ -417,8 +449,18 @@ export function AppProvider({ children, skipAuthBootstrap = false }: AppProvider
       return;
     }
 
-    const { perms, migrationMissing } = await readPermissions(p);
+    const { perms, migrationMissing, timedOut } = await readPermissions(p);
     if (superseded()) return;
+
+    // A permission read that timed out is NOT a permission set. Mounting the
+    // shell here would either show an operator an empty app or, worse, invite a
+    // fallback grant the server never confirmed. Fail closed into the stated
+    // failure that offers a retry, dropping org scope and permissions with it.
+    if (timedOut) {
+      clearIdentityState();
+      setProfileStatus('failed');
+      return;
+    }
 
     profileUserIdRef.current = p.id;
     setProfile(p);
