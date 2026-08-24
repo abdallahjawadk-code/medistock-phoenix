@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { useAsync } from '@/shared/lib/useAsync';
@@ -53,6 +53,71 @@ const fieldStyle = {
   border: '1px solid var(--brd)', background: 'var(--s)',
   color: 'var(--t)', fontSize: '12.5px',
 } as const;
+
+/**
+ * Shared accessibility controller for the four legacy user-lifecycle overlays.
+ * They intentionally keep their existing visual/risk treatments, but now honor
+ * the same modal contract as PhoenixDialog: initial focus, Tab containment,
+ * Escape close when safe, and focus restoration.
+ */
+function useLifecycleModalAccessibility(onRequestClose: () => void, closeDisabled = false) {
+  const overlayRef = useRef<HTMLDivElement>(null);
+  const previouslyFocusedRef = useRef<HTMLElement | null>(null);
+  const closeRef = useRef(onRequestClose);
+  const closeDisabledRef = useRef(closeDisabled);
+  closeRef.current = onRequestClose;
+  closeDisabledRef.current = closeDisabled;
+
+  useEffect(() => {
+    const overlay = overlayRef.current;
+    if (!overlay) return;
+
+    const active = document.activeElement;
+    previouslyFocusedRef.current = active instanceof HTMLElement ? active : null;
+
+    const focusables = () => Array.from(overlay.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])',
+    ));
+
+    (focusables()[0] ?? overlay).focus();
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        if (closeDisabledRef.current) return;
+        event.preventDefault();
+        closeRef.current();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+
+      const items = focusables();
+      if (items.length === 0) {
+        event.preventDefault();
+        overlay.focus();
+        return;
+      }
+      const first = items[0];
+      const last = items[items.length - 1];
+      const focused = document.activeElement;
+      if (event.shiftKey && (focused === first || !overlay.contains(focused))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (focused === last || !overlay.contains(focused))) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      previouslyFocusedRef.current?.focus?.();
+      previouslyFocusedRef.current = null;
+    };
+  }, []);
+
+  return overlayRef;
+}
 
 function userName(u: ManagedUser): string { return u.full_name || u.id; }
 
@@ -1078,8 +1143,18 @@ function DisableConfirmModal({ user, lang, onCancel, onConfirm, isEnable }: {
   isEnable: boolean;
 }) {
   const [busy, setBusy] = useState(false);
+  const modalRef = useLifecycleModalAccessibility(onCancel, busy);
   return (
-    <div className="nexus-ua-modal-overlay" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9000, padding: '16px' }}>
+    <div
+      ref={modalRef}
+      role="dialog"
+      aria-modal="true"
+      aria-label={t(isEnable ? 'um_enable_user' : 'um_disable_user', lang)}
+      aria-busy={busy || undefined}
+      tabIndex={-1}
+      className="nexus-ua-modal-overlay"
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9000, padding: '16px' }}
+    >
       <PhoenixCard className={`nexus-ua-modal-panel nexus-ua-modal-panel--${isEnable ? 'recovery' : 'caution'}`} padding="24px" style={{ maxWidth: '440px', width: '100%' }}>
         <h3 style={{ fontSize: '15px', fontWeight: 700, marginBottom: '10px' }}>
           {isEnable
@@ -1166,8 +1241,19 @@ function RotatePasswordModal({ user, lang, onCancel, onDone }: {
     else onCancel();
   }
 
+  const modalRef = useLifecycleModalAccessibility(handleClose, busy);
+
   return (
-    <div className="nexus-ua-modal-overlay" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9000, padding: '16px' }}>
+    <div
+      ref={modalRef}
+      role="dialog"
+      aria-modal="true"
+      aria-label={t('um_rotate_password', lang)}
+      aria-busy={busy || undefined}
+      tabIndex={-1}
+      className="nexus-ua-modal-overlay"
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9000, padding: '16px' }}
+    >
       <PhoenixCard className="nexus-ua-modal-panel nexus-ua-modal-panel--caution" padding="24px" style={{ maxWidth: '440px', width: '100%' }}>
         <h3 style={{ fontSize: '15px', fontWeight: 700, marginBottom: '10px' }}>
           <PhoenixIcon name="key" size={14} inline /> {t('um_rotate_password', lang)}
@@ -1268,6 +1354,8 @@ function RecycleConfirmModal({ user, lang, isSuper, actorOrgId, onCancel, onSucc
   const localValid = validateUsername(newUsername) && tempPassword.length >= 8 && tempPassword === tempConfirm;
   const canSubmit = Boolean(newName.trim() && localValid && confirm === expectedConfirm);
 
+  const modalRef = useLifecycleModalAccessibility(onCancel, busy);
+
   async function onSubmit() {
     setBusy(true);
     try {
@@ -1303,7 +1391,16 @@ function RecycleConfirmModal({ user, lang, isSuper, actorOrgId, onCancel, onSucc
   }
 
   return (
-    <div className="nexus-ua-modal-overlay" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9000, padding: '16px' }}>
+    <div
+      ref={modalRef}
+      role="dialog"
+      aria-modal="true"
+      aria-label={t('um_recycle_account', lang)}
+      aria-busy={busy || undefined}
+      tabIndex={-1}
+      className="nexus-ua-modal-overlay"
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9000, padding: '16px' }}
+    >
       <PhoenixCard className="nexus-ua-modal-panel nexus-ua-modal-panel--caution" padding="24px" style={{ maxWidth: '520px', width: '100%', maxHeight: '90vh', overflowY: 'auto' }}>
         <h3 style={{ fontSize: '15px', fontWeight: 700, marginBottom: '10px' }}>
           <PhoenixIcon name="recycle" size={14} inline /> {t('um_recycle_account', lang)}
@@ -1422,6 +1519,8 @@ function DeleteConfirmModal({ user, lang, onCancel, onSuccess }: {
   const expectedConfirm = `DELETE_USER_${user.id}`;
   const canSubmit = confirm === expectedConfirm && !busy;
 
+  const modalRef = useLifecycleModalAccessibility(onCancel, busy);
+
   async function onSubmit() {
     if (!canSubmit) return;
     setBusy(true);
@@ -1461,7 +1560,16 @@ function DeleteConfirmModal({ user, lang, onCancel, onSuccess }: {
   }
 
   return (
-    <div className="nexus-ua-modal-overlay" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9000, padding: '16px' }}>
+    <div
+      ref={modalRef}
+      role="dialog"
+      aria-modal="true"
+      aria-label={t('um_delete_user_action', lang)}
+      aria-busy={busy || undefined}
+      tabIndex={-1}
+      className="nexus-ua-modal-overlay"
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9000, padding: '16px' }}
+    >
       <PhoenixCard className="nexus-ua-modal-panel nexus-ua-modal-panel--danger" padding="24px" style={{ maxWidth: '460px', width: '100%' }}>
         <h3 style={{ fontSize: '15px', fontWeight: 700, marginBottom: '10px', color: 'var(--danger)' }}>
           <PhoenixIcon name="trash" size={15} inline /> {t('um_delete_user_action', lang)}

@@ -184,6 +184,24 @@ describe('narrow-phone forms collapse fixed desktop columns', () => {
   });
 });
 
+describe('legacy user lifecycle overlays now satisfy modal keyboard semantics', () => {
+  it('shares one focus/escape controller across all four lifecycle overlays', () => {
+    expect(userManagement).toContain('function useLifecycleModalAccessibility');
+    expect(userManagement).toContain("event.key === 'Escape'");
+    expect(userManagement).toContain("event.key !== 'Tab'");
+    expect(userManagement).toContain('previouslyFocusedRef.current?.focus?.()');
+    expect((userManagement.match(/useLifecycleModalAccessibility\(/g) ?? []).length).toBe(5);
+    expect((userManagement.match(/aria-modal="true"/g) ?? []).length).toBeGreaterThanOrEqual(4);
+    expect((userManagement.match(/ref=\{modalRef\}/g) ?? []).length).toBe(4);
+  });
+
+  it('does not allow Escape to dismiss a lifecycle request while it is busy', () => {
+    expect(userManagement).toContain('closeDisabledRef.current');
+    expect(userManagement).toContain('useLifecycleModalAccessibility(onCancel, busy)');
+    expect(userManagement).toContain('useLifecycleModalAccessibility(handleClose, busy)');
+  });
+});
+
 describe('legacy user-management overlays and toast are viewport bounded', () => {
   it('bounds all lifecycle overlays by safe areas and 100dvh', () => {
     expect((userManagement.match(/nexus-ua-modal-overlay/g) ?? []).length).toBe(4);
