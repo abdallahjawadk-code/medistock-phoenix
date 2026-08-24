@@ -123,7 +123,9 @@ export function PhoenixAppShell({ children, currentScreen, onNavigate, onLogout 
             minHeight: 0,
             overflowY: 'auto',
             overflowX: 'hidden',
-            padding: isMobile ? '16px 14px' : '24px 28px',
+            padding: isMobile
+              ? '16px calc(14px + env(safe-area-inset-right, 0px)) 16px calc(14px + env(safe-area-inset-left, 0px))'
+              : '24px 28px',
             paddingBottom: isMobile
               ? 'calc(var(--bnh) + 14px + env(safe-area-inset-bottom, 0px))'
               : '28px',

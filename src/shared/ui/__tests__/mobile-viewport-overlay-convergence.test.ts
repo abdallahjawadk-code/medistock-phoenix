@@ -88,6 +88,22 @@ describe('non-PhoenixDialog overlays are phone-bounded', () => {
   });
 });
 
+describe('authenticated shell keeps landscape content outside side cutouts', () => {
+  it('adds left/right safe-area insets to the mobile main scroll owner', () => {
+    const appShell = read('shared/ui/PhoenixAppShell.tsx');
+    expect(appShell).toContain('env(safe-area-inset-right, 0px)');
+    expect(appShell).toContain('env(safe-area-inset-left, 0px)');
+    expect(appShell).toContain('calc(var(--bnh) + 14px + env(safe-area-inset-bottom, 0px))');
+  });
+
+  it('lets dialog actions wrap on 320-380px phones instead of forcing overflow', () => {
+    expect(nexus).toContain('@media (max-width: 380px)');
+    expect(nexus).toContain('.premium-dialog-panel .phoenix-button');
+    expect(nexus).toContain('white-space: normal !important;');
+    expect(nexus).toContain('overflow-wrap: anywhere;');
+  });
+});
+
 describe('shell-absent mobile surfaces respect safe areas too', () => {
   it('login controls and form padding clear top/bottom/cutout insets', () => {
     expect(nexus).toContain('top: calc(20px + env(safe-area-inset-top, 0px));');

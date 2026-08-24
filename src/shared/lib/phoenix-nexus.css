@@ -468,6 +468,16 @@ html body {
 
 }
 
+@media (max-width: 380px) {
+  .premium-dialog-panel .phoenix-button {
+    min-width: 0 !important;
+    max-width: 100%;
+    white-space: normal !important;
+    overflow-wrap: anywhere;
+    text-align: center;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .nexus-shell *,
   .nexus-shell *::before,
