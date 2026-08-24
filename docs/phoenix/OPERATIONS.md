@@ -26,13 +26,13 @@ Nothing here grants an authorization gate.
 | Audit trail | **PARTIAL** | `audit_logs` relation; no retention policy recorded |
 | Deployment + rollback | **PARTIAL** | §4 below; Vercel-native |
 | Post-deployment verification | **PARTIAL** | §5 below |
-| Monitoring / alerting | **MISSING** | no external monitor is configured or evidenced |
+| Monitoring / alerting | **MANUAL — owner-accepted** | §12; no automated monitor exists or is claimed |
 | Backup posture | **EXTERNAL_PLATFORM_EVIDENCE_REQUIRED** | §7 |
-| Restore evidence | **MISSING** | §7 — no rehearsal has ever run |
+| Restore evidence | **NOT PERFORMED** | §7 — engine is owner-operated by design |
 | Secret rotation | **PARTIAL** | §8 |
-| Emergency contacts / ownership | **OWNER_DECISION_REQUIRED** | §9 |
-| RPO | **OWNER_DECISION_REQUIRED** | §7 |
-| RTO | **OWNER_DECISION_REQUIRED** | §7 |
+| Ownership / escalation | **OWNER-ACCEPTED** | §9; owner-held, no 24x7 rota claimed |
+| RPO | **NOT_FORMALLY_COMMITTED** | §7; owner-accepted limitation |
+| RTO | **NOT_FORMALLY_COMMITTED** | §7; owner-accepted limitation |
 
 ---
 
@@ -167,31 +167,69 @@ reintroduced. Do not add a path-filtered workflow to the required set.
 
 ## 7. Backup, restore, RPO and RTO
 
-**This section deliberately claims nothing.**
+**This section deliberately claims nothing it cannot prove.** The positions
+below are owner-adopted as the honest posture for the current stage, not
+aspirations and not achievements.
 
-* **Backup posture — EXTERNAL_PLATFORM_EVIDENCE_REQUIRED.** Whatever automated
-  backups exist are a property of the Supabase project, not of this repository.
-  Nothing in this repository proves that backups are enabled, what their
-  retention is, or whether point-in-time recovery is available. **Do not state
-  that PITR or any retention window exists** until platform evidence is
-  recorded here.
-* **Restore evidence — MISSING.** `ops/` contains a real restore-rehearsal
-  engine (`run-pg17-restore-rehearsal.ps1` → `restore-run-result.json` →
-  `generate-restore-proof.ps1`) which restores a backup onto a **local,
-  disposable, loopback PostgreSQL 17 clone** and extracts every field from real
-  commands. It accepts no boolean, exit code or version as an input.
-  `ops/evidence/README.md` records that **no rehearsal has ever run and none of
-  the evidence files exist**. Therefore restore capability is *unproven*, not
-  *absent* — the tooling is ready and has never been exercised.
-* **RPO — OWNER_DECISION_REQUIRED.** No recovery point objective has been set.
-* **RTO — OWNER_DECISION_REQUIRED.** No recovery time objective has been set.
+### Owner-adopted posture
 
-A restore rehearsal against a disposable local clone is safe and is the
-preferred way to close this gap. **A destructive restore exercise against
-Production is forbidden.** No paid platform feature may be enabled without
-separate cost authorization.
+| Item | Status |
+|---|---|
+| RPO | **NOT_FORMALLY_COMMITTED** — owner-accepted current limitation |
+| RTO | **NOT_FORMALLY_COMMITTED** — owner-accepted current limitation |
+| Backup / PITR / retention | **EXTERNAL_PLATFORM_EVIDENCE_REQUIRED** |
+| Restore rehearsal | **NOT PERFORMED** — see below |
 
----
+No production SLA is being claimed at this stage. No numeric recovery target
+has been invented to fill the gap, and none may be added here without an
+explicit owner commitment.
+
+**Backups are not proven.** Whatever automated backups exist are a property of
+the Supabase project, not of this repository. Nothing here proves that backups
+are enabled, what their retention is, or whether point-in-time recovery is
+available. **Do not state that PITR or any retention window exists** until
+platform evidence is recorded in this section. This is an accepted, documented
+limitation — not a proven backup capability.
+
+### Restore rehearsal — why it has not run
+
+`ops/` contains a genuine rehearsal engine: `run-pg17-restore-rehearsal.ps1`
+restores a backup onto a **local, disposable, loopback PostgreSQL 17 clone** and
+is the only tool permitted to write `restore-run-result.json`. It accepts no
+boolean, exit code or version as an input; every field is extracted from real
+commands run against the clone. `generate-restore-proof.ps1` then consumes that
+report. `ops/evidence/` currently holds nothing but its README.
+
+A rehearsal was authorized against disposable local infrastructure only. It
+**could not be performed**, for three independent reasons, none of which is a
+defect in the engine:
+
+1. **No backup artifact exists.** The engine restores a real backup; there is
+   none in this repository or on the working host, and producing one would
+   require `pg_dump` against Production, which is not an authorized path.
+2. **The engine verifies a v147-era state.** It requires the restored database
+   to show migration ceiling exactly 147, a keeper account resolving to one
+   `auth.users` row with an active global `super_admin` profile, and RBAC
+   130/415. A synthetic schema-only replay of the canonical chain satisfies
+   none of those — it has no `auth.users` rows at all — so it would fail closed
+   at the keeper step, correctly. Substituting one would fabricate the very
+   evidence the engine exists to make unfakeable.
+3. **The engine requires an interactive operator confirmation.** Before any
+   `DROP DATABASE` it demands a typed phrase naming the exact database to be
+   destroyed. **This rehearsal is therefore owner-operated by construction and
+   cannot be driven by an automated agent.** That is a correct design, and it
+   is why this section records the rehearsal as not performed rather than as
+   blocked on tooling.
+
+Closing this gap needs an owner-run rehearsal with a real backup. A destructive
+restore exercise against Production remains **forbidden**, and no paid platform
+feature may be enabled without separate cost authorization.
+
+> Note for whoever runs it: `ops/targets/rehearsal-clone.example.json` ships
+> `"database_name": "phoenix_clone"`, which the engine's own clone guard
+> rejects — it requires `^phoenix_rehearsal_[a-z0-9_]+$`. The real manifest is
+> gitignored and owner-created; name its database accordingly or the run stops
+> at the guard.
 
 ## 8. Secrets and credential rotation
 
@@ -215,8 +253,11 @@ separate cost authorization.
 
 ## 9. Ownership and escalation
 
-**OWNER_DECISION_REQUIRED.** This repository defines no on-call rota, no
-escalation contacts and no ownership matrix, and none can be invented here.
+**Owner-adopted posture.** Primary operational ownership rests with the
+repository/project owner. **No 24x7 rota and no staffed escalation service is
+claimed**, and this repository defines no on-call schedule or contact matrix.
+That absence is recorded deliberately rather than filled with an invented
+contact.
 
 What *is* established: the owner is the final authority for every gate;
 ChatGPT acts as the control and adjudication layer; the execution plane never
@@ -267,18 +308,24 @@ Every line must be **yes** before a Production-affecting release.
 
 ## 12. Known limitations
 
-* **No monitoring or alerting is configured.** A Production incident is
-  discovered by a person, not by an alert. Closing this needs an owner decision
-  about tooling and cost.
-* **Restore has never been rehearsed.** The engine exists; the evidence chain is
-  empty.
-* **No RPO or RTO is defined.**
+* **Monitoring is manual, by owner decision.** No automated monitoring or
+  alerting capability exists or is claimed: a Production incident is discovered
+  by a person, not by an alert. `MANUAL_OPERATIONAL_MONITORING_ACCEPTED` is the
+  current posture, and automated monitoring is recorded as future operational
+  hardening — never as a Major-I success.
+* **Restore has never been rehearsed.** The engine exists and is owner-operated
+  by design; the evidence chain is empty. See §7.
+* **No RPO or RTO is committed.** Owner-accepted current limitation, not an
+  oversight (§7).
 * **The Windows release-engine acceptance is not a required check.** It runs on
   a path filter and would recreate the required-check deadlock (§6) if
   promoted. It cannot be silently deleted — the required contract test asserts
   it exists, runs on `windows-latest`, and keeps its zero-skipped gate — but a
-  red result would not block a merge today. Promoting it requires either an
-  owner decision to accept an unconditional Windows job, or a different design.
+  red result would not block a merge today. **By owner decision it stays
+  path-filtered and NOT globally required**, precisely because promoting a
+  conditionally-emitted context would recreate the merge deadlock described in
+  §6. It may be added to the ruleset only if it is first made unconditional and
+  separately authorized.
 * **Documentation drift is itself a risk.** `docs/deployment-readiness.md` and
   `docs/blocker-migration-065-accumulating-receipt-concurrency.md` each carried
   a hard "do not deploy" blocker long after the code flag
