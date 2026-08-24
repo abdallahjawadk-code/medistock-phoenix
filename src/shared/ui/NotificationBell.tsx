@@ -125,13 +125,34 @@ export function NotificationBell() {
     return () => document.removeEventListener('mousedown', onClickOutside);
   }, [open]);
 
-  // MOBILE-NOTIFICATION-SHEET-HOTFIX: on phones the panel is portalled to
-  // document.body so it cannot be clipped by the AppShell/topbar stacking and
-  // overflow contexts. Give the dialog a deterministic focus target and let
-  // Escape return focus to the bell. Desktop anchoring stays unchanged.
+  // MOBILE-NOTIFICATION-SHEET-HOTFIX: the old mobile CSS correctly supplied
+  // fixed physical edges, but then `inset-inline-end:auto !important` could
+  // cancel one of those same edges (right in LTR, left in RTL). The phone sheet
+  // is now portalled outside AppShell/topbar clipping, then its four-edge
+  // geometry is pinned at inline-!important priority so the historical rule
+  // cannot collapse either direction. The legacy class stays present so the
+  // authenticated E2E browser gate continues exercising this exact surface.
   useEffect(() => {
     if (!open || !isMobile) return;
-    const frame = window.requestAnimationFrame(() => panelRef.current?.focus());
+    const frame = window.requestAnimationFrame(() => {
+      const panel = panelRef.current;
+      if (!panel) return;
+      const top = 'calc(var(--tbh) + env(safe-area-inset-top, 0px) + 8px)';
+      const right = 'calc(8px + env(safe-area-inset-right, 0px))';
+      const bottom = 'calc(var(--bnh) + env(safe-area-inset-bottom, 0px) + 8px)';
+      const left = 'calc(8px + env(safe-area-inset-left, 0px))';
+      const direction = getComputedStyle(document.documentElement).direction;
+      panel.style.setProperty('position', 'fixed', 'important');
+      panel.style.setProperty('top', top, 'important');
+      panel.style.setProperty('right', right, 'important');
+      panel.style.setProperty('bottom', bottom, 'important');
+      panel.style.setProperty('left', left, 'important');
+      panel.style.setProperty('inset-inline-end', direction === 'rtl' ? left : right, 'important');
+      panel.style.setProperty('width', 'auto', 'important');
+      panel.style.setProperty('max-height', 'none', 'important');
+      panel.style.setProperty('overflow-y', 'auto', 'important');
+      panel.focus();
+    });
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
       event.preventDefault();
@@ -202,10 +223,8 @@ export function NotificationBell() {
       aria-modal={isMobile ? true : undefined}
       aria-label={t('notif_panel_title', lang)}
       tabIndex={isMobile ? -1 : undefined}
-      className={isMobile ? 'nexus-notification-mobile-sheet' : 'nexus-notification-panel'}
+      className={isMobile ? 'nexus-notification-panel nexus-notification-mobile-sheet' : 'nexus-notification-panel'}
       style={isMobile ? {
-        // Physical left/right edges are deliberate: unlike logical inset-end,
-        // they cannot collapse to one unanchored side under RTL/LTR overrides.
         position: 'fixed',
         top: 'calc(var(--tbh) + env(safe-area-inset-top, 0px) + 8px)',
         right: 'calc(8px + env(safe-area-inset-right, 0px))',
