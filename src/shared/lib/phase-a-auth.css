@@ -176,9 +176,17 @@ html[data-phoenix-ui-phase='a'] .nexus-login__auth::before {
 }
 
 html[data-phoenix-ui-phase='a'] .nexus-login__controls {
-  top: max(28px, env(safe-area-inset-top, 0px));
-  inset-inline-end: max(30px, env(safe-area-inset-right, 0px));
+  top: calc(28px + env(safe-area-inset-top, 0px));
+  inset-inline-end: 30px;
   z-index: 30;
+}
+/* Logical inline-end maps to opposite physical edges in LTR and RTL. Bind the
+   safe inset to that actual edge instead of always reading the RIGHT inset. */
+html[data-phoenix-ui-phase='a'][dir='ltr'] .nexus-login__controls {
+  inset-inline-end: calc(30px + env(safe-area-inset-right, 0px));
+}
+html[data-phoenix-ui-phase='a'][dir='rtl'] .nexus-login__controls {
+  inset-inline-end: calc(30px + env(safe-area-inset-left, 0px));
 }
 
 html[data-phoenix-ui-phase='a'] .nexus-login__controls .nexus-control {
@@ -334,11 +342,17 @@ html[data-phoenix-ui-phase='a'] .nexus-welcome__scrim {
 }
 
 html[data-phoenix-ui-phase='a'] .nexus-welcome__skip {
-  top: max(30px, env(safe-area-inset-top, 0px));
-  inset-inline-end: max(32px, env(safe-area-inset-right, 0px));
+  top: calc(30px + env(safe-area-inset-top, 0px));
+  inset-inline-end: 32px;
   color: rgba(248, 251, 255, .9);
   border-color: rgba(221, 186, 99, .3);
   background: rgba(5, 14, 25, .62);
+}
+html[data-phoenix-ui-phase='a'][dir='ltr'] .nexus-welcome__skip {
+  inset-inline-end: calc(32px + env(safe-area-inset-right, 0px));
+}
+html[data-phoenix-ui-phase='a'][dir='rtl'] .nexus-welcome__skip {
+  inset-inline-end: calc(32px + env(safe-area-inset-left, 0px));
 }
 
 html[data-phoenix-ui-phase='a'] .nexus-welcome__masthead {
@@ -494,7 +508,11 @@ html[data-phoenix-ui-phase='a'] .nexus-welcome[data-phase='rise'] .nexus-welcome
   }
 
   html[data-phoenix-ui-phase='a'] .nexus-login__auth {
-    padding: clamp(28px, 6vw, 48px) clamp(16px, 5vw, 42px) max(34px, env(safe-area-inset-bottom, 0px));
+    padding:
+      clamp(28px, 6vw, 48px)
+      calc(clamp(16px, 5vw, 42px) + env(safe-area-inset-right, 0px))
+      calc(34px + env(safe-area-inset-bottom, 0px))
+      calc(clamp(16px, 5vw, 42px) + env(safe-area-inset-left, 0px));
     overflow: visible;
   }
 
@@ -504,8 +522,14 @@ html[data-phoenix-ui-phase='a'] .nexus-welcome[data-phase='rise'] .nexus-welcome
 
   html[data-phoenix-ui-phase='a'] .nexus-login__controls {
     position: absolute;
-    top: max(14px, env(safe-area-inset-top, 0px));
-    inset-inline-end: max(14px, env(safe-area-inset-right, 0px));
+    top: calc(14px + env(safe-area-inset-top, 0px));
+    inset-inline-end: 14px;
+  }
+  html[data-phoenix-ui-phase='a'][dir='ltr'] .nexus-login__controls {
+    inset-inline-end: calc(14px + env(safe-area-inset-right, 0px));
+  }
+  html[data-phoenix-ui-phase='a'][dir='rtl'] .nexus-login__controls {
+    inset-inline-end: calc(14px + env(safe-area-inset-left, 0px));
   }
 
   html[data-phoenix-ui-phase='a'] .nexus-login__controls .nexus-control {
@@ -536,7 +560,8 @@ html[data-phoenix-ui-phase='a'] .nexus-welcome[data-phase='rise'] .nexus-welcome
   }
 
   html[data-phoenix-ui-phase='a'] .nexus-login__auth {
-    padding-inline: 14px;
+    padding-left: calc(14px + env(safe-area-inset-left, 0px));
+    padding-right: calc(14px + env(safe-area-inset-right, 0px));
   }
 
   html[data-phoenix-ui-phase='a'] .nexus-login__brand {
@@ -549,7 +574,11 @@ html[data-phoenix-ui-phase='a'] .nexus-welcome[data-phase='rise'] .nexus-welcome
   }
 
   html[data-phoenix-ui-phase='a'] .nexus-welcome {
-    padding: 14px;
+    padding:
+      calc(14px + env(safe-area-inset-top, 0px))
+      calc(14px + env(safe-area-inset-right, 0px))
+      calc(14px + env(safe-area-inset-bottom, 0px))
+      calc(14px + env(safe-area-inset-left, 0px));
   }
 
   html[data-phoenix-ui-phase='a'] .nexus-welcome::before {
@@ -558,8 +587,14 @@ html[data-phoenix-ui-phase='a'] .nexus-welcome[data-phase='rise'] .nexus-welcome
   }
 
   html[data-phoenix-ui-phase='a'] .nexus-welcome__skip {
-    top: max(16px, env(safe-area-inset-top, 0px));
-    inset-inline-end: max(16px, env(safe-area-inset-right, 0px));
+    top: calc(16px + env(safe-area-inset-top, 0px));
+    inset-inline-end: 16px;
+  }
+  html[data-phoenix-ui-phase='a'][dir='ltr'] .nexus-welcome__skip {
+    inset-inline-end: calc(16px + env(safe-area-inset-right, 0px));
+  }
+  html[data-phoenix-ui-phase='a'][dir='rtl'] .nexus-welcome__skip {
+    inset-inline-end: calc(16px + env(safe-area-inset-left, 0px));
   }
 
   html[data-phoenix-ui-phase='a'] .nexus-welcome__masthead {
@@ -571,9 +606,12 @@ html[data-phoenix-ui-phase='a'] .nexus-welcome[data-phase='rise'] .nexus-welcome
   }
 
   html[data-phoenix-ui-phase='a'] .nexus-welcome__credits {
-    inset-inline: 14px;
-    bottom: max(36px, env(safe-area-inset-bottom, 0px));
-    width: calc(100% - 28px);
+    inset-inline: auto;
+    left: calc(14px + env(safe-area-inset-left, 0px));
+    right: calc(14px + env(safe-area-inset-right, 0px));
+    bottom: calc(36px + env(safe-area-inset-bottom, 0px));
+    width: auto;
+    max-width: 680px;
     padding: 18px 16px;
     border-radius: 17px;
   }

@@ -19,6 +19,7 @@ const drawer = read('shared/ui/PhoenixMobileDrawer.tsx');
 const topbar = read('shared/ui/PhoenixTopbar.tsx');
 const bell = read('shared/ui/NotificationBell.tsx');
 const nexus = read('shared/lib/phoenix-nexus.css');
+const phaseAuth = read('shared/lib/phase-a-auth.css');
 const globalCss = read('shared/lib/global.css');
 const indexHtml = readFileSync(join(ROOT, 'index.html'), 'utf8').replace(/\r\n/g, '\n');
 const userManagement = read('features/users/UserManagementScreen.tsx');
@@ -44,6 +45,26 @@ describe('shared dialog geometry is bounded by the usable mobile viewport', () =
     expect(dialog).toContain("overscrollBehavior: 'contain'");
     expect(dialog).toContain("maxInlineSize: '100%'");
     expect(dialog).toContain('minWidth: 0');
+  });
+});
+
+describe('highest-precedence Phase-A auth layer preserves real safe-area geometry', () => {
+  it('binds inline-end controls to the physical safe edge in both directions', () => {
+    expect(phaseAuth).toContain("html[data-phoenix-ui-phase='a'][dir='ltr'] .nexus-login__controls");
+    expect(phaseAuth).toContain("html[data-phoenix-ui-phase='a'][dir='rtl'] .nexus-login__controls");
+    expect(phaseAuth).toContain("html[data-phoenix-ui-phase='a'][dir='ltr'] .nexus-welcome__skip");
+    expect(phaseAuth).toContain("html[data-phoenix-ui-phase='a'][dir='rtl'] .nexus-welcome__skip");
+    expect(phaseAuth).toContain('safe-area-inset-right');
+    expect(phaseAuth).toContain('safe-area-inset-left');
+  });
+
+  it('keeps narrow login/welcome content outside all four cutout/gesture insets', () => {
+    expect(phaseAuth).toContain('padding-left: calc(14px + env(safe-area-inset-left, 0px));');
+    expect(phaseAuth).toContain('padding-right: calc(14px + env(safe-area-inset-right, 0px));');
+    expect(phaseAuth).toContain('calc(14px + env(safe-area-inset-top, 0px))');
+    expect(phaseAuth).toContain('calc(14px + env(safe-area-inset-bottom, 0px))');
+    expect(phaseAuth).toContain('left: calc(14px + env(safe-area-inset-left, 0px));');
+    expect(phaseAuth).toContain('right: calc(14px + env(safe-area-inset-right, 0px));');
   });
 });
 
