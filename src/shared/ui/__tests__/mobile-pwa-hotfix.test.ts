@@ -184,7 +184,8 @@ describe('one keyboard search controller — never two competing surfaces', () =
     expect(smartOpen).toContain('scrollIntoView');
     expect(smartOpen).toContain('focus({ preventScroll: true })');
     expect(smartOpen).toContain('return;'); // local field found -> NO palette
-    expect(smartOpen).toContain('setOpen(true)');
+    expect(smartOpen).toContain('openPalette();');
+    expect(palette).toContain('setOpen(true)');
     expect(palette).not.toContain('premium-command-trigger');
   });
 
