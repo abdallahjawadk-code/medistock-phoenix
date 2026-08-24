@@ -197,6 +197,7 @@ export function NotificationBell() {
         <div
           role="dialog"
           aria-label={t('notif_panel_title', lang)}
+          className="nexus-notification-panel"
           style={{
             position: 'absolute', top: 'calc(100% + 8px)', insetInlineEnd: 0,
             width: 'min(380px, 92vw)', maxHeight: '70vh', overflowY: 'auto',

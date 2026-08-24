@@ -362,6 +362,13 @@ html body {
   box-shadow: var(--nx-shadow-deep), var(--nx-bevel) !important;
 }
 
+/* MOBILE-RESPONSIVE-CONVERGENCE-J: desktop keeps the notification anchored to
+   its bell; on phones the same surface becomes a viewport-bounded sheet. */
+.nexus-notification-panel {
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
 .nexus-shell :is(.premium-card, .card, section[style*="background: var(--s)"]) {
   border-color: var(--nx-line);
 }
@@ -413,7 +420,8 @@ html body {
   }
 
   .nexus-shell .premium-topbar {
-    padding-inline: 12px !important;
+    padding-left: calc(12px + env(safe-area-inset-left, 0px)) !important;
+    padding-right: calc(12px + env(safe-area-inset-right, 0px)) !important;
   }
 
   /* PhoenixTopbar already drops the scope line on phones; this is the
@@ -429,6 +437,33 @@ html body {
 
   .nexus-shell .premium-main {
     padding-inline: 12px !important;
+  }
+
+  /* interactive-widget=resizes-content makes 100dvh follow the software
+     keyboard. Keep the two non-PhoenixDialog overlays inside that usable
+     viewport and outside physical cutout / gesture safe areas. */
+  .nexus-command-backdrop {
+    padding: calc(8px + env(safe-area-inset-top, 0px))
+             calc(8px + env(safe-area-inset-right, 0px))
+             calc(8px + env(safe-area-inset-bottom, 0px))
+             calc(8px + env(safe-area-inset-left, 0px)) !important;
+  }
+
+  .nexus-command-panel {
+    max-height: calc(100dvh - 16px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)) !important;
+    min-width: 0;
+  }
+
+  .nexus-notification-panel {
+    position: fixed !important;
+    top: calc(var(--tbh) + env(safe-area-inset-top, 0px) + 6px) !important;
+    bottom: calc(var(--bnh) + env(safe-area-inset-bottom, 0px) + 8px) !important;
+    left: calc(8px + env(safe-area-inset-left, 0px)) !important;
+    right: calc(8px + env(safe-area-inset-right, 0px)) !important;
+    inset-inline-end: auto !important;
+    width: auto !important;
+    max-height: none !important;
+    overflow-y: auto !important;
   }
 
 }
