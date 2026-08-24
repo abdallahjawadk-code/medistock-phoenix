@@ -9,7 +9,7 @@ export function PhoenixToast({ message }: Props) {
       aria-live="polite"
       style={{
         position: 'fixed',
-        bottom: 'calc(var(--bnh) + 12px)',
+        bottom: 'calc(var(--bnh) + 12px + env(safe-area-inset-bottom, 0px))',
         insetInlineStart: '50%',
         transform: 'translateX(-50%)',
         display: 'inline-flex',
@@ -21,7 +21,7 @@ export function PhoenixToast({ message }: Props) {
         color: 'var(--bg)',
         fontSize: '13px',
         fontWeight: 600,
-        maxWidth: 'min(92vw, 640px)',
+        maxWidth: 'min(640px, calc(100vw - 24px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)))',
         whiteSpace: 'normal',
         textAlign: 'start',
         overflowWrap: 'anywhere',

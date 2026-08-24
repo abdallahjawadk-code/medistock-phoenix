@@ -251,7 +251,7 @@ export function PlatformBroadcastAdminPanel({ lang, role }: Props) {
           <textarea value={body} onChange={e => setBody(e.target.value)} style={{ ...fieldStyle, minHeight: '80px', resize: 'vertical' }} dir="auto" />
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
+        <div className="nexus-responsive-two-col" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
           <div>
             <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>{t('pbc_field_severity', lang)}</label>
             <select value={severity} onChange={e => setSeverity(e.target.value as BroadcastSeverity)} style={fieldStyle}>

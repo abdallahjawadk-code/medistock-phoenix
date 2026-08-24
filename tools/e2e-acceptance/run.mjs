@@ -1293,7 +1293,7 @@ async function main() {
     await page.close();
   }
 
-  // ── 5. Mobile viewport — no blank page, no horizontal overflow ────────────
+  // ── 5. Mobile viewport matrix — shell + overlays stay inside usable bounds ──
   {
     const { page, consoleErrors } = await freshPage(browser, { width: 390, height: 844 });
     await login(page, seed.users.outletOfficerA.email, seed.password);
@@ -1320,12 +1320,193 @@ async function main() {
         .catch(() => false);
       record('Phase 8 mobile Open draft reaches the existing return-request detail', openedExistingPage);
     }
-    const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 2);
+
+    const mobileViewports = [
+      { name: 'small-320x568', width: 320, height: 568 },
+      { name: 'android-360x800', width: 360, height: 800 },
+      { name: 'modern-390x844', width: 390, height: 844 },
+      { name: 'large-430x932', width: 430, height: 932 },
+      { name: 'landscape-667x375', width: 667, height: 375 },
+    ];
+
+    for (const vp of mobileViewports) {
+      await page.setViewportSize({ width: vp.width, height: vp.height });
+      await settle(180);
+
+      const geometry = await page.evaluate(() => {
+        const rect = (selector) => {
+          const el = document.querySelector(selector);
+          if (!el) return null;
+          const r = el.getBoundingClientRect();
+          return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width, height: r.height };
+        };
+        const topbar = document.querySelector('.premium-topbar');
+        return {
+          innerWidth: window.innerWidth,
+          innerHeight: window.innerHeight,
+          documentOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth + 2,
+          topbarOverflow: topbar ? topbar.scrollWidth > topbar.clientWidth + 2 : true,
+          topbar: rect('.premium-topbar'),
+          main: rect('#phoenix-main'),
+          bottomNav: rect('.premium-bottom-nav'),
+        };
+      });
+
+      const horizontalInside = [geometry.topbar, geometry.main, geometry.bottomNav]
+        .filter(Boolean)
+        .every(r => r.left >= -2 && r.right <= geometry.innerWidth + 2);
+      record(`${vp.name}: no document horizontal overflow`, !geometry.documentOverflow);
+      record(`${vp.name}: shell chrome stays inside viewport width`, horizontalInside,
+        JSON.stringify(geometry));
+      record(`${vp.name}: topbar controls do not overflow their row`, !geometry.topbarOverflow);
+
+      await page.keyboard.press('Control+K');
+      const commandPanel = page.locator('.nexus-command-panel');
+      const commandVisible = await commandPanel.waitFor({ state: 'visible', timeout: 5000 })
+        .then(() => true).catch(() => false);
+      record(`${vp.name}: command palette opens`, commandVisible);
+      if (commandVisible) {
+        const commandRect = await commandPanel.evaluate(el => {
+          const r = el.getBoundingClientRect();
+          return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, innerWidth: window.innerWidth, innerHeight: window.innerHeight };
+        });
+        const commandInside = commandRect.left >= -2
+          && commandRect.right <= commandRect.innerWidth + 2
+          && commandRect.top >= -2
+          && commandRect.bottom <= commandRect.innerHeight + 2;
+        record(`${vp.name}: command palette stays inside viewport`, commandInside, JSON.stringify(commandRect));
+        if (vp.name === 'small-320x568') {
+          // The palette declares aria-modal=true; prove the real browser focus
+          // cannot escape backwards from its first auto-focused control.
+          await page.keyboard.press('Shift+Tab');
+          const focusTrapped = await page.evaluate(() => {
+            const panel = document.querySelector('.nexus-command-panel');
+            return Boolean(panel && document.activeElement && panel.contains(document.activeElement));
+          });
+          record('small-320x568: command palette traps keyboard focus', focusTrapped);
+        }
+      }
+      await page.keyboard.press('Escape');
+      await commandPanel.waitFor({ state: 'detached', timeout: 3000 }).catch(() => {});
+
+      const drawerTrigger = page.locator('.premium-drawer-trigger');
+      if (await drawerTrigger.count()) {
+        await drawerTrigger.click();
+        const drawer = page.locator('.premium-mobile-drawer');
+        const drawerVisible = await drawer.waitFor({ state: 'visible', timeout: 5000 })
+          .then(() => true).catch(() => false);
+        record(`${vp.name}: mobile drawer opens`, drawerVisible);
+        if (drawerVisible) {
+          // "visible" is true on the first frame of the 200ms si/si-rtl enter
+          // animation. Geometry acceptance is about the settled surface, so
+          // wait for this element's own finite enter animation to finish.
+          await drawer.evaluate(async el => {
+            await Promise.all(el.getAnimations().map(animation => animation.finished.catch(() => undefined)));
+          });
+          const drawerRect = await drawer.evaluate(el => {
+            const r = el.getBoundingClientRect();
+            return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, innerWidth: window.innerWidth, innerHeight: window.innerHeight };
+          });
+          const drawerInside = drawerRect.left >= -2
+            && drawerRect.right <= drawerRect.innerWidth + 2
+            && drawerRect.top >= -2
+            && drawerRect.bottom <= drawerRect.innerHeight + 2;
+          record(`${vp.name}: mobile drawer stays inside viewport`, drawerInside, JSON.stringify(drawerRect));
+        }
+        await page.keyboard.press('Escape');
+        await drawer.waitFor({ state: 'detached', timeout: 3000 }).catch(() => {});
+      }
+
+      const bell = page.locator('header .nexus-control[aria-expanded]:not(.premium-drawer-trigger)').first();
+      if (await bell.count()) {
+        await bell.click();
+        const panel = page.locator('.nexus-notification-panel');
+        const panelVisible = await panel.waitFor({ state: 'visible', timeout: 5000 })
+          .then(() => true).catch(() => false);
+        record(`${vp.name}: notification panel opens`, panelVisible);
+        if (panelVisible) {
+          const panelRect = await panel.evaluate(el => {
+            const r = el.getBoundingClientRect();
+            return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, innerWidth: window.innerWidth, innerHeight: window.innerHeight };
+          });
+          const panelInside = panelRect.left >= -2
+            && panelRect.right <= panelRect.innerWidth + 2
+            && panelRect.top >= -2
+            && panelRect.bottom <= panelRect.innerHeight + 2;
+          record(`${vp.name}: notification panel stays inside viewport`, panelInside, JSON.stringify(panelRect));
+        }
+        await bell.click();
+        await panel.waitFor({ state: 'detached', timeout: 3000 }).catch(() => {});
+      }
+    }
+
+    // Shared PhoenixDialog geometry: open a REAL dispense composer at the
+    // smallest supported viewport, measure it, then Escape without submitting.
+    // This exercises the same shared primitive used by the inventory/status/
+    // broadcast dialogs while keeping the disposable E2E database unchanged by
+    // this geometry probe.
+    await page.setViewportSize({ width: 320, height: 568 });
+    await openOutletOperations(page, { mobile: true });
+    const mobileStockTab = page.getByText('Stock & Batches').or(page.getByText('المخزون والدفعات')).first();
+    await mobileStockTab.waitFor({ state: 'visible', timeout: 15000 }).catch(() => {});
+    await mobileStockTab.click().catch(() => {});
+    await waitForText(page, ['E2E Paracetamol', 'E2E Amoxicillin', 'E2E Ibuprofen']);
+
+    const mobileMaterialCard = page.locator('div', { hasText: 'E2E Paracetamol' }).first();
+    const mobileDispenseButton = mobileMaterialCard.getByText('Dispense').or(mobileMaterialCard.getByText('صرف')).first();
+    const mobileDialogOpened = await mobileDispenseButton.click().then(() => true).catch(() => false);
+    record('small-320x568: real PhoenixDialog opens from Outlet Operations', mobileDialogOpened);
+
+    if (mobileDialogOpened) {
+      const dialogOverlay = page.locator('.phoenix-dialog-overlay[role="dialog"]').first();
+      const dialogVisible = await dialogOverlay.waitFor({ state: 'visible', timeout: 5000 })
+        .then(() => true).catch(() => false);
+      record('small-320x568: PhoenixDialog is visible', dialogVisible);
+
+      if (dialogVisible) {
+        const dialogPanel = dialogOverlay.locator('.premium-dialog-panel').first();
+        // PhoenixDialog's su animation begins at translateY(28px). Waiting for
+        // visibility alone measures that transient first frame and can report
+        // a false bottom overflow even though the settled panel is bounded.
+        await dialogPanel.evaluate(async el => {
+          await Promise.all(el.getAnimations().map(animation => animation.finished.catch(() => undefined)));
+        });
+        const dialogGeometry = await dialogOverlay.evaluate(el => {
+          const panel = el.querySelector('.premium-dialog-panel');
+          if (!(panel instanceof HTMLElement)) return null;
+          const r = panel.getBoundingClientRect();
+          const cs = getComputedStyle(panel);
+          return {
+            left: r.left, right: r.right, top: r.top, bottom: r.bottom,
+            innerWidth: window.innerWidth, innerHeight: window.innerHeight,
+            scrollHeight: panel.scrollHeight, clientHeight: panel.clientHeight,
+            overflowY: cs.overflowY,
+            focusInside: Boolean(document.activeElement && el.contains(document.activeElement)),
+          };
+        });
+        const dialogInside = Boolean(dialogGeometry)
+          && dialogGeometry.left >= -2
+          && dialogGeometry.right <= dialogGeometry.innerWidth + 2
+          && dialogGeometry.top >= -2
+          && dialogGeometry.bottom <= dialogGeometry.innerHeight + 2;
+        const dialogScrollable = Boolean(dialogGeometry)
+          && (dialogGeometry.scrollHeight <= dialogGeometry.clientHeight + 1
+            || ['auto', 'scroll'].includes(dialogGeometry.overflowY));
+        record('small-320x568: PhoenixDialog stays inside viewport', dialogInside, JSON.stringify(dialogGeometry));
+        record('small-320x568: PhoenixDialog has a valid internal scroll path', dialogScrollable, JSON.stringify(dialogGeometry));
+        record('small-320x568: PhoenixDialog owns keyboard focus', Boolean(dialogGeometry?.focusInside));
+      }
+
+      await page.keyboard.press('Escape');
+      const dialogClosed = await dialogOverlay.waitFor({ state: 'detached', timeout: 5000 })
+        .then(() => true).catch(() => false);
+      record('small-320x568: PhoenixDialog closes with Escape', dialogClosed);
+    }
+
     const bodyText = (await page.textContent('body')) ?? '';
-    record('mobile viewport: no horizontal overflow', !overflow);
-    record('mobile viewport: not a blank page', bodyText.trim().length > 100);
-    record('mobile viewport session has no console errors', consoleErrors.length === 0, consoleErrors.slice(0, 3).join(' | '));
-    await page.screenshot({ path: join(OUT_DIR, 'outlet-ops-mobile.png') });
+    record('mobile viewport matrix: not a blank page', bodyText.trim().length > 100);
+    record('mobile viewport matrix session has no console errors', consoleErrors.length === 0, consoleErrors.slice(0, 3).join(' | '));
+    await page.screenshot({ path: join(OUT_DIR, 'outlet-ops-mobile-matrix-final.png') });
     await page.close();
   }
 

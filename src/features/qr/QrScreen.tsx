@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import QRCode from 'qrcode';
 import { useApp } from '@/app/AppContext';
+import { useIsMobileViewport } from '@/shared/ui/useResponsiveViewport';
 import { t } from '@/shared/i18n/strings';
 import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import { useAsync } from '@/shared/lib/useAsync';
@@ -69,7 +70,7 @@ function fmtDatetime(iso: string | null, lang: 'ar' | 'en'): string {
 
 export function QrScreen() {
   const { lang, activeOrgId, myPermissions } = useApp();
-  const isMobile = window.innerWidth < 768;
+  const isMobile = useIsMobileViewport();
   const canRevoke   = myPermissions.has('qr.revoke');
   const canGenerate = myPermissions.has('qr.generate');
 

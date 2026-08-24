@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useApp } from '@/app/AppContext';
+import { useIsMobileViewport } from '@/shared/ui/useResponsiveViewport';
 import { t } from '@/shared/i18n/strings';
 import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import { useAsync } from '@/shared/lib/useAsync';
@@ -40,7 +41,7 @@ export function ReportsScreen() {
   // production change shadow mode exists to avoid. The scoped engine runs, the
   // comparison is reported, and the screen renders as before.
   useShadowObservation(authz, 'reports.view', { organizationId: activeOrgId });
-  const isMobile = window.innerWidth < 768;
+  const isMobile = useIsMobileViewport();
 
   const metrics  = useAsync(() => getDashboardMetrics(activeOrgId ?? undefined), [activeOrgId]);
   const overview = useAsync(() => getInstitutionOverviews(), []);

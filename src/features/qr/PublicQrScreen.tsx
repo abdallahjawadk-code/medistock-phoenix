@@ -237,7 +237,16 @@ export function PublicQrScreen({ publicId }: Props) {
     : visibleItems;
 
   return (
-    <div className="premium-qr-public-shell nexus-qr-public" style={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '24px 16px' }}>
+    <div
+      className="premium-qr-public-shell nexus-qr-public"
+      style={{
+        minHeight: '100dvh',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        padding: 'calc(24px + env(safe-area-inset-top, 0px)) calc(16px + env(safe-area-inset-right, 0px)) calc(24px + env(safe-area-inset-bottom, 0px)) calc(16px + env(safe-area-inset-left, 0px))',
+      }}
+    >
       <div style={{ width: '100%', maxWidth: '480px' }}>
         {/* Header */}
         <div className="nexus-qr-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '18px' }}>

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '@/app/AppContext';
+import { useIsMobileViewport } from '@/shared/ui/useResponsiveViewport';
 import { useAsync } from '@/shared/lib/useAsync';
 import { getOrganizations } from '@/shared/supabase/services/organizations.service';
 import { PhoenixButton } from '@/shared/ui/PhoenixButton';
@@ -162,7 +163,7 @@ function SignalBadges({ row, lang }: { row: GlobalMaterialSearchRow; lang: 'ar' 
 export function GlobalMaterialSearchPanel() {
   const { lang, role } = useApp();
   const c = COPY[lang];
-  const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+  const isMobile = useIsMobileViewport();
   const organizations = useAsync(() => getOrganizations(), []);
 
   const [query, setQuery] = useState('');

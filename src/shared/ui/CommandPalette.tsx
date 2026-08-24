@@ -114,6 +114,8 @@ export function CommandPalette({ onNavigate }: Props) {
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [orgs, setOrgs] = useState<OrgRow[] | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const previouslyFocusedRef = useRef<HTMLElement | null>(null);
 
   // Efficient debounce: matching runs against the settled query only.
   useEffect(() => {
@@ -195,6 +197,12 @@ export function CommandPalette({ onNavigate }: Props) {
     setDebouncedQuery('');
   }, []);
 
+  const openPalette = useCallback(() => {
+    const active = document.activeElement;
+    previouslyFocusedRef.current = active instanceof HTMLElement ? active : null;
+    setOpen(true);
+  }, []);
+
   // The context-aware `/` entry point: focus the screen's own search when one
   // exists, otherwise open the palette.
   const smartOpen = useCallback(() => {
@@ -204,8 +212,48 @@ export function CommandPalette({ onNavigate }: Props) {
       local.focus({ preventScroll: true });
       return;
     }
-    setOpen(true);
-  }, []);
+    openPalette();
+  }, [openPalette]);
+
+  // aria-modal requires keyboard focus to remain inside the modal surface.
+  // PhoenixDialog already enforces this contract; keep the command palette
+  // equivalent while preserving its lightweight global-shortcut controller.
+  useEffect(() => {
+    if (!open) return;
+    const panel = panelRef.current;
+    if (!panel) return;
+
+    const focusables = () => Array.from(panel.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])',
+    ));
+
+    const trapTab = (event: KeyboardEvent) => {
+      if (event.key !== 'Tab') return;
+      const items = focusables();
+      if (items.length === 0) {
+        event.preventDefault();
+        panel.focus();
+        return;
+      }
+      const first = items[0];
+      const last = items[items.length - 1];
+      const active = document.activeElement;
+      if (event.shiftKey && (active === first || !panel.contains(active))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (active === last || !panel.contains(active))) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener('keydown', trapTab);
+    return () => {
+      document.removeEventListener('keydown', trapTab);
+      previouslyFocusedRef.current?.focus?.();
+      previouslyFocusedRef.current = null;
+    };
+  }, [open]);
 
   useEffect(() => {
     function isTypingContext(target: EventTarget | null): boolean {
@@ -218,7 +266,12 @@ export function CommandPalette({ onNavigate }: Props) {
       const isMod = e.ctrlKey || e.metaKey;
       if (isMod && e.key.toLowerCase() === 'k') {
         e.preventDefault();
-        setOpen(o => !o);
+        setOpen(o => {
+          if (o) return false;
+          const active = document.activeElement;
+          previouslyFocusedRef.current = active instanceof HTMLElement ? active : null;
+          return true;
+        });
       } else if (e.key === '/' && !isMod && !e.altKey && !isTypingContext(e.target)) {
         e.preventDefault();
         smartOpen();
@@ -250,13 +303,15 @@ export function CommandPalette({ onNavigate }: Props) {
           onClick={close}
           className="nexus-command-backdrop"
           style={{
-            position: 'fixed', inset: 0, zIndex: 300,
+            position: 'fixed', inset: 0, zIndex: 'var(--z-modal)',
             background: 'rgba(15, 23, 42, .45)',
             display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
             padding: '10vh 16px 16px',
           }}
         >
           <div
+            ref={panelRef}
+            tabIndex={-1}
             className="nexus-command-panel"
             onClick={e => e.stopPropagation()}
             style={{

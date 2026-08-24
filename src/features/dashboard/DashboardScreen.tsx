@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { useApp } from '@/app/AppContext';
+import { useIsMobileViewport } from '@/shared/ui/useResponsiveViewport';
 import { t } from '@/shared/i18n/strings';
 import { useAsync } from '@/shared/lib/useAsync';
 import {
@@ -57,7 +58,7 @@ function ExpiryBucketBadge({ bucket, lang }: { bucket: string; lang: 'ar' | 'en'
 
 export function DashboardScreen({ onNavigate }: Props) {
   const { lang, activeOrgId, configured } = useApp();
-  const isMobile = window.innerWidth < 768;
+  const isMobile = useIsMobileViewport();
 
   const metrics = useAsync(() => getDashboardMetrics(activeOrgId ?? undefined), [activeOrgId]);
   const insts   = useAsync(() => getInstitutionOverviews(), []);

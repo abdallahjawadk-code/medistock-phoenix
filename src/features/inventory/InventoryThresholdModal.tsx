@@ -244,7 +244,7 @@ export function InventoryThresholdModal({ open, organizationId, organizationLabe
           </div>
         )}
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+        <div className="nexus-responsive-two-col" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
           <div>
             <PhoenixInput
               label={t('inv_th_reorder_point', lang)}

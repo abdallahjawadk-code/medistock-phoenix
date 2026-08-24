@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import { useApp } from '@/app/AppContext';
+import { useIsMobileViewport } from '@/shared/ui/useResponsiveViewport';
 import { t } from '@/shared/i18n/strings';
 import { useAsync } from '@/shared/lib/useAsync';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
@@ -245,7 +246,7 @@ function sortAlerts(list: LiveInterInstitutionAlertWithState[], mode: SortMode):
 
 export function InterInstitutionAlertsScreen() {
   const { lang, myPermissions, activeOrgId, role } = useApp();
-  const isMobile = window.innerWidth < 768;
+  const isMobile = useIsMobileViewport();
   // UX-WHATSAPP-ALERT-CONTACT-WIRING-A: decides whether both alert
   // counterparts are offered as contact targets, or just the one "other
   // institution" relative to the actor's own org (see resolveAlertContactTargets).

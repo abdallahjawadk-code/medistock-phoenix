@@ -274,7 +274,7 @@ export function MyAccountScreen() {
           {t('ma_change_pw_desc', lang)}
         </p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+          <div className="nexus-responsive-two-col" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
             <div>
               <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>{t('ma_new_pw', lang)}</label>
               <div style={{ position: 'relative' }}>
