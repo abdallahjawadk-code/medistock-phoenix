@@ -468,8 +468,28 @@ html body {
 
 }
 
+/* User-management lifecycle confirmations predate PhoenixDialog. Keep their
+   existing semantics but give all four overlays the same viewport contract:
+   four safe-area edges, dynamic keyboard height and one internal scroll owner. */
+.nexus-ua-modal-overlay {
+  padding: calc(12px + env(safe-area-inset-top, 0px))
+           calc(12px + env(safe-area-inset-right, 0px))
+           calc(12px + env(safe-area-inset-bottom, 0px))
+           calc(12px + env(safe-area-inset-left, 0px)) !important;
+  overflow: hidden;
+}
+
+.nexus-ua-modal-panel {
+  max-width: 100%;
+  max-height: calc(100dvh - 24px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)) !important;
+  overflow-y: auto !important;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
 @media (max-width: 380px) {
-  .premium-dialog-panel .phoenix-button {
+  .premium-dialog-panel .phoenix-button,
+  .nexus-ua-modal-panel .phoenix-button {
     min-width: 0 !important;
     max-width: 100%;
     white-space: normal !important;

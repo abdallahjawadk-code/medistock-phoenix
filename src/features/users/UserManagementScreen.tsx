@@ -1317,7 +1317,7 @@ function RecycleConfirmModal({ user, lang, isSuper, actorOrgId, onCancel, onSucc
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '12px' }}>
             <div>
               <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>{t('um_recycle_new_name', lang)} *</label>
               <input type="text" value={newName} onChange={e => setNewName(e.target.value)} style={fieldStyle} dir="auto" />
@@ -1351,7 +1351,7 @@ function RecycleConfirmModal({ user, lang, isSuper, actorOrgId, onCancel, onSucc
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '12px' }}>
             <div>
               <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>{t('um_password', lang)} *</label>
               <div style={{ position: 'relative' }}>

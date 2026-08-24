@@ -21,6 +21,8 @@ const bell = read('shared/ui/NotificationBell.tsx');
 const nexus = read('shared/lib/phoenix-nexus.css');
 const globalCss = read('shared/lib/global.css');
 const indexHtml = readFileSync(join(ROOT, 'index.html'), 'utf8').replace(/\r\n/g, '\n');
+const userManagement = read('features/users/UserManagementScreen.tsx');
+const toast = read('shared/ui/PhoenixToast.tsx');
 
 describe('shared dialog geometry is bounded by the usable mobile viewport', () => {
   it('uses the modal z-layer, all four safe-area edges and responsive padding', () => {
@@ -124,6 +126,26 @@ describe('shell-absent mobile surfaces respect safe areas too', () => {
     const state = nexus.slice(nexus.indexOf('.nexus-state-screen {'));
     expect(state).toContain('safe-area-inset-top');
     expect(state).toContain('safe-area-inset-bottom');
+  });
+});
+
+describe('legacy user-management overlays and toast are viewport bounded', () => {
+  it('bounds all lifecycle overlays by safe areas and 100dvh', () => {
+    expect((userManagement.match(/nexus-ua-modal-overlay/g) ?? []).length).toBe(4);
+    expect(nexus).toContain('.nexus-ua-modal-overlay');
+    expect(nexus).toContain('.nexus-ua-modal-panel');
+    expect(nexus).toContain('max-height: calc(100dvh - 24px');
+    expect(nexus).toContain('overscroll-behavior: contain;');
+  });
+
+  it('lets recycle-account form grids collapse to one column on narrow phones', () => {
+    expect(userManagement).toContain("repeat(auto-fit, minmax(150px, 1fr))");
+  });
+
+  it('keeps toast above the gesture bar and inside horizontal cutouts', () => {
+    expect(toast).toContain('safe-area-inset-bottom');
+    expect(toast).toContain('safe-area-inset-left');
+    expect(toast).toContain('safe-area-inset-right');
   });
 });
 
