@@ -1293,7 +1293,7 @@ async function main() {
     await page.close();
   }
 
-  // ── 5. Mobile viewport — no blank page, no horizontal overflow ────────────
+  // ── 5. Mobile viewport matrix — shell + overlays stay inside usable bounds ──
   {
     const { page, consoleErrors } = await freshPage(browser, { width: 390, height: 844 });
     await login(page, seed.users.outletOfficerA.email, seed.password);
@@ -1320,12 +1320,114 @@ async function main() {
         .catch(() => false);
       record('Phase 8 mobile Open draft reaches the existing return-request detail', openedExistingPage);
     }
-    const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 2);
+
+    const mobileViewports = [
+      { name: 'small-320x568', width: 320, height: 568 },
+      { name: 'android-360x800', width: 360, height: 800 },
+      { name: 'modern-390x844', width: 390, height: 844 },
+      { name: 'large-430x932', width: 430, height: 932 },
+      { name: 'landscape-667x375', width: 667, height: 375 },
+    ];
+
+    for (const vp of mobileViewports) {
+      await page.setViewportSize({ width: vp.width, height: vp.height });
+      await settle(180);
+
+      const geometry = await page.evaluate(() => {
+        const rect = (selector) => {
+          const el = document.querySelector(selector);
+          if (!el) return null;
+          const r = el.getBoundingClientRect();
+          return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width, height: r.height };
+        };
+        const topbar = document.querySelector('.premium-topbar');
+        return {
+          innerWidth: window.innerWidth,
+          innerHeight: window.innerHeight,
+          documentOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth + 2,
+          topbarOverflow: topbar ? topbar.scrollWidth > topbar.clientWidth + 2 : true,
+          topbar: rect('.premium-topbar'),
+          main: rect('#phoenix-main'),
+          bottomNav: rect('.premium-bottom-nav'),
+        };
+      });
+
+      const horizontalInside = [geometry.topbar, geometry.main, geometry.bottomNav]
+        .filter(Boolean)
+        .every(r => r.left >= -2 && r.right <= geometry.innerWidth + 2);
+      record(`${vp.name}: no document horizontal overflow`, !geometry.documentOverflow);
+      record(`${vp.name}: shell chrome stays inside viewport width`, horizontalInside,
+        JSON.stringify(geometry));
+      record(`${vp.name}: topbar controls do not overflow their row`, !geometry.topbarOverflow);
+
+      await page.keyboard.press('Control+K');
+      const commandPanel = page.locator('.nexus-command-panel');
+      const commandVisible = await commandPanel.waitFor({ state: 'visible', timeout: 5000 })
+        .then(() => true).catch(() => false);
+      record(`${vp.name}: command palette opens`, commandVisible);
+      if (commandVisible) {
+        const commandRect = await commandPanel.evaluate(el => {
+          const r = el.getBoundingClientRect();
+          return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, innerWidth: window.innerWidth, innerHeight: window.innerHeight };
+        });
+        const commandInside = commandRect.left >= -2
+          && commandRect.right <= commandRect.innerWidth + 2
+          && commandRect.top >= -2
+          && commandRect.bottom <= commandRect.innerHeight + 2;
+        record(`${vp.name}: command palette stays inside viewport`, commandInside, JSON.stringify(commandRect));
+      }
+      await page.keyboard.press('Escape');
+      await commandPanel.waitFor({ state: 'detached', timeout: 3000 }).catch(() => {});
+
+      const drawerTrigger = page.locator('.premium-drawer-trigger');
+      if (await drawerTrigger.count()) {
+        await drawerTrigger.click();
+        const drawer = page.locator('.premium-mobile-drawer');
+        const drawerVisible = await drawer.waitFor({ state: 'visible', timeout: 5000 })
+          .then(() => true).catch(() => false);
+        record(`${vp.name}: mobile drawer opens`, drawerVisible);
+        if (drawerVisible) {
+          const drawerRect = await drawer.evaluate(el => {
+            const r = el.getBoundingClientRect();
+            return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, innerWidth: window.innerWidth, innerHeight: window.innerHeight };
+          });
+          const drawerInside = drawerRect.left >= -2
+            && drawerRect.right <= drawerRect.innerWidth + 2
+            && drawerRect.top >= -2
+            && drawerRect.bottom <= drawerRect.innerHeight + 2;
+          record(`${vp.name}: mobile drawer stays inside viewport`, drawerInside, JSON.stringify(drawerRect));
+        }
+        await page.keyboard.press('Escape');
+        await drawer.waitFor({ state: 'detached', timeout: 3000 }).catch(() => {});
+      }
+
+      const bell = page.locator('header .nexus-control[aria-expanded]:not(.premium-drawer-trigger)').first();
+      if (await bell.count()) {
+        await bell.click();
+        const panel = page.locator('.nexus-notification-panel');
+        const panelVisible = await panel.waitFor({ state: 'visible', timeout: 5000 })
+          .then(() => true).catch(() => false);
+        record(`${vp.name}: notification panel opens`, panelVisible);
+        if (panelVisible) {
+          const panelRect = await panel.evaluate(el => {
+            const r = el.getBoundingClientRect();
+            return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, innerWidth: window.innerWidth, innerHeight: window.innerHeight };
+          });
+          const panelInside = panelRect.left >= -2
+            && panelRect.right <= panelRect.innerWidth + 2
+            && panelRect.top >= -2
+            && panelRect.bottom <= panelRect.innerHeight + 2;
+          record(`${vp.name}: notification panel stays inside viewport`, panelInside, JSON.stringify(panelRect));
+        }
+        await bell.click();
+        await panel.waitFor({ state: 'detached', timeout: 3000 }).catch(() => {});
+      }
+    }
+
     const bodyText = (await page.textContent('body')) ?? '';
-    record('mobile viewport: no horizontal overflow', !overflow);
-    record('mobile viewport: not a blank page', bodyText.trim().length > 100);
-    record('mobile viewport session has no console errors', consoleErrors.length === 0, consoleErrors.slice(0, 3).join(' | '));
-    await page.screenshot({ path: join(OUT_DIR, 'outlet-ops-mobile.png') });
+    record('mobile viewport matrix: not a blank page', bodyText.trim().length > 100);
+    record('mobile viewport matrix session has no console errors', consoleErrors.length === 0, consoleErrors.slice(0, 3).join(' | '));
+    await page.screenshot({ path: join(OUT_DIR, 'outlet-ops-mobile-matrix-final.png') });
     await page.close();
   }
 

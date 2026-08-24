@@ -23,6 +23,8 @@ const globalCss = read('shared/lib/global.css');
 const indexHtml = readFileSync(join(ROOT, 'index.html'), 'utf8').replace(/\r\n/g, '\n');
 const userManagement = read('features/users/UserManagementScreen.tsx');
 const toast = read('shared/ui/PhoenixToast.tsx');
+const institutions = read('features/institutions/InstitutionScreen.tsx');
+const directSupply = read('features/network/DirectSupplyOperations.tsx');
 
 describe('shared dialog geometry is bounded by the usable mobile viewport', () => {
   it('uses the modal z-layer, all four safe-area edges and responsive padding', () => {
@@ -126,6 +128,16 @@ describe('shell-absent mobile surfaces respect safe areas too', () => {
     const state = nexus.slice(nexus.indexOf('.nexus-state-screen {'));
     expect(state).toContain('safe-area-inset-top');
     expect(state).toContain('safe-area-inset-bottom');
+  });
+});
+
+describe('narrow-phone forms collapse fixed desktop columns', () => {
+  it('marks institution city/email rows and direct-supply add-line row for mobile collapse', () => {
+    expect((institutions.match(/nexus-responsive-two-col/g) ?? []).length).toBeGreaterThanOrEqual(2);
+    expect(directSupply).toContain('nexus-responsive-action-grid');
+    expect(nexus).toContain('.nexus-responsive-two-col');
+    expect(nexus).toContain('.nexus-responsive-action-grid');
+    expect(nexus).toContain('grid-template-columns: minmax(0, 1fr) !important;');
   });
 });
 

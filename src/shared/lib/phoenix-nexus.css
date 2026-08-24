@@ -468,6 +468,15 @@ html body {
 
 }
 
+/* Form rows that are comfortable on tablet/desktop must collapse instead of
+   squeezing labels/inputs below a usable touch width on 320-360px phones. */
+@media (max-width: 520px) {
+  .nexus-responsive-two-col,
+  .nexus-responsive-action-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+}
+
 /* User-management lifecycle confirmations predate PhoenixDialog. Keep their
    existing semantics but give all four overlays the same viewport contract:
    four safe-area edges, dynamic keyboard height and one internal scroll owner. */
