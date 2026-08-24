@@ -519,11 +519,17 @@ html body {
 
 .nexus-login__controls {
   position: fixed;
-  top: 20px;
+  top: calc(20px + env(safe-area-inset-top, 0px));
   inset-inline-end: 22px;
   z-index: 20;
   display: flex;
   gap: 8px;
+}
+[dir="ltr"] .nexus-login__controls {
+  inset-inline-end: calc(22px + env(safe-area-inset-right, 0px));
+}
+[dir="rtl"] .nexus-login__controls {
+  inset-inline-end: calc(22px + env(safe-area-inset-left, 0px));
 }
 
 .nexus-login__kicker {
@@ -798,6 +804,10 @@ html body {
   display: grid;
   place-items: center;
   min-height: 100dvh;
+  padding: calc(12px + env(safe-area-inset-top, 0px))
+           calc(12px + env(safe-area-inset-right, 0px))
+           calc(12px + env(safe-area-inset-bottom, 0px))
+           calc(12px + env(safe-area-inset-left, 0px));
   /* WELCOME-PHOENIX-COMPOSITION-HOTFIX-A: when the masthead + credits exceed
      a short viewport (small landscape phones), the experience scrolls instead
      of clipping the credits or the seal. */
@@ -837,7 +847,7 @@ html body {
 
 .nexus-welcome__skip {
   position: fixed;
-  top: 22px;
+  top: calc(22px + env(safe-area-inset-top, 0px));
   inset-inline-end: 24px;
   z-index: 5;
   padding-inline: 14px;
@@ -847,6 +857,12 @@ html body {
   backdrop-filter: blur(16px);
   font-size: 11px;
   font-weight: 680;
+}
+[dir="ltr"] .nexus-welcome__skip {
+  inset-inline-end: calc(24px + env(safe-area-inset-right, 0px));
+}
+[dir="rtl"] .nexus-welcome__skip {
+  inset-inline-end: calc(24px + env(safe-area-inset-left, 0px));
 }
 
 .nexus-welcome[data-phase="rise"] .nexus-welcome[data-phase="rise"] .nexus-welcome__kicker {
@@ -932,13 +948,22 @@ html body {
 
 @media (max-width: 520px) {
   .nexus-login__controls {
-    top: 14px;
+    top: calc(14px + env(safe-area-inset-top, 0px));
     inset-inline-end: 14px;
+  }
+  [dir="ltr"] .nexus-login__controls {
+    inset-inline-end: calc(14px + env(safe-area-inset-right, 0px));
+  }
+  [dir="rtl"] .nexus-login__controls {
+    inset-inline-end: calc(14px + env(safe-area-inset-left, 0px));
   }
 
   .nexus-login__auth {
     justify-content: flex-start;
-    padding: 74px 14px 26px;
+    padding: calc(74px + env(safe-area-inset-top, 0px))
+             calc(14px + env(safe-area-inset-right, 0px))
+             calc(26px + env(safe-area-inset-bottom, 0px))
+             calc(14px + env(safe-area-inset-left, 0px));
   }
 
   .nexus-login__brand {
@@ -954,8 +979,17 @@ html body {
   .nexus-login__brand-name { font-size: 17px; }
   .nexus-login__card { padding: 23px 19px; border-radius: 22px; }
 
-    .nexus-welcome__credits { padding: 18px 20px; }
-  .nexus-welcome__skip { top: 14px; inset-inline-end: 14px; }
+  .nexus-welcome__credits { padding: 18px 20px; }
+  .nexus-welcome__skip {
+    top: calc(14px + env(safe-area-inset-top, 0px));
+    inset-inline-end: 14px;
+  }
+  [dir="ltr"] .nexus-welcome__skip {
+    inset-inline-end: calc(14px + env(safe-area-inset-right, 0px));
+  }
+  [dir="rtl"] .nexus-welcome__skip {
+    inset-inline-end: calc(14px + env(safe-area-inset-left, 0px));
+  }
 
   /* Perf: a heavy backdrop blur is the single most expensive compositing cost on
      phones and it runs on the GPU alongside any WebGL scene. Cap the login/
@@ -2272,7 +2306,10 @@ html[data-page-hidden] .nexus-pulse * { animation-play-state: paused !important;
 
   .nexus-login__auth {
     min-height: 100dvh;
-    padding: 72px 22px 34px;
+    padding: calc(72px + env(safe-area-inset-top, 0px))
+             calc(22px + env(safe-area-inset-right, 0px))
+             calc(34px + env(safe-area-inset-bottom, 0px))
+             calc(22px + env(safe-area-inset-left, 0px));
     border-inline-start: 0;
     box-shadow: none;
   }
@@ -2310,5 +2347,8 @@ html[data-page-hidden] .nexus-pulse * { animation-play-state: paused !important;
   align-items: center;
   justify-content: center;
   gap: 30px;
-  padding: 24px;
+  padding: calc(24px + env(safe-area-inset-top, 0px))
+           calc(24px + env(safe-area-inset-right, 0px))
+           calc(24px + env(safe-area-inset-bottom, 0px))
+           calc(24px + env(safe-area-inset-left, 0px));
 }

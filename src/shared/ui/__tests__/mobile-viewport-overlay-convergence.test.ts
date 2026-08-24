@@ -88,6 +88,29 @@ describe('non-PhoenixDialog overlays are phone-bounded', () => {
   });
 });
 
+describe('shell-absent mobile surfaces respect safe areas too', () => {
+  it('login controls and form padding clear top/bottom/cutout insets', () => {
+    expect(nexus).toContain('top: calc(20px + env(safe-area-inset-top, 0px));');
+    expect(nexus).toContain('calc(72px + env(safe-area-inset-top, 0px))');
+    expect(nexus).toContain('calc(34px + env(safe-area-inset-bottom, 0px))');
+    expect(nexus).toContain('[dir="rtl"] .nexus-login__controls');
+    expect(nexus).toContain('[dir="ltr"] .nexus-login__controls');
+  });
+
+  it('welcome root/skip and full-screen state clear physical safe areas', () => {
+    const welcome = nexus.slice(nexus.indexOf('.nexus-welcome {'));
+    expect(welcome).toContain('safe-area-inset-top');
+    expect(welcome).toContain('safe-area-inset-right');
+    expect(welcome).toContain('safe-area-inset-bottom');
+    expect(welcome).toContain('safe-area-inset-left');
+    expect(nexus).toContain('[dir="rtl"] .nexus-welcome__skip');
+    expect(nexus).toContain('[dir="ltr"] .nexus-welcome__skip');
+    const state = nexus.slice(nexus.indexOf('.nexus-state-screen {'));
+    expect(state).toContain('safe-area-inset-top');
+    expect(state).toContain('safe-area-inset-bottom');
+  });
+});
+
 describe('root sizing is explicit without hiding layout defects globally', () => {
   it('bounds root width but does not paper over defects with body overflow-x hidden', () => {
     expect(globalCss).toContain('#root { min-height: 100%; min-width: 0; width: 100%; max-width: 100%; }');
