@@ -16,6 +16,13 @@ const WO = '00000000-0000-0000-0000-000000199303';
 const OO = '00000000-0000-0000-0000-000000199304';
 const CWM = '00000000-0000-0000-0000-000000199305';
 const HCM = '00000000-0000-0000-0000-000000199306';
+// health_center_manager is facility-scoped: migration 182's profile guard
+// refuses the role unless its organization is an ACTIVE care_institution with
+// institution_class = 'health_sector'. Org A is a hospital, so HCM gets its
+// own health-sector organization. Requesting org A therefore remains a
+// cross-organization request, which is exactly what the fail-closed
+// assertion below exercises.
+const HS = '00000000-0000-0000-0000-000000199003';
 
 run('199 command center read contract — dynamic', () => {
   let rig: Awaited<ReturnType<typeof buildRig>>;
@@ -39,7 +46,8 @@ run('199 command center read contract — dynamic', () => {
     await admin(`
       INSERT INTO organizations(id,name,name_ar,code,organization_kind,institution_class,status) VALUES
         ('${A}','RAC2 A','راك ٢ أ','rac2-a','care_institution','hospital','active'),
-        ('${B}','RAC2 B','راك ٢ ب','rac2-b','care_institution','hospital','active');
+        ('${B}','RAC2 B','راك ٢ ب','rac2-b','care_institution','hospital','active'),
+        ('${HS}','RAC2 sector','قطاع راك','rac2-hs','care_institution','health_sector','active');
 
       INSERT INTO warehouses(id,organization_id,name,name_ar,warehouse_kind,is_main,status,code) VALUES
         ('${WA}','${A}','RAC2 A warehouse','مخزن راك أ','institution',true,'active','rac2-wa'),
@@ -62,7 +70,7 @@ run('199 command center read contract — dynamic', () => {
       UPDATE profiles SET role='warehouse_officer',status='active',organization_id='${A}' WHERE id='${WO}';
       UPDATE profiles SET role='outlet_officer',status='active',organization_id='${A}' WHERE id='${OO}';
       UPDATE profiles SET role='central_warehouse_manager',status='active',organization_id='${A}' WHERE id='${CWM}';
-      UPDATE profiles SET role='health_center_manager',status='active',organization_id='${A}' WHERE id='${HCM}';
+      UPDATE profiles SET role='health_center_manager',status='active',organization_id='${HS}' WHERE id='${HCM}';
 
       INSERT INTO profile_scope_assignments(profile_id,organization_id,scope_type,warehouse_id,is_active)
         VALUES ('${WO}','${A}','warehouse','${WA}',true);

@@ -204,6 +204,14 @@ run('E7-2 · Stage-E application wiring (dynamic)',()=>{
       // Stage-E corridor or semantics. Exact registration keeps this successor
       // guard exhaustive.
       '198_phoenix_secdef_search_path_convergence.sql',
+      // RAC-2 (199): adds ONE additive SECURITY DEFINER read boundary for the
+      // Command Center, enforcing dashboard.view through the canonical scoped
+      // permission helper. It is READ-ONLY and additive: no table, column,
+      // constraint, index, corridor, route or permission key, and it redefines
+      // no existing routine — so the "Stage E still ends at 171" assertion
+      // above is unaffected. Listed here so this guard stays exhaustive and
+      // still fails closed on any unlisted new file.
+      '199_phoenix_command_center_read_contract.sql',
     ];
     it('Stage E still ends at 171 — E7-2 introduced no new SQL',()=>{
       const files=readdirSync(join(__dirname,'..')).filter(f=>/^\d{3}_.*\.sql$/.test(f));
