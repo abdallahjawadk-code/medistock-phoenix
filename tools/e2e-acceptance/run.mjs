@@ -1375,6 +1375,16 @@ async function main() {
           && commandRect.top >= -2
           && commandRect.bottom <= commandRect.innerHeight + 2;
         record(`${vp.name}: command palette stays inside viewport`, commandInside, JSON.stringify(commandRect));
+        if (vp.name === 'small-320x568') {
+          // The palette declares aria-modal=true; prove the real browser focus
+          // cannot escape backwards from its first auto-focused control.
+          await page.keyboard.press('Shift+Tab');
+          const focusTrapped = await page.evaluate(() => {
+            const panel = document.querySelector('.nexus-command-panel');
+            return Boolean(panel && document.activeElement && panel.contains(document.activeElement));
+          });
+          record('small-320x568: command palette traps keyboard focus', focusTrapped);
+        }
       }
       await page.keyboard.press('Escape');
       await commandPanel.waitFor({ state: 'detached', timeout: 3000 }).catch(() => {});
@@ -1422,6 +1432,62 @@ async function main() {
         await bell.click();
         await panel.waitFor({ state: 'detached', timeout: 3000 }).catch(() => {});
       }
+    }
+
+    // Shared PhoenixDialog geometry: open a REAL dispense composer at the
+    // smallest supported viewport, measure it, then Escape without submitting.
+    // This exercises the same shared primitive used by the inventory/status/
+    // broadcast dialogs while keeping the disposable E2E database unchanged by
+    // this geometry probe.
+    await page.setViewportSize({ width: 320, height: 568 });
+    await openOutletOperations(page, { mobile: true });
+    const mobileStockTab = page.getByText('Stock & Batches').or(page.getByText('المخزون والدفعات')).first();
+    await mobileStockTab.waitFor({ state: 'visible', timeout: 15000 }).catch(() => {});
+    await mobileStockTab.click().catch(() => {});
+    await waitForText(page, ['E2E Paracetamol', 'E2E Amoxicillin', 'E2E Ibuprofen']);
+
+    const mobileMaterialCard = page.locator('div', { hasText: 'E2E Paracetamol' }).first();
+    const mobileDispenseButton = mobileMaterialCard.getByText('Dispense').or(mobileMaterialCard.getByText('صرف')).first();
+    const mobileDialogOpened = await mobileDispenseButton.click().then(() => true).catch(() => false);
+    record('small-320x568: real PhoenixDialog opens from Outlet Operations', mobileDialogOpened);
+
+    if (mobileDialogOpened) {
+      const dialogOverlay = page.locator('.phoenix-dialog-overlay[role="dialog"]').first();
+      const dialogVisible = await dialogOverlay.waitFor({ state: 'visible', timeout: 5000 })
+        .then(() => true).catch(() => false);
+      record('small-320x568: PhoenixDialog is visible', dialogVisible);
+
+      if (dialogVisible) {
+        const dialogGeometry = await dialogOverlay.evaluate(el => {
+          const panel = el.querySelector('.premium-dialog-panel');
+          if (!(panel instanceof HTMLElement)) return null;
+          const r = panel.getBoundingClientRect();
+          const cs = getComputedStyle(panel);
+          return {
+            left: r.left, right: r.right, top: r.top, bottom: r.bottom,
+            innerWidth: window.innerWidth, innerHeight: window.innerHeight,
+            scrollHeight: panel.scrollHeight, clientHeight: panel.clientHeight,
+            overflowY: cs.overflowY,
+            focusInside: Boolean(document.activeElement && el.contains(document.activeElement)),
+          };
+        });
+        const dialogInside = Boolean(dialogGeometry)
+          && dialogGeometry.left >= -2
+          && dialogGeometry.right <= dialogGeometry.innerWidth + 2
+          && dialogGeometry.top >= -2
+          && dialogGeometry.bottom <= dialogGeometry.innerHeight + 2;
+        const dialogScrollable = Boolean(dialogGeometry)
+          && (dialogGeometry.scrollHeight <= dialogGeometry.clientHeight + 1
+            || ['auto', 'scroll'].includes(dialogGeometry.overflowY));
+        record('small-320x568: PhoenixDialog stays inside viewport', dialogInside, JSON.stringify(dialogGeometry));
+        record('small-320x568: PhoenixDialog has a valid internal scroll path', dialogScrollable, JSON.stringify(dialogGeometry));
+        record('small-320x568: PhoenixDialog owns keyboard focus', Boolean(dialogGeometry?.focusInside));
+      }
+
+      await page.keyboard.press('Escape');
+      const dialogClosed = await dialogOverlay.waitFor({ state: 'detached', timeout: 5000 })
+        .then(() => true).catch(() => false);
+      record('small-320x568: PhoenixDialog closes with Escape', dialogClosed);
     }
 
     const bodyText = (await page.textContent('body')) ?? '';
