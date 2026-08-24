@@ -1,20 +1,24 @@
 -- ============================================================================
 -- MEDISTOCK PHOENIX v2.1 — RAC-2 COMMAND CENTER READ CONTRACT — 199
 --
--- Additive read-only contract for the future role-aware Command Center.
--- This migration does NOT seed permissions, alter existing dashboard RPCs,
--- change routing/UI, create trend models, or mutate Production data.
+-- Additive/forward-hardening migration for the future role-aware Command Center.
+-- Historical migrations are immutable. M199 creates one new scoped read contract
+-- and forward-redefines the two legacy dashboard-count RPCs only to enforce the
+-- already-existing dashboard.view permission at the server boundary.
+--
+-- This migration does NOT seed permissions, change routing/UI, create trend
+-- models, add a table/index, or mutate business data.
 --
 -- Security contract:
 --   * actor identity is always auth.uid()
---   * dashboard.view is enforced server-side through the canonical
---     phoenix_profile_has_scoped_permission helper
---   * caller-supplied scope is a requested scope, never authority
---   * unknown/inactive/unscoped/unauthorized identities fail closed (42501)
---   * PUBLIC/anon receive no EXECUTE
+--   * dashboard.view is enforced server-side
+--   * caller-supplied scope is requested scope, never authority
+--   * unknown/inactive/unscoped/unauthorized identities fail closed
+--   * legacy count RPC output shapes stay unchanged for authorized callers
+--   * PUBLIC/anon receive no EXECUTE on the new contract
 --   * SECURITY DEFINER search_path is public, pg_temp
 --
--- Scope semantics:
+-- Scope semantics for the new contract:
 --   * global: super_admin only (no organization/resource requested)
 --   * organization: condition/network summary within one authorized org
 --   * warehouse: stock summary for exactly one authorized warehouse
@@ -28,8 +32,13 @@ BEGIN;
 
 DO $precondition$
 BEGIN
-  IF to_regprocedure('public.phoenix_profile_has_scoped_permission(uuid,text,uuid,uuid,uuid)') IS NULL THEN
-    RAISE EXCEPTION '199 PRECONDITION FAILED: canonical scoped-permission helper missing';
+  IF to_regprocedure('public.phoenix_profile_has_scoped_permission(uuid,text,uuid,uuid,uuid)') IS NULL
+     OR to_regprocedure('public.phoenix_profile_has_permission(uuid,text)') IS NULL THEN
+    RAISE EXCEPTION '199 PRECONDITION FAILED: canonical permission helper missing';
+  END IF;
+  IF to_regprocedure('public.phoenix_get_dashboard_condition_counts(uuid)') IS NULL
+     OR to_regprocedure('public.phoenix_get_institution_condition_counts()') IS NULL THEN
+    RAISE EXCEPTION '199 PRECONDITION FAILED: legacy dashboard count RPC missing';
   END IF;
   IF to_regclass('public.item_availability') IS NULL
      OR to_regclass('public.warehouse_stock') IS NULL
@@ -44,6 +53,163 @@ BEGIN
   END IF;
 END;
 $precondition$;
+
+-- ============================================================================
+-- A. FORWARD HARDEN THE TWO LEGACY DASHBOARD COUNT RPCs
+--
+-- The legacy functions predate dashboard.view enforcement. Their existing
+-- response shapes and organization scoping are preserved. The only new behavior
+-- is a server-side WHAT gate for non-super callers. health_center_manager keeps
+-- the exact pre-M199 empty/zero behavior introduced by its existing hardening.
+-- This closes direct-RPC bypass without editing historical migration 054.
+-- ============================================================================
+
+CREATE OR REPLACE FUNCTION public.phoenix_get_dashboard_condition_counts(
+  p_org_id uuid DEFAULT NULL
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $legacy_dashboard_counts$
+DECLARE
+  v_actor uuid := auth.uid();
+  v_role text;
+  v_my_org uuid;
+  v_is_super boolean;
+  v_effective_org uuid;
+  v_available integer;
+  v_low_stock integer;
+  v_missing integer;
+  v_near_expiry integer;
+  v_surplus integer;
+BEGIN
+  IF v_actor IS NULL THEN
+    RAISE EXCEPTION 'not_authenticated' USING ERRCODE = '28000';
+  END IF;
+
+  v_role := public.phoenix_my_role();
+  v_my_org := public.phoenix_my_org();
+  v_is_super := COALESCE(v_role = 'super_admin', false);
+
+  -- Preserve the existing HCM compatibility result exactly: no dashboard data,
+  -- no existence oracle, and no privilege expansion.
+  IF v_role = 'health_center_manager' THEN
+    RETURN jsonb_build_object(
+      'available', 0,
+      'low_stock', 0,
+      'missing', 0,
+      'near_expiry', 0,
+      'surplus', 0
+    );
+  END IF;
+
+  IF NOT v_is_super
+     AND NOT public.phoenix_profile_has_permission(v_actor, 'dashboard.view') THEN
+    RAISE EXCEPTION 'dashboard_view_forbidden' USING ERRCODE = '42501';
+  END IF;
+
+  IF NOT v_is_super AND v_my_org IS NULL THEN
+    RETURN jsonb_build_object(
+      'available', 0,
+      'low_stock', 0,
+      'missing', 0,
+      'near_expiry', 0,
+      'surplus', 0
+    );
+  END IF;
+
+  v_effective_org := CASE WHEN v_is_super THEN p_org_id ELSE v_my_org END;
+
+  SELECT
+    count(*) FILTER (WHERE condition = 'available'),
+    count(*) FILTER (WHERE condition = 'low_stock'),
+    count(*) FILTER (WHERE condition = 'missing'),
+    count(*) FILTER (WHERE condition = 'near_expiry'),
+    count(*) FILTER (WHERE condition = 'surplus')
+  INTO v_available, v_low_stock, v_missing, v_near_expiry, v_surplus
+  FROM public.item_availability
+  WHERE removed_at IS NULL
+    AND (v_effective_org IS NULL OR organization_id = v_effective_org);
+
+  RETURN jsonb_build_object(
+    'available', COALESCE(v_available, 0),
+    'low_stock', COALESCE(v_low_stock, 0),
+    'missing', COALESCE(v_missing, 0),
+    'near_expiry', COALESCE(v_near_expiry, 0),
+    'surplus', COALESCE(v_surplus, 0)
+  );
+END;
+$legacy_dashboard_counts$;
+
+CREATE OR REPLACE FUNCTION public.phoenix_get_institution_condition_counts()
+RETURNS TABLE(
+  organization_id uuid,
+  available integer,
+  low integer,
+  missing integer
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $legacy_institution_counts$
+DECLARE
+  v_actor uuid := auth.uid();
+  v_role text;
+  v_my_org uuid;
+  v_is_super boolean;
+BEGIN
+  IF v_actor IS NULL THEN
+    RAISE EXCEPTION 'not_authenticated' USING ERRCODE = '28000';
+  END IF;
+
+  v_role := public.phoenix_my_role();
+  v_my_org := public.phoenix_my_org();
+  v_is_super := COALESCE(v_role = 'super_admin', false);
+
+  -- Preserve existing HCM empty-result behavior.
+  IF v_role = 'health_center_manager' THEN
+    RETURN;
+  END IF;
+
+  IF NOT v_is_super
+     AND NOT public.phoenix_profile_has_permission(v_actor, 'dashboard.view') THEN
+    RAISE EXCEPTION 'dashboard_view_forbidden' USING ERRCODE = '42501';
+  END IF;
+
+  IF NOT v_is_super AND v_my_org IS NULL THEN
+    RETURN;
+  END IF;
+
+  RETURN QUERY
+  SELECT
+    o.id,
+    COALESCE(SUM(CASE WHEN ia.condition IN ('available', 'surplus') THEN 1 ELSE 0 END), 0)::integer,
+    COALESCE(SUM(CASE WHEN ia.condition IN ('low_stock', 'near_expiry') THEN 1 ELSE 0 END), 0)::integer,
+    COALESCE(SUM(CASE WHEN ia.condition IN ('missing', 'expired') THEN 1 ELSE 0 END), 0)::integer
+  FROM public.organizations o
+  LEFT JOIN public.item_availability ia
+    ON ia.organization_id = o.id
+   AND ia.removed_at IS NULL
+  WHERE o.status = 'active'
+    AND (v_is_super OR o.id = v_my_org)
+  GROUP BY o.id;
+END;
+$legacy_institution_counts$;
+
+-- Preserve the existing RPC ACL contract explicitly after replacement.
+REVOKE ALL ON FUNCTION public.phoenix_get_dashboard_condition_counts(uuid)
+  FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.phoenix_get_dashboard_condition_counts(uuid)
+  TO authenticated;
+REVOKE ALL ON FUNCTION public.phoenix_get_institution_condition_counts()
+  FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.phoenix_get_institution_condition_counts()
+  TO authenticated;
+
+-- ============================================================================
+-- B. NEW ROLE-AWARE COMMAND CENTER READ CONTRACT
+-- ============================================================================
 
 CREATE FUNCTION public.phoenix_command_center_read_contract(
   p_organization_id uuid DEFAULT NULL,
@@ -86,8 +252,8 @@ BEGIN
     RAISE EXCEPTION 'command_center_invalid_scope' USING ERRCODE = '22023';
   END IF;
 
-  -- Caller input selects a requested scope only. For ordinary actors, omitted
-  -- organization means their own home organization. A super_admin may omit all
+  -- Caller input selects requested scope only. For ordinary actors, omitted
+  -- organization means their home organization. A super_admin may omit all
   -- scope to request the global Command Center.
   v_effective_org := COALESCE(p_organization_id, v_home_org);
 
@@ -139,8 +305,8 @@ BEGIN
   END IF;
 
   -- Capability hints are derived from the same canonical permission engine.
-  -- They are presentation hints only; every destination RPC must continue to
-  -- enforce its own authorization independently.
+  -- They are presentation hints only; destination RPCs must still enforce
+  -- their own authorization independently.
   v_capabilities := jsonb_build_object(
     'dashboard_view', true,
     'alerts_view', public.phoenix_profile_has_scoped_permission(
@@ -276,10 +442,15 @@ COMMENT ON FUNCTION public.phoenix_command_center_read_contract(uuid,uuid,uuid) 
   'or distribution-point scope; global scope is super_admin-only by the canonical '
   'helper. Returns bounded summary/network/capability JSON. No trend read model.';
 
+-- ============================================================================
+-- C. SELF-VERIFY SECURITY + ACL CONTRACTS
+-- ============================================================================
 DO $verify$
 DECLARE
   v_definition text;
   v_public_execute boolean;
+  v_legacy_dashboard text;
+  v_legacy_institution text;
 BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_proc p
@@ -311,6 +482,12 @@ BEGIN
   SELECT pg_get_functiondef(
     'public.phoenix_command_center_read_contract(uuid,uuid,uuid)'::regprocedure
   ) INTO v_definition;
+  SELECT pg_get_functiondef(
+    'public.phoenix_get_dashboard_condition_counts(uuid)'::regprocedure
+  ) INTO v_legacy_dashboard;
+  SELECT pg_get_functiondef(
+    'public.phoenix_get_institution_condition_counts()'::regprocedure
+  ) INTO v_legacy_institution;
 
   IF v_definition NOT LIKE '%auth.uid()%'
      OR v_definition NOT LIKE '%phoenix_profile_has_scoped_permission%'
@@ -319,6 +496,15 @@ BEGIN
      OR v_definition NOT LIKE '%deferred_pending_measurement%'
      OR v_definition NOT LIKE '%current_date + 270%' THEN
     RAISE EXCEPTION '199 VERIFY FAILED: required authorization/data-contract clauses missing';
+  END IF;
+
+  IF v_legacy_dashboard NOT LIKE '%phoenix_profile_has_permission%'
+     OR v_legacy_dashboard NOT LIKE '%''dashboard.view''%'
+     OR v_legacy_dashboard NOT LIKE '%dashboard_view_forbidden%'
+     OR v_legacy_institution NOT LIKE '%phoenix_profile_has_permission%'
+     OR v_legacy_institution NOT LIKE '%''dashboard.view''%'
+     OR v_legacy_institution NOT LIKE '%dashboard_view_forbidden%' THEN
+    RAISE EXCEPTION '199 VERIFY FAILED: legacy dashboard RPC bypass remains open';
   END IF;
 END;
 $verify$;
