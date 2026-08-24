@@ -30,6 +30,7 @@ const facilityManagement = read('features/institutions/FacilityManagementPanel.t
 const myAccount = read('features/account/MyAccountScreen.tsx');
 const thresholdModal = read('features/inventory/InventoryThresholdModal.tsx');
 const broadcastAdmin = read('features/platform-broadcast/PlatformBroadcastAdminPanel.tsx');
+const commandPalette = read('shared/ui/CommandPalette.tsx');
 
 describe('shared dialog geometry is bounded by the usable mobile viewport', () => {
   it('uses the modal z-layer, all four safe-area edges and responsive padding', () => {
@@ -88,6 +89,18 @@ describe('mobile shell chrome respects cutouts and short viewports', () => {
     for (const edge of ['top', 'right', 'bottom', 'left']) {
       expect(drawer).toContain(`safe-area-inset-${edge}`);
     }
+  });
+});
+
+describe('command palette behaves as a real modal surface', () => {
+  it('traps Tab focus, restores prior focus and uses the modal z-layer', () => {
+    expect(commandPalette).toContain('previouslyFocusedRef');
+    expect(commandPalette).toContain("event.key !== 'Tab'");
+    expect(commandPalette).toContain('panel.contains(active)');
+    expect(commandPalette).toContain('previouslyFocusedRef.current?.focus?.()');
+    expect(commandPalette).toContain("zIndex: 'var(--z-modal)'");
+    expect(commandPalette).toContain('ref={panelRef}');
+    expect(commandPalette).toContain('tabIndex={-1}');
   });
 });
 

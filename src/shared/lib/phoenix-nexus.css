@@ -354,6 +354,7 @@ html body {
 .nexus-command-backdrop {
   background: rgba(3, 10, 20, .58) !important;
   backdrop-filter: blur(10px) saturate(120%);
+  overscroll-behavior: contain;
 }
 
 .nexus-command-panel {
