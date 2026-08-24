@@ -181,7 +181,11 @@ run('199 command center read contract — dynamic', () => {
       p.prosecdef AS secdef,
       p.provolatile AS volatility,
       p.proconfig @> ARRAY['search_path=public, pg_temp']::text[] AS hardened_path,
-      has_function_privilege('PUBLIC', p.oid, 'EXECUTE') AS public_exec,
+      EXISTS (
+        SELECT 1
+        FROM aclexplode(COALESCE(p.proacl, acldefault('f', p.proowner))) a
+        WHERE a.grantee = 0 AND a.privilege_type = 'EXECUTE'
+      ) AS public_exec,
       has_function_privilege('anon', p.oid, 'EXECUTE') AS anon_exec,
       has_function_privilege('authenticated', p.oid, 'EXECUTE') AS authenticated_exec
     FROM pg_proc p
