@@ -279,6 +279,7 @@ COMMENT ON FUNCTION public.phoenix_command_center_read_contract(uuid,uuid,uuid) 
 DO $verify$
 DECLARE
   v_definition text;
+  v_public_execute boolean;
 BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_proc p
@@ -290,8 +291,16 @@ BEGIN
     RAISE EXCEPTION '199 VERIFY FAILED: function security/stability/search_path contract incorrect';
   END IF;
 
-  IF has_function_privilege(
-       'PUBLIC', 'public.phoenix_command_center_read_contract(uuid,uuid,uuid)', 'EXECUTE')
+  SELECT EXISTS (
+    SELECT 1
+    FROM pg_proc p
+    CROSS JOIN LATERAL aclexplode(COALESCE(p.proacl, acldefault('f', p.proowner))) a
+    WHERE p.oid = 'public.phoenix_command_center_read_contract(uuid,uuid,uuid)'::regprocedure
+      AND a.grantee = 0
+      AND a.privilege_type = 'EXECUTE'
+  ) INTO v_public_execute;
+
+  IF v_public_execute
      OR has_function_privilege(
        'anon', 'public.phoenix_command_center_read_contract(uuid,uuid,uuid)', 'EXECUTE')
      OR NOT has_function_privilege(
