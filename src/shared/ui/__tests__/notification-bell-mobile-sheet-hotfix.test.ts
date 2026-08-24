@@ -6,21 +6,23 @@ const SRC = join(__dirname, '../../../');
 const bell = readFileSync(join(SRC, 'shared/ui/NotificationBell.tsx'), 'utf8').replace(/\r\n/g, '\n');
 
 describe('mobile notification sheet hotfix', () => {
-  it('ports the phone sheet outside shell/topbar clipping contexts', () => {
+  it('ports the phone sheet outside shell/topbar clipping contexts without breaking the E2E selector contract', () => {
     expect(bell).toContain("import { createPortal } from 'react-dom';");
     expect(bell).toContain("import { useIsMobileViewport } from './useResponsiveViewport';");
-    expect(bell).toContain("className={isMobile ? 'nexus-notification-mobile-sheet' : 'nexus-notification-panel'}");
+    expect(bell).toContain("className={isMobile ? 'nexus-notification-panel nexus-notification-mobile-sheet' : 'nexus-notification-panel'}");
     expect(bell).toContain('createPortal(notificationPanel, document.body)');
   });
 
-  it('pins all four physical phone edges and uses the modal z-layer', () => {
+  it('pins all four physical phone edges and overrides the historical logical-inset conflict at important priority', () => {
     expect(bell).toContain("position: 'fixed'");
     expect(bell).toContain("top: 'calc(var(--tbh) + env(safe-area-inset-top, 0px) + 8px)'");
     expect(bell).toContain("right: 'calc(8px + env(safe-area-inset-right, 0px))'");
     expect(bell).toContain("bottom: 'calc(var(--bnh) + env(safe-area-inset-bottom, 0px) + 8px)'");
     expect(bell).toContain("left: 'calc(8px + env(safe-area-inset-left, 0px))'");
+    expect(bell).toContain("panel.style.setProperty('left', left, 'important')");
+    expect(bell).toContain("panel.style.setProperty('right', right, 'important')");
+    expect(bell).toContain("panel.style.setProperty('inset-inline-end', direction === 'rtl' ? left : right, 'important')");
     expect(bell).toContain("zIndex: 'var(--z-modal)'");
-    expect(bell).toContain("width: 'auto'");
     expect(bell).toContain("overscrollBehavior: 'contain'");
   });
 
