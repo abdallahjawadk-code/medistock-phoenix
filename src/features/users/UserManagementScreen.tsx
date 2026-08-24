@@ -936,7 +936,7 @@ function CreateUserForm({ lang, isSuper, actorRole, actorOrgId, onClose, onToast
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
         {/* Name + Username */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+        <div className="nexus-responsive-two-col" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
           <div>
             <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>{t('um_full_name', lang)} *</label>
             <input type="text" value={fullName} onChange={e => setFullName(e.target.value)} style={fieldStyle} dir="auto" />
@@ -954,7 +954,7 @@ function CreateUserForm({ lang, isSuper, actorRole, actorOrgId, onClose, onToast
         )}
 
         {/* Org + Role */}
-        <div style={{ display: 'grid', gridTemplateColumns: isSuper ? '1fr 1fr' : '1fr', gap: '12px' }}>
+        <div className="nexus-responsive-two-col" style={{ display: 'grid', gridTemplateColumns: isSuper ? '1fr 1fr' : '1fr', gap: '12px' }}>
           {isSuper && (
             <div>
               <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>{t('um_organization', lang)} *</label>
@@ -1022,7 +1022,7 @@ function CreateUserForm({ lang, isSuper, actorRole, actorOrgId, onClose, onToast
           <p style={{ fontSize: '11.5px', color: 'var(--warn)', margin: '0 0 12px 0', fontWeight: 600 }} dir="auto">
 <PhoenixIcon name="warning" size={13} inline /> {t('um_password_mode_warning', lang)}
           </p>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+          <div className="nexus-responsive-two-col" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
             <div>
               <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>{t('um_password', lang)} *</label>
               <div style={{ position: 'relative' }}>
