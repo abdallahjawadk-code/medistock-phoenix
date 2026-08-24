@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useApp } from '@/app/AppContext';
+import { useIsMobileViewport } from '@/shared/ui/useResponsiveViewport';
 import { t } from '@/shared/i18n/strings';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
 import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
@@ -22,7 +23,7 @@ const EVENTS = [
 export function HealthScreen() {
   const { lang } = useApp();
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-  const isMobile = window.innerWidth < 768;
+  const isMobile = useIsMobileViewport();
 
   const toggle = (id: string) => setExpanded(e => ({ ...e, [id]: !e[id] }));
 

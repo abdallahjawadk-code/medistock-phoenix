@@ -150,7 +150,7 @@ function FacilityForm({
   return (
     <PhoenixCard padding="14px">
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+        <div className="nexus-responsive-two-col" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
           <div>
             <label htmlFor="fac-name-en" style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>{t('fac_name_en', lang)} *</label>
             <input id="fac-name-en" type="text" value={name} onChange={e => setName(e.target.value)} style={fieldStyle} dir="ltr" />
@@ -160,7 +160,7 @@ function FacilityForm({
             <input id="fac-name-ar" type="text" value={nameAr} onChange={e => setNameAr(e.target.value)} style={fieldStyle} dir="rtl" />
           </div>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+        <div className="nexus-responsive-two-col" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
           <div>
             <label htmlFor="fac-code" style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '5px' }}>{t('fac_code', lang)}</label>
             <input id="fac-code" type="text" value={code} onChange={e => setCode(e.target.value)} style={fieldStyle} dir="ltr" />

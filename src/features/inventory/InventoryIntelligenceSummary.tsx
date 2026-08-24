@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useApp } from '@/app/AppContext';
+import { useIsMobileViewport } from '@/shared/ui/useResponsiveViewport';
 import { t } from '@/shared/i18n/strings';
 import { PhoenixMetricCard } from '@/shared/ui/PhoenixMetricCard';
 import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
@@ -35,7 +36,7 @@ interface Props {
 
 export function InventoryIntelligenceSummary({ onViewAll }: Props) {
   const { lang, myPermissions } = useApp();
-  const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+  const isMobile = useIsMobileViewport();
 
   const canView    = myPermissions.has(PK.viewSignals);
   const canManage  = myPermissions.has(PK.manageAlerts);

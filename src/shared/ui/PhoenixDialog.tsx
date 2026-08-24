@@ -86,7 +86,16 @@ export function PhoenixDialog({ open, onClose, title, children, maxWidth = 420 }
   // any of this dialog's 22 real consumers rely on changes.
   return createPortal(
     <div
-      style={{ position: 'fixed', inset: 0, zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}
+      className="phoenix-dialog-overlay"
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 'var(--z-modal)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 'calc(12px + env(safe-area-inset-top, 0px)) calc(12px + env(safe-area-inset-right, 0px)) calc(12px + env(safe-area-inset-bottom, 0px)) calc(12px + env(safe-area-inset-left, 0px))',
+      }}
       role="dialog"
       aria-modal="true"
       aria-labelledby="dialog-title"
@@ -104,13 +113,18 @@ export function PhoenixDialog({ open, onClose, title, children, maxWidth = 420 }
           background: 'var(--s)',
           borderRadius: 'var(--r5)',
           boxShadow: 'var(--sh-xl)',
-          padding: '28px',
+          padding: 'clamp(16px, 4vw, 28px)',
           width: '100%',
           maxWidth,
+          maxInlineSize: '100%',
+          minWidth: 0,
           border: '1px solid var(--brd)',
           animation: 'su .25s ease',
-          maxHeight: '90dvh',
+          maxHeight: 'calc(100dvh - 24px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px))',
           overflowY: 'auto',
+          overscrollBehavior: 'contain',
+          WebkitOverflowScrolling: 'touch',
+          scrollbarGutter: 'stable',
           outline: 'none',
         }}
       >

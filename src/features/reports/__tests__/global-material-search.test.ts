@@ -357,7 +357,8 @@ describe('bilingual responsive UX', () => {
   it('contains Arabic and English copy and separate mobile/desktop layouts', () => {
     expect(panel).toContain("ar: {");
     expect(panel).toContain("en: {");
-    expect(panel).toContain("window.innerWidth < 768");
+    expect(panel).toContain('useIsMobileViewport');
+    expect(panel).not.toContain("window.innerWidth < 768");
     expect(panel).toContain("isMobile ? (");
   });
 

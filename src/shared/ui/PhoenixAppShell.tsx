@@ -1,5 +1,6 @@
 import { ReactNode, useCallback, useState, useEffect } from 'react';
 import { useApp } from '@/app/AppContext';
+import { useIsMobileViewport } from '@/shared/ui/useResponsiveViewport';
 import { t } from '@/shared/i18n/strings';
 import { PhoenixSidebar } from './PhoenixSidebar';
 import { PhoenixMobileDrawer } from './PhoenixMobileDrawer';
@@ -46,15 +47,9 @@ interface Props {
 export function PhoenixAppShell({ children, currentScreen, onNavigate, onLogout }: Props) {
   const { lang, dir } = useApp();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const isMobile = useIsMobileViewport();
   const closeSidebar = useCallback(() => setSidebarOpen(false), []);
   const toggleSidebar = useCallback(() => setSidebarOpen(open => !open), []);
-
-  useEffect(() => {
-    const onResize = () => setIsMobile(window.innerWidth < 768);
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, []);
 
   // PHARMACY-PULSE-LOADER: pause decorative animations while the page is
   // hidden (background tab) — CSS reads html[data-page-hidden].
@@ -123,7 +118,9 @@ export function PhoenixAppShell({ children, currentScreen, onNavigate, onLogout 
             minHeight: 0,
             overflowY: 'auto',
             overflowX: 'hidden',
-            padding: isMobile ? '16px 14px' : '24px 28px',
+            padding: isMobile
+              ? '16px calc(14px + env(safe-area-inset-right, 0px)) 16px calc(14px + env(safe-area-inset-left, 0px))'
+              : '24px 28px',
             paddingBottom: isMobile
               ? 'calc(var(--bnh) + 14px + env(safe-area-inset-bottom, 0px))'
               : '28px',

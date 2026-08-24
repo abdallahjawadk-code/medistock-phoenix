@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import QRCode from 'qrcode';
 import { useApp } from '@/app/AppContext';
+import { useIsMobileViewport } from '@/shared/ui/useResponsiveViewport';
 import { t } from '@/shared/i18n/strings';
 import { useAsync } from '@/shared/lib/useAsync';
 import { formatStableDate } from '@/shared/lib/date';
@@ -143,7 +144,7 @@ const fieldStyle = {
 export function InstitutionScreen() {
   const { lang, role, activeOrgId, profile, myPermissions, reloadMyPermissions } = useApp();
   useEffect(() => { if (myPermissions.size === 0) reloadMyPermissions(); }, []);
-  const isMobile = window.innerWidth < 768;
+  const isMobile = useIsMobileViewport();
   const isSuper = role === 'super_admin';
 
   const [selectedOrgId, setSelectedOrgId] = useState<string | null>(null);
@@ -444,7 +445,7 @@ function AddOrgForm({ lang, onCreated, onCancel }: {
             </select>
           </div>
         )}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+        <div className="nexus-responsive-two-col" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
           <div>
             <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '6px' }}>{t('inst_city', lang)}</label>
             <input type="text" value={city} onChange={e => setCity(e.target.value)} style={fieldStyle} dir="auto" />
@@ -767,7 +768,7 @@ function EditOrgForm({ lang, org, onSaved, onCancel }: {
           <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '6px' }}>{t('inst_name_ar', lang)} *</label>
           <input type="text" value={nameAr} onChange={e => setNameAr(e.target.value)} style={fieldStyle} dir="rtl" />
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+        <div className="nexus-responsive-two-col" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
           <div>
             <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--t2)', marginBottom: '6px' }}>{t('inst_city', lang)}</label>
             <input type="text" value={city} onChange={e => setCity(e.target.value)} style={fieldStyle} dir="auto" />

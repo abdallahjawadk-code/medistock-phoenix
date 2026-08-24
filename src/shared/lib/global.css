@@ -12,7 +12,8 @@
   padding: 0;
 }
 
-html, body { height: 100%; }
+html, body { height: 100%; width: 100%; max-width: 100%; }
+#root { min-height: 100%; min-width: 0; width: 100%; max-width: 100%; }
 
 body {
   font-family: var(--font-sans);
@@ -346,7 +347,9 @@ button:not(:disabled):active { transform: translateY(1px) scale(.985); }
   animation: fs .3s ease;
 }
 .premium-pwa-install[data-placement="mobile"] {
-  inset-inline: 10px;
+  inset-inline: auto;
+  left: calc(10px + env(safe-area-inset-left, 0px));
+  right: calc(10px + env(safe-area-inset-right, 0px));
   bottom: calc(var(--bnh) + 10px + env(safe-area-inset-bottom, 0px));
 }
 .premium-pwa-install[data-placement="desktop"] {
@@ -415,7 +418,22 @@ button:not(:disabled):active { transform: translateY(1px) scale(.985); }
   white-space: nowrap;
 }
 @media (max-width: 380px) {
-  .premium-pwa-install[data-placement="mobile"] { padding: 10px 12px; }
+  .premium-pwa-install[data-placement="mobile"] {
+    padding: 10px 12px;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+  }
+  .premium-pwa-install__actions {
+    grid-column: 1 / -1;
+    width: 100%;
+    flex-direction: row;
+  }
+  .premium-pwa-install__actions > button {
+    flex: 1 1 0;
+    min-height: var(--touch-target);
+    white-space: normal;
+  }
 }
 .premium-field { min-height: 44px; }
 .premium-field:focus {

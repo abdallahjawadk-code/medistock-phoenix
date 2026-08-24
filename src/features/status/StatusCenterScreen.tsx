@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useApp } from '@/app/AppContext';
+import { useIsMobileViewport } from '@/shared/ui/useResponsiveViewport';
 import { t } from '@/shared/i18n/strings';
 import { useAsync } from '@/shared/lib/useAsync';
 import { formatStableDate, formatStableDateTime } from '@/shared/lib/date';
@@ -255,7 +256,7 @@ function daysUntilExpiry(expiryDate: string | null, now: Date = new Date()): num
 
 export function StatusCenterScreen({ onNavigate }: { onNavigate: (screen: number) => void }) {
   const { lang, activeOrgId, myPermissions, role } = useApp();
-  const isMobile = window.innerWidth < 768;
+  const isMobile = useIsMobileViewport();
 
   const effectiveOrgId = activeOrgId ?? undefined;
 

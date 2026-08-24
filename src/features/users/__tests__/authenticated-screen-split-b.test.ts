@@ -29,7 +29,7 @@ const appShell = readSrc('shared/ui/PhoenixAppShell.tsx');
 
 describe('UserManagementScreen: both panels are React.lazy, gated by role, wrapped in Suspense', () => {
   it('imports React.lazy/Suspense and lazy()-wraps both components (no static top-level import remains)', () => {
-    expect(userMgmt).toContain("import { lazy, Suspense, useEffect, useState } from 'react';");
+    expect(userMgmt).toMatch(/import \{[^}]*lazy[^}]*Suspense[^}]*\} from 'react';/);
     expect(userMgmt).not.toContain("import { AvailabilityCleanupWizard } from '@/features/admin/AvailabilityCleanupWizard';");
     expect(userMgmt).not.toContain("import { PlatformBroadcastAdminPanel } from '@/features/platform-broadcast/PlatformBroadcastAdminPanel';");
     expect(userMgmt).toContain("const AvailabilityCleanupWizard = lazy(() =>");

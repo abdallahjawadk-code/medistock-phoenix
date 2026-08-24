@@ -772,7 +772,7 @@ function AddForwardLineForm({ lang, requestId, onDone }: {
             <PhoenixButton variant="ghost" size="sm" onClick={() => setSelected(null)}>✕</PhoenixButton>
           </div>
         )}
-        <div style={{ display: 'grid', gap: '8px', gridTemplateColumns: '1fr auto', alignItems: 'end' }}>
+        <div className="nexus-responsive-action-grid" style={{ display: 'grid', gap: '8px', gridTemplateColumns: '1fr auto', alignItems: 'end' }}>
           <PhoenixInput label={t('net_op_qty', lang)} type="number" value={qty} onChange={e => setQty(e.target.value)} />
           <PhoenixButton loading={busy} disabled={!canAdd} onClick={async () => {
             if (!selected) return;
