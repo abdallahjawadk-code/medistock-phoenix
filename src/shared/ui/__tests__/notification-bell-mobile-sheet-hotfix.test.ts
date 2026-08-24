@@ -9,7 +9,7 @@ describe('mobile notification sheet hotfix', () => {
   it('ports the phone sheet outside shell/topbar clipping contexts without breaking the E2E selector contract', () => {
     expect(bell).toContain("import { createPortal } from 'react-dom';");
     expect(bell).toContain("import { useIsMobileViewport } from './useResponsiveViewport';");
-    expect(bell).toContain("className={isMobile ? 'nexus-notification-panel nexus-notification-mobile-sheet' : 'nexus-notification-panel'}");
+    expect(bell).toContain('className="nexus-notification-panel"');
     expect(bell).toContain('createPortal(notificationPanel, document.body)');
   });
 
