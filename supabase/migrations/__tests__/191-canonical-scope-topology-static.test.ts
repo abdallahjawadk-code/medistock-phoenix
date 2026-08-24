@@ -59,7 +59,7 @@ describe('191 · registration and file hygiene', () => {
     expect(REVIEWED_MIGRATION_FILES).toContain(NAME);
   });
 
-  it('is immediately followed by 192 through 198, the new ceiling, and 199 stays absent', () => {
+  it('is immediately followed by 192 through 199, the new ceiling, and 200 stays absent', () => {
     const NEXT = '192_phoenix_anonymous_read_surface_convergence.sql';
     const NEXT_2 = '193_phoenix_inter_org_alert_command_surface_hardening.sql';
     const NEXT_3 = '194_phoenix_authorization_surface_reproducibility_convergence.sql';
@@ -67,16 +67,17 @@ describe('191 · registration and file hygiene', () => {
     const NEXT_5 = '196_phoenix_secdef_relation_schema_qualification.sql';
     const NEXT_6 = '197_phoenix_public_execute_convergence.sql';
     const NEXT_7 = '198_phoenix_secdef_search_path_convergence.sql';
+    const NEXT_8 = '199_phoenix_command_center_read_contract.sql';
     const numbers = REVIEWED_MIGRATION_FILES.map(f => Number(f.slice(0, 3))).filter(Number.isFinite);
-    expect(Math.max(...numbers)).toBe(198);
-    expect(REVIEWED_MIGRATION_FILES.slice(REVIEWED_MIGRATION_FILES.indexOf(NAME) + 1)).toEqual([NEXT, NEXT_2, NEXT_3, NEXT_4, NEXT_5, NEXT_6, NEXT_7]);
-    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1]).toBe(NEXT_7);
+    expect(Math.max(...numbers)).toBe(199);
+    expect(REVIEWED_MIGRATION_FILES.slice(REVIEWED_MIGRATION_FILES.indexOf(NAME) + 1)).toEqual([NEXT, NEXT_2, NEXT_3, NEXT_4, NEXT_5, NEXT_6, NEXT_7, NEXT_8]);
+    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1]).toBe(NEXT_8);
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^192_/.test(f))).toEqual([NEXT]);
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^193_/.test(f))).toEqual([NEXT_2]);
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^194_/.test(f))).toEqual([NEXT_3]);
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^195_/.test(f))).toEqual([NEXT_4]);
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^196_/.test(f))).toEqual([NEXT_5]);
-    expect(REVIEWED_MIGRATION_FILES.filter(f => /^199_/.test(f))).toHaveLength(0);
+    expect(REVIEWED_MIGRATION_FILES.filter(f => /^200_/.test(f))).toHaveLength(0);
   });
 
   it('carries no CR bytes', () => {

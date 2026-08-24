@@ -7,6 +7,10 @@ const sql = readFileSync(
   'utf8',
 );
 
+// Comment-stripped view. The header prose is allowed to name the deferred
+// legacy RPCs; the executable statements are not allowed to touch them.
+const code = sql.replace(/^\s*--.*$/gm, '');
+
 describe('199 command center read contract — static', () => {
   it('creates the new SECURITY DEFINER read boundary and no relation/schema data model', () => {
     expect(sql).toContain('CREATE FUNCTION public.phoenix_command_center_read_contract');
@@ -14,11 +18,26 @@ describe('199 command center read contract — static', () => {
     expect(sql).not.toMatch(/CREATE TABLE|ALTER TABLE|DROP TABLE|TRUNCATE|DELETE FROM|UPDATE public\.|INSERT INTO public\./);
   });
 
-  it('forward-hardens both legacy dashboard-count RPCs without changing their signatures', () => {
-    expect(sql).toContain('CREATE OR REPLACE FUNCTION public.phoenix_get_dashboard_condition_counts(');
-    expect(sql).toContain('CREATE OR REPLACE FUNCTION public.phoenix_get_institution_condition_counts()');
-    expect(sql).toContain("'dashboard_view_forbidden' USING ERRCODE = '42501'");
-    expect(sql).toContain("public.phoenix_profile_has_permission(v_actor, 'dashboard.view')");
+  // OWNER_DECISION = OPTION_2 (strict GATE-ONLY). Hardening the two legacy
+  // dashboard-count RPCs is real work, but it changes a live contract for
+  // roles that lack dashboard.view by default, so it is deferred as
+  // POST_RAC2_ROLE_PRODUCT_DECISION / LEGACY_DASHBOARD_RPC_HARDENING.
+  // These assertions are what keeps that decision from eroding silently.
+  it('is strictly additive: it redefines nothing and touches neither legacy dashboard-count RPC', () => {
+    expect(code).not.toMatch(/CREATE\s+OR\s+REPLACE/i);
+    expect(code).not.toMatch(/\b(ALTER|DROP)\s+FUNCTION\b/i);
+    expect(code).not.toContain('phoenix_get_dashboard_condition_counts');
+    expect(code).not.toContain('phoenix_get_institution_condition_counts');
+    expect(code).not.toContain('dashboard_view_forbidden');
+    expect(code.match(/CREATE\s+FUNCTION/gi) ?? []).toHaveLength(1);
+  });
+
+  it('confines every GRANT/REVOKE to the one function it creates', () => {
+    const acl = code.match(/^(?:GRANT|REVOKE)[\s\S]*?;/gm) ?? [];
+    expect(acl.length).toBeGreaterThan(0);
+    for (const statement of acl) {
+      expect(statement).toContain('public.phoenix_command_center_read_contract(uuid,uuid,uuid)');
+    }
   });
 
   it('derives actor server-side and enforces dashboard.view through the canonical scoped helper', () => {
@@ -33,6 +52,8 @@ describe('199 command center read contract — static', () => {
     expect(sql).not.toMatch(/profile_permission_overrides/);
     expect(sql).not.toMatch(/LEGACY_TO_OFFICIAL/);
     expect(sql).not.toMatch(/GRANT\s+.*dashboard\.view/i);
+    // authority comes only from the canonical SCOPED helper
+    expect(code).not.toMatch(/phoenix_profile_has_permission\s*\(/);
   });
 
   it('keeps global organization counts super-only and exact-scope summaries bounded', () => {
