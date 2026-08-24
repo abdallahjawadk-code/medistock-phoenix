@@ -57,12 +57,17 @@ const THIRTY = [
 ];
 
 describe('M198 static — identity and placement', () => {
-  it('is the single next migration, numbered 198, with no 199+ present', () => {
+  it('is registered at 198, below the 199 ceiling, with no 200+ present', () => {
+    // RAC-2 landed 199 (Command Center read contract) directly after this
+    // migration, so 198 is no longer the newest file. It must still exist
+    // exactly once, still sit at index 197, and 199 must be the ONLY thing
+    // above it — a second unreviewed migration still fails this closed.
     const files = readdirSync(MIGRATIONS).filter((f) => /^\d{3}_.*\.sql$/.test(f)).sort();
     expect(files).toContain(FILENAME);
-    expect(files[files.length - 1]).toBe(FILENAME);
-    expect(files.filter((f) => /^(199|[2-9]\d\d)_/.test(f))).toEqual([]);
-    expect(files).toHaveLength(198);
+    expect(files.indexOf(FILENAME)).toBe(197);
+    expect(files.slice(198)).toEqual(['199_phoenix_command_center_read_contract.sql']);
+    expect(files.filter((f) => /^(200|[2-9]\d\d)_/.test(f))).toEqual([]);
+    expect(files).toHaveLength(199);
   });
 
   it('carries no MANUAL APPLY ONLY banner, so the pinned executor will accept it', () => {

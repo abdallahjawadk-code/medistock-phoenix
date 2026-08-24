@@ -390,6 +390,32 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
       // first CI run. No wildcard and no directory exemption: every other file
       // under supabase/ still fails this guard closed.
       'supabase/migrations/198_phoenix_secdef_search_path_convergence.sql',
+      //
+      // RAC-2 (v2.1.0) Command Center secure read boundary: M199 plus its two
+      // proof suites, the client service, and that service's contract test.
+      // M199 is STRICTLY ADDITIVE under OWNER_DECISION = OPTION_2 (GATE-ONLY):
+      // it issues exactly one CREATE FUNCTION, no CREATE OR REPLACE, no ALTER
+      // or DROP FUNCTION, and touches neither legacy dashboard-count RPC —
+      // phoenix_get_dashboard_condition_counts(uuid) and
+      // phoenix_get_institution_condition_counts() keep their bodies, ACLs,
+      // signatures, output and error behaviour exactly as migration 054 and its
+      // successors left them. Hardening those two is deferred as
+      // POST_RAC2_ROLE_PRODUCT_DECISION / LEGACY_DASHBOARD_RPC_HARDENING,
+      // because gating them would change a live contract for roles that lack
+      // dashboard.view by default. M199 seeds no permission, creates no table,
+      // index or policy, and mutates no business data; its VERIFY block proves
+      // the SECURITY DEFINER / search_path / ACL contract and that exactly one
+      // new routine exists. The service file is a thin typed RPC caller that
+      // infers no authority client-side.
+      //
+      // Registered by EXACT filename BEFORE the commit that lands them, for the
+      // same reason recorded above: `git diff --name-only <BASE>` cannot see an
+      // untracked file. No wildcard and no directory exemption.
+      'supabase/migrations/199_phoenix_command_center_read_contract.sql',
+      'supabase/migrations/__tests__/199-command-center-read-contract-static.test.ts',
+      'supabase/migrations/__tests__/199-command-center-read-contract.dynamic.test.ts',
+      'src/shared/supabase/services/command-center.service.ts',
+      'src/shared/supabase/services/__tests__/command-center-service-contract.test.ts',
       'supabase/migrations/__tests__/198-secdef-search-path-convergence-static.test.ts',
       'supabase/migrations/__tests__/198-secdef-search-path-convergence.dynamic.test.ts',
       // …and Stage I / I-6's Windows ops-coverage fix, which converts the ONE
