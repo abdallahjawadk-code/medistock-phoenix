@@ -223,7 +223,7 @@ export function NotificationBell() {
       aria-modal={isMobile ? true : undefined}
       aria-label={t('notif_panel_title', lang)}
       tabIndex={isMobile ? -1 : undefined}
-      className={isMobile ? 'nexus-notification-panel nexus-notification-mobile-sheet' : 'nexus-notification-panel'}
+      className="nexus-notification-panel"
       style={isMobile ? {
         position: 'fixed',
         top: 'calc(var(--tbh) + env(safe-area-inset-top, 0px) + 8px)',
