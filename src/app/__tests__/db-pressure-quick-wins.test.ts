@@ -80,13 +80,23 @@ describe('Public QR route skips AppContext auth bootstrap', () => {
    * What THIS test exists to guarantee is unchanged and still asserted below:
    * all four reads still happen here, in this effect, gated by nothing except
    * the skipAuthBootstrap flag. Only the names of two of them moved.
+   *
+   * MAJOR-J COLD-START: each read is now wrapped in withDeadline(), because a
+   * request that never settles left the app on the loading emblem forever and
+   * try/catch cannot bound silence. The CALLS are unchanged and still made from
+   * this effect, still gated by nothing but the flag — only the expression they
+   * sit inside moved. The assertions below were widened to name the bounded
+   * form rather than deleted, so a future edit that drops one of these reads
+   * still fails this test exactly as before.
    */
   it('getSession/onAuthChange/getMyProfile/getEffectivePermissions calls themselves are still present and still only guarded by the new flag', () => {
     expect(appContext).toContain('onAuthChange(async (event, s) => {');
     expect(appContext).toContain('readSessionOutcome().then(async (res) => {');
     expect(appContext).toContain('getSessionResult()');
     expect(appContext).toContain('getMyProfileResult()');
-    expect(appContext).toContain('const res = await getEffectivePermissions(p.id);');
+    // Bounded by a deadline, but still this effect's own call and still
+    // unguarded except by the flag.
+    expect(appContext).toContain('withDeadline(getEffectivePermissions(p.id), AUTH_PROFILE_DEADLINE_MS)');
   });
 
   it('PublicQrScreen itself only reads lang/toggleLang off useApp() — nothing that depends on session/profile/permissions', () => {
