@@ -10,10 +10,10 @@ this file less trustworthy, not more.
 
 ## v2.0.0
 
-Planned first tagged release. `package.json` has declared `2.0.0` throughout.
-**J-2 does not create the tag.** The `v2.0.0` tag is reserved for J-3, after
-the final whole-program audit, so it can point at the final audited release
-commit rather than at an intermediate state.
+First release candidate intended for the `v2.0.0` tag. `package.json` declares
+`2.0.0`. J-2 deliberately did not create the tag; J-3 creates it only after
+the final whole-program audit and its own required checks pass, so the tag
+points at the final audited release commit rather than an intermediate state.
 
 ### What ships
 
@@ -39,8 +39,12 @@ role/permission management with delegated and facility-scoped access.
   never becomes a fabricated `no_session`.
 * **Database** — Supabase PostgreSQL, canonical migrations `001`–`198`,
   applied through one pinned executor.
-* **Edge Functions** — `admin-create-user`, `admin-user-lifecycle`,
-  `admin-recycle-user`, `phoenix-outbox-dispatcher`.
+* **Canonical source-controlled Edge Functions** — `admin-create-user`,
+  `admin-user-lifecycle`, `admin-recycle-user`,
+  `phoenix-outbox-dispatcher`. Production also retains four legacy deployed
+  functions classified `SAFE_TO_RETIRE`; they are not repository callers or
+  part of the canonical shipped surface and are recorded under accepted
+  limitations below.
 
 ### Security posture at this release
 
@@ -49,8 +53,11 @@ role/permission management with delegated and facility-scoped access.
 * First-party `SECURITY DEFINER` routines on a bare `search_path = public`:
   **0**; all 321 carry `public, pg_temp` (migration 198), so the temporary
   schema can no longer be searched first and shadow a `public` name.
-* Anonymous surface: `get_public_qr_payload(text)` is the only routine granted
-  to `anon`, returning public-safe fields keyed by a random `public_id`.
+* Anonymous data surface: `get_public_qr_payload(text)` is the only
+  data-returning RPC intentionally executable by `anon`, returning public-safe
+  fields keyed by a random `public_id`. `phoenix_set_updated_at()` is also
+  executable through the default ACL but is a trigger-only routine and cannot
+  be invoked as a normal RPC.
 * Identity helpers `phoenix_my_org()` and `phoenix_my_role()` are reachable
   by `authenticated` through explicit grants, not through `PUBLIC`
   inheritance.
@@ -96,7 +103,8 @@ retrying.
 ### Accepted limitations at this release
 
 Recorded so the release is not read as claiming more than it delivers. Full
-detail in [`docs/phoenix/OPERATIONS.md`](docs/phoenix/OPERATIONS.md).
+detail is in [`docs/phoenix/OPERATIONS.md`](docs/phoenix/OPERATIONS.md) and
+[`docs/phoenix/J3-FINAL-RELEASE-AUDIT.md`](docs/phoenix/J3-FINAL-RELEASE-AUDIT.md).
 
 | Area | Status |
 |---|---|
@@ -106,5 +114,8 @@ detail in [`docs/phoenix/OPERATIONS.md`](docs/phoenix/OPERATIONS.md).
 | Monitoring / alerting | **MANUAL** — incidents are found by a person, not an automated alert |
 | On-call rota | **NONE CLAIMED** — operational ownership is owner-held |
 | Edge Function CORS (D3) | **RESIDUAL_ACCEPTED_RISK** — non-credentialed wildcard, Bearer-token auth, no cookies; see the security audit |
+| Leaked-password protection | **ACCEPTED_LIMITATION** — Supabase reports it disabled; the feature is available on Pro and above, and this release does not authorize a paid-plan mutation |
+| Legacy deployed Edge Functions | **SAFE_TO_RETIRE / NOT REMOVED** — `create-user`, `reset-user-password`, `update-user`, `delete-user` remain active in Production but have no canonical repository caller; retirement is a separate authorized control-plane action |
+| Supabase performance advisor backlog | **POST-RELEASE** — advisory-only optimization items remain; no release-candidate correctness or authenticated acceptance failure is attributed to them |
 
 None of the above is a proven capability, and none may be presented as one.
