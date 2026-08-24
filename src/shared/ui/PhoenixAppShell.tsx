@@ -1,5 +1,6 @@
 import { ReactNode, useCallback, useState, useEffect } from 'react';
 import { useApp } from '@/app/AppContext';
+import { useIsMobileViewport } from '@/shared/ui/useResponsiveViewport';
 import { t } from '@/shared/i18n/strings';
 import { PhoenixSidebar } from './PhoenixSidebar';
 import { PhoenixMobileDrawer } from './PhoenixMobileDrawer';
@@ -46,15 +47,9 @@ interface Props {
 export function PhoenixAppShell({ children, currentScreen, onNavigate, onLogout }: Props) {
   const { lang, dir } = useApp();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const isMobile = useIsMobileViewport();
   const closeSidebar = useCallback(() => setSidebarOpen(false), []);
   const toggleSidebar = useCallback(() => setSidebarOpen(open => !open), []);
-
-  useEffect(() => {
-    const onResize = () => setIsMobile(window.innerWidth < 768);
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, []);
 
   // PHARMACY-PULSE-LOADER: pause decorative animations while the page is
   // hidden (background tab) — CSS reads html[data-page-hidden].

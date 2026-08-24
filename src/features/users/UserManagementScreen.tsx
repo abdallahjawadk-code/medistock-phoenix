@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { useApp } from '@/app/AppContext';
+import { useIsMobileViewport } from '@/shared/ui/useResponsiveViewport';
 import { t } from '@/shared/i18n/strings';
 import { useAsync } from '@/shared/lib/useAsync';
 import {
@@ -192,7 +193,7 @@ export function UserManagementScreen() {
   // That guard is still true and worth keeping — so this addition works around
   // it rather than editing it.
   const { lang, role, activeOrgId, profile, authz, myPermissions, reloadMyPermissions } = useApp();
-  const isMobile = window.innerWidth < 768;
+  const isMobile = useIsMobileViewport();
   const isSuper  = normalizeRole(role) === 'super_admin';
 
   // PHASE-1-CONTROLLED-RBAC-ACTIVATION-SHADOW-MODE: observe the two scope-

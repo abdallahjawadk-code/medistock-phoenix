@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import QRCode from 'qrcode';
 import { useApp } from '@/app/AppContext';
+import { useIsMobileViewport } from '@/shared/ui/useResponsiveViewport';
 import { t } from '@/shared/i18n/strings';
 import { useAsync } from '@/shared/lib/useAsync';
 import { formatStableDate } from '@/shared/lib/date';
@@ -143,7 +144,7 @@ const fieldStyle = {
 export function InstitutionScreen() {
   const { lang, role, activeOrgId, profile, myPermissions, reloadMyPermissions } = useApp();
   useEffect(() => { if (myPermissions.size === 0) reloadMyPermissions(); }, []);
-  const isMobile = window.innerWidth < 768;
+  const isMobile = useIsMobileViewport();
   const isSuper = role === 'super_admin';
 
   const [selectedOrgId, setSelectedOrgId] = useState<string | null>(null);

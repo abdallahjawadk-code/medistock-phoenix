@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useApp } from '@/app/AppContext';
+import { useIsMobileViewport } from '@/shared/ui/useResponsiveViewport';
 import { t } from '@/shared/i18n/strings';
 import { useAsync } from '@/shared/lib/useAsync';
 import { getInstitutionOverviews, type InstitutionOverview } from '@/shared/supabase/services/dashboard.service';
@@ -14,7 +15,7 @@ interface Props { onNavigate: (screen: number) => void; }
 export function MeshScreen({ onNavigate: _onNavigate }: Props) {
   const { lang } = useApp();
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const isMobile = window.innerWidth < 768;
+  const isMobile = useIsMobileViewport();
 
   const { data, loading, error, reload } = useAsync(() => getInstitutionOverviews(), []);
   const nodes = data ?? [];
