@@ -78,12 +78,15 @@ run('199 command center read contract — dynamic', () => {
         VALUES ('${WO}','${A}','distribution_point','${PA}',true),
                ('${OO}','${A}','distribution_point','${PA}',true);
 
+      -- item_availability_identity_chk requires local_item_id OR port_name.
+      -- port_name is additionally unique per distribution point
+      -- (item_avail_point_port_idx), so each row at PA carries a distinct one.
       INSERT INTO item_availability(
-        distribution_point_id,organization_id,quantity,condition,scientific_name
+        distribution_point_id,organization_id,quantity,condition,scientific_name,port_name
       ) VALUES
-        ('${PA}','${A}',12,'available','RAC2 A available'),
-        ('${PA}','${A}',0,'missing','RAC2 A missing'),
-        ('${PB}','${B}',7,'available','RAC2 B available');
+        ('${PA}','${A}',12,'available','RAC2 A available','RAC2-PA-AVAIL'),
+        ('${PA}','${A}',0,'missing','RAC2 A missing','RAC2-PA-MISSING'),
+        ('${PB}','${B}',7,'available','RAC2 B available','RAC2-PB-AVAIL');
 
       INSERT INTO warehouse_stock(
         organization_id,warehouse_id,scientific_name,
