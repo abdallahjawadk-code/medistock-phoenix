@@ -13,16 +13,50 @@ name: E2E authenticated acceptance
 # tools/e2e-acceptance/run.mjs both hard-refuse to run against anything that
 # isn't a recognized local address.
 
+# ============================================================================
+# EMISSION CONTRACT (Stage I / I-6, reviewed) — RUNS FOR EVERY PR TO MASTER.
+#
+# THIS WORKFLOW MUST NOT BE PATH-FILTERED, because I-1B makes its job name a
+# REQUIRED status check on master.
+#
+# GitHub blocks a pull request whose required context never arrives. A
+# path-filtered workflow does not run at all for a non-matching PR, so the
+# context is never reported and the PR sits permanently "Expected — waiting for
+# status to be reported". Repository rulesets have no conditional or
+# path-scoped form of required_status_checks: the only related knobs are
+# strict_required_status_checks_policy (branch freshness) and
+# do_not_enforce_on_create (branch creation), neither of which makes a
+# requirement conditional on the diff. So a required context must be
+# unconditional.
+#
+# This was measured, not assumed. Against the ten-path matrix this workflow
+# previously carried, 5 of 15 open pull requests touched none of those paths
+# and would have deadlocked; PRs #153 and #154 had already merged with the
+# context absent. Hence: no `paths:`, and `branches: [master]` so it covers
+# exactly the ref the ruleset guards.
+#
+# WHAT IT PROVES, AND WHAT IT DOES NOT.
+# It builds the REAL production bundle, starts a disposable Supabase with
+# supabase/migrations applied, seeds real Auth users, serves the built app and
+# drives it with a real browser. The surfaces that change what it proves are
+# supabase/migrations/**, src/app/**, src/shared/authz/**,
+# src/shared/supabase/**, src/features/outlet/**, tools/e2e-fixtures/**,
+# tools/e2e-acceptance/**, package.json and package-lock.json.
+#
+# It does NOT exercise the Production migration executor. A green result here
+# is not evidence of executor correctness; that remains proven by
+# production-migration-executor-contract.test.ts and by pg-rig's TLS
+# mixed-history acceptance. Running unconditionally is a required-check
+# necessity, not a claim that this job covers everything it runs on.
+#
+# tests/e2e-authenticated-trigger-contract.test.ts pins the absence of a
+# `paths:` filter, so a future edit cannot silently reintroduce the deadlock.
+# ============================================================================
 on:
   workflow_dispatch:
   pull_request:
-    paths:
-      - 'src/features/outlet/**'
-      - 'src/shared/authz/**'
-      - 'supabase/migrations/**'
-      - 'tools/e2e-fixtures/**'
-      - 'tools/e2e-acceptance/**'
-      - '.github/workflows/e2e-authenticated.yml'
+    branches:
+      - master
 
 permissions:
   contents: read

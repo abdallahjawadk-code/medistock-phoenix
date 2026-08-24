@@ -100,9 +100,13 @@ describe('release engine -- encoding and PowerShell compatibility', () => {
     }
   });
 
-  it('parses cleanly under the real Windows PowerShell parser', () => {
-    const ps = 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe';
-    if (process.platform !== 'win32' || !existsSync(ps)) return; // Linux CI: byte guard above protects
+  // I-6: this used to `return` early off Windows, which vitest reports as a
+  // PASSED test that asserted nothing -- a green tick for work that never ran.
+  // it.runIf(canRun) reports it as SKIPPED instead, so the distinction between
+  // "proven" and "not attempted" survives into the CI summary, and the
+  // ops-windows-acceptance.yml job runs it for real on windows-latest.
+  it.runIf(canRun)('parses cleanly under the real Windows PowerShell parser', () => {
+    const ps = PS_EXE;
     for (const f of PS_FILES) {
       const script = `
 $t=$null;$e=$null

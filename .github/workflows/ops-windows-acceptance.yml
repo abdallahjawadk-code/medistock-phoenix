@@ -1,0 +1,118 @@
+name: Windows ops acceptance
+
+# ============================================================================
+# WINDOWS OPS RELEASE-ENGINE ACCEPTANCE — Stage I / I-6.
+#
+# WHY THIS EXISTS.
+# supabase/migrations/__tests__/ops-purge-runner-compatibility.test.ts guards
+# the owner-run PowerShell release engine: that every ops/*.ps1 file is pure
+# ASCII, that none of them contains a character Windows PowerShell 5.1 would
+# treat as a string delimiter, that they PARSE under the real 5.1 parser, and
+# that the evidence generators actually refuse a forged or empty run report.
+#
+# Eight of those assertions can only run where Windows PowerShell 5.1 exists.
+# Every runner in ci.yml is ubuntu-24.04, so on merge they were never executed:
+# seven were honestly reported as skipped, and one `return`ed early off Windows
+# and was reported as a PASS that asserted nothing. A skipped test is not a
+# pass, and a green tick for work that never ran is worse than a red one.
+#
+# WHY A WINDOWS JOB RATHER THAN A PLATFORM-NEUTRAL FIX.
+# The byte-level guards (ASCII-only, no smart-quote delimiters) already are
+# platform-neutral and run on Linux — they are the cheap half. The remaining
+# half is irreducibly Windows: only the Windows PowerShell 5.1 parser can prove
+# a 5.1 parse, and only a real powershell.exe can prove the evidence generators
+# reject bad input. PowerShell 7 on Linux is a DIFFERENT parser with different
+# encoding behaviour, so passing there would be false confidence about the
+# thing that actually broke — the 5.1 ANSI-codepage fallback. GitHub-hosted
+# windows-latest ships 5.1 at the exact path the test probes, and this
+# repository is public, so its runners cost nothing.
+#
+# WHY IT IS NARROW.
+# It runs ONE test file, only when the release engine or that file changes.
+# It is not a second full CI.
+# ============================================================================
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'ops/**'
+      - 'supabase/ops/**'
+      - 'supabase/migrations/__tests__/ops-purge-runner-compatibility.test.ts'
+      - '.github/workflows/ops-windows-acceptance.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ops-windows-acceptance-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-ops-acceptance:
+    name: Windows ops release-engine acceptance
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      # The whole point of this job is that `canRun` in the test file is TRUE
+      # here. If Windows PowerShell 5.1 were ever absent from the image, every
+      # Windows-only assertion would silently revert to "skipped" and this job
+      # would go green having proven nothing. Prove the precondition FIRST, and
+      # fail the job outright if it does not hold.
+      - name: Prove Windows PowerShell 5.1 is present at the path the test probes
+        shell: bash
+        run: |
+          set -euo pipefail
+          PS='/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe'
+          if [ ! -f "$PS" ]; then
+            echo "::error::Windows PowerShell 5.1 is absent — the Windows-only assertions would silently skip."
+            exit 1
+          fi
+          "$PS" -NoProfile -NonInteractive -Command '$PSVersionTable.PSVersion.ToString()'
+          echo "Windows PowerShell 5.1 present at the probed path."
+
+      - name: Run the release-engine acceptance on real Windows
+        shell: bash
+        env:
+          TZ: Asia/Baghdad
+        run: |
+          set -euo pipefail
+          npx vitest run supabase/migrations/__tests__/ops-purge-runner-compatibility.test.ts \
+            --reporter=json --outputFile=ops-windows-result.json --reporter=default
+
+      # A green vitest exit code is satisfied by a file whose every test was
+      # skipped. This asserts the file actually EXECUTED its assertions: zero
+      # skipped, and at least the eight Windows-only ones among the passes.
+      - name: Assert the Windows-only assertions really ran — zero skipped
+        shell: bash
+        run: |
+          set -euo pipefail
+          node -e "
+            const r = require('./ops-windows-result.json');
+            const files = r.testResults ?? [];
+            if (files.length !== 1) { console.error('::error::expected exactly 1 test file, got ' + files.length); process.exit(1); }
+            const a = files[0].assertionResults ?? [];
+            const passed  = a.filter(x => x.status === 'passed').length;
+            const skipped = a.filter(x => x.status === 'pending' || x.status === 'skipped' || x.status === 'todo').length;
+            const failed  = a.filter(x => x.status === 'failed').length;
+            console.log('passed=' + passed + ' skipped=' + skipped + ' failed=' + failed);
+            if (failed > 0)  { console.error('::error::' + failed + ' assertion(s) failed'); process.exit(1); }
+            if (skipped > 0) { console.error('::error::' + skipped + ' assertion(s) were SKIPPED on a Windows runner — the Windows-only coverage did not execute'); process.exit(1); }
+            if (passed < 60) { console.error('::error::only ' + passed + ' assertions ran; the file is expected to carry far more'); process.exit(1); }
+            console.log('Windows ops acceptance executed ' + passed + ' assertions with none skipped.');
+          "
