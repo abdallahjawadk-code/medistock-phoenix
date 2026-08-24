@@ -8,10 +8,17 @@ const sql = readFileSync(
 );
 
 describe('199 command center read contract — static', () => {
-  it('creates one additive SECURITY DEFINER read boundary with hardened search_path', () => {
+  it('creates the new SECURITY DEFINER read boundary and no relation/schema data model', () => {
     expect(sql).toContain('CREATE FUNCTION public.phoenix_command_center_read_contract');
     expect(sql).toMatch(/SECURITY DEFINER[\s\S]*SET search_path = public, pg_temp/);
     expect(sql).not.toMatch(/CREATE TABLE|ALTER TABLE|DROP TABLE|TRUNCATE|DELETE FROM|UPDATE public\.|INSERT INTO public\./);
+  });
+
+  it('forward-hardens both legacy dashboard-count RPCs without changing their signatures', () => {
+    expect(sql).toContain('CREATE OR REPLACE FUNCTION public.phoenix_get_dashboard_condition_counts(');
+    expect(sql).toContain('CREATE OR REPLACE FUNCTION public.phoenix_get_institution_condition_counts()');
+    expect(sql).toContain("'dashboard_view_forbidden' USING ERRCODE = '42501'");
+    expect(sql).toContain("public.phoenix_profile_has_permission(v_actor, 'dashboard.view')");
   });
 
   it('derives actor server-side and enforces dashboard.view through the canonical scoped helper', () => {
@@ -43,7 +50,7 @@ describe('199 command center read contract — static', () => {
     expect(sql).toContain("'trend_status', 'deferred_pending_measurement'");
   });
 
-  it('revokes PUBLIC/anon execute and grants authenticated only', () => {
+  it('revokes PUBLIC/anon execute and grants authenticated only on the new contract', () => {
     expect(sql).toMatch(/REVOKE ALL ON FUNCTION public\.phoenix_command_center_read_contract\(uuid,uuid,uuid\)[\s\S]*FROM PUBLIC, anon;/);
     expect(sql).toMatch(/GRANT EXECUTE ON FUNCTION public\.phoenix_command_center_read_contract\(uuid,uuid,uuid\)[\s\S]*TO authenticated;/);
   });
