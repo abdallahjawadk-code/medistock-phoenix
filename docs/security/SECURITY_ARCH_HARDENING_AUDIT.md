@@ -34,6 +34,51 @@ Migration `093` functions are all SECURITY DEFINER with `search_path` pinned, RE
 |---|-----|------|---------|--------------|-------------------------------|
 | D3 | **Low/Info** | B auth | Edge Functions set `Access-Control-Allow-Origin: '*'`. | Functions are **Bearer-token** authed (no cookies), so `*` grants no CSRF/credential-theft path; a stolen token is the prerequisite regardless of origin. Restricting origins now risks breaking Vercel **preview** deployments (dynamic hostnames), and CORS was explicitly out of scope for this package. | **Accepted temporarily.** Review condition: once a stable production origin (and a preview-origin policy) is fixed, replace `'*'` with an allowlist keyed off a configured app-origin env var. No data exposure in the interim (token-gated, server-authorized). |
 
+
+### D3 — FINAL DISPOSITION (Stage J / J-1, 2026-08-24)
+
+**D3 = RESIDUAL_ACCEPTED_RISK.** Re-audited at master `4dbfc869` and closed as
+accepted rather than changed. The original review condition — "once a stable
+production origin (and a preview-origin policy) is fixed" — is **half** met: a
+stable Production origin exists, but a preview-origin policy still does not,
+and cannot be built here without either weakening the policy or mutating
+Production configuration.
+
+**Why no code change was made.** Every safe option is unavailable, and every
+available option is unsafe or forbidden:
+
+| Option | Verdict |
+|---|---|
+| Exact Production origin only | Breaks every Vercel **preview** deployment's admin calls — preview hostnames are per-deployment and not enumerable. |
+| Environment-configured allowlist | The three functions read **only** `SUPABASE_URL`, and **no workflow sets Edge Function secrets**. Supplying an allowlist means `supabase secrets set` against the Production Supabase project — a Production configuration mutation, which is not authorized. |
+| `*.vercel.app` pattern | A broad wildcard-pattern allowlist. Rejected: it would mark the finding "closed" while accepting any attacker-controlled `*.vercel.app` subdomain. |
+| Reflecting the request Origin | Arbitrary origin reflection. Rejected outright. |
+
+**Why accepting it is sound, not a concession.** The containment argument was
+re-verified against the live code, not taken from the earlier record:
+
+* **`Access-Control-Allow-Credentials` is absent from every function.** The
+  wildcard is therefore non-credentialed: a browser will not attach cookies or
+  credentials to a `*` origin.
+* **No function reads or sets a cookie.** Authorization is Bearer-token only.
+* **Every admin function rejects an unauthenticated request** before doing any
+  work (`NOT_AUTHENTICATED`).
+* Most decisively: **CORS is enforced by browsers, not by servers.** A caller
+  holding a valid token can invoke these endpoints from curl or any server-side
+  client no matter what `Access-Control-Allow-Origin` says. Restricting the
+  header would therefore remove no attacker capability — it would only restrict
+  legitimate browsers. The real control is the Bearer token and the
+  server-side authority checks behind it, both of which are unchanged.
+
+So a stricter header would add process, not security, and would break the
+preview development model in exchange. The honest disposition is to accept it.
+
+**Review condition (unchanged, carried forward).** Revisit if any of these
+becomes true: a credentialed CORS mode is ever introduced; cookie-based auth is
+ever adopted; a bounded, enumerable preview-origin policy becomes available; or
+a sanctioned path exists to configure Edge Function secrets without an
+unreviewed Production mutation.
+
 ---
 
 ## 2. Positive assurance (audited, no action needed — with evidence)
