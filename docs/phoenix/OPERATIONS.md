@@ -326,6 +326,19 @@ Every line must be **yes** before a Production-affecting release.
   conditionally-emitted context would recreate the merge deadlock described in
   §6. It may be added to the ruleset only if it is first made unconditional and
   separately authorized.
+* **Edge Function CORS is an accepted residual risk (D3).** The three `admin-*`
+  functions send `Access-Control-Allow-Origin: '*'`. Re-audited in Stage J and
+  accepted, not changed: `Access-Control-Allow-Credentials` is absent from every
+  function, no function reads or sets a cookie, and every one rejects an
+  unauthenticated request. CORS is browser-enforced, so a token holder can call
+  these endpoints from any non-browser client regardless of the header —
+  tightening it would remove no attacker capability while breaking Vercel
+  preview deployments, whose hostnames are per-deployment and not enumerable.
+  An environment-configured allowlist is not available either: the functions
+  read only `SUPABASE_URL`, and no workflow configures Edge Function secrets.
+  Full reasoning and the review condition are in
+  `docs/security/SECURITY_ARCH_HARDENING_AUDIT.md` under "D3 — FINAL
+  DISPOSITION".
 * **Documentation drift is itself a risk.** `docs/deployment-readiness.md` and
   `docs/blocker-migration-065-accumulating-receipt-concurrency.md` each carried
   a hard "do not deploy" blocker long after the code flag
