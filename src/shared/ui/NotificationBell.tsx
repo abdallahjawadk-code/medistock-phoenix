@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import {
@@ -11,6 +12,7 @@ import { PhoenixIcon } from './PhoenixIcon';
 import { PhoenixLoadingState } from './PhoenixLoadingState';
 import { PhoenixErrorState } from './PhoenixErrorState';
 import { PhoenixEmptyState } from './PhoenixEmptyState';
+import { useIsMobileViewport } from './useResponsiveViewport';
 
 /**
  * PAPER-REFERENCE-CONTRACT-110 — a notification's reference_type is the
@@ -60,6 +62,7 @@ function eventLabel(n: NotificationRow, lang: 'ar' | 'en'): string {
 
 export function NotificationBell() {
   const { lang, profile } = useApp();
+  const isMobile = useIsMobileViewport();
   const [open, setOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [notifications, setNotifications] = useState<NotificationRow[] | null>(null);
@@ -67,6 +70,8 @@ export function NotificationBell() {
   const [error, setError] = useState<string | null>(null);
   const [paperRefs, setPaperRefs] = useState<Map<string, PaperReference>>(new Map());
   const containerRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const bellButtonRef = useRef<HTMLButtonElement>(null);
 
   /**
    * One batched query PER covered document type across the whole visible
@@ -112,11 +117,54 @@ export function NotificationBell() {
 
   useEffect(() => {
     function onClickOutside(e: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      if (containerRef.current?.contains(target) || panelRef.current?.contains(target)) return;
+      setOpen(false);
     }
     if (open) document.addEventListener('mousedown', onClickOutside);
     return () => document.removeEventListener('mousedown', onClickOutside);
   }, [open]);
+
+  // MOBILE-NOTIFICATION-SHEET-HOTFIX: the old mobile CSS correctly supplied
+  // fixed physical edges, but then `inset-inline-end:auto !important` could
+  // cancel one of those same edges (right in LTR, left in RTL). The phone sheet
+  // is now portalled outside AppShell/topbar clipping, then its four-edge
+  // geometry is pinned at inline-!important priority so the historical rule
+  // cannot collapse either direction. The legacy class stays present so the
+  // authenticated E2E browser gate continues exercising this exact surface.
+  useEffect(() => {
+    if (!open || !isMobile) return;
+    const frame = window.requestAnimationFrame(() => {
+      const panel = panelRef.current;
+      if (!panel) return;
+      const top = 'calc(var(--tbh) + env(safe-area-inset-top, 0px) + 8px)';
+      const right = 'calc(8px + env(safe-area-inset-right, 0px))';
+      const bottom = 'calc(var(--bnh) + env(safe-area-inset-bottom, 0px) + 8px)';
+      const left = 'calc(8px + env(safe-area-inset-left, 0px))';
+      const direction = getComputedStyle(document.documentElement).direction;
+      panel.style.setProperty('position', 'fixed', 'important');
+      panel.style.setProperty('top', top, 'important');
+      panel.style.setProperty('right', right, 'important');
+      panel.style.setProperty('bottom', bottom, 'important');
+      panel.style.setProperty('left', left, 'important');
+      panel.style.setProperty('inset-inline-end', direction === 'rtl' ? left : right, 'important');
+      panel.style.setProperty('width', 'auto', 'important');
+      panel.style.setProperty('max-height', 'none', 'important');
+      panel.style.setProperty('overflow-y', 'auto', 'important');
+      panel.focus();
+    });
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      setOpen(false);
+      window.requestAnimationFrame(() => bellButtonRef.current?.focus());
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [open, isMobile]);
 
   const loadList = useCallback(() => {
     setLoading(true);
@@ -167,14 +215,117 @@ export function NotificationBell() {
     }
   };
 
+  const notificationPanel = open ? (
+    <div
+      id="phoenix-notification-panel"
+      ref={panelRef}
+      role="dialog"
+      aria-modal={isMobile ? true : undefined}
+      aria-label={t('notif_panel_title', lang)}
+      tabIndex={isMobile ? -1 : undefined}
+      className="nexus-notification-panel"
+      style={isMobile ? {
+        position: 'fixed',
+        top: 'calc(var(--tbh) + env(safe-area-inset-top, 0px) + 8px)',
+        right: 'calc(8px + env(safe-area-inset-right, 0px))',
+        bottom: 'calc(var(--bnh) + env(safe-area-inset-bottom, 0px) + 8px)',
+        left: 'calc(8px + env(safe-area-inset-left, 0px))',
+        width: 'auto',
+        maxHeight: 'none',
+        overflowY: 'auto',
+        overscrollBehavior: 'contain',
+        WebkitOverflowScrolling: 'touch',
+        background: 'var(--surface)',
+        border: '1px solid var(--line)',
+        borderRadius: 12,
+        boxShadow: '0 20px 48px rgba(0,0,0,0.28)',
+        zIndex: 'var(--z-modal)',
+      } : {
+        position: 'absolute', top: 'calc(100% + 8px)', insetInlineEnd: 0,
+        width: 'min(380px, 92vw)', maxHeight: '70vh', overflowY: 'auto',
+        background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 12,
+        boxShadow: '0 20px 48px rgba(0,0,0,0.28)', zIndex: 'var(--z-topbar, 40)',
+      }}
+    >
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '10px 14px', borderBottom: '1px solid var(--line)', position: 'sticky', top: 0,
+        background: 'var(--surface)', zIndex: 1,
+      }}>
+        <strong>{t('notif_panel_title', lang)}</strong>
+        {unreadCount > 0 && (
+          <button type="button" onClick={handleMarkAllRead} className="premium-focus-ring" style={{
+            background: 'transparent', border: 'none', color: 'var(--cyanDim)', fontSize: 13, cursor: 'pointer',
+          }}>
+            {t('notif_mark_all_read', lang)}
+          </button>
+        )}
+      </div>
+
+      <div style={{ padding: 8 }}>
+        {loading && <PhoenixLoadingState label={t('loading', lang)} />}
+        {!loading && error && (
+          <PhoenixErrorState title={t('notif_load_error', lang)} message={error} onRetry={loadList} />
+        )}
+        {!loading && !error && notifications && notifications.length === 0 && (
+          <PhoenixEmptyState icon="bell" title={t('notif_empty_title', lang)} description={t('notif_empty_description', lang)} />
+        )}
+        {!loading && !error && notifications && notifications.length > 0 && (
+          <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {notifications.map((n) => {
+              const docType = n.referenceType ? NOTIFICATION_REF_TYPE_TO_DOCUMENT_TYPE[n.referenceType] : undefined;
+              const paperRef = docType && n.referenceId ? paperRefs.get(`${docType}:${n.referenceId}`) : undefined;
+              return (
+                <li key={n.id}>
+                  <button
+                    type="button"
+                    onClick={() => !n.isRead && handleMarkRead(n.id)}
+                    className="premium-focus-ring"
+                    style={{
+                      width: '100%', textAlign: 'start', display: 'flex', flexDirection: 'column', gap: 2,
+                      padding: '8px 10px', borderRadius: 8, border: 'none', cursor: n.isRead ? 'default' : 'pointer',
+                      background: n.isRead ? 'transparent' : 'var(--chip)',
+                    }}
+                  >
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      {!n.isRead && (
+                        <span aria-hidden="true" style={{
+                          width: 6, height: 6, borderRadius: 999, background: 'var(--ember)', flexShrink: 0,
+                        }} />
+                      )}
+                      <span style={{ fontWeight: n.isRead ? 400 : 600, fontSize: 13.5 }}>{eventLabel(n, lang)}</span>
+                    </span>
+                    <span style={{ fontSize: 12, color: 'var(--muted)', display: 'flex', gap: 6 }}>
+                      {n.reference && <span>{n.reference}</span>}
+                      <span dir="ltr">{relativeTime(n.occurredAt, lang)}</span>
+                    </span>
+                    {/* PAPER-REFERENCE-CONTRACT-110: only when actually recorded — most
+                        notifications carry no paper reference and must not show a "—". */}
+                    {paperRef?.paperReferenceNumber && (
+                      <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
+                        {t('mv_h_paper_reference_number', lang)}: {paperReferenceSummary(paperRef)}
+                      </span>
+                    )}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+    </div>
+  ) : null;
+
   return (
     <div ref={containerRef} style={{ position: 'relative' }}>
       <button
+        ref={bellButtonRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
         className="nexus-control"
         aria-label={t('notif_bell_label', lang)}
         aria-expanded={open}
+        aria-controls="phoenix-notification-panel"
         style={{ position: 'relative' }}
       >
         <PhoenixIcon name="bell" size={17} />
@@ -193,85 +344,10 @@ export function NotificationBell() {
         )}
       </button>
 
-      {open && (
-        <div
-          role="dialog"
-          aria-label={t('notif_panel_title', lang)}
-          className="nexus-notification-panel"
-          style={{
-            position: 'absolute', top: 'calc(100% + 8px)', insetInlineEnd: 0,
-            width: 'min(380px, 92vw)', maxHeight: '70vh', overflowY: 'auto',
-            background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 12,
-            boxShadow: '0 20px 48px rgba(0,0,0,0.28)', zIndex: 'var(--z-topbar, 40)',
-          }}
-        >
-          <div style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            padding: '10px 14px', borderBottom: '1px solid var(--line)', position: 'sticky', top: 0,
-            background: 'var(--surface)',
-          }}>
-            <strong>{t('notif_panel_title', lang)}</strong>
-            {unreadCount > 0 && (
-              <button type="button" onClick={handleMarkAllRead} className="premium-focus-ring" style={{
-                background: 'transparent', border: 'none', color: 'var(--cyanDim)', fontSize: 13, cursor: 'pointer',
-              }}>
-                {t('notif_mark_all_read', lang)}
-              </button>
-            )}
-          </div>
-
-          <div style={{ padding: 8 }}>
-            {loading && <PhoenixLoadingState label={t('loading', lang)} />}
-            {!loading && error && (
-              <PhoenixErrorState title={t('notif_load_error', lang)} message={error} onRetry={loadList} />
-            )}
-            {!loading && !error && notifications && notifications.length === 0 && (
-              <PhoenixEmptyState icon="bell" title={t('notif_empty_title', lang)} description={t('notif_empty_description', lang)} />
-            )}
-            {!loading && !error && notifications && notifications.length > 0 && (
-              <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
-                {notifications.map((n) => {
-                  const docType = n.referenceType ? NOTIFICATION_REF_TYPE_TO_DOCUMENT_TYPE[n.referenceType] : undefined;
-                  const paperRef = docType && n.referenceId ? paperRefs.get(`${docType}:${n.referenceId}`) : undefined;
-                  return (
-                  <li key={n.id}>
-                    <button
-                      type="button"
-                      onClick={() => !n.isRead && handleMarkRead(n.id)}
-                      className="premium-focus-ring"
-                      style={{
-                        width: '100%', textAlign: 'start', display: 'flex', flexDirection: 'column', gap: 2,
-                        padding: '8px 10px', borderRadius: 8, border: 'none', cursor: n.isRead ? 'default' : 'pointer',
-                        background: n.isRead ? 'transparent' : 'var(--chip)',
-                      }}
-                    >
-                      <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        {!n.isRead && (
-                          <span aria-hidden="true" style={{
-                            width: 6, height: 6, borderRadius: 999, background: 'var(--ember)', flexShrink: 0,
-                          }} />
-                        )}
-                        <span style={{ fontWeight: n.isRead ? 400 : 600, fontSize: 13.5 }}>{eventLabel(n, lang)}</span>
-                      </span>
-                      <span style={{ fontSize: 12, color: 'var(--muted)', display: 'flex', gap: 6 }}>
-                        {n.reference && <span>{n.reference}</span>}
-                        <span dir="ltr">{relativeTime(n.occurredAt, lang)}</span>
-                      </span>
-                      {/* PAPER-REFERENCE-CONTRACT-110: only when actually recorded — most
-                          notifications carry no paper reference and must not show a "—". */}
-                      {paperRef?.paperReferenceNumber && (
-                        <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
-                          {t('mv_h_paper_reference_number', lang)}: {paperReferenceSummary(paperRef)}
-                        </span>
-                      )}
-                    </button>
-                  </li>
-                  );
-                })}
-              </ul>
-            )}
-          </div>
-        </div>
+      {notificationPanel && (
+        isMobile && typeof document !== 'undefined'
+          ? createPortal(notificationPanel, document.body)
+          : notificationPanel
       )}
     </div>
   );
