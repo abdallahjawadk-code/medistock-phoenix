@@ -122,6 +122,26 @@ export function isScreenAuthorized(
   if (screen === 14) return n === 'super_admin' || permissions.has('users.view');
 
   /**
+   * RAC-3 - the Command Center is CAPABILITY-gated on `dashboard.view`.
+   *
+   * This mirrors, in the UX layer, the authority Migration 199 already
+   * enforces server-side: phoenix_command_center_read_contract derives the
+   * actor from auth.uid() and refuses with 42501 unless the canonical scoped
+   * helper grants `dashboard.view` at the requested scope. The key is read
+   * from EFFECTIVE permissions, never from a role name, so a per-profile
+   * override is honoured here exactly as the database honours it.
+   *
+   * The point of gating it here too is NOT security - the RPC is the
+   * authority and stays so. It is that an ineligible actor must keep the
+   * landing it already has instead of being routed at a screen that can only
+   * answer 42501. `central_warehouse_manager` and `outlet_officer` hold no
+   * `dashboard.view` default, and `health_center_manager` is refused earlier
+   * by the facility-scoped branch - the same three refusals migration 199's
+   * runtime suite proves.
+   */
+  if (screen === COMMAND_CENTER_SCREEN) return permissions.has(DASHBOARD_VIEW_PERMISSION);
+
+  /**
    * R1.3 - screen 17 is CAPABILITY-gated, not scope-admin-gated.
    *
    * Screen 17 hosts two unrelated sub-surfaces: warehouse/network structural
@@ -148,4 +168,43 @@ export function isScreenAuthorized(
       || permissions.has('warehouse_transfer.send');
   }
   return true;
+}
+
+/**
+ * RAC-3 - the Command Center screen id.
+ *
+ * Declared here, next to the predicate that gates it, so the route, the four
+ * navigation surfaces and the landing preference all name one constant.
+ */
+export const COMMAND_CENTER_SCREEN = 22;
+
+/** The single permission key the Command Center is gated on, server and client. */
+export const DASHBOARD_VIEW_PERMISSION = 'dashboard.view';
+
+/**
+ * RAC-3 - may this actor OPEN the Command Center?
+ *
+ * Delegates to the canonical decision rather than re-deriving it, so the
+ * landing preference can never disagree with the route guard.
+ */
+export function isCommandCenterEligible(
+  role: string | null | undefined,
+  permissions: ReadonlySet<string>,
+): boolean {
+  return isScreenAuthorized(COMMAND_CENTER_SCREEN, role, permissions);
+}
+
+/**
+ * RAC-3 - the Command Center as a landing, or `null` to keep the existing one.
+ *
+ * Deliberately returns null rather than a fallback screen: the caller keeps
+ * calling `roleLandingScreen(role)` itself, so an ineligible actor's landing
+ * is produced by exactly the same expression as before RAC-3 existed. This
+ * adds a preference for eligible actors; it removes nothing.
+ */
+export function commandCenterLanding(
+  role: string | null | undefined,
+  permissions: ReadonlySet<string>,
+): number | null {
+  return isCommandCenterEligible(role, permissions) ? COMMAND_CENTER_SCREEN : null;
 }

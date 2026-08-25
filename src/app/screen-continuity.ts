@@ -1,4 +1,4 @@
-import { isScreenAuthorized, roleLandingScreen } from '@/shared/authz/screen-access';
+import { commandCenterLanding, isScreenAuthorized, roleLandingScreen } from '@/shared/authz/screen-access';
 
 const STORAGE_PREFIX = 'medistock-phoenix-screen:';
 const EPOCH_PREFIX = 'medistock-phoenix-continuity-epoch:';
@@ -27,7 +27,7 @@ export function isScreenRestorable(
   role: string | null | undefined,
   permissions: ReadonlySet<string>,
 ): boolean {
-  if (![3, 6, 11, 13, 14, 15, 17, 18, 19, 21].includes(screen)) return false;
+  if (![3, 6, 11, 13, 14, 15, 17, 18, 19, 21, 22].includes(screen)) return false;
   return isScreenAuthorized(screen, role, permissions);
 }
 
@@ -114,7 +114,9 @@ export function resolveRestoredScreen(
   role: string | null | undefined,
   permissions: ReadonlySet<string>,
 ): number {
-  const landing = roleLandingScreen(role);
+  // RAC-3: an actor eligible for the Command Center prefers it as the
+  // landing; everyone else keeps the exact expression they had before.
+  const landing = commandCenterLanding(role, permissions) ?? roleLandingScreen(role);
   if (typeof window === 'undefined') return landing;
   const epoch = currentEpoch(profileId);
   const fromHistory = historyScreen(window.history.state, profileId, epoch);
@@ -133,7 +135,7 @@ export function screenFromPopState(
   const candidate = historyScreen(state, profileId, currentEpoch(profileId));
   return candidate !== null && candidate !== undefined && isScreenRestorable(candidate, role, permissions)
     ? candidate
-    : roleLandingScreen(role);
+    : (commandCenterLanding(role, permissions) ?? roleLandingScreen(role));
 }
 
 export function rememberScreen(

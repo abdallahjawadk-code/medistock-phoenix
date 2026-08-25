@@ -1,0 +1,520 @@
+/* ─── RAC-3 — ROLE-AWARE CINEMATIC COMMAND CENTER ──────────────────────────
+   Presentation only. No data, no authorization, no routing lives here.
+
+   Art direction: the existing Phoenix palette, used with restraint. The deep
+   navy/graphite foundation, the cyan operational accent and the gold/ember
+   emphasis all come from tokens.css — this file introduces NO new palette and
+   NO parallel design system. Depth is built from layered surfaces, hairlines
+   and one soft glow reserved for genuinely critical status, rather than from
+   neon, particles or heavy blur, which would cost readability in a clinical
+   setting for no operational gain.
+
+   Every inline-direction value is a LOGICAL property, so Arabic RTL and
+   English LTR are the same layout mirrored, not two hand-tuned stylesheets.
+   ─────────────────────────────────────────────────────────────────────────── */
+
+.rac3 {
+  --rac3-gap: clamp(12px, 1.6vw, 18px);
+  --rac3-seam: color-mix(in srgb, var(--cyan) 14%, var(--brd));
+  --rac3-panel-bg: linear-gradient(155deg,
+    color-mix(in srgb, var(--surface2) 82%, transparent),
+    color-mix(in srgb, var(--surface) 96%, transparent));
+  --rac3-glow: radial-gradient(28rem 18rem at 8% -30%,
+    color-mix(in srgb, var(--cyan) 10%, transparent), transparent 70%);
+
+  display: flex;
+  flex-direction: column;
+  gap: var(--rac3-gap);
+  /* The shell owns page scrolling; nothing here may widen the document. */
+  max-inline-size: 1500px;
+  inline-size: 100%;
+  min-inline-size: 0;
+}
+
+/* ── Context band ─────────────────────────────────────────────────────────── */
+.rac3-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: clamp(14px, 1.8vw, 20px) clamp(15px, 2vw, 22px);
+  border: 1px solid var(--rac3-seam);
+  border-radius: var(--r4);
+  background: var(--rac3-glow), var(--rac3-panel-bg);
+  box-shadow: var(--sh-sm);
+}
+
+.rac3-header__identity { min-inline-size: 0; flex: 1 1 260px; }
+
+.rac3-header__kicker {
+  margin: 0;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--cyan);
+}
+
+.rac3-header__title {
+  margin: 4px 0 0;
+  font-size: clamp(18px, 2.4vw, 25px);
+  font-weight: 700;
+  letter-spacing: -.3px;
+  line-height: 1.2;
+  color: var(--t);
+}
+
+.rac3-header__sub {
+  margin: 5px 0 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--t2);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.rac3-header__role {
+  padding: 2px 9px;
+  border-radius: var(--rpill);
+  background: var(--chip);
+  border: 1px solid var(--rac3-seam);
+  color: var(--cyan);
+  font-size: 10.5px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.rac3-refresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-block-size: 44px;
+  padding: 0 15px;
+  border-radius: var(--r3);
+  border: 1px solid var(--rac3-seam);
+  background: var(--chip);
+  color: var(--cyan);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 140ms ease, border-color 140ms ease, transform 140ms ease;
+  flex-shrink: 0;
+}
+
+.rac3-refresh:hover:not(:disabled) { background: var(--hover); }
+.rac3-refresh:active:not(:disabled) { transform: translateY(1px); }
+.rac3-refresh:disabled { opacity: .62; cursor: progress; }
+.rac3-refresh__spin { display: inline-flex; animation: rac3-spin 900ms linear infinite; }
+
+@keyframes rac3-spin { to { transform: rotate(360deg); } }
+
+/* ── Status strip ─────────────────────────────────────────────────────────── */
+.rac3-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 9px clamp(13px, 1.6vw, 18px);
+  border: 1px solid var(--brd);
+  border-radius: var(--r3);
+  background: color-mix(in srgb, var(--surface2) 62%, transparent);
+  font-size: 11.5px;
+  color: var(--t2);
+}
+
+.rac3-status__item { display: inline-flex; align-items: center; gap: 6px; }
+.rac3-status__item--muted { color: var(--t3); }
+.rac3-status__dot {
+  inline-size: 7px; block-size: 7px; border-radius: 50%;
+  background: currentColor; flex-shrink: 0;
+}
+.rac3-status__item--ok { color: var(--ok); }
+.rac3-status__item--warn { color: var(--warn); }
+
+/* ── Layout: stack on mobile, two-track on desktop ────────────────────────── */
+.rac3-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--rac3-gap);
+  min-inline-size: 0;
+}
+
+.rac3-grid {
+  display: grid;
+  /* minmax(0, …) is what actually prevents a wide child (a long label, a
+     number row) from forcing the track — and therefore the page — wider than
+     the viewport. `1fr` alone resolves to min-content and overflows. */
+  grid-template-columns: minmax(0, 1.62fr) minmax(0, 1fr);
+  gap: var(--rac3-gap);
+  align-items: start;
+  min-inline-size: 0;
+}
+
+.rac3-grid__main,
+.rac3-grid__side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--rac3-gap);
+  min-inline-size: 0;
+}
+
+@media (max-width: 1080px) {
+  .rac3-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ── Panel shell ──────────────────────────────────────────────────────────── */
+.rac3-panel {
+  border: 1px solid var(--brd);
+  border-radius: var(--r4);
+  background: var(--rac3-panel-bg);
+  box-shadow: var(--sh-sm);
+  padding: clamp(13px, 1.6vw, 18px);
+  min-inline-size: 0;
+}
+
+.rac3-panel__title,
+.rac3-panel__title--bare {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: -.1px;
+  color: var(--t);
+}
+
+.rac3-panel__title-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 26px;
+  block-size: 26px;
+  border-radius: var(--r2);
+  background: var(--chip);
+  color: var(--cyan);
+  flex-shrink: 0;
+}
+
+.rac3-panel__body { min-inline-size: 0; }
+.rac3-panel__empty { margin: 0; font-size: 12.5px; color: var(--t2); line-height: 1.6; }
+
+/* A single restrained emphasis: the critical panel gets a warm hairline. */
+.rac3-panel--signals { border-color: color-mix(in srgb, var(--ember) 26%, var(--brd)); }
+
+/* ── KPI grid ─────────────────────────────────────────────────────────────── */
+.rac3-kpis { display: flex; flex-direction: column; min-inline-size: 0; }
+
+.rac3-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 148px), 1fr));
+  gap: 10px;
+  min-inline-size: 0;
+}
+
+.rac3-kpi {
+  position: relative;
+  overflow: hidden;
+  min-inline-size: 0;
+  padding: 13px 14px;
+  border: 1px solid var(--brd);
+  border-radius: var(--r3);
+  background: var(--s);
+  box-shadow: var(--sh-xs);
+  transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .rac3-kpi:hover {
+    transform: translateY(-2px);
+    border-color: var(--rac3-seam);
+    box-shadow: var(--sh-md);
+  }
+}
+
+.rac3-kpi__top { display: flex; align-items: center; justify-content: space-between; margin-block-end: 9px; }
+
+.rac3-kpi__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 32px;
+  block-size: 32px;
+  border-radius: var(--r2);
+  flex-shrink: 0;
+}
+
+.rac3-kpi__value {
+  font-size: clamp(20px, 2.5vw, 27px);
+  font-weight: 700;
+  line-height: 1.05;
+  letter-spacing: -.6px;
+  /* Tabular figures stop the count-up from reflowing the card width. */
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.rac3-kpi__label {
+  margin-block-start: 4px;
+  font-size: 11.5px;
+  line-height: 1.35;
+  color: var(--t2);
+}
+
+/* ── Skeletons ────────────────────────────────────────────────────────────── */
+.rac3-skel {
+  background: linear-gradient(90deg, var(--skel), color-mix(in srgb, var(--skel) 55%, transparent), var(--skel));
+  background-size: 200% 100%;
+  animation: rac3-shimmer 1.35s ease-in-out infinite;
+  border-radius: var(--r1);
+}
+
+.rac3-skel--value { block-size: 24px; inline-size: 58%; margin-block-start: 2px; }
+.rac3-skel--label { block-size: 10px; inline-size: 78%; margin-block-start: 8px; }
+.rac3-kpi--skeleton { box-shadow: none; }
+
+@keyframes rac3-shimmer {
+  from { background-position: 200% 0; }
+  to   { background-position: -200% 0; }
+}
+
+/* ── Stock health ─────────────────────────────────────────────────────────── */
+.rac3-health {
+  display: flex;
+  align-items: center;
+  gap: clamp(14px, 2.4vw, 26px);
+  flex-wrap: wrap;
+  min-inline-size: 0;
+}
+
+.rac3-health__ring { position: relative; flex-shrink: 0; line-height: 0; }
+
+.rac3-health__svg circle { transition: stroke-dasharray 620ms cubic-bezier(.22,.8,.3,1); }
+
+.rac3-health__center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  pointer-events: none;
+}
+
+.rac3-health__total {
+  font-size: 20px; font-weight: 700; color: var(--t);
+  font-variant-numeric: tabular-nums; line-height: 1.1;
+}
+.rac3-health__total-label { font-size: 9.5px; color: var(--t2); letter-spacing: .04em; }
+
+.rac3-health__legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  flex: 1 1 210px;
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.rac3-health__legend-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 12px;
+  min-inline-size: 0;
+}
+
+.rac3-health__swatch {
+  inline-size: 10px; block-size: 10px; border-radius: 3px; flex-shrink: 0;
+}
+
+.rac3-health__legend-label {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  color: var(--t2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rac3-health__legend-value {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  font-weight: 700;
+  color: var(--t);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.rac3-health__legend-pct { font-size: 10.5px; font-weight: 600; color: var(--t3); }
+
+/* ── Critical signals ─────────────────────────────────────────────────────── */
+.rac3-signals { display: flex; flex-direction: column; gap: 9px; min-inline-size: 0; }
+
+.rac3-signals__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 7px; }
+
+.rac3-signal {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 11px;
+  border-radius: var(--r2);
+  border: 1px solid var(--brd);
+  background: var(--s);
+  font-size: 12px;
+  min-inline-size: 0;
+}
+
+.rac3-signal--err {
+  border-color: color-mix(in srgb, var(--err) 34%, var(--brd));
+  background: var(--err2);
+  /* The one soft glow in the whole screen, reserved for a real critical state. */
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--err) 10%, transparent);
+}
+.rac3-signal--warn {
+  border-color: color-mix(in srgb, var(--warn) 30%, var(--brd));
+  background: var(--warn2);
+}
+
+.rac3-signal__icon { display: inline-flex; flex-shrink: 0; }
+.rac3-signal--err .rac3-signal__icon { color: var(--err); }
+.rac3-signal--warn .rac3-signal__icon { color: var(--warn); }
+
+.rac3-signal__label {
+  flex: 1 1 auto; min-inline-size: 0; color: var(--t);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.rac3-signal__value { font-weight: 700; font-variant-numeric: tabular-nums; flex-shrink: 0; }
+
+/* Severity as words, so status is never carried by colour alone. */
+.rac3-signal__tone {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: var(--rpill);
+  flex-shrink: 0;
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+}
+.rac3-signal--err .rac3-signal__tone { color: var(--err); }
+.rac3-signal--warn .rac3-signal__tone { color: var(--warn); }
+
+.rac3-signals__clear {
+  display: flex; align-items: center; gap: 8px;
+  margin: 0; padding: 11px 12px;
+  border-radius: var(--r2);
+  background: var(--ok2);
+  border: 1px solid color-mix(in srgb, var(--ok) 26%, var(--brd));
+  color: var(--ok);
+  font-size: 12.5px; font-weight: 600;
+}
+.rac3-signals__clear-icon { display: inline-flex; flex-shrink: 0; }
+
+.rac3-linkbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-block-size: 44px;
+  padding: 0 14px;
+  border-radius: var(--r3);
+  border: 1px solid var(--rac3-seam);
+  background: transparent;
+  color: var(--cyan);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 140ms ease;
+}
+.rac3-linkbtn:hover { background: var(--hover); }
+
+/* ── Network ──────────────────────────────────────────────────────────────── */
+.rac3-network { display: flex; flex-direction: column; gap: 10px; min-inline-size: 0; }
+.rac3-network__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 7px; }
+
+.rac3-network__row {
+  display: flex; align-items: center; gap: 9px;
+  padding: 9px 11px;
+  border-radius: var(--r2);
+  background: color-mix(in srgb, var(--surface2) 66%, transparent);
+  border: 1px solid var(--brd);
+  font-size: 12px;
+  min-inline-size: 0;
+}
+
+.rac3-network__icon { display: inline-flex; color: var(--cyan); flex-shrink: 0; }
+.rac3-network__label {
+  flex: 1 1 auto; min-inline-size: 0; color: var(--t2);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.rac3-network__value { font-weight: 700; color: var(--t); font-variant-numeric: tabular-nums; flex-shrink: 0; }
+.rac3-network__scope-note { margin: 0; font-size: 11px; line-height: 1.55; color: var(--t3); }
+
+/* ── Trend (deferred) ─────────────────────────────────────────────────────── */
+.rac3-trend {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: clamp(16px, 2.4vw, 26px) 16px;
+  border-radius: var(--r3);
+  border: 1px dashed color-mix(in srgb, var(--cyan) 22%, var(--brd));
+  background: color-mix(in srgb, var(--surface2) 45%, transparent);
+  min-inline-size: 0;
+}
+
+.rac3-trend__glyph {
+  display: inline-flex; align-items: center; justify-content: center;
+  inline-size: 38px; block-size: 38px; border-radius: 50%;
+  background: var(--chip); color: var(--cyan); flex-shrink: 0;
+}
+
+.rac3-trend__text {
+  margin: 0; font-size: 12.5px; line-height: 1.6; color: var(--t2); min-inline-size: 0;
+}
+
+/* ── Mobile ergonomics ────────────────────────────────────────────────────── */
+@media (max-width: 767px) {
+  .rac3 { --rac3-gap: 12px; }
+
+  .rac3-header { padding: 14px 15px; }
+  .rac3-refresh { inline-size: 100%; }
+
+  /* Two dense-but-readable KPI columns at 320px, never one giant tile. */
+  .rac3-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+  .rac3-kpi { padding: 11px 12px; }
+  .rac3-kpi__icon { inline-size: 28px; block-size: 28px; }
+  .rac3-kpi__value { font-size: 20px; }
+  .rac3-kpi__label { font-size: 10.5px; }
+
+  .rac3-health { justify-content: center; gap: 14px; }
+  .rac3-health__legend { flex-basis: 100%; }
+
+  /* The shell's bottom navigation is fixed; the last panel must clear it. */
+  .rac3-stack > :last-child { margin-block-end: 76px; }
+}
+
+/* Landscape phones are short, not narrow — reclaim vertical space. */
+@media (max-height: 430px) and (orientation: landscape) {
+  .rac3-header { padding-block: 10px; }
+  .rac3-trend { padding-block: 12px; }
+}
+
+/* ── Reduced motion ───────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .rac3-skel,
+  .rac3-refresh__spin {
+    animation: none;
+  }
+  .rac3-health__svg circle { transition: none; }
+  .rac3-kpi { transition: none; }
+  .rac3-kpi:hover { transform: none; }
+}

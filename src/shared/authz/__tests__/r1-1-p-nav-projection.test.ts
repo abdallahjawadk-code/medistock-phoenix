@@ -170,6 +170,21 @@ describe('C) historical roles keep their exact previous menus', () => {
         || perms.has('users.edit_scope')
         || perms.has('warehouse_transfer.send');
     }
+    /**
+     * RAC-3 restated the oracle again, for the same reason R1.3 did: screen 22
+     * is a NEW surface with its OWN gate, so leaving the oracle's catch-all
+     * `return true` to cover it would assert that every historical role may
+     * reach the Command Center — the exact opposite of the rule.
+     *
+     * The rule is `dashboard.view`, read from effective permissions, mirroring
+     * what Migration 199 enforces server-side. `dashboard.view` is added to
+     * PERM_SETS below so this branch is actually exercised in both states,
+     * rather than passing because the key is never present.
+     *
+     * This is not a widening: 22 did not exist before RAC-3, so no historical
+     * role loses a menu item it previously had.
+     */
+    if (screen === 22) return perms.has('dashboard.view');
     return true;
   };
 
@@ -189,6 +204,13 @@ describe('C) historical roles keep their exact previous menus', () => {
     new Set(['warehouse_transfer.send']),
     new Set(['warehouse_transfer.send', 'users.edit_scope']),
     new Set(['warehouse_transfer.send', 'users.view']),
+    // RAC-3 — the Command Center capability, alone and combined. Without these
+    // the screen-22 branch above would only ever be exercised in its FALSE
+    // state, and a regression that offered the Command Center to everyone
+    // would still pass this parity check.
+    new Set(['dashboard.view']),
+    new Set(['dashboard.view', 'users.view']),
+    new Set(['dashboard.view', 'warehouse_transfer.send']),
   ];
 
   it.each(HISTORICAL)('%s: identical to the pre-R1.1-P gates on every surface and permission set', (role) => {

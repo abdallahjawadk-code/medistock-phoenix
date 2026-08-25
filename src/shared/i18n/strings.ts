@@ -1743,6 +1743,108 @@ export const T: Dict = {
   cc_activity_empty:    { ar: 'ستظهر هنا آخر العمليات بعد بدء استخدام النظام.', en: 'Recent activity will appear here after the system is used.' },
   cc_activity_updated:  { ar: 'محدث',                                       en: 'updated' },
 
+  /* ── RAC-3: Role-Aware Cinematic Command Center ──────────────────────────
+     Arabic first, as the product's primary language. Every label is written
+     for a pharmacy-operations reader, not a database reader: the strings name
+     what an operator must DO or NOTICE, and the deferred/refusal states say
+     plainly why a panel is absent instead of implying a fault. */
+  rac3_nav:            { ar: 'مركز القيادة',            en: 'Command Center' },
+  rac3_title:          { ar: 'مركز القيادة',            en: 'Command Center' },
+  rac3_subtitle:       { ar: 'الحالة التشغيلية ضمن نطاق صلاحيتك.', en: 'Operational status within your authorized scope.' },
+  rac3_subtitle_named: { ar: 'أهلًا {name} — الحالة التشغيلية ضمن نطاق صلاحيتك.', en: 'Welcome {name} — operational status within your authorized scope.' },
+  rac3_refresh:        { ar: 'تحديث',                    en: 'Refresh' },
+  rac3_not_reported:   { ar: 'غير متوفر',                en: 'Not reported' },
+
+  /* Scope — always the scope the SERVER answered at, never the one requested. */
+  rac3_scope_global:             { ar: 'النطاق: المنظومة كاملة',    en: 'Scope: Entire platform' },
+  rac3_scope_organization:       { ar: 'النطاق: مؤسستك',            en: 'Scope: Your organization' },
+  rac3_scope_warehouse:          { ar: 'النطاق: المستودع',          en: 'Scope: Warehouse' },
+  rac3_scope_distribution_point: { ar: 'النطاق: منفذ الصرف',        en: 'Scope: Dispensing point' },
+  rac3_scope_pending:            { ar: 'جارٍ تحديد النطاق',         en: 'Resolving scope' },
+
+  /* Panels */
+  rac3_panel_kpis:    { ar: 'المؤشرات الرئيسية',   en: 'Key indicators' },
+  rac3_panel_signals: { ar: 'إشارات حرجة',          en: 'Critical signals' },
+  rac3_panel_health:  { ar: 'صحة المخزون',          en: 'Stock health' },
+  rac3_panel_network: { ar: 'نطاق الشبكة',          en: 'Network reach' },
+  rac3_panel_trend:   { ar: 'الاتجاه الزمني',       en: 'Trend over time' },
+  rac3_panel_actions: { ar: 'إجراءات سريعة',        en: 'Quick actions' },
+
+  /* KPIs — organization / global scope (item availability by condition) */
+  rac3_kpi_expired:     { ar: 'منتهي الصلاحية',      en: 'Expired' },
+  rac3_kpi_near_expiry: { ar: 'قارب على الانتهاء',   en: 'Near expiry' },
+  rac3_kpi_missing:     { ar: 'مفقود',                en: 'Missing' },
+  rac3_kpi_low_stock:   { ar: 'مخزون منخفض',         en: 'Low stock' },
+  rac3_kpi_available:   { ar: 'متوفر',                en: 'Available' },
+  rac3_kpi_surplus:     { ar: 'فائض',                 en: 'Surplus' },
+  rac3_kpi_rows:        { ar: 'سجلات التوفر',        en: 'Availability records' },
+  rac3_kpi_units:       { ar: 'إجمالي الوحدات',      en: 'Total units' },
+
+  /* KPIs — warehouse / outlet scope (stock lines) */
+  rac3_kpi_expired_lines:     { ar: 'سطور منتهية',            en: 'Expired lines' },
+  rac3_kpi_near_expiry_lines: { ar: 'سطور قاربت الانتهاء',    en: 'Near-expiry lines' },
+  rac3_kpi_zero_available:    { ar: 'سطور بدون رصيد متاح',    en: 'Zero-available lines' },
+  rac3_kpi_stock_lines:       { ar: 'إجمالي سطور المخزون',    en: 'Stock lines' },
+  rac3_kpi_available_units:   { ar: 'وحدات متاحة',            en: 'Available units' },
+  rac3_kpi_on_hand_units:     { ar: 'وحدات في المخزن',        en: 'On-hand units' },
+
+  /* Stock-health distribution */
+  rac3_state_available:      { ar: 'متوفر',              en: 'Available' },
+  rac3_state_low_stock:      { ar: 'منخفض',              en: 'Low' },
+  rac3_state_near_expiry:    { ar: 'قارب على الانتهاء',  en: 'Near expiry' },
+  rac3_state_expired:        { ar: 'منتهي',              en: 'Expired' },
+  rac3_state_missing:        { ar: 'مفقود',              en: 'Missing' },
+  rac3_state_surplus:        { ar: 'فائض',               en: 'Surplus' },
+  rac3_state_healthy_lines:  { ar: 'سطور سليمة',         en: 'Healthy lines' },
+  rac3_state_zero_available: { ar: 'بدون رصيد متاح',     en: 'Zero available' },
+  rac3_health_total:         { ar: 'الإجمالي',           en: 'Total' },
+  rac3_stock_health_empty:   { ar: 'لا توجد بيانات مخزون ضمن هذا النطاق بعد.', en: 'No stock data in this scope yet.' },
+
+  /* Critical signals — derived from the authorized payload, never a new query. */
+  rac3_signal_expired:           { ar: 'أصناف منتهية الصلاحية',   en: 'Expired items' },
+  rac3_signal_missing:           { ar: 'أصناف مفقودة',            en: 'Missing items' },
+  rac3_signal_near_expiry:       { ar: 'أصناف قاربت الانتهاء',    en: 'Items near expiry' },
+  rac3_signal_low_stock:         { ar: 'أصناف بمخزون منخفض',      en: 'Items low on stock' },
+  rac3_signal_expired_lines:     { ar: 'سطور منتهية الصلاحية',    en: 'Expired stock lines' },
+  rac3_signal_zero_available:    { ar: 'سطور بدون رصيد متاح',     en: 'Lines with no available stock' },
+  rac3_signal_near_expiry_lines: { ar: 'سطور قاربت الانتهاء',     en: 'Lines near expiry' },
+  rac3_signals_none:  { ar: 'لا توجد إشارات حرجة ضمن نطاقك حاليًا.', en: 'No critical signals in your scope right now.' },
+  rac3_tone_critical: { ar: 'حرج',    en: 'Critical' },
+  rac3_tone_watch:    { ar: 'مراقبة', en: 'Watch' },
+  /* Screen 13's canonical name is «اقتراحات المناقلات» / Transfer Suggestions.
+     The retired "Inter-Institution Alerts" wording is guarded against by
+     unified-domain-ux.test.ts and must not reappear. */
+  rac3_open_alerts:   { ar: 'فتح اقتراحات المناقلات', en: 'Open transfer suggestions' },
+
+  /* Network reach */
+  rac3_network_organizations: { ar: 'المؤسسات',        en: 'Organizations' },
+  rac3_network_warehouses:    { ar: 'المستودعات',      en: 'Warehouses' },
+  rac3_network_points:        { ar: 'منافذ الصرف',     en: 'Dispensing points' },
+  rac3_network_scope_global:  { ar: 'أرقام على مستوى المنظومة كاملة.', en: 'Counts across the entire platform.' },
+  rac3_network_scope_local:   { ar: 'أرقام ضمن نطاق صلاحيتك فقط، ولا تعكس حجم المنظومة.', en: 'Counts within your authorized scope only; they do not reflect platform size.' },
+
+  /* Trend — deliberately deferred, never fabricated. */
+  rac3_trend_deferred: { ar: 'سيظهر تحليل الاتجاه الزمني عند توفّر بيانات تاريخية مقاسة. لا تُعرض هنا أرقام تقديرية.', en: 'Trend analytics will appear once measured historical data is available. No estimated figures are shown here.' },
+
+  /* System status — only state this client can actually observe. */
+  rac3_status_online:             { ar: 'متصل',                 en: 'Online' },
+  rac3_status_offline:            { ar: 'غير متصل',             en: 'Offline' },
+  rac3_status_refreshing:         { ar: 'جارٍ التحديث…',        en: 'Refreshing…' },
+  rac3_status_updated:            { ar: 'آخر تحديث',            en: 'Updated' },
+  rac3_status_near_expiry_policy: { ar: 'سياسة قرب الانتهاء: {days} يومًا', en: 'Near-expiry policy: {days} days' },
+
+  /* States */
+  rac3_unauthorized_title:  { ar: 'لا تملك صلاحية مركز القيادة', en: 'You do not have Command Center access' },
+  rac3_unauthorized_msg:    { ar: 'رفض الخادم عرض بيانات مركز القيادة لحسابك ضمن هذا النطاق. هذه ليست حالة "لا توجد بيانات" — بل قرار صلاحية. راجع مسؤول النظام إن كنت تتوقع الوصول.', en: 'The server refused Command Center data for your account in this scope. This is not a "no data" state — it is an authorization decision. Contact your administrator if you expected access.' },
+  rac3_unauthorized_action: { ar: 'العودة إلى شاشتك الرئيسية',  en: 'Return to your main screen' },
+  rac3_invalid_scope_title: { ar: 'نطاق غير صالح',              en: 'Invalid scope' },
+  rac3_invalid_scope_msg:   { ar: 'لا يمكن طلب مستودع ومنفذ صرف في آنٍ واحد. اختر نطاقًا واحدًا.', en: 'A warehouse and a dispensing point cannot be requested together. Choose one scope.' },
+  rac3_unavailable_title:   { ar: 'مركز القيادة غير مفعّل',     en: 'Command Center not enabled' },
+  rac3_unavailable_msg:     { ar: 'لم يتم تفعيل واجهة قراءة مركز القيادة على هذه البيئة بعد.', en: 'The Command Center read contract is not enabled on this environment yet.' },
+  rac3_network_msg:         { ar: 'تعذّر الوصول إلى الخادم. تحقّق من الاتصال ثم أعد المحاولة.', en: 'Could not reach the server. Check your connection and try again.' },
+  rac3_empty_title:         { ar: 'لا توجد بيانات لعرضها',      en: 'No data to display' },
+  rac3_empty_msg:           { ar: 'لم يُرجع الخادم بيانات لهذا النطاق.', en: 'The server returned no data for this scope.' },
+
   /* ── UX-SMART-FILTERS-TIMELINE-A: Smart Filters ── */
   sf_group_label:        { ar: 'مرشحات ذكية',            en: 'Smart filters' },
   sf_has_quantity:       { ar: 'يوجد كمية',              en: 'Has quantity' },

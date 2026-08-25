@@ -15,6 +15,10 @@ import '@/shared/lib/global.css';
 import '@/shared/lib/phase-a-foundation.css';
 import '@/shared/lib/phase-a-auth.css';
 import '@/shared/lib/phase-a-command-center.css';
+// RAC-3 sits with its Phase-A sibling rather than last: the A7.1/A7.2 layers
+// must remain the final CSS imports. Every selector here is `.rac3-`
+// prefixed and unique to the Command Center, so no later layer collides.
+import '@/shared/lib/rac3-command-center.css';
 import '@/shared/lib/phase-a-inventory-transfers.css';
 import '@/shared/lib/phase-a-institutions-outlets.css';
 import '@/shared/lib/phase-a-alerts-admin-qr.css';

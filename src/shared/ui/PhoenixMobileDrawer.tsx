@@ -30,6 +30,7 @@ const ALL_NAV: {
   frozen?: boolean;
   superAdminOnly?: boolean;
 }[] = [
+  { screen: 22, icon: 'command', labelKey: 'rac3_nav' },
   { screen: 11, icon: 'institutions', labelKey: 'nav_institutions' },
   { screen: 13, icon: 'alerts', labelKey: 'nav_inter_alerts' },
   { screen: 14, icon: 'users', labelKey: 'nav_users' },

@@ -54,6 +54,7 @@ interface PaletteItem {
 // Screen 21 preserves each moved-in section's original boundary instead of
 // inferring one shell-wide permission; server/RPC/RLS checks remain final.
 const PALETTE_ITEMS: PaletteItem[] = [
+  { screen: 22, icon: 'command', labelKey: 'rac3_nav' },
   { screen: 11, icon: 'institutions', labelKey: 'nav_institutions' },
   { screen: 13, icon: 'alerts', labelKey: 'nav_inter_alerts' },
   { screen: 14, icon: 'users', labelKey: 'nav_users' },
