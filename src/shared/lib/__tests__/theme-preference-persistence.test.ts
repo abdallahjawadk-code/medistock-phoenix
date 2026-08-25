@@ -25,6 +25,8 @@ afterEach(() => {
 describe('theme preference persistence', () => {
   it('keeps light as the safe default when no preference exists', () => {
     expect(readThemePreference()).toBe('light');
+    expect(restoreThemeBeforeReact()).toBe('light');
+    expect(document.documentElement.getAttribute('data-theme')).toBe('light');
   });
 
   it('restores a saved dark preference and applies it to the document before React', () => {
@@ -35,12 +37,14 @@ describe('theme preference persistence', () => {
 
   it('restores a saved light preference', () => {
     window.localStorage.setItem(THEME_STORAGE_KEY, 'light');
-    expect(readThemePreference()).toBe('light');
+    expect(restoreThemeBeforeReact()).toBe('light');
+    expect(document.documentElement.getAttribute('data-theme')).toBe('light');
   });
 
   it('ignores an invalid stored value and falls back to light', () => {
     window.localStorage.setItem(THEME_STORAGE_KEY, 'sepia');
-    expect(readThemePreference()).toBe('light');
+    expect(restoreThemeBeforeReact()).toBe('light');
+    expect(document.documentElement.getAttribute('data-theme')).toBe('light');
   });
 
   it('persists both valid theme transitions', () => {
@@ -66,7 +70,7 @@ describe('theme preference persistence', () => {
     expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
   });
 
-  it('restores the preference before createRoot and bridges it into AppContext before paint', () => {
+  it('restores before createRoot and bridges both public and authenticated routes before paint', () => {
     const main = readFileSync(join(ROOT, 'src/main.tsx'), 'utf8');
     const app = readFileSync(join(ROOT, 'src/app/App.tsx'), 'utf8');
 
@@ -76,7 +80,11 @@ describe('theme preference persistence', () => {
     expect(app).toContain('function ThemePreferenceBridge');
     expect(app).toContain('useLayoutEffect(() =>');
     expect(app).toContain('persistThemePreference(theme);');
-    expect(app).toContain('<ThemePreferenceBridge>');
-    expect(app).toContain('<AppInner qid={qid} />');
+    const bridgeOpen = app.indexOf('<ThemePreferenceBridge>');
+    const routedApp = app.indexOf('<AppInner qid={qid} />');
+    const bridgeClose = app.indexOf('</ThemePreferenceBridge>');
+    expect(bridgeOpen).toBeGreaterThan(-1);
+    expect(routedApp).toBeGreaterThan(bridgeOpen);
+    expect(bridgeClose).toBeGreaterThan(routedApp);
   });
 });
