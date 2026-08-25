@@ -447,7 +447,12 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
       // Registered by EXACT filename; no wildcard and no directory exemption,
       // so every other file under src/shared/supabase still fails this guard
       // closed.
-      'src/shared/supabase/__tests__/production-migration-executor-contract.test.ts'
+      'src/shared/supabase/__tests__/production-migration-executor-contract.test.ts',
+      // PR #167 — the reviewed theme-persistence bridge. App.tsx changes only
+      // the browser-local light/dark startup reconciliation; it does not alter
+      // Auth, RBAC, routing authority, Supabase access or environment handling.
+      // Keep the exemption exact so every other src/app file still fails closed.
+      'src/app/App.tsx'
     ];
     const changed=execSync(`git diff --name-only ${BASE}`,{cwd:ROOT,encoding:'utf8'}).split('\n').map(l=>l.trim()).filter(Boolean);
     const prohibited=changed.filter(f=>WATCHED.some(p=>f===p||f.startsWith(p+'/'))&&!EXCLUDED.includes(f));

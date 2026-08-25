@@ -1,6 +1,11 @@
-import { lazy, Suspense, type ReactNode } from 'react';
+import { lazy, Suspense, type ReactNode, useLayoutEffect, useRef, useState } from 'react';
 import { AppProvider, useApp } from './AppContext';
 import { t } from '@/shared/i18n/strings';
+import {
+  applyThemeToDocument,
+  persistThemePreference,
+  readThemePreference,
+} from '@/shared/lib/themePreference';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
 
 /**
@@ -62,6 +67,36 @@ function LoadingFallback() {
   return <PhoenixLoadingState fullScreen label={t('loading', lang)} />;
 }
 
+/**
+ * THEME-PERSISTENCE-HOTFIX: AppContext historically starts at light on every
+ * mount. Reconcile that in-memory state with the validated browser preference
+ * in a layout effect, before paint, then persist each real theme transition.
+ *
+ * This bridge is deliberately UI-only: no account/profile/database state is
+ * involved, and storage failures never make the application unavailable.
+ */
+function ThemePreferenceBridge({ children }: { children: ReactNode }) {
+  const { theme, setTheme } = useApp();
+  const [initialTheme] = useState(readThemePreference);
+  const hydratedRef = useRef(false);
+  const setThemeRef = useRef(setTheme);
+  setThemeRef.current = setTheme;
+
+  useLayoutEffect(() => {
+    if (!hydratedRef.current && theme !== initialTheme) {
+      applyThemeToDocument(initialTheme);
+      setThemeRef.current(initialTheme);
+      return;
+    }
+
+    hydratedRef.current = true;
+    applyThemeToDocument(theme);
+    persistThemePreference(theme);
+  }, [initialTheme, theme]);
+
+  return <>{children}</>;
+}
+
 function AppInner({ qid }: { qid: string | null }) {
   // ── Anon public QR scan view — bypasses auth entirely, own lazy chunk ──
   if (qid) {
@@ -94,7 +129,9 @@ export function App() {
   const qid = publicQrId();
   return (
     <AppProvider skipAuthBootstrap={!!qid}>
-      <AppInner qid={qid} />
+      <ThemePreferenceBridge>
+        <AppInner qid={qid} />
+      </ThemePreferenceBridge>
     </AppProvider>
   );
 }
