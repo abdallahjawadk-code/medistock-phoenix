@@ -349,3 +349,73 @@ describe('RAC-3 · I) no backend or migration change', () => {
     expect(changed).not.toContain('package-lock.json');
   });
 });
+
+describe('RAC-3 · J) owner polish — Statistics identity and no Quick Actions', () => {
+  const strings = read('shared/i18n/strings.ts');
+  const shell = read('shared/ui/PhoenixAppShell.tsx');
+  const screenSrc = read('features/command-center/CommandCenterScreen.tsx');
+  const header = read('features/command-center/panels/CommandCenterHeader.tsx');
+
+  it('names screen 22 «الإحصائيات» / Statistics in both languages', () => {
+    expect(strings).toContain("rac3_nav:            { ar: 'الإحصائيات',               en: 'Statistics' },");
+    expect(strings).toContain("rac3_title:          { ar: 'الإحصائيات',               en: 'Statistics' },");
+  });
+
+  it('leaves no user-visible Command Center wording in any rac3_ string', () => {
+    const rac3Lines = strings.match(/^\s+rac3_[a-z_]+:.*$/gm) ?? [];
+    expect(rac3Lines.length).toBeGreaterThan(30);
+    for (const line of rac3Lines) {
+      expect(line, line.slice(0, 60)).not.toContain('مركز القيادة');
+      expect(line, line.slice(0, 60)).not.toContain('Command Center');
+    }
+  });
+
+  it('maps the shell topbar title for screen 22 at its real source', () => {
+    // The wrong «مركز التقارير والمواقف» header came from PhoenixAppShell's
+    // `?? 'nav_decision_reports'` fallback, because 22 was missing from the map.
+    // Fixed at the source, not patched in the page body.
+    expect(shell).toContain("22: 'rac3_nav',");
+    expect(shell).toContain("const title = t(SCREEN_TITLE_KEYS[currentScreen] ?? 'nav_decision_reports', lang);");
+  });
+
+  it('titles the page with an h2, leaving the shell topbar as the only h1', () => {
+    expect(header).toContain('<h2 className="rac3-header__title">');
+    expect(header).not.toContain('<h1');
+  });
+
+  it('composes no Quick Actions panel and imports nothing for one', () => {
+    expect(screenSrc).not.toContain('QuickActionGrid');
+    expect(screenSrc).not.toContain('QUICK_ACTION_CANDIDATES');
+    expect(screenSrc).not.toContain('rac3_panel_actions');
+    // Removed from the composition, not hidden: no leftover CSS hook either.
+    expect(read('shared/lib/rac3-command-center.css')).not.toContain('rac3-panel--actions');
+  });
+
+  it('keeps the shared QuickActionGrid and its other consumers intact', () => {
+    // The component is shared. Removing OUR panel must not remove theirs.
+    expect(read('features/reports/DecisionIntelligenceReportsScreen.tsx')).toContain('QuickActionGrid');
+    expect(read('features/status/StatusCenterScreen.tsx')).toContain('QuickActionGrid');
+  });
+
+  it('keeps every canonical navigation destination reachable', () => {
+    // The destinations the removed panel linked to must still be offered by the
+    // real navigation surfaces, which are the reason the panel was redundant.
+    const sidebar = read('shared/ui/PhoenixSidebar.tsx');
+    const drawer = read('shared/ui/PhoenixMobileDrawer.tsx');
+    for (const s of [3, 13, 14, 17, 18, 19, 21]) {
+      expect(sidebar + drawer, `screen ${s}`).toContain(`screen: ${s},`);
+    }
+    // …and screen 22 itself is still projected, under the new label.
+    for (const surface of [sidebar, drawer, read('shared/ui/PhoenixMobileBottomNav.tsx'),
+      read('shared/ui/CommandPalette.tsx')]) {
+      expect(surface).toContain("{ screen: 22, icon: 'command', labelKey: 'rac3_nav' },");
+    }
+  });
+
+  it('did not touch the screen-22 authorization rule while renaming it', () => {
+    const authz = read('shared/authz/screen-access.ts');
+    expect(authz).toContain('if (screen === COMMAND_CENTER_SCREEN) return permissions.has(DASHBOARD_VIEW_PERMISSION);');
+    expect(authz).toContain('export const COMMAND_CENTER_SCREEN = 22;');
+    expect(authz).toContain("export const DASHBOARD_VIEW_PERMISSION = 'dashboard.view';");
+  });
+});

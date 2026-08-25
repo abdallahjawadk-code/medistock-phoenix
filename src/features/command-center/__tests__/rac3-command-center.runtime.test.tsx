@@ -107,7 +107,7 @@ describe('RAC-3 runtime · lifecycle states are distinguishable', () => {
     render(<CommandCenterScreen onNavigate={vi.fn()} />);
 
     await waitFor(() => expect(root()).toHaveAttribute('data-rac3-state', 'unauthorized'));
-    expect(screen.getByText(/لا تملك صلاحية مركز القيادة/)).toBeInTheDocument();
+    expect(screen.getByText(/لا تملك صلاحية الإحصائيات/)).toBeInTheDocument();
     // The honest-empty copy must NOT be what an unauthorized actor sees.
     expect(screen.queryByText(/لا توجد بيانات لعرضها/)).not.toBeInTheDocument();
   });
@@ -169,14 +169,17 @@ describe('RAC-3 runtime · capability-driven rendering', () => {
     expect(screen.getByRole('button', { name: /فتح اقتراحات المناقلات/ })).toBeInTheDocument();
   });
 
-  it('filters quick actions through the canonical navigation projection', async () => {
-    // No users.view -> screen 14 must not be offered as a quick action.
+  it('renders no Quick Actions panel — those destinations live in the canonical nav', async () => {
+    // OWNER POLISH: the body panel duplicated the sidebar/drawer/bottom-bar and
+    // was removed from the composition entirely. This asserts ABSENCE FROM THE
+    // DOM, not that it is merely hidden: a CSS-hidden panel would still match.
     readContract.mockResolvedValue(contract());
     render(<CommandCenterScreen onNavigate={vi.fn()} />);
     await waitFor(() => expect(root()).toHaveAttribute('data-rac3-state', 'ready'));
 
-    const actions = document.querySelector('.rac3-panel--actions') as HTMLElement;
-    expect(within(actions).queryByText(/إدارة المستخدمين/)).not.toBeInTheDocument();
+    expect(document.querySelector('.rac3-panel--actions')).toBeNull();
+    expect(document.querySelector('.premium-quick-action-grid')).toBeNull();
+    expect(screen.queryByText('إجراءات سريعة')).not.toBeInTheDocument();
   });
 });
 
@@ -241,13 +244,26 @@ describe('RAC-3 runtime · trend stays deferred', () => {
 });
 
 describe('RAC-3 runtime · accessibility and direction', () => {
-  it('exposes one h1 and section headings beneath it', async () => {
+  it('renders no h1 — PhoenixAppShell owns the page heading for every screen', async () => {
     readContract.mockResolvedValue(contract());
     render(<CommandCenterScreen onNavigate={vi.fn()} />);
     await waitFor(() => expect(root()).toHaveAttribute('data-rac3-state', 'ready'));
 
-    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+    // Screens 18 and 21 title themselves with an h2 under the shell's topbar
+    // h1. An h1 here would put two page headings in one document.
+    expect(screen.queryAllByRole('heading', { level: 1 })).toHaveLength(0);
     expect(screen.getAllByRole('heading', { level: 2 }).length).toBeGreaterThan(2);
+  });
+
+  it('uses the Statistics identity, never the retired Command Center wording', async () => {
+    readContract.mockResolvedValue(contract());
+    render(<CommandCenterScreen onNavigate={vi.fn()} />);
+    await waitFor(() => expect(root()).toHaveAttribute('data-rac3-state', 'ready'));
+
+    expect(screen.getByRole('heading', { level: 2, name: 'الإحصائيات' })).toBeInTheDocument();
+    expect(root().textContent).not.toContain('مركز القيادة');
+    // …and the wrong shell title must never leak into the page body either.
+    expect(root().textContent).not.toContain('مركز التقارير والمواقف');
   });
 
   it('carries status severity as text, never colour alone', async () => {
@@ -278,7 +294,8 @@ describe('RAC-3 runtime · accessibility and direction', () => {
     render(<CommandCenterScreen onNavigate={vi.fn()} />);
     await waitFor(() => expect(root()).toHaveAttribute('data-rac3-state', 'ready'));
 
-    expect(screen.getByRole('heading', { level: 1, name: 'Command Center' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'Statistics' })).toBeInTheDocument();
+    expect(root().textContent).not.toContain('Command Center');
     expect(screen.getByText('Scope: Your organization')).toBeInTheDocument();
     // No inline left/right anywhere in the rendered tree.
     expect(root().innerHTML).not.toMatch(/style="[^"]*(margin-left|margin-right|padding-left|padding-right|left:|right:)/);

@@ -147,7 +147,7 @@
   /* minmax(0, …) is what actually prevents a wide child (a long label, a
      number row) from forcing the track — and therefore the page — wider than
      the viewport. `1fr` alone resolves to min-content and overflows. */
-  grid-template-columns: minmax(0, 1.62fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr);
   gap: var(--rac3-gap);
   align-items: start;
   min-inline-size: 0;
@@ -520,16 +520,6 @@
   .rac3-refresh { inline-size: auto; min-block-size: 40px; }
   .rac3-status { padding-block: 6px; }
   .rac3-trend { padding-block: 12px; }
-}
-
-/* QuickActionGrid hard-codes `repeat(auto-fit, minmax(140px, 1fr))` as an
-   INLINE style. In this panel's narrow desktop side column that resolves to
-   two tiles and ellipsises the longer labels ("Supplementary Pu…"). The
-   override is scoped to this panel so the component's two other consumers keep
-   their existing layout untouched; `!important` is needed only because the
-   declaration it replaces is inline. */
-.rac3-panel--actions .premium-quick-action-grid {
-  grid-template-columns: minmax(0, 1fr) !important;
 }
 
 /* ── Reduced motion ───────────────────────────────────────────────────────── */

@@ -6,8 +6,6 @@ import { useIsMobileViewport } from '@/shared/ui/useResponsiveViewport';
 import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import { PhoenixErrorState } from '@/shared/ui/PhoenixErrorState';
 import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
-import { QuickActionGrid, type QuickAction } from '@/shared/ui/QuickActionGrid';
-import { projectNavigation } from '@/shared/authz/nav-projection';
 import { useCommandCenter } from './useCommandCenter';
 import {
   deriveCriticalSignals,
@@ -26,26 +24,6 @@ import { SystemStatusStrip } from './panels/SystemStatusStrip';
 interface Props {
   onNavigate: (screen: number) => void;
 }
-
-/**
- * Quick-action CANDIDATES.
- *
- * Every entry is an existing screen reached through the existing `onNavigate`
- * switch — RAC-3 invents no workflow and no route. The list is passed through
- * `projectNavigation`, the same projection the sidebar, drawer, bottom bar and
- * command palette use, so an action can never be offered for a screen the
- * route guard would refuse.
- */
-const QUICK_ACTION_CANDIDATES: QuickAction[] = [
-  { screen: 3, icon: 'editor', labelKey: 'nav_editor' },
-  { screen: 18, icon: 'outlet', labelKey: 'nav_outlet_ops' },
-  { screen: 19, icon: 'warehouse', labelKey: 'nav_local_procurement' },
-  { screen: 17, icon: 'network', labelKey: 'nav_network' },
-  { screen: 21, icon: 'reports', labelKey: 'nav_decision_reports' },
-  { screen: 13, icon: 'alerts', labelKey: 'nav_inter_alerts' },
-  { screen: 6, icon: 'qr', labelKey: 'nav_qr' },
-  { screen: 14, icon: 'users', labelKey: 'nav_users' },
-];
 
 /** A titled shell so every panel shares one heading rhythm and hairline. */
 function Panel({
@@ -86,7 +64,7 @@ function Panel({
  * it is simply absent. Nothing here infers authority from a role name.
  */
 export function CommandCenterScreen({ onNavigate }: Props) {
-  const { lang, role, activeOrgId, myPermissions } = useApp();
+  const { lang, role, activeOrgId } = useApp();
   const isMobile = useIsMobileViewport();
 
   /**
@@ -107,11 +85,6 @@ export function CommandCenterScreen({ onNavigate }: Props) {
   const panels = useMemo(
     () => (data ? derivePanels(data.capabilities) : null),
     [data],
-  );
-
-  const quickActions = useMemo(
-    () => projectNavigation(QUICK_ACTION_CANDIDATES, { role, permissions: myPermissions }),
-    [role, myPermissions],
   );
 
   const scopeKind = data?.scope.kind ?? null;
@@ -212,12 +185,6 @@ export function CommandCenterScreen({ onNavigate }: Props) {
     </Panel>
   );
 
-  const actionsPanel = quickActions.length > 0 ? (
-    <Panel titleKey="rac3_panel_actions" icon="command" className="rac3-panel--actions">
-      <QuickActionGrid actions={quickActions} onNavigate={onNavigate} />
-    </Panel>
-  ) : null;
-
   const kpiBlock = (
     <section className="rac3-kpis" aria-label={t('rac3_panel_kpis', lang)}>
       <h2 className="rac3-panel__title rac3-panel__title--bare">
@@ -245,7 +212,6 @@ export function CommandCenterScreen({ onNavigate }: Props) {
           {signalsPanel}
           {kpiBlock}
           {healthPanel}
-          {actionsPanel}
           {networkPanel}
           {trendPanel}
         </div>
@@ -254,12 +220,17 @@ export function CommandCenterScreen({ onNavigate }: Props) {
           <div className="rac3-grid__main">
             {kpiBlock}
             {healthPanel}
-            {trendPanel}
           </div>
+          {/* Removing Quick Actions left the side track roughly 290px shorter
+              than the main one. Trend — the lowest-priority panel, and a
+              deferred state rather than live data — moves down here to close
+              that gap, which keeps Critical Signals at the top of the column
+              where an operator looks first. No panel is duplicated and no new
+              content was invented to fill the space. */}
           <aside className="rac3-grid__side">
             {signalsPanel}
-            {actionsPanel}
             {networkPanel}
+            {trendPanel}
           </aside>
         </div>
       )}

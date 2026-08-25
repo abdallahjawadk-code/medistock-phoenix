@@ -84,6 +84,27 @@ function record(name, ok, detail) {
   return ok;
 }
 
+/**
+ * Wait until the KPI count-up has finished, using a DOM-stability condition
+ * rather than a fixed sleep.
+ *
+ * The counters animate for ~620ms. Screenshotting before they settle produced
+ * artifacts whose KPI values disagreed with the stock-health ring rendered from
+ * the same payload. Three identical consecutive samples means the numbers have
+ * stopped moving.
+ */
+async function waitForKpiSettled(page) {
+  await page.evaluate(() => { window.__rac3Prev = null; window.__rac3Stable = 0; });
+  await page.waitForFunction(() => {
+    const cards = document.querySelectorAll('.rac3-kpi__value');
+    if (cards.length === 0) return false;
+    const snapshot = [...cards].map(e => e.textContent).join('|');
+    if (window.__rac3Prev === snapshot) window.__rac3Stable += 1;
+    else { window.__rac3Prev = snapshot; window.__rac3Stable = 0; }
+    return window.__rac3Stable >= 3;
+  }, null, { timeout: 20000, polling: 120 }).catch(() => {});
+}
+
 async function launch() {
   try {
     return await chromium.launch({ headless: true, channel: 'chrome' });
@@ -1510,18 +1531,28 @@ async function main() {
     await page.close();
   }
 
-  // ── 6. RAC-3 Command Center — eligibility, responsive matrix, RTL/LTR ─────
+  // ── 6. Statistics (screen 22) — naming, eligibility, responsive, themes ───
   //
-  // Two actors, deliberately chosen for opposite authority:
-  //   institutionAdminA — holds `dashboard.view` by role default, so the
-  //                       Command Center is both reachable and its landing;
-  //   outletOfficerA    — holds NO permission by default, so it must keep its
-  //                       existing Outlet Operations landing and never be
-  //                       offered the surface at all.
-  // The second half matters most: RAC-3 must not have moved anyone who was
-  // not already authorized.
+  // Two actors with opposite authority:
+  //   institutionAdminA — holds `dashboard.view` by role default, so Statistics
+  //                       is reachable and is its landing;
+  //   outletOfficerA    — holds NO permission by default, so it must land on
+  //                       its own historical screen and never be offered 22.
+  //
+  // The second half is proven POSITIVELY: an earlier revision asserted only
+  // that Statistics was absent, and did so while the welcome sequence was still
+  // on screen, which made the assertion vacuous — it would have passed even if
+  // routing were broken. It now waits for the real shell and identifies the
+  // screen the actor actually reached.
   {
     const { page, consoleErrors } = await freshPage(browser, { width: 1440, height: 900 });
+
+    // Runtime request budget: count the RAC-2 RPC, not the source claim.
+    let ccRpcRequests = 0;
+    page.on('request', (req) => {
+      if (req.url().includes('phoenix_command_center_read_contract')) ccRpcRequests += 1;
+    });
+
     await login(page, seed.users.institutionAdminA.email, seed.password);
 
     const ccRoot = page.locator('.rac3');
@@ -1529,87 +1560,187 @@ async function main() {
       .waitFor({ state: 'visible', timeout: 60000 })
       .then(() => true)
       .catch(() => false);
-    record('RAC-3: an actor holding dashboard.view lands on the Command Center', landed);
+    record('RAC-3: an actor holding dashboard.view lands on Statistics', landed);
 
     if (landed) {
       const state = await ccRoot.getAttribute('data-rac3-state');
-      // A live authorized read must reach 'ready'. 'unauthorized' here would
-      // mean the client and the database disagree about this actor's authority.
-      record('RAC-3: the Command Center resolves to a ready, authorized payload',
+      record('RAC-3: Statistics resolves to a ready, authorized payload',
         state === 'ready', `data-rac3-state=${state}`);
 
-      const htmlLang = await page.evaluate(() => document.documentElement.lang);
-      const htmlDir = await page.evaluate(() => document.documentElement.dir);
-      record('RAC-3 desktop renders Arabic/RTL by default',
-        htmlLang === 'ar' && htmlDir === 'rtl', `lang=${htmlLang} dir=${htmlDir}`);
+      await waitForKpiSettled(page);
 
-      const h1 = await page.locator('.rac3 h1').first().textContent().catch(() => null);
-      record('RAC-3: exposes a single top-level page heading',
-        Boolean(h1 && h1.trim().length > 0), `h1=${h1}`);
+      // ── Owner polish: the screen identity ──
+      const naming = await page.evaluate(() => ({
+        shellTitle: document.querySelector('.nexus-topbar-heading')?.textContent?.trim() ?? '',
+        pageTitle: document.querySelector('.rac3-header__title')?.textContent?.trim() ?? '',
+        pageTitleTag: document.querySelector('.rac3-header__title')?.tagName ?? '',
+        h1Count: document.querySelectorAll('h1').length,
+        activeNav: [...document.querySelectorAll('nav a, nav button, aside button')]
+          .map(e => (e.textContent ?? '').trim()).filter(Boolean),
+        bodyHasOldName: (document.body.textContent ?? '').includes('مركز القيادة'),
+        bodyHasReportsTitle: (document.body.textContent ?? '').includes('مركز التقارير والمواقف'),
+        quickActionsPanel: Boolean(document.querySelector('.rac3-panel--actions, .premium-quick-action-grid')),
+      }));
+      record('Statistics: shell topbar title is الإحصائيات', naming.shellTitle === 'الإحصائيات', `title=${naming.shellTitle}`);
+      record('Statistics: page heading is الإحصائيات', naming.pageTitle === 'الإحصائيات', `page=${naming.pageTitle}`);
+      record('Statistics: page titles itself with an h2 under the shell h1',
+        naming.pageTitleTag === 'H2' && naming.h1Count === 1, `tag=${naming.pageTitleTag} h1s=${naming.h1Count}`);
+      record('Statistics: the retired «مركز القيادة» wording is gone', !naming.bodyHasOldName);
+      record('Statistics: the wrong «مركز التقارير والمواقف» header is gone', !naming.bodyHasReportsTitle);
+      record('Statistics: sidebar labels the screen الإحصائيات',
+        naming.activeNav.some(l => l.includes('الإحصائيات')), JSON.stringify(naming.activeNav.slice(0, 8)));
+      record('Statistics: the redundant Quick Actions panel is absent from the DOM',
+        !naming.quickActionsPanel);
 
+      // ── Runtime request budget ──
+      record('Statistics: exactly ONE RAC-2 RPC request on initial load',
+        ccRpcRequests === 1, `requests=${ccRpcRequests}`);
+      const beforeIdle = ccRpcRequests;
+      await settle(6000);
+      record('Statistics: no polling or interval refetch while idle (6s)',
+        ccRpcRequests === beforeIdle, `before=${beforeIdle} after=${ccRpcRequests}`);
+
+      // ── Desktop geometry ──
       const desktopGeometry = await page.evaluate(() => {
         const panels = [...document.querySelectorAll('.rac3-panel, .rac3-kpis')].map(el => {
           const r = el.getBoundingClientRect();
-          return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, w: r.width, h: r.height };
+          return { cls: String(el.className), left: r.left, right: r.right, top: r.top, bottom: r.bottom, h: r.height };
         });
-        const kpis = [...document.querySelectorAll('.rac3-kpi')].length;
+        const main = document.querySelector('.rac3-grid__main');
+        const side = document.querySelector('.rac3-grid__side');
         return {
           innerWidth: window.innerWidth,
           documentOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth + 2,
           panels,
-          kpis,
+          kpis: document.querySelectorAll('.rac3-kpi').length,
           twoTrack: Boolean(document.querySelector('.rac3-grid')),
-          // Quick-action labels are included deliberately: the shared grid
-          // ellipsises them in a narrow column, which is exactly the kind of
-          // clipping the desktop contract forbids.
-          clipped: [...document.querySelectorAll('.rac3-kpi__value, .rac3-panel__title, .rac3-panel--actions .premium-quick-action span:last-child')]
+          mainH: main ? main.getBoundingClientRect().height : 0,
+          sideH: side ? side.getBoundingClientRect().height : 0,
+          clipped: [...document.querySelectorAll('.rac3-kpi__value, .rac3-panel__title, .rac3-health__legend-label, .rac3-signal__label, .rac3-network__label')]
             .filter(el => el.scrollWidth > el.clientWidth + 2)
             .map(el => (el.textContent ?? '').slice(0, 40)),
         };
       });
-      record('RAC-3 desktop: no document horizontal overflow', !desktopGeometry.documentOverflow);
-      record('RAC-3 desktop: uses the two-track composition', desktopGeometry.twoTrack);
-      record('RAC-3 desktop: renders KPI cards', desktopGeometry.kpis > 0, `kpis=${desktopGeometry.kpis}`);
-      record('RAC-3 desktop: no clipped KPI value, panel title or action label',
-        desktopGeometry.clipped.length === 0, JSON.stringify(desktopGeometry.clipped));
-      record('RAC-3 desktop: every panel stays inside the viewport',
-        desktopGeometry.panels.every(p => p.left >= -2 && p.right <= desktopGeometry.innerWidth + 2),
-        JSON.stringify(desktopGeometry.panels.slice(0, 4)));
-      await page.screenshot({ path: join(OUT_DIR, 'rac3-command-center-desktop-ar.png'), fullPage: true });
+      record('Statistics desktop: no document horizontal overflow', !desktopGeometry.documentOverflow);
+      record('Statistics desktop: two-track composition', desktopGeometry.twoTrack);
+      record('Statistics desktop: renders KPI cards', desktopGeometry.kpis > 0, `kpis=${desktopGeometry.kpis}`);
+      record('Statistics desktop: no clipped label anywhere', desktopGeometry.clipped.length === 0,
+        JSON.stringify(desktopGeometry.clipped));
+      record('Statistics desktop: every panel inside the viewport',
+        desktopGeometry.panels.every(p => p.left >= -2 && p.right <= desktopGeometry.innerWidth + 2));
+      // Rebalance check: with Quick Actions gone, the two tracks must stay
+      // comparable — a side column far shorter than the main one is the
+      // "deleted from a template" hole the owner asked us to avoid.
+      const tallest = Math.max(desktopGeometry.mainH, desktopGeometry.sideH);
+      const shortest = Math.min(desktopGeometry.mainH, desktopGeometry.sideH);
+      record('Statistics desktop: the two tracks stay balanced after removing Quick Actions',
+        tallest > 0 && shortest / tallest >= 0.6,
+        `main=${Math.round(desktopGeometry.mainH)} side=${Math.round(desktopGeometry.sideH)} ratio=${(shortest / tallest).toFixed(2)}`);
 
-      // ── English LTR: the same component, mirrored ──
-      if (await page.evaluate(() => document.documentElement.lang) !== 'en') {
-        const switchToEnglish = page.getByRole('button', { name: /^(Switch to English|التبديل إلى الإنجليزية)$/ });
-        await switchToEnglish.click().catch(() => {});
-        await page.waitForFunction(() => document.documentElement.lang === 'en', null, { timeout: 15000 }).catch(() => {});
+      // ── PR #165 desktop notification behaviour (anchored, not the mobile sheet) ──
+      {
+        const bell = page.locator('button[aria-label*="إشعار"], button[aria-label*="notification" i]').first();
+        if (await bell.isVisible().catch(() => false)) {
+          await bell.click().catch(() => {});
+          await settle(320);
+          const desk = await page.evaluate(() => {
+            const el = document.querySelector('[role="dialog"], .nexus-notification-panel, [data-notification-panel]');
+            if (!el) return null;
+            const r = el.getBoundingClientRect();
+            return {
+              w: r.width, h: r.height, iw: window.innerWidth, ih: window.innerHeight,
+              inside: r.left >= -2 && r.right <= window.innerWidth + 2 && r.top >= -2,
+              portalledToBody: el.parentElement === document.body,
+              ariaModal: el.getAttribute('aria-modal'),
+            };
+          });
+          if (desk) {
+            record('Statistics desktop: notification panel opens', desk.w > 0 && desk.h > 0, JSON.stringify(desk));
+            record('Statistics desktop: panel is anchored, NOT the mobile full-bleed sheet',
+              desk.w < desk.iw * 0.6 && !desk.portalledToBody && desk.ariaModal !== 'true', JSON.stringify(desk));
+            record('Statistics desktop: notification panel stays inside the viewport', desk.inside);
+          }
+          await page.keyboard.press('Escape').catch(() => {});
+          await settle(240);
+          const closed = await page.evaluate(() => ({
+            gone: !document.querySelector('[role="dialog"], .nexus-notification-panel, [data-notification-panel]'),
+            focusOnBell: (document.activeElement?.getAttribute('aria-label') ?? '').match(/إشعار|notification/i) !== null,
+          }));
+          record('Statistics desktop: Escape closes the notification panel', closed.gone);
+          record('Statistics desktop: focus returns to the notification bell', closed.focusOnBell);
+        }
       }
-      const ltr = await page.evaluate(() => ({
+
+      await page.screenshot({ path: join(OUT_DIR, 'rac3-statistics-desktop-ar-light.png'), fullPage: true });
+
+      // ── Dark theme, through the product's own toggle ──
+      const toDark = page.getByRole('button', { name: /^(تفعيل المظهر الداكن|Activate dark theme)$/ });
+      await toDark.click().catch(() => {});
+      await page.waitForFunction(() => document.documentElement.getAttribute('data-theme') === 'dark',
+        null, { timeout: 15000 }).catch(() => {});
+      await waitForKpiSettled(page);
+      const darkDesk = await page.evaluate(() => ({
+        theme: document.documentElement.getAttribute('data-theme'),
+        overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth + 2,
+        clipped: [...document.querySelectorAll('.rac3-kpi__value, .rac3-panel__title, .rac3-signal__label')]
+          .filter(el => el.scrollWidth > el.clientWidth + 2).length,
+        bodyBg: getComputedStyle(document.body).backgroundColor,
+        kpiColor: getComputedStyle(document.querySelector('.rac3-kpi__value')).color,
+        panelBorder: getComputedStyle(document.querySelector('.rac3-panel')).borderTopColor,
+      }));
+      record('Statistics dark: the product theme toggle applies data-theme=dark',
+        darkDesk.theme === 'dark', JSON.stringify(darkDesk));
+      record('Statistics dark desktop: no overflow and no clipped text',
+        !darkDesk.overflow && darkDesk.clipped === 0, JSON.stringify(darkDesk));
+      await page.screenshot({ path: join(OUT_DIR, 'rac3-statistics-desktop-ar-dark.png'), fullPage: true });
+
+      // ── English LTR, dark then light ──
+      const toEnglish = page.getByRole('button', { name: /^(Switch to English|التبديل إلى الإنجليزية)$/ });
+      await toEnglish.click().catch(() => {});
+      await page.waitForFunction(() => document.documentElement.lang === 'en', null, { timeout: 15000 }).catch(() => {});
+      await waitForKpiSettled(page);
+      const ltrDark = await page.evaluate(() => ({
         lang: document.documentElement.lang,
         dir: document.documentElement.dir,
+        theme: document.documentElement.getAttribute('data-theme'),
+        shellTitle: document.querySelector('.nexus-topbar-heading')?.textContent?.trim() ?? '',
+        pageTitle: document.querySelector('.rac3-header__title')?.textContent?.trim() ?? '',
         overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth + 2,
-        title: document.querySelector('.rac3 h1')?.textContent ?? '',
+        hasOldName: (document.body.textContent ?? '').includes('Command Center'),
       }));
-      record('RAC-3 desktop LTR: flips to English without breaking layout',
-        ltr.lang === 'en' && ltr.dir === 'ltr' && !ltr.overflow, JSON.stringify(ltr));
-      await page.screenshot({ path: join(OUT_DIR, 'rac3-command-center-desktop-en.png'), fullPage: true });
+      record('Statistics EN: shell and page both read "Statistics"',
+        ltrDark.shellTitle === 'Statistics' && ltrDark.pageTitle === 'Statistics', JSON.stringify(ltrDark));
+      record('Statistics EN: the retired "Command Center" wording is gone', !ltrDark.hasOldName);
+      record('Statistics EN dark: LTR renders without overflow',
+        ltrDark.lang === 'en' && ltrDark.dir === 'ltr' && !ltrDark.overflow, JSON.stringify(ltrDark));
+      await page.screenshot({ path: join(OUT_DIR, 'rac3-statistics-desktop-en-dark.png'), fullPage: true });
 
-      // Back to Arabic for the phone matrix — Arabic RTL is the product default
-      // and the harder direction, so the phones are measured in it.
-      const switchToArabic = page.getByRole('button', { name: /^(Switch to Arabic|التبديل إلى العربية)$/ });
-      await switchToArabic.click().catch(() => {});
+      const toLight = page.getByRole('button', { name: /^(Activate light theme|تفعيل المظهر الفاتح)$/ });
+      await toLight.click().catch(() => {});
+      await page.waitForFunction(() => document.documentElement.getAttribute('data-theme') === 'light',
+        null, { timeout: 15000 }).catch(() => {});
+      await waitForKpiSettled(page);
+      await page.screenshot({ path: join(OUT_DIR, 'rac3-statistics-desktop-en-light.png'), fullPage: true });
+
+      // Back to Arabic for the phone matrix — the product default and the
+      // harder direction.
+      const toArabic = page.getByRole('button', { name: /^(Switch to Arabic|التبديل إلى العربية)$/ });
+      await toArabic.click().catch(() => {});
       await page.waitForFunction(() => document.documentElement.lang === 'ar', null, { timeout: 15000 }).catch(() => {});
+      await waitForKpiSettled(page);
 
       const ccViewports = [
-        { name: 'cc-small-320x568', width: 320, height: 568 },
-        { name: 'cc-android-360x800', width: 360, height: 800 },
-        { name: 'cc-modern-390x844', width: 390, height: 844 },
-        { name: 'cc-large-430x932', width: 430, height: 932 },
-        { name: 'cc-landscape-667x375', width: 667, height: 375 },
+        { name: 'stats-small-320x568', width: 320, height: 568 },
+        { name: 'stats-android-360x800', width: 360, height: 800 },
+        { name: 'stats-modern-390x844', width: 390, height: 844 },
+        { name: 'stats-large-430x932', width: 430, height: 932 },
+        { name: 'stats-landscape-667x375', width: 667, height: 375 },
       ];
 
       for (const vp of ccViewports) {
         await page.setViewportSize({ width: vp.width, height: vp.height });
         await settle(260);
+        await waitForKpiSettled(page);
 
         const g = await page.evaluate(() => {
           const rect = (sel) => {
@@ -1620,56 +1751,46 @@ async function main() {
           };
           const panels = [...document.querySelectorAll('.rac3-stack > *')].map(el => {
             const r = el.getBoundingClientRect();
-            return { cls: String(el.className), left: r.left, right: r.right, top: r.top, bottom: r.bottom };
+            return { cls: String(el.className), top: r.top, bottom: r.bottom };
           });
-          // A vertical stack: each panel must start at or below the end of the
-          // previous one. A negative gap is a real overlap.
           let overlap = false;
           for (let i = 1; i < panels.length; i++) {
             if (panels[i].top < panels[i - 1].bottom - 2) overlap = true;
           }
           const nav = document.querySelector('.premium-bottom-nav');
-          const navH = nav ? nav.getBoundingClientRect().height : 0;
           return {
             innerWidth: window.innerWidth,
-            innerHeight: window.innerHeight,
             documentOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth + 2,
             stacked: Boolean(document.querySelector('.rac3-stack')),
-            panels,
-            overlap,
+            panels, overlap,
             kpiCount: document.querySelectorAll('.rac3-kpi').length,
             kpiInside: [...document.querySelectorAll('.rac3-kpi')].every(el => {
               const r = el.getBoundingClientRect();
               return r.left >= -2 && r.right <= window.innerWidth + 2;
             }),
             signalsFirst: panels.length > 0 && panels[0].cls.includes('rac3-panel--signals'),
+            quickActions: Boolean(document.querySelector('.rac3-panel--actions, .premium-quick-action-grid')),
+            clipped: [...document.querySelectorAll('.rac3-kpi__value, .rac3-panel__title, .rac3-signal__label')]
+              .filter(el => el.scrollWidth > el.clientWidth + 2).length,
             root: rect('.rac3'),
-            navH,
+            navTop: nav ? nav.getBoundingClientRect().top : window.innerHeight,
           };
         });
 
         record(`${vp.name}: no document horizontal overflow`, !g.documentOverflow, `w=${g.innerWidth}`);
-        record(`${vp.name}: Command Center is visible and non-empty`,
-          Boolean(g.root && g.root.h > 100), JSON.stringify(g.root));
-        record(`${vp.name}: uses the mobile stack, not a squeezed desktop grid`, g.stacked);
-        record(`${vp.name}: critical signals are the first panel`,
-          g.signalsFirst, String(g.panels[0] ? g.panels[0].cls : ''));
-        record(`${vp.name}: KPI cards stay inside the viewport`,
-          g.kpiCount > 0 && g.kpiInside, `kpis=${g.kpiCount}`);
+        record(`${vp.name}: Statistics is visible and non-empty`, Boolean(g.root && g.root.h > 100), JSON.stringify(g.root));
+        record(`${vp.name}: uses the mobile stack`, g.stacked);
+        record(`${vp.name}: critical signals are the first panel`, g.signalsFirst, String(g.panels[0] ? g.panels[0].cls : ''));
+        record(`${vp.name}: KPI cards stay inside the viewport`, g.kpiCount > 0 && g.kpiInside, `kpis=${g.kpiCount}`);
         record(`${vp.name}: panels do not overlap`, !g.overlap);
+        record(`${vp.name}: no clipped label`, g.clipped === 0);
+        record(`${vp.name}: Quick Actions panel absent`, !g.quickActions);
+        record(`${vp.name}: root inside the viewport width`,
+          Boolean(g.root) && g.root.left >= -2 && g.root.right <= g.innerWidth + 2, JSON.stringify(g.root));
 
-        // The bottom bar is FIXED over the page, and #phoenix-main — not the
-        // document — is the single scroll owner. So the property to prove is
-        // behavioural, not arithmetic on document height: scroll that owner to
-        // its very end, then check the last panel has actually come to rest
-        // ABOVE the bar rather than underneath it.
         const clearsNav = await page.evaluate(async () => {
           const main = document.querySelector('#phoenix-main');
           if (!main) return { ok: false, reason: 'no scroll owner' };
-          // .premium-main sets `scroll-behavior: smooth`, so assigning
-          // scrollTop ANIMATES. Measuring two frames later samples the middle
-          // of that animation, not its end. Force instant scrolling for the
-          // probe, then restore the page's own behaviour.
           const previous = main.style.scrollBehavior;
           main.style.scrollBehavior = 'auto';
           main.scrollTop = main.scrollHeight;
@@ -1681,33 +1802,20 @@ async function main() {
           const lastBottom = last.getBoundingClientRect().bottom;
           const nav = document.querySelector('.premium-bottom-nav');
           const navTop = nav ? nav.getBoundingClientRect().top : window.innerHeight;
-          return {
-            ok: lastBottom <= navTop + 2,
-            lastBottom: Math.round(lastBottom),
-            navTop: Math.round(navTop),
-            scrolledToEnd: Math.round(main.scrollTop + main.clientHeight) >= Math.round(main.scrollHeight) - 2,
-          };
+          return { ok: lastBottom <= navTop + 2, lastBottom: Math.round(lastBottom), navTop: Math.round(navTop) };
         });
         record(`${vp.name}: last panel scrolls clear of the fixed bottom navigation`,
           clearsNav.ok, JSON.stringify(clearsNav));
         await page.evaluate(() => {
           const m = document.querySelector('#phoenix-main');
           if (!m) return;
-          const previous = m.style.scrollBehavior;
+          const prev = m.style.scrollBehavior;
           m.style.scrollBehavior = 'auto';
           m.scrollTop = 0;
-          m.style.scrollBehavior = previous;
+          m.style.scrollBehavior = prev;
         });
         await settle(140);
 
-        record(`${vp.name}: root stays inside the viewport width`,
-          Boolean(g.root) && g.root.left >= -2 && g.root.right <= g.innerWidth + 2, JSON.stringify(g.root));
-
-        // Above the fold, unscrolled, an operator must already see something
-        // operational — not just the header and the status strip. This is the
-        // §19 urgency ordering measured rather than asserted about, and it is
-        // the check that catches a short landscape phone where chrome eats the
-        // entire first screen.
         const aboveFold = await page.evaluate(() => {
           const signals = document.querySelector('.rac3-panel--signals');
           const kpis = document.querySelector('.rac3-kpis');
@@ -1717,13 +1825,11 @@ async function main() {
           const first = Math.min(topOf(signals), topOf(kpis));
           return { ok: first < limit, first: Math.round(first), limit: Math.round(limit) };
         });
-        record(`${vp.name}: operational content starts above the fold`,
-          aboveFold.ok, JSON.stringify(aboveFold));
+        record(`${vp.name}: operational content starts above the fold`, aboveFold.ok, JSON.stringify(aboveFold));
 
-        // The PR #165 notification hotfix must still work ON this screen.
+        // PR #165 mobile sheet, on this screen.
         const bell = page.locator('button[aria-label*="إشعار"], button[aria-label*="notification" i]').first();
-        const bellFound = await bell.isVisible().catch(() => false);
-        if (bellFound) {
+        if (await bell.isVisible().catch(() => false)) {
           await bell.click().catch(() => {});
           await settle(340);
           const panel = await page.evaluate(() => {
@@ -1731,57 +1837,95 @@ async function main() {
             if (!el) return null;
             const r = el.getBoundingClientRect();
             return {
-              left: r.left, right: r.right, top: r.top, bottom: r.bottom,
-              w: r.width, h: r.height, iw: window.innerWidth, ih: window.innerHeight,
-              portalled: el.parentElement === document.body,
+              left: r.left, right: r.right, top: r.top, bottom: r.bottom, w: r.width, h: r.height,
+              iw: window.innerWidth, ih: window.innerHeight, portalled: el.parentElement === document.body,
             };
           });
           if (panel) {
-            record(`${vp.name}: notification sheet opens over the Command Center`,
-              panel.w > 0 && panel.h > 0, JSON.stringify(panel));
+            record(`${vp.name}: notification sheet opens over Statistics`, panel.w > 0 && panel.h > 0);
             record(`${vp.name}: notification sheet stays inside the viewport`,
-              panel.left >= -2 && panel.right <= panel.iw + 2
-              && panel.top >= -2 && panel.bottom <= panel.ih + 2,
+              panel.left >= -2 && panel.right <= panel.iw + 2 && panel.top >= -2 && panel.bottom <= panel.ih + 2,
               JSON.stringify(panel));
             record(`${vp.name}: notification sheet is portalled to document.body`, panel.portalled);
           }
           await page.keyboard.press('Escape').catch(() => {});
           await settle(220);
+          const restored = await page.evaluate(() => ({
+            gone: !document.querySelector('[role="dialog"][aria-modal="true"]'),
+            focusOnBell: (document.activeElement?.getAttribute('aria-label') ?? '').match(/إشعار|notification/i) !== null,
+          }));
+          record(`${vp.name}: Escape closes the sheet and restores focus to the bell`,
+            restored.gone && restored.focusOnBell, JSON.stringify(restored));
         }
 
-        if (vp.name === 'cc-android-360x800' || vp.name === 'cc-modern-390x844' || vp.name === 'cc-landscape-667x375') {
-          await page.screenshot({ path: join(OUT_DIR, `rac3-command-center-${vp.name}-ar.png`), fullPage: false });
+        if (vp.name === 'stats-android-360x800' || vp.name === 'stats-modern-390x844' || vp.name === 'stats-landscape-667x375') {
+          await page.screenshot({ path: join(OUT_DIR, `rac3-${vp.name}-ar-light.png`), fullPage: false });
+        }
+        if (vp.name === 'stats-modern-390x844') {
+          const dk = page.getByRole('button', { name: /^(تفعيل المظهر الداكن|Activate dark theme)$/ });
+          await dk.click().catch(() => {});
+          await page.waitForFunction(() => document.documentElement.getAttribute('data-theme') === 'dark',
+            null, { timeout: 15000 }).catch(() => {});
+          await waitForKpiSettled(page);
+          const darkMobile = await page.evaluate(() => ({
+            theme: document.documentElement.getAttribute('data-theme'),
+            overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth + 2,
+            clipped: [...document.querySelectorAll('.rac3-kpi__value, .rac3-panel__title, .rac3-signal__label')]
+              .filter(el => el.scrollWidth > el.clientWidth + 2).length,
+          }));
+          record('stats-modern-390x844 dark: renders without overflow or clipped text',
+            darkMobile.theme === 'dark' && !darkMobile.overflow && darkMobile.clipped === 0,
+            JSON.stringify(darkMobile));
+          await page.screenshot({ path: join(OUT_DIR, 'rac3-stats-modern-390x844-ar-dark.png'), fullPage: false });
+          const lt = page.getByRole('button', { name: /^(تفعيل المظهر الفاتح|Activate light theme)$/ });
+          await lt.click().catch(() => {});
+          await page.waitForFunction(() => document.documentElement.getAttribute('data-theme') === 'light',
+            null, { timeout: 15000 }).catch(() => {});
+          await waitForKpiSettled(page);
         }
       }
     }
 
-    record('RAC-3 eligible-actor session has no console errors',
+    record('Statistics eligible-actor session has no console errors',
       consoleErrors.length === 0, consoleErrors.slice(0, 3).join(' | '));
     await page.close();
   }
 
-  // ── 6b. The actor RAC-3 must NOT have moved ───────────────────────────────
+  // ── 6b. The actor RAC-3 must NOT have moved — POSITIVE landing proof ──────
   {
     const { page } = await freshPage(browser, { width: 390, height: 844 });
     await login(page, seed.users.outletOfficerA.email, seed.password);
-    await settle(3000);
 
-    const state = await page.evaluate(() => ({
-      commandCenterPresent: Boolean(document.querySelector('.rac3')),
-      // Every navigation surface is a projection of the SAME decision the route
-      // guard uses, so an entry here would mean the capability gate leaked.
-      navOffersCommandCenter: [...document.querySelectorAll('button, a')]
-        .some(b => (b.textContent ?? '').includes('مركز القيادة')),
-      bodyText: (document.body.textContent ?? '').trim(),
+    // The welcome sequence runs for SEQUENCE_MS after login. Measuring before
+    // it finishes is what made the previous revision of this check vacuous:
+    // `.rac3` is trivially absent on the splash, so the assertion passed
+    // without ever observing the routed screen. Wait for the real shell.
+    const shellUp = await page.locator('#phoenix-main')
+      .waitFor({ state: 'visible', timeout: 60000 })
+      .then(() => true)
+      .catch(() => false);
+    record('RAC-3 ineligible: the authenticated shell actually mounted (not the welcome splash)', shellUp);
+
+    // outlet_officer holds no permission by default, so roleLandingScreen()
+    // sends it to screen 18 — Outlet Operations, titled «عمليات المنفذ».
+    const landing = await page.evaluate(() => ({
+      shellTitle: document.querySelector('.nexus-topbar-heading')?.textContent?.trim() ?? '',
+      statisticsPresent: Boolean(document.querySelector('.rac3')),
+      navOffersStatistics: [...document.querySelectorAll('button, a')]
+        .some(b => (b.textContent ?? '').includes('الإحصائيات')),
+      bodyChars: (document.body.textContent ?? '').trim().length,
+      welcomeStillUp: Boolean(document.querySelector('.nexus-welcome__title')),
     }));
 
-    record('RAC-3: an actor without dashboard.view does NOT land on the Command Center',
-      !state.commandCenterPresent);
-    record('RAC-3: no navigation surface offers the Command Center to that actor',
-      !state.navOffersCommandCenter);
-    record('RAC-3: that actor keeps a real, non-blank authorized surface',
-      state.bodyText.length > 100, `chars=${state.bodyText.length}`);
-    await page.screenshot({ path: join(OUT_DIR, 'rac3-ineligible-actor-keeps-landing-390.png') });
+    record('RAC-3 ineligible: POSITIVELY reached its historical landing, Outlet Operations',
+      landing.shellTitle === 'عمليات المنفذ', `shellTitle=${landing.shellTitle}`);
+    record('RAC-3 ineligible: the welcome splash is no longer on screen', !landing.welcomeStillUp);
+    record('RAC-3 ineligible: Statistics screen is absent', !landing.statisticsPresent);
+    record('RAC-3 ineligible: no navigation surface offers Statistics',
+      !landing.navOffersStatistics);
+    record('RAC-3 ineligible: the landing is a real, populated surface',
+      landing.bodyChars > 400, `chars=${landing.bodyChars}`);
+    await page.screenshot({ path: join(OUT_DIR, 'rac3-ineligible-actor-outlet-landing-390.png') });
     await page.close();
   }
 

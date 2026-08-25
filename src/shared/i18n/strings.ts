@@ -1748,8 +1748,12 @@ export const T: Dict = {
      for a pharmacy-operations reader, not a database reader: the strings name
      what an operator must DO or NOTICE, and the deferred/refusal states say
      plainly why a panel is absent instead of implying a fault. */
-  rac3_nav:            { ar: 'مركز القيادة',            en: 'Command Center' },
-  rac3_title:          { ar: 'مركز القيادة',            en: 'Command Center' },
+  /* OWNER POLISH: the visible identity of screen 22 is «الإحصائيات» / Statistics.
+     Internal identifiers (CommandCenterScreen, command-center.service, the RAC-3
+     test names) deliberately keep the Command Center wording — renaming them
+     would be pure churn with no user-visible effect. */
+  rac3_nav:            { ar: 'الإحصائيات',               en: 'Statistics' },
+  rac3_title:          { ar: 'الإحصائيات',               en: 'Statistics' },
   rac3_subtitle:       { ar: 'الحالة التشغيلية ضمن نطاق صلاحيتك.', en: 'Operational status within your authorized scope.' },
   rac3_subtitle_named: { ar: 'أهلًا {name} — الحالة التشغيلية ضمن نطاق صلاحيتك.', en: 'Welcome {name} — operational status within your authorized scope.' },
   rac3_refresh:        { ar: 'تحديث',                    en: 'Refresh' },
@@ -1834,13 +1838,13 @@ export const T: Dict = {
   rac3_status_near_expiry_policy: { ar: 'سياسة قرب الانتهاء: {days} يومًا', en: 'Near-expiry policy: {days} days' },
 
   /* States */
-  rac3_unauthorized_title:  { ar: 'لا تملك صلاحية مركز القيادة', en: 'You do not have Command Center access' },
-  rac3_unauthorized_msg:    { ar: 'رفض الخادم عرض بيانات مركز القيادة لحسابك ضمن هذا النطاق. هذه ليست حالة "لا توجد بيانات" — بل قرار صلاحية. راجع مسؤول النظام إن كنت تتوقع الوصول.', en: 'The server refused Command Center data for your account in this scope. This is not a "no data" state — it is an authorization decision. Contact your administrator if you expected access.' },
+  rac3_unauthorized_title:  { ar: 'لا تملك صلاحية الإحصائيات', en: 'You do not have Statistics access' },
+  rac3_unauthorized_msg:    { ar: 'رفض الخادم عرض بيانات الإحصائيات لحسابك ضمن هذا النطاق. هذه ليست حالة "لا توجد بيانات" — بل قرار صلاحية. راجع مسؤول النظام إن كنت تتوقع الوصول.', en: 'The server refused Statistics data for your account in this scope. This is not a "no data" state — it is an authorization decision. Contact your administrator if you expected access.' },
   rac3_unauthorized_action: { ar: 'العودة إلى شاشتك الرئيسية',  en: 'Return to your main screen' },
   rac3_invalid_scope_title: { ar: 'نطاق غير صالح',              en: 'Invalid scope' },
   rac3_invalid_scope_msg:   { ar: 'لا يمكن طلب مستودع ومنفذ صرف في آنٍ واحد. اختر نطاقًا واحدًا.', en: 'A warehouse and a dispensing point cannot be requested together. Choose one scope.' },
-  rac3_unavailable_title:   { ar: 'مركز القيادة غير مفعّل',     en: 'Command Center not enabled' },
-  rac3_unavailable_msg:     { ar: 'لم يتم تفعيل واجهة قراءة مركز القيادة على هذه البيئة بعد.', en: 'The Command Center read contract is not enabled on this environment yet.' },
+  rac3_unavailable_title:   { ar: 'الإحصائيات غير مفعّلة',      en: 'Statistics not enabled' },
+  rac3_unavailable_msg:     { ar: 'لم يتم تفعيل واجهة قراءة الإحصائيات على هذه البيئة بعد.', en: 'The Statistics read contract is not enabled on this environment yet.' },
   rac3_network_msg:         { ar: 'تعذّر الوصول إلى الخادم. تحقّق من الاتصال ثم أعد المحاولة.', en: 'Could not reach the server. Check your connection and try again.' },
   rac3_empty_title:         { ar: 'لا توجد بيانات لعرضها',      en: 'No data to display' },
   rac3_empty_msg:           { ar: 'لم يُرجع الخادم بيانات لهذا النطاق.', en: 'The server returned no data for this scope.' },

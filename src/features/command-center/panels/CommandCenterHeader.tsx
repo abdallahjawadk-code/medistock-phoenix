@@ -38,7 +38,11 @@ export function CommandCenterHeader({ scopeKind, refreshing, onRefresh }: Props)
         <p className="rac3-header__kicker">
           {scopeKind ? t(`rac3_scope_${scopeKind}`, lang) : t('rac3_scope_pending', lang)}
         </p>
-        <h1 className="rac3-header__title">{t('rac3_title', lang)}</h1>
+        {/* h2, not h1: PhoenixAppShell's topbar renders the page-level h1 for
+            every authenticated screen, and screens 18 and 21 both title
+            themselves with an h2 beneath it. An h1 here would put two
+            page headings in one document. */}
+        <h2 className="rac3-header__title">{t('rac3_title', lang)}</h2>
         <p className="rac3-header__sub">
           {displayName
             ? t('rac3_subtitle_named', lang).replace('{name}', displayName)
