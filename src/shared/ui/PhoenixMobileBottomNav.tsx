@@ -11,6 +11,7 @@ import { PhoenixIcon, type PhoenixIconName } from './PhoenixIcon';
 // correct for any other in-app navigation that already uses the canonical
 // screen number.
 const BOTTOM_NAV: { screen: number; icon: PhoenixIconName; labelKey: string }[] = [
+  { screen: 22, icon: 'command', labelKey: 'rac3_nav' },
   { screen: 21, icon: 'status', labelKey: 'nav_decision_reports' },
   { screen: 3, icon: 'editor', labelKey: 'nav_editor' },
   { screen: 11, icon: 'institutions', labelKey: 'nav_institutions' },

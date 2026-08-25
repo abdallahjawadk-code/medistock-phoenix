@@ -25,6 +25,7 @@ import { NetworkManagementScreen } from '@/features/network/NetworkManagementScr
 import { OutletOperationsScreen } from '@/features/outlet/OutletOperationsScreen';
 import { LocalProcurementScreen } from '@/features/procurement/LocalProcurementScreen';
 import { DecisionIntelligenceReportsScreen } from '@/features/reports/DecisionIntelligenceReportsScreen';
+import { CommandCenterScreen } from '@/features/command-center/CommandCenterScreen';
 import { ScreenAuthzGuard } from '@/shared/authz/ScreenAuthzGuard';
 import {
   suggestionDocumentScreen,
@@ -298,6 +299,11 @@ export function AuthenticatedApp() {
       // material search — every RPC re-checked server-side, every
       // permission gate unchanged from its original screen.
       case 21: return <DecisionIntelligenceReportsScreen onNavigate={setScreen} onOpenSuggestionDocument={openSuggestionDocument} />;
+      // RAC-3: the role-aware Command Center. Reached only by an actor the
+      // canonical decision admits (dashboard.view); Migration 199 re-proves
+      // that authority server-side on every read, so this route is a UX gate
+      // over a boundary the database already enforces.
+      case 22: return <CommandCenterScreen onNavigate={setScreen} />;
       // Central dashboard (former screen 2) and any unknown screen number
       // safely redirect to the unified shell — the real-data landing screen.
       default: return <DecisionIntelligenceReportsScreen onNavigate={setScreen} onOpenSuggestionDocument={openSuggestionDocument} />;

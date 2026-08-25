@@ -35,6 +35,11 @@ const SCREEN_TITLE_KEYS: Record<number, string> = {
   20: 'nav_decision_reports',
   // Screen 21: the unified "مركز التقارير والمواقف" shell.
   21: 'nav_decision_reports',
+  // Screen 22 (Statistics, RAC-3). Without this entry the topbar falls back to
+  // nav_decision_reports and rendered «مركز التقارير والمواقف» above the
+  // Statistics page — the exact failure recorded for screen 18 above, caught
+  // again here by owner review of the RAC-3 preview.
+  22: 'rac3_nav',
 };
 
 interface Props {
