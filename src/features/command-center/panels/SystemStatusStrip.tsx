@@ -68,7 +68,11 @@ export function SystemStatusStrip({ lastLoadedAt, refreshing, nearExpiryDays }: 
       ) : null}
 
       <span className="rac3-status__item rac3-status__item--muted">
-        {t('rac3_status_near_expiry_policy', lang).replace('{days}', String(nearExpiryDays))}
+        {/* Formatted through the same locale as every other figure on this
+            screen. `String(days)` printed Western digits beside Arabic-Indic
+            KPI values, mixing two numeral systems in one strip. */}
+        {t('rac3_status_near_expiry_policy', lang)
+          .replace('{days}', nearExpiryDays.toLocaleString(lang === 'ar' ? 'ar-IQ' : 'en-US'))}
       </span>
     </div>
   );

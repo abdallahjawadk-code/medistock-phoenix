@@ -506,10 +506,30 @@
      and leave dead space under the last panel. */
 }
 
-/* Landscape phones are short, not narrow — reclaim vertical space. */
+/* Landscape phones are short, not narrow — reclaim vertical space.
+   At 667x375 the header alone (title + greeting + a full-width refresh button
+   on its own row) plus the status strip consumed the entire fold, so an
+   operator saw no operational content at all before scrolling. The greeting
+   is the least urgent element and the refresh button does not need its own
+   row when there is horizontal room, so both give way to the critical
+   signals panel. */
 @media (max-height: 430px) and (orientation: landscape) {
   .rac3-header { padding-block: 10px; }
+  .rac3-header__title { font-size: 17px; }
+  .rac3-header__sub { display: none; }
+  .rac3-refresh { inline-size: auto; min-block-size: 40px; }
+  .rac3-status { padding-block: 6px; }
   .rac3-trend { padding-block: 12px; }
+}
+
+/* QuickActionGrid hard-codes `repeat(auto-fit, minmax(140px, 1fr))` as an
+   INLINE style. In this panel's narrow desktop side column that resolves to
+   two tiles and ellipsises the longer labels ("Supplementary Pu…"). The
+   override is scoped to this panel so the component's two other consumers keep
+   their existing layout untouched; `!important` is needed only because the
+   declaration it replaces is inline. */
+.rac3-panel--actions .premium-quick-action-grid {
+  grid-template-columns: minmax(0, 1fr) !important;
 }
 
 /* ── Reduced motion ───────────────────────────────────────────────────────── */

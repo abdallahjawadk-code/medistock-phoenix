@@ -1559,14 +1559,19 @@ async function main() {
           panels,
           kpis,
           twoTrack: Boolean(document.querySelector('.rac3-grid')),
-          clipped: [...document.querySelectorAll('.rac3-kpi__value, .rac3-panel__title')]
-            .some(el => el.scrollWidth > el.clientWidth + 2),
+          // Quick-action labels are included deliberately: the shared grid
+          // ellipsises them in a narrow column, which is exactly the kind of
+          // clipping the desktop contract forbids.
+          clipped: [...document.querySelectorAll('.rac3-kpi__value, .rac3-panel__title, .rac3-panel--actions .premium-quick-action span:last-child')]
+            .filter(el => el.scrollWidth > el.clientWidth + 2)
+            .map(el => (el.textContent ?? '').slice(0, 40)),
         };
       });
       record('RAC-3 desktop: no document horizontal overflow', !desktopGeometry.documentOverflow);
       record('RAC-3 desktop: uses the two-track composition', desktopGeometry.twoTrack);
       record('RAC-3 desktop: renders KPI cards', desktopGeometry.kpis > 0, `kpis=${desktopGeometry.kpis}`);
-      record('RAC-3 desktop: no clipped KPI value or panel title', !desktopGeometry.clipped);
+      record('RAC-3 desktop: no clipped KPI value, panel title or action label',
+        desktopGeometry.clipped.length === 0, JSON.stringify(desktopGeometry.clipped));
       record('RAC-3 desktop: every panel stays inside the viewport',
         desktopGeometry.panels.every(p => p.left >= -2 && p.right <= desktopGeometry.innerWidth + 2),
         JSON.stringify(desktopGeometry.panels.slice(0, 4)));
@@ -1697,6 +1702,23 @@ async function main() {
 
         record(`${vp.name}: root stays inside the viewport width`,
           Boolean(g.root) && g.root.left >= -2 && g.root.right <= g.innerWidth + 2, JSON.stringify(g.root));
+
+        // Above the fold, unscrolled, an operator must already see something
+        // operational — not just the header and the status strip. This is the
+        // §19 urgency ordering measured rather than asserted about, and it is
+        // the check that catches a short landscape phone where chrome eats the
+        // entire first screen.
+        const aboveFold = await page.evaluate(() => {
+          const signals = document.querySelector('.rac3-panel--signals');
+          const kpis = document.querySelector('.rac3-kpis');
+          const nav = document.querySelector('.premium-bottom-nav');
+          const limit = nav ? nav.getBoundingClientRect().top : window.innerHeight;
+          const topOf = (el) => (el ? el.getBoundingClientRect().top : Number.POSITIVE_INFINITY);
+          const first = Math.min(topOf(signals), topOf(kpis));
+          return { ok: first < limit, first: Math.round(first), limit: Math.round(limit) };
+        });
+        record(`${vp.name}: operational content starts above the fold`,
+          aboveFold.ok, JSON.stringify(aboveFold));
 
         // The PR #165 notification hotfix must still work ON this screen.
         const bell = page.locator('button[aria-label*="إشعار"], button[aria-label*="notification" i]').first();
