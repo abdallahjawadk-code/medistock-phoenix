@@ -345,8 +345,42 @@ describe('RAC-3 · I) no backend or migration change', () => {
     ).split('\n').map(l => l.trim()).filter(Boolean);
     expect(changed.filter(f => f.startsWith('supabase/'))).toEqual([]);
     expect(changed.filter(f => f.endsWith('.sql'))).toEqual([]);
-    expect(changed).not.toContain('package.json');
-    expect(changed).not.toContain('package-lock.json');
+  });
+
+  /**
+   * The v2.1.0 release ceremony legitimately edits package.json and the
+   * lockfile to carry the release version, so a blanket "these files never
+   * change" ban would now fail for a correct release.
+   *
+   * The guarantee that actually matters — that no dependency was added, removed
+   * or moved — is asserted DIRECTLY instead, by diffing the dependency graph
+   * rather than the filename. That is strictly stronger than the ban it
+   * replaces: it would also catch a dependency edit smuggled in beside a
+   * version bump, which a filename check never could.
+   */
+  it('changes no dependency — only the release version may differ', () => {
+    const BASE = 'b707f073d60b4cc61205c35003ab491f3aed7468';
+    const jsonAt = (ref: string, file: string) => JSON.parse(
+      execSync(`git show ${ref}:${file}`, { cwd: process.cwd(), encoding: 'utf8' }),
+    );
+
+    const base = jsonAt(BASE, 'package.json');
+    const head = jsonAt('HEAD', 'package.json');
+    expect(head.dependencies).toEqual(base.dependencies);
+    expect(head.devDependencies).toEqual(base.devDependencies);
+    expect(head.overrides).toEqual(base.overrides);
+    expect(head.scripts).toEqual(base.scripts);
+    expect(head.name).toBe(base.name);
+
+    // The lockfile's whole graph must be identical too — only the two root
+    // version fields may move.
+    const normalise = (lock: Record<string, unknown>) => {
+      const packages = { ...(lock.packages as Record<string, Record<string, unknown>>) };
+      packages[''] = { ...packages[''], version: 'RELEASE_VERSION' };
+      return JSON.stringify({ ...lock, version: 'RELEASE_VERSION', packages });
+    };
+    expect(normalise(jsonAt('HEAD', 'package-lock.json')))
+      .toBe(normalise(jsonAt(BASE, 'package-lock.json')));
   });
 });
 
