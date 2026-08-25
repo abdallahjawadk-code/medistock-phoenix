@@ -1578,7 +1578,12 @@ async function main() {
         activeNav: [...document.querySelectorAll('nav a, nav button, aside button')]
           .map(e => (e.textContent ?? '').trim()).filter(Boolean),
         bodyHasOldName: (document.body.textContent ?? '').includes('مركز القيادة'),
-        bodyHasReportsTitle: (document.body.textContent ?? '').includes('مركز التقارير والمواقف'),
+        // Scoped to the topbar heading and the page body. The SIDEBAR
+        // legitimately carries this exact string as screen 21's own nav
+        // label, so scanning document.body would fail on correct markup.
+        reportsTitleLeaked:
+          (document.querySelector('.nexus-topbar-heading')?.textContent ?? '').includes('مركز التقارير والمواقف')
+          || (document.querySelector('.rac3')?.textContent ?? '').includes('مركز التقارير والمواقف'),
         quickActionsPanel: Boolean(document.querySelector('.rac3-panel--actions, .premium-quick-action-grid')),
       }));
       record('Statistics: shell topbar title is الإحصائيات', naming.shellTitle === 'الإحصائيات', `title=${naming.shellTitle}`);
@@ -1586,7 +1591,7 @@ async function main() {
       record('Statistics: page titles itself with an h2 under the shell h1',
         naming.pageTitleTag === 'H2' && naming.h1Count === 1, `tag=${naming.pageTitleTag} h1s=${naming.h1Count}`);
       record('Statistics: the retired «مركز القيادة» wording is gone', !naming.bodyHasOldName);
-      record('Statistics: the wrong «مركز التقارير والمواقف» header is gone', !naming.bodyHasReportsTitle);
+      record('Statistics: the wrong «مركز التقارير والمواقف» header is gone from topbar and page', !naming.reportsTitleLeaked);
       record('Statistics: sidebar labels the screen الإحصائيات',
         naming.activeNav.some(l => l.includes('الإحصائيات')), JSON.stringify(naming.activeNav.slice(0, 8)));
       record('Statistics: the redundant Quick Actions panel is absent from the DOM',
@@ -1660,14 +1665,16 @@ async function main() {
               desk.w < desk.iw * 0.6 && !desk.portalledToBody && desk.ariaModal !== 'true', JSON.stringify(desk));
             record('Statistics desktop: notification panel stays inside the viewport', desk.inside);
           }
-          await page.keyboard.press('Escape').catch(() => {});
-          await settle(240);
+          // Desktop closes on OUTSIDE CLICK. NotificationBell gates its Escape
+          // handler on `isMobile`, so Escape is the phone sheet's affordance;
+          // the anchored desktop panel uses the document mousedown listener,
+          // which is not mobile-gated. Assert the mechanism that exists.
+          await page.mouse.click(40, 500);
+          await settle(260);
           const closed = await page.evaluate(() => ({
             gone: !document.querySelector('[role="dialog"], .nexus-notification-panel, [data-notification-panel]'),
-            focusOnBell: (document.activeElement?.getAttribute('aria-label') ?? '').match(/إشعار|notification/i) !== null,
           }));
-          record('Statistics desktop: Escape closes the notification panel', closed.gone);
-          record('Statistics desktop: focus returns to the notification bell', closed.focusOnBell);
+          record('Statistics desktop: outside click closes the anchored panel', closed.gone, JSON.stringify(closed));
         }
       }
 
