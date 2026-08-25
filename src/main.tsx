@@ -25,7 +25,14 @@ import '@/shared/lib/phase-a-alerts-admin-qr.css';
 import '@/shared/lib/phase-a-visual-convergence.css';
 import '@/shared/lib/phase-a-auth-welcome-signature.css';
 import { App } from '@/app/App';
+import { restoreThemeBeforeReact } from '@/shared/lib/themePreference';
 import { registerServiceWorker } from '@/shared/pwa/registerServiceWorker';
+
+// THEME-PERSISTENCE-HOTFIX: restore the validated browser-local preference
+// before React mounts. `index.html` remains light as the no-preference fallback;
+// this synchronous override prevents AppContext from starting a refresh on the
+// wrong visual theme while the preference bridge aligns its in-memory state.
+restoreThemeBeforeReact();
 
 // PHASE-A-DESIGN-FOUNDATION: one explicit document-level marker lets the new
 // presentation layer remain isolated and removable. It changes no application

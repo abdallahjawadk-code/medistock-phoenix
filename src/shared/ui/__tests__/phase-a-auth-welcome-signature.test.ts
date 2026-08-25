@@ -13,14 +13,16 @@ const read = (path: string) => readFileSync(join(SRC, path), 'utf8');
  *
  * This is the dedicated contract for the NEW signature layer only
  * (phase-a-auth-welcome-signature.css + InstitutionalSupplyMotif +
- * LoginScreen/PhoenixWelcomeExperience's hero swap + the light-first theme
- * default). A7's own contract (phase-a-visual-convergence.test.ts) and A7.1's
+ * LoginScreen/PhoenixWelcomeExperience's hero swap + the safe-light fallback
+ * and validated saved-theme restoration). A7's own contract
+ * (phase-a-visual-convergence.test.ts) and A7.1's
  * closure contract (phase-a71-visual-acceptance-closure.test.ts) already
  * cover their own layers and gained one narrow, documented exclusion each
  * here — see the comments at their own "byte-for-byte"/"last import" tests.
  */
 describe('Phase A7.2 premium living auth & welcome signature contract', () => {
   const main = read('main.tsx');
+  const app = read('app/App.tsx');
   const css = read('shared/lib/phase-a-auth-welcome-signature.css');
   const convergenceCss = read('shared/lib/phase-a-visual-convergence.css');
   const motif = read('shared/ui/AuthSupplyHero.tsx');
@@ -29,6 +31,7 @@ describe('Phase A7.2 premium living auth & welcome signature contract', () => {
   const login = read('features/auth/LoginScreen.tsx');
   const welcome = read('features/auth/PhoenixWelcomeExperience.tsx');
   const appContext = read('app/AppContext.tsx');
+  const themePreference = read('shared/lib/themePreference.ts');
   const indexHtml = readFileSync(join(ROOT, 'index.html'), 'utf8');
 
   // ─── 1. CSS layer: import order, gating, purity ────────────────────────────
@@ -378,13 +381,19 @@ describe('Phase A7.2 premium living auth & welcome signature contract', () => {
 
   // ─── 5. Theme/language persistence contract ────────────────────────────────
 
-  it('light is the default only because no saved-preference mechanism exists — no new persistence layer was added to override one', () => {
+  it('keeps light as the safe fallback while restoring a valid saved preference before React starts', () => {
     expect(appContext).toContain("useState<Theme>('light')");
-    // No storage key exists for either preference, before or after this phase —
-    // "respect a saved preference" has nothing to override, and this phase
-    // does not invent a mechanism that would need to.
+    // AppContext remains storage-agnostic; the dedicated helper owns the
+    // validated browser preference and the bridge reconciles it before paint.
     expect(appContext).not.toMatch(/localStorage|sessionStorage/);
-    expect(main).not.toMatch(/localStorage|sessionStorage/);
+    expect(themePreference).toContain("value === 'light' || value === 'dark'");
+    expect(themePreference).toContain('window.localStorage.getItem(THEME_STORAGE_KEY)');
+    expect(themePreference).toContain("return isTheme(stored) ? stored : 'light';");
+    expect(main).toContain('restoreThemeBeforeReact();');
+    expect(main.indexOf('restoreThemeBeforeReact();')).toBeLessThan(main.indexOf('createRoot('));
+    expect(app).toContain('const [initialTheme] = useState(readThemePreference);');
+    expect(app).toContain('<ThemePreferenceBridge>');
+    expect(app).toContain('<AppInner qid={qid} />');
   });
 
   it('language state and the toggle mechanism are unchanged (no parallel language state introduced)', () => {
@@ -393,7 +402,7 @@ describe('Phase A7.2 premium living auth & welcome signature contract', () => {
     expect(appContext).toContain("toggleTheme = () => setThemeState(t => t === 'dark' ? 'light' : 'dark');");
   });
 
-  it('index.html agrees with the light-first default at first paint, and leaves PWA meta (theme-color/manifest) untouched', () => {
+  it('index.html supplies the light fallback before preference restoration and leaves PWA meta untouched', () => {
     expect(indexHtml).toContain('data-theme="light"');
     // Deliberately out of scope for this presentation-only phase.
     expect(indexHtml).toContain('<meta name="theme-color" content="#07111F" />');
