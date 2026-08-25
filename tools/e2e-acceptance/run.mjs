@@ -1661,8 +1661,15 @@ async function main() {
         const clearsNav = await page.evaluate(async () => {
           const main = document.querySelector('#phoenix-main');
           if (!main) return { ok: false, reason: 'no scroll owner' };
+          // .premium-main sets `scroll-behavior: smooth`, so assigning
+          // scrollTop ANIMATES. Measuring two frames later samples the middle
+          // of that animation, not its end. Force instant scrolling for the
+          // probe, then restore the page's own behaviour.
+          const previous = main.style.scrollBehavior;
+          main.style.scrollBehavior = 'auto';
           main.scrollTop = main.scrollHeight;
           await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+          main.style.scrollBehavior = previous;
           const panels = [...document.querySelectorAll('.rac3-stack > *')];
           const last = panels.length ? panels[panels.length - 1] : null;
           if (!last) return { ok: false, reason: 'no panels' };
@@ -1678,7 +1685,14 @@ async function main() {
         });
         record(`${vp.name}: last panel scrolls clear of the fixed bottom navigation`,
           clearsNav.ok, JSON.stringify(clearsNav));
-        await page.evaluate(() => { const m = document.querySelector('#phoenix-main'); if (m) m.scrollTop = 0; });
+        await page.evaluate(() => {
+          const m = document.querySelector('#phoenix-main');
+          if (!m) return;
+          const previous = m.style.scrollBehavior;
+          m.style.scrollBehavior = 'auto';
+          m.scrollTop = 0;
+          m.style.scrollBehavior = previous;
+        });
         await settle(140);
 
         record(`${vp.name}: root stays inside the viewport width`,
