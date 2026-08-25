@@ -1625,7 +1625,6 @@ async function main() {
           }
           const nav = document.querySelector('.premium-bottom-nav');
           const navH = nav ? nav.getBoundingClientRect().height : 0;
-          const last = panels.length ? panels[panels.length - 1] : null;
           return {
             innerWidth: window.innerWidth,
             innerHeight: window.innerHeight,
@@ -1641,11 +1640,6 @@ async function main() {
             signalsFirst: panels.length > 0 && panels[0].cls.includes('rac3-panel--signals'),
             root: rect('.rac3'),
             navH,
-            // With the bar fixed over the page, the last panel must be able to
-            // scroll clear of it rather than sit permanently beneath it.
-            lastPanelClearsNav: last
-              ? (document.documentElement.scrollHeight - (last.bottom + window.scrollY)) >= navH - 12
-              : true,
           };
         });
 
@@ -1658,7 +1652,35 @@ async function main() {
         record(`${vp.name}: KPI cards stay inside the viewport`,
           g.kpiCount > 0 && g.kpiInside, `kpis=${g.kpiCount}`);
         record(`${vp.name}: panels do not overlap`, !g.overlap);
-        record(`${vp.name}: content can clear the bottom navigation`, g.lastPanelClearsNav, `navH=${g.navH}`);
+
+        // The bottom bar is FIXED over the page, and #phoenix-main — not the
+        // document — is the single scroll owner. So the property to prove is
+        // behavioural, not arithmetic on document height: scroll that owner to
+        // its very end, then check the last panel has actually come to rest
+        // ABOVE the bar rather than underneath it.
+        const clearsNav = await page.evaluate(async () => {
+          const main = document.querySelector('#phoenix-main');
+          if (!main) return { ok: false, reason: 'no scroll owner' };
+          main.scrollTop = main.scrollHeight;
+          await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+          const panels = [...document.querySelectorAll('.rac3-stack > *')];
+          const last = panels.length ? panels[panels.length - 1] : null;
+          if (!last) return { ok: false, reason: 'no panels' };
+          const lastBottom = last.getBoundingClientRect().bottom;
+          const nav = document.querySelector('.premium-bottom-nav');
+          const navTop = nav ? nav.getBoundingClientRect().top : window.innerHeight;
+          return {
+            ok: lastBottom <= navTop + 2,
+            lastBottom: Math.round(lastBottom),
+            navTop: Math.round(navTop),
+            scrolledToEnd: Math.round(main.scrollTop + main.clientHeight) >= Math.round(main.scrollHeight) - 2,
+          };
+        });
+        record(`${vp.name}: last panel scrolls clear of the fixed bottom navigation`,
+          clearsNav.ok, JSON.stringify(clearsNav));
+        await page.evaluate(() => { const m = document.querySelector('#phoenix-main'); if (m) m.scrollTop = 0; });
+        await settle(140);
+
         record(`${vp.name}: root stays inside the viewport width`,
           Boolean(g.root) && g.root.left >= -2 && g.root.right <= g.innerWidth + 2, JSON.stringify(g.root));
 

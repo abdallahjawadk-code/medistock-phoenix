@@ -498,8 +498,12 @@
   .rac3-health { justify-content: center; gap: 14px; }
   .rac3-health__legend { flex-basis: 100%; }
 
-  /* The shell's bottom navigation is fixed; the last panel must clear it. */
-  .rac3-stack > :last-child { margin-block-end: 76px; }
+  /* No bottom spacer here on purpose. #phoenix-main is the single scroll
+     owner (MOBILE-SCROLL-OWNER-HOTFIX-A) and already carries
+     `padding-bottom: calc(var(--bnh) + 14px + env(safe-area-inset-bottom))`,
+     which clears the fixed bottom navigation and the device safe area for
+     every screen. Adding our own spacer on top of it would double the gap
+     and leave dead space under the last panel. */
 }
 
 /* Landscape phones are short, not narrow — reclaim vertical space. */
