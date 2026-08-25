@@ -157,14 +157,22 @@ describe('no client-side document-number sequence exists',()=>{
     // search_path-only — one ALTER FUNCTION per target, no table, sequence,
     // counter, max()+1 logic, generated identity, document number or function
     // body.
+    // UAT-BUG-001 / M200: splits phoenix_demo_purge into an authorization
+    // wrapper (owned by postgres, which can traverse schema auth) and an
+    // internal executor (owned by phoenix_demo_purger, which cannot and no
+    // longer needs to). It replaces one function body and adds one internal
+    // routine — no table, sequence, counter, max()+1 logic, generated numeric
+    // identity, document number or business write. Boundary moves to 200 so the
+    // next unknown migration still fails closed.
     // RAC-2 / M199: adds the Command Center read contract — one additive
     // SECURITY DEFINER read boundary enforcing dashboard.view. Read-only: no
     // table, sequence, counter, max()+1 logic, generated identity, document
     // number or business write. Boundary moves to 199 so the next unknown
     // migration still fails closed.
-    const beyond=migrations.filter(f=>/^(1[89]\d|[2-9]\d\d)_/.test(f)&&!/^(179|180|181|182|183|184|185|186|187|188|189|190|191|192|193|194|195|196|197|198|199)_/.test(f));
+    const beyond=migrations.filter(f=>/^(1[89]\d|[2-9]\d\d)_/.test(f)&&!/^(179|180|181|182|183|184|185|186|187|188|189|190|191|192|193|194|195|196|197|198|199|200)_/.test(f));
     expect(beyond).toEqual([]);
     for(const f of [
+      '200_phoenix_demo_purge_auth_boundary_correction.sql',
       '199_phoenix_command_center_read_contract.sql',
       '198_phoenix_secdef_search_path_convergence.sql',
       '197_phoenix_public_execute_convergence.sql',
