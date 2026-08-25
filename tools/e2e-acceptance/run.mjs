@@ -1510,6 +1510,223 @@ async function main() {
     await page.close();
   }
 
+  // ── 6. RAC-3 Command Center — eligibility, responsive matrix, RTL/LTR ─────
+  //
+  // Two actors, deliberately chosen for opposite authority:
+  //   institutionAdminA — holds `dashboard.view` by role default, so the
+  //                       Command Center is both reachable and its landing;
+  //   outletOfficerA    — holds NO permission by default, so it must keep its
+  //                       existing Outlet Operations landing and never be
+  //                       offered the surface at all.
+  // The second half matters most: RAC-3 must not have moved anyone who was
+  // not already authorized.
+  {
+    const { page, consoleErrors } = await freshPage(browser, { width: 1440, height: 900 });
+    await login(page, seed.users.institutionAdminA.email, seed.password);
+
+    const ccRoot = page.locator('.rac3');
+    const landed = await ccRoot
+      .waitFor({ state: 'visible', timeout: 60000 })
+      .then(() => true)
+      .catch(() => false);
+    record('RAC-3: an actor holding dashboard.view lands on the Command Center', landed);
+
+    if (landed) {
+      const state = await ccRoot.getAttribute('data-rac3-state');
+      // A live authorized read must reach 'ready'. 'unauthorized' here would
+      // mean the client and the database disagree about this actor's authority.
+      record('RAC-3: the Command Center resolves to a ready, authorized payload',
+        state === 'ready', `data-rac3-state=${state}`);
+
+      const htmlLang = await page.evaluate(() => document.documentElement.lang);
+      const htmlDir = await page.evaluate(() => document.documentElement.dir);
+      record('RAC-3 desktop renders Arabic/RTL by default',
+        htmlLang === 'ar' && htmlDir === 'rtl', `lang=${htmlLang} dir=${htmlDir}`);
+
+      const h1 = await page.locator('.rac3 h1').first().textContent().catch(() => null);
+      record('RAC-3: exposes a single top-level page heading',
+        Boolean(h1 && h1.trim().length > 0), `h1=${h1}`);
+
+      const desktopGeometry = await page.evaluate(() => {
+        const panels = [...document.querySelectorAll('.rac3-panel, .rac3-kpis')].map(el => {
+          const r = el.getBoundingClientRect();
+          return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, w: r.width, h: r.height };
+        });
+        const kpis = [...document.querySelectorAll('.rac3-kpi')].length;
+        return {
+          innerWidth: window.innerWidth,
+          documentOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth + 2,
+          panels,
+          kpis,
+          twoTrack: Boolean(document.querySelector('.rac3-grid')),
+          clipped: [...document.querySelectorAll('.rac3-kpi__value, .rac3-panel__title')]
+            .some(el => el.scrollWidth > el.clientWidth + 2),
+        };
+      });
+      record('RAC-3 desktop: no document horizontal overflow', !desktopGeometry.documentOverflow);
+      record('RAC-3 desktop: uses the two-track composition', desktopGeometry.twoTrack);
+      record('RAC-3 desktop: renders KPI cards', desktopGeometry.kpis > 0, `kpis=${desktopGeometry.kpis}`);
+      record('RAC-3 desktop: no clipped KPI value or panel title', !desktopGeometry.clipped);
+      record('RAC-3 desktop: every panel stays inside the viewport',
+        desktopGeometry.panels.every(p => p.left >= -2 && p.right <= desktopGeometry.innerWidth + 2),
+        JSON.stringify(desktopGeometry.panels.slice(0, 4)));
+      await page.screenshot({ path: join(OUT_DIR, 'rac3-command-center-desktop-ar.png'), fullPage: true });
+
+      // ── English LTR: the same component, mirrored ──
+      if (await page.evaluate(() => document.documentElement.lang) !== 'en') {
+        const switchToEnglish = page.getByRole('button', { name: /^(Switch to English|التبديل إلى الإنجليزية)$/ });
+        await switchToEnglish.click().catch(() => {});
+        await page.waitForFunction(() => document.documentElement.lang === 'en', null, { timeout: 15000 }).catch(() => {});
+      }
+      const ltr = await page.evaluate(() => ({
+        lang: document.documentElement.lang,
+        dir: document.documentElement.dir,
+        overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth + 2,
+        title: document.querySelector('.rac3 h1')?.textContent ?? '',
+      }));
+      record('RAC-3 desktop LTR: flips to English without breaking layout',
+        ltr.lang === 'en' && ltr.dir === 'ltr' && !ltr.overflow, JSON.stringify(ltr));
+      await page.screenshot({ path: join(OUT_DIR, 'rac3-command-center-desktop-en.png'), fullPage: true });
+
+      // Back to Arabic for the phone matrix — Arabic RTL is the product default
+      // and the harder direction, so the phones are measured in it.
+      const switchToArabic = page.getByRole('button', { name: /^(Switch to Arabic|التبديل إلى العربية)$/ });
+      await switchToArabic.click().catch(() => {});
+      await page.waitForFunction(() => document.documentElement.lang === 'ar', null, { timeout: 15000 }).catch(() => {});
+
+      const ccViewports = [
+        { name: 'cc-small-320x568', width: 320, height: 568 },
+        { name: 'cc-android-360x800', width: 360, height: 800 },
+        { name: 'cc-modern-390x844', width: 390, height: 844 },
+        { name: 'cc-large-430x932', width: 430, height: 932 },
+        { name: 'cc-landscape-667x375', width: 667, height: 375 },
+      ];
+
+      for (const vp of ccViewports) {
+        await page.setViewportSize({ width: vp.width, height: vp.height });
+        await settle(260);
+
+        const g = await page.evaluate(() => {
+          const rect = (sel) => {
+            const el = document.querySelector(sel);
+            if (!el) return null;
+            const r = el.getBoundingClientRect();
+            return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, w: r.width, h: r.height };
+          };
+          const panels = [...document.querySelectorAll('.rac3-stack > *')].map(el => {
+            const r = el.getBoundingClientRect();
+            return { cls: String(el.className), left: r.left, right: r.right, top: r.top, bottom: r.bottom };
+          });
+          // A vertical stack: each panel must start at or below the end of the
+          // previous one. A negative gap is a real overlap.
+          let overlap = false;
+          for (let i = 1; i < panels.length; i++) {
+            if (panels[i].top < panels[i - 1].bottom - 2) overlap = true;
+          }
+          const nav = document.querySelector('.premium-bottom-nav');
+          const navH = nav ? nav.getBoundingClientRect().height : 0;
+          const last = panels.length ? panels[panels.length - 1] : null;
+          return {
+            innerWidth: window.innerWidth,
+            innerHeight: window.innerHeight,
+            documentOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth + 2,
+            stacked: Boolean(document.querySelector('.rac3-stack')),
+            panels,
+            overlap,
+            kpiCount: document.querySelectorAll('.rac3-kpi').length,
+            kpiInside: [...document.querySelectorAll('.rac3-kpi')].every(el => {
+              const r = el.getBoundingClientRect();
+              return r.left >= -2 && r.right <= window.innerWidth + 2;
+            }),
+            signalsFirst: panels.length > 0 && panels[0].cls.includes('rac3-panel--signals'),
+            root: rect('.rac3'),
+            navH,
+            // With the bar fixed over the page, the last panel must be able to
+            // scroll clear of it rather than sit permanently beneath it.
+            lastPanelClearsNav: last
+              ? (document.documentElement.scrollHeight - (last.bottom + window.scrollY)) >= navH - 12
+              : true,
+          };
+        });
+
+        record(`${vp.name}: no document horizontal overflow`, !g.documentOverflow, `w=${g.innerWidth}`);
+        record(`${vp.name}: Command Center is visible and non-empty`,
+          Boolean(g.root && g.root.h > 100), JSON.stringify(g.root));
+        record(`${vp.name}: uses the mobile stack, not a squeezed desktop grid`, g.stacked);
+        record(`${vp.name}: critical signals are the first panel`,
+          g.signalsFirst, String(g.panels[0] ? g.panels[0].cls : ''));
+        record(`${vp.name}: KPI cards stay inside the viewport`,
+          g.kpiCount > 0 && g.kpiInside, `kpis=${g.kpiCount}`);
+        record(`${vp.name}: panels do not overlap`, !g.overlap);
+        record(`${vp.name}: content can clear the bottom navigation`, g.lastPanelClearsNav, `navH=${g.navH}`);
+        record(`${vp.name}: root stays inside the viewport width`,
+          Boolean(g.root) && g.root.left >= -2 && g.root.right <= g.innerWidth + 2, JSON.stringify(g.root));
+
+        // The PR #165 notification hotfix must still work ON this screen.
+        const bell = page.locator('button[aria-label*="إشعار"], button[aria-label*="notification" i]').first();
+        const bellFound = await bell.isVisible().catch(() => false);
+        if (bellFound) {
+          await bell.click().catch(() => {});
+          await settle(340);
+          const panel = await page.evaluate(() => {
+            const el = document.querySelector('[role="dialog"][aria-modal="true"]');
+            if (!el) return null;
+            const r = el.getBoundingClientRect();
+            return {
+              left: r.left, right: r.right, top: r.top, bottom: r.bottom,
+              w: r.width, h: r.height, iw: window.innerWidth, ih: window.innerHeight,
+              portalled: el.parentElement === document.body,
+            };
+          });
+          if (panel) {
+            record(`${vp.name}: notification sheet opens over the Command Center`,
+              panel.w > 0 && panel.h > 0, JSON.stringify(panel));
+            record(`${vp.name}: notification sheet stays inside the viewport`,
+              panel.left >= -2 && panel.right <= panel.iw + 2
+              && panel.top >= -2 && panel.bottom <= panel.ih + 2,
+              JSON.stringify(panel));
+            record(`${vp.name}: notification sheet is portalled to document.body`, panel.portalled);
+          }
+          await page.keyboard.press('Escape').catch(() => {});
+          await settle(220);
+        }
+
+        if (vp.name === 'cc-android-360x800' || vp.name === 'cc-modern-390x844' || vp.name === 'cc-landscape-667x375') {
+          await page.screenshot({ path: join(OUT_DIR, `rac3-command-center-${vp.name}-ar.png`), fullPage: false });
+        }
+      }
+    }
+
+    record('RAC-3 eligible-actor session has no console errors',
+      consoleErrors.length === 0, consoleErrors.slice(0, 3).join(' | '));
+    await page.close();
+  }
+
+  // ── 6b. The actor RAC-3 must NOT have moved ───────────────────────────────
+  {
+    const { page } = await freshPage(browser, { width: 390, height: 844 });
+    await login(page, seed.users.outletOfficerA.email, seed.password);
+    await settle(3000);
+
+    const state = await page.evaluate(() => ({
+      commandCenterPresent: Boolean(document.querySelector('.rac3')),
+      // Every navigation surface is a projection of the SAME decision the route
+      // guard uses, so an entry here would mean the capability gate leaked.
+      navOffersCommandCenter: [...document.querySelectorAll('button, a')]
+        .some(b => (b.textContent ?? '').includes('مركز القيادة')),
+      bodyText: (document.body.textContent ?? '').trim(),
+    }));
+
+    record('RAC-3: an actor without dashboard.view does NOT land on the Command Center',
+      !state.commandCenterPresent);
+    record('RAC-3: no navigation surface offers the Command Center to that actor',
+      !state.navOffersCommandCenter);
+    record('RAC-3: that actor keeps a real, non-blank authorized surface',
+      state.bodyText.length > 100, `chars=${state.bodyText.length}`);
+    await page.screenshot({ path: join(OUT_DIR, 'rac3-ineligible-actor-keeps-landing-390.png') });
+    await page.close();
+  }
+
   await browser.close();
   if (dbPool) await dbPool.end();
 
