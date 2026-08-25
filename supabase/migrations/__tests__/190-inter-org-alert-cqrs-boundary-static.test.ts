@@ -106,7 +106,7 @@ describe('190 · registration and file hygiene', () => {
     expect(code(refreshBody)).not.toMatch(/\bROLLBACK\b/);
   });
 
-  it('is followed by 191 through 199, the current ceiling, and 200 stays absent', () => {
+  it('is followed by 191 through 200, the current ceiling, and 201 stays absent', () => {
     const numbers = REVIEWED_MIGRATION_FILES.map(f => Number(f.slice(0, 3))).filter(Number.isFinite);
     const NEXT = '191_phoenix_canonical_scope_topology_read_contract.sql';
     const NEXT_2 = '192_phoenix_anonymous_read_surface_convergence.sql';
@@ -117,10 +117,11 @@ describe('190 · registration and file hygiene', () => {
     const NEXT_7 = '197_phoenix_public_execute_convergence.sql';
     const NEXT_8 = '198_phoenix_secdef_search_path_convergence.sql';
     const NEXT_9 = '199_phoenix_command_center_read_contract.sql';
-    expect(Math.max(...numbers)).toBe(199);
+    const NEXT_10 = '200_phoenix_demo_purge_auth_boundary_correction.sql';
+    expect(Math.max(...numbers)).toBe(200);
     const i = REVIEWED_MIGRATION_FILES.indexOf(NAME);
-    expect(REVIEWED_MIGRATION_FILES.slice(i + 1)).toEqual([NEXT, NEXT_2, NEXT_3, NEXT_4, NEXT_5, NEXT_6, NEXT_7, NEXT_8, NEXT_9]);
-    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1]).toBe(NEXT_9);
+    expect(REVIEWED_MIGRATION_FILES.slice(i + 1)).toEqual([NEXT, NEXT_2, NEXT_3, NEXT_4, NEXT_5, NEXT_6, NEXT_7, NEXT_8, NEXT_9, NEXT_10]);
+    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1]).toBe(NEXT_10);
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^191_/.test(f))).toEqual([NEXT]);
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^192_/.test(f))).toEqual([NEXT_2]);
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^193_/.test(f))).toEqual([NEXT_3]);

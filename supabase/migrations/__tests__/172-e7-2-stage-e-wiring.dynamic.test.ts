@@ -212,6 +212,20 @@ run('E7-2 · Stage-E application wiring (dynamic)',()=>{
       // above is unaffected. Listed here so this guard stays exhaustive and
       // still fails closed on any unlisted new file.
       '199_phoenix_command_center_read_contract.sql',
+      // UAT-BUG-001 (200): corrects the demo-purge auth boundary. Migration
+      // 141's `GRANT USAGE ON SCHEMA auth TO phoenix_demo_purger` silently
+      // granted nothing on a Supabase-shaped database — PostgreSQL answers a
+      // GRANT from a grantor holding no grant option with a WARNING, not an
+      // error — so the SECURITY DEFINER purge, owned by that role and calling
+      // auth.uid(), aborted 42501 and the demo dataset was unpurgeable. 200
+      // splits it into an authorization wrapper owned by postgres and an
+      // internal executor still owned by phoenix_demo_purger. It touches the
+      // DEMO DATASET LIFECYCLE only: no table, column, constraint, index,
+      // corridor, route or permission key, and it adds NO migration numbered
+      // <= 171 — so the "Stage E still ends at 171" assertion above is
+      // unaffected. Listed here so this guard stays exhaustive and still fails
+      // closed on any unlisted new file.
+      '200_phoenix_demo_purge_auth_boundary_correction.sql',
     ];
     it('Stage E still ends at 171 — E7-2 introduced no new SQL',()=>{
       const files=readdirSync(join(__dirname,'..')).filter(f=>/^\d{3}_.*\.sql$/.test(f));

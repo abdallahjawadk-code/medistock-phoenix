@@ -338,13 +338,34 @@ describe('RAC-3 · H) the mobile notification hotfix is untouched', () => {
 });
 
 describe('RAC-3 · I) no backend or migration change', () => {
+  /**
+   * UAT-BUG-001 landed migration 200 (the demo-purge auth-boundary correction)
+   * after RAC-3, as a separately-reviewed change with its own static and
+   * dynamic tests and its own entry in every exact-filename guard. It also
+   * shifts the reviewed-migration ceiling from 199 to 200, which edits the
+   * ceiling assertions living under supabase/migrations/__tests__/.
+   *
+   * A blanket "nothing under supabase/ ever changes again" ban would therefore
+   * now fail for a correct, reviewed migration — the same situation the
+   * dependency guard below already had to solve for package.json.
+   *
+   * The guarantee that actually matters — that RAC-3 itself is frontend-only —
+   * is asserted DIRECTLY instead: no SQL file other than migration 200 may
+   * differ, and nothing under supabase/ outside its test directory may differ.
+   * That still fails closed on any migration RAC-3 might smuggle in, and is
+   * narrower than the ban it replaces rather than weaker.
+   */
   it('adds no migration and touches no SQL', () => {
+    const M200 = 'supabase/migrations/200_phoenix_demo_purge_auth_boundary_correction.sql';
     const changed = execSync(
       'git diff --name-only b707f073d60b4cc61205c35003ab491f3aed7468',
       { cwd: process.cwd(), encoding: 'utf8' },
     ).split('\n').map(l => l.trim()).filter(Boolean);
-    expect(changed.filter(f => f.startsWith('supabase/'))).toEqual([]);
-    expect(changed.filter(f => f.endsWith('.sql'))).toEqual([]);
+    expect(changed.filter(f => f.endsWith('.sql') && f !== M200)).toEqual([]);
+    expect(changed.filter(f =>
+      f.startsWith('supabase/')
+      && !f.startsWith('supabase/migrations/__tests__/')
+      && f !== M200)).toEqual([]);
   });
 
   /**

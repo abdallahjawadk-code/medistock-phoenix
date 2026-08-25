@@ -411,6 +411,25 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
       // Registered by EXACT filename BEFORE the commit that lands them, for the
       // same reason recorded above: `git diff --name-only <BASE>` cannot see an
       // untracked file. No wildcard and no directory exemption.
+      // UAT-BUG-001 / M200 — the demo-purge auth-boundary correction. Migration
+      // 141's `GRANT USAGE ON SCHEMA auth TO phoenix_demo_purger` never took
+      // effect on a Supabase-shaped database (PostgreSQL answers a GRANT from a
+      // grantor without grant option with a WARNING, not an error), so the
+      // SECURITY DEFINER purge — owned by that role and calling auth.uid() —
+      // aborted 42501 and PHOENIX_DEMO_V1 was unpurgeable. M200 moves the
+      // identity check into a wrapper owned by postgres and leaves the purge
+      // algorithm in an internal executor still owned by phoenix_demo_purger,
+      // which the immutable-history exemptions require. It grants nothing new
+      // on schema auth, creates no table/index/policy, and changes no business
+      // data. Its tests model the Production auth ownership explicitly, because
+      // pg-rig's synthetic auth schema masks the defect entirely.
+      //
+      // Registered by EXACT filename BEFORE the commit that lands them, for the
+      // same reason recorded above: `git diff --name-only <BASE>` cannot see an
+      // untracked file. No wildcard and no directory exemption.
+      'supabase/migrations/200_phoenix_demo_purge_auth_boundary_correction.sql',
+      'supabase/migrations/__tests__/200-demo-purge-auth-boundary-static.test.ts',
+      'supabase/migrations/__tests__/200-demo-purge-auth-boundary.dynamic.test.ts',
       'supabase/migrations/199_phoenix_command_center_read_contract.sql',
       'supabase/migrations/__tests__/199-command-center-read-contract-static.test.ts',
       'supabase/migrations/__tests__/199-command-center-read-contract.dynamic.test.ts',
