@@ -1,7 +1,7 @@
 {
   "name": "medistock-phoenix",
   "private": true,
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "MediStock-Babil Phoenix V2 — Clean rebuild",
   "type": "module",
   "scripts": {
