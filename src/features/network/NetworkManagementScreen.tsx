@@ -41,6 +41,28 @@ type Lang = 'ar' | 'en';
 /** Map an RPC error-code token to a localized, actionable message. */
 export function networkErrorMessage(code: string | undefined, lang: Lang): string {
   const c = (code ?? '').toUpperCase();
+  // WAREHOUSE-DEACTIVATION-UX — EXACT match, before every heuristic below.
+  // Migration 183 refuses to deactivate a warehouse an ACTIVE crash cabinet or
+  // rescue cart still depends on (SQLSTATE 23514,
+  // emergency_outlet_warehouse_deactivation_blocked_by_active_outlet). That is
+  // a specific, fixable situation, and the operator needs to be told WHICH
+  // thing to stand down — not "the operation could not be completed", which is
+  // where the substring heuristics below dropped it. Matched on the whole token
+  // so no other 23514 refusal (WAREHOUSE_ARCHIVED, the health-sector depot
+  // guard, any future one) can inherit this copy.
+  if (c === 'EMERGENCY_OUTLET_WAREHOUSE_DEACTIVATION_BLOCKED_BY_ACTIVE_OUTLET') {
+    return t('net_err_wh_deactivate_blocked_emergency_outlet', lang);
+  }
+  // PRB1-REVIEW-FINDING-001 — the health-sector sibling refusal, migration 181
+  // (SQLSTATE 23514, health_center_depot_deactivation_blocked_by_active_outlet).
+  // Its OWN exact match and its OWN copy, deliberately NOT an alias of the
+  // branch above: 183 blocks only on an active crash cabinet or rescue cart,
+  // whereas 181 blocks a health-sector depot on ANY active dependent outlet, so
+  // the emergency copy would name the wrong dependency and send the operator
+  // after the wrong thing. Whole-token equality, before every heuristic below.
+  if (c === 'HEALTH_CENTER_DEPOT_DEACTIVATION_BLOCKED_BY_ACTIVE_OUTLET') {
+    return t('net_err_depot_deactivate_blocked_active_outlet', lang);
+  }
   if (c.startsWith('NOT_AUTHORIZED') && c.includes('CROSS_ORG')) return t('net_err_cross_org', lang);
   if (c.startsWith('NOT_AUTHORIZED')) return t('net_err_not_authorized', lang);
   if (c.includes('CROSS_ORG')) return t('net_err_cross_org', lang);

@@ -9,6 +9,7 @@ import { PhoenixSelect } from '@/shared/ui/PhoenixSelect';
 import { PhoenixToast } from '@/shared/ui/PhoenixToast';
 import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
+import { PhoenixErrorState } from '@/shared/ui/PhoenixErrorState';
 import { PhoenixOrgScope } from '@/shared/ui/PhoenixOrgScope';
 import { getWarehouseStock, type WarehouseStockBatch } from '@/features/network/network.service';
 import { InstitutionIncomingSupplies } from '@/features/movement/InstitutionIncomingSupplies';
@@ -226,6 +227,21 @@ export function InventoryCenterScreen({
   }
 
   if (scopes.loading) return <div dir={dir} className="nexus-inventory-transfers nexus-inventory-transfers--center">{header}<PhoenixLoadingState /></div>;
+
+  // UAT-DEFECT-005 — a FAILED scope read is not a permission answer.
+  // Without this branch the next test (`manageableWarehouses.length === 0`)
+  // catches the failure and tells the operator they have no warehouse
+  // permissions — a claim the topology read never actually returned. The
+  // error is terminal and retryable; retry re-enters loading through the
+  // hook's own reload, with no page reload.
+  if (scopes.error) {
+    return (
+      <div dir={dir} className="nexus-inventory-transfers nexus-inventory-transfers--center">
+        {header}
+        <PhoenixErrorState title={t('load_error', lang)} message={t('inv_scope_read_failed', lang)} onRetry={scopes.reload} />
+      </div>
+    );
+  }
 
   if (manageableWarehouses.length === 0) {
     return (
@@ -943,7 +959,10 @@ function BatchRow({ batch, lang, canAdjust, canCorrect, isInstitutionWarehouse, 
 
 // ─── Ledger ──────────────────────────────────────────────────────────────────
 
-function LedgerList({ batches, lang }: { batches: WarehouseStockBatch[]; lang: 'ar' | 'en' }) {
+// Exported for the UAT-DEFECT-004 regression suite, which drives the four
+// ledger states directly. Same pattern as networkErrorMessage in
+// NetworkManagementScreen: the unit under test is reachable by name.
+export function LedgerList({ batches, lang }: { batches: WarehouseStockBatch[]; lang: 'ar' | 'en' }) {
   const [batchId, setBatchId] = useState('');
   const activeBatchId = batches.some(b => b.id === batchId) ? batchId : '';
   const movements = useAsync(
@@ -973,22 +992,33 @@ function LedgerList({ batches, lang }: { batches: WarehouseStockBatch[]; lang: '
           })),
         ]}
       />
+      {/* UAT-DEFECT-004 — FOUR STATES, NEVER THREE.
+          This used to be `loading ? spinner : rows.length === 0 ? empty : list`,
+          which has no branch for a FAILED read: on error `movements.data` stays
+          null, `(data ?? []).length === 0` is true, and the operator is told
+          "no movements" about a batch whose history simply could not be
+          fetched. For a stock ledger that is not a cosmetic defect — it asserts
+          an absence of movement that was never established. The read error now
+          has its own terminal, retryable state, and the empty state is reached
+          only by a read that actually SUCCEEDED and returned nothing. */}
       {movements.loading ? <PhoenixLoadingState />
-        : (movements.data ?? []).length === 0
-          ? <PhoenixEmptyState icon="🗒️" title={t('inv_no_movements', lang)} />
-          : (
-            <ul className="nexus-it-ledger-list" style={{ listStyle: 'none', padding: 0, margin: '12px 0 0', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {(movements.data ?? []).map(m => (
-                <li key={m.id} className="nexus-it-ledger-row" style={{ fontSize: '12px', borderBottom: '1px solid var(--brd)', paddingBottom: '8px' }}>
-                  <strong>{m.movementType}</strong> {m.quantityBefore} → {m.quantityAfter}
-                  {' · '}{new Date(m.createdAt).toLocaleString(lang === 'ar' ? 'ar' : 'en')}
-                  {m.actorNameSnapshot ? ` · ${m.actorNameSnapshot}` : ''}
-                  {m.reason ? ` · ${m.reason}` : ''}
-                  {' · '}{t('mv_h_paper_reference_number', lang)}: {paperReferenceSummary(paperRefs.data?.get(m.id))}
-                </li>
-              ))}
-            </ul>
-          )}
+        : movements.error
+          ? <PhoenixErrorState title={t('load_error', lang)} message={t('inv_ledger_read_failed', lang)} onRetry={movements.reload} />
+          : (movements.data ?? []).length === 0
+            ? <PhoenixEmptyState icon="🗒️" title={t('inv_no_movements', lang)} />
+            : (
+              <ul className="nexus-it-ledger-list" style={{ listStyle: 'none', padding: 0, margin: '12px 0 0', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {(movements.data ?? []).map(m => (
+                  <li key={m.id} className="nexus-it-ledger-row" style={{ fontSize: '12px', borderBottom: '1px solid var(--brd)', paddingBottom: '8px' }}>
+                    <strong>{m.movementType}</strong> {m.onHandBefore} → {m.onHandAfter}
+                    {' · '}{new Date(m.createdAt).toLocaleString(lang === 'ar' ? 'ar' : 'en')}
+                    {m.actorName ? ` · ${m.actorName}` : ''}
+                    {m.reason ? ` · ${m.reason}` : ''}
+                    {' · '}{t('mv_h_paper_reference_number', lang)}: {paperReferenceSummary(paperRefs.data?.get(m.id))}
+                  </li>
+                ))}
+              </ul>
+            )}
     </PhoenixCard>
   );
 }

@@ -113,6 +113,19 @@ export function OutletOperationsScreen({
   if (scopes.loading && outlets.length === 0) {
     return <div dir={dir} className="nexus-outlet-ops">{header}<PhoenixLoadingState /></div>;
   }
+  // UAT-DEFECT-005 — a FAILED scope read is not "you have no outlets".
+  // Same shape as InventoryCenterScreen: without this branch the empty state
+  // below absorbs the failure and asserts an absence of scope the read never
+  // established. Only when nothing usable arrived, so a still-valid previous
+  // catalog keeps rendering rather than being replaced by an error.
+  if (scopes.error && outlets.length === 0) {
+    return (
+      <div dir={dir} className="nexus-outlet-ops">
+        {header}
+        <PhoenixErrorState title={t('load_error', lang)} message={t('inv_scope_read_failed', lang)} onRetry={scopes.reload} />
+      </div>
+    );
+  }
   if (outlets.length === 0 || !activeOutlet) {
     return <div dir={dir} className="nexus-outlet-ops">{header}<PhoenixEmptyState icon="package" title={t('or_no_outlet_scope', lang)} description={t('empty_hint', lang)} /></div>;
   }

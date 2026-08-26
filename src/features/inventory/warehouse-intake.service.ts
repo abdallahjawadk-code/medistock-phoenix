@@ -635,26 +635,41 @@ export function rejectWarehouseStockCorrection(
  * One posted movement in a warehouse's ledger. Read-only: warehouse_stock_movements
  * grants SELECT only to client roles (migration 065), and its RLS policy
  * re-enforces warehouse scope for every caller regardless of these filters.
+ *
+ * UAT-DEFECT-004 — THE FIELD NAMES ARE THE LEDGER'S OWN, NOT AN INVENTED ALIAS.
+ * This projection used to ask for a `quantity_*` before/delta/after triple, a
+ * `notes` column, and an actor-snapshot column. Migration 060 created none of
+ * them: the ledger's on-hand triple is `on_hand_before` / `on_hand_delta` /
+ * `on_hand_after`, the actor column is plain `actor_name`, and there is no
+ * `notes` column at all — a movement's free text is `reason`. PostgREST
+ * therefore refused the WHOLE read with 42703, so a batch with real posted
+ * movements produced an ERROR, which the ledger view then rendered as "no
+ * movements". The names below are transcribed from 060's CREATE TABLE and
+ * re-verified against the live schema.
+ *
+ * (The dead column names are deliberately NOT spelled in full anywhere in this
+ * file: the actor-snapshot guardrail in phoenix-guardrails.test.ts is a raw
+ * string scan, and a comment quoting the name would read to it exactly like a
+ * live reference. The full before/after names live in the regression suite.)
  */
 export interface WarehouseStockMovementRecord {
   id: string;
   warehouseStockId: string;
   movementType: string;
-  quantityBefore: number;
-  quantityDelta: number;
-  quantityAfter: number;
+  onHandBefore: number;
+  onHandDelta: number;
+  onHandAfter: number;
   reason: string | null;
-  notes: string | null;
   sourceDocumentNumber: string | null;
-  actorNameSnapshot: string | null;
+  actorName: string | null;
   createdAt: string;
 }
 
 interface WarehouseStockMovementRow {
   id: string; warehouse_stock_id: string; movement_type: string;
-  quantity_before: number; quantity_delta: number; quantity_after: number;
-  reason: string | null; notes: string | null; source_document_number: string | null;
-  actor_name_snapshot: string | null; created_at: string;
+  on_hand_before: number; on_hand_delta: number; on_hand_after: number;
+  reason: string | null; source_document_number: string | null;
+  actor_name: string | null; created_at: string;
 }
 
 /** Newest-first ledger history for one batch, capped — an audit view, not an export. */
@@ -666,24 +681,26 @@ export async function getWarehouseStockMovements(
   const { data, error } = await supabase
     .from('warehouse_stock_movements')
     .select(`
-      id, warehouse_stock_id, movement_type, quantity_before, quantity_delta, quantity_after,
-      reason, notes, source_document_number, actor_name_snapshot, created_at
+      id, warehouse_stock_id, movement_type, on_hand_before, on_hand_delta, on_hand_after,
+      reason, source_document_number, actor_name, created_at
     `)
     .eq('warehouse_stock_id', warehouseStockId)
     .order('created_at', { ascending: false })
     .limit(limit);
+  // A failed read is RAISED, never flattened to []. Keeping "this batch has no
+  // history" distinguishable from "the history could not be read" is the whole
+  // point of UAT-DEFECT-004, and it starts here.
   if (error) throw error;
   return (data as WarehouseStockMovementRow[] | null ?? []).map(r => ({
     id: r.id,
     warehouseStockId: r.warehouse_stock_id,
     movementType: r.movement_type,
-    quantityBefore: r.quantity_before,
-    quantityDelta: r.quantity_delta,
-    quantityAfter: r.quantity_after,
+    onHandBefore: r.on_hand_before,
+    onHandDelta: r.on_hand_delta,
+    onHandAfter: r.on_hand_after,
     reason: r.reason,
-    notes: r.notes,
     sourceDocumentNumber: r.source_document_number,
-    actorNameSnapshot: r.actor_name_snapshot,
+    actorName: r.actor_name,
     createdAt: r.created_at,
   }));
 }

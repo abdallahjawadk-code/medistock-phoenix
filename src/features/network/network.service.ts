@@ -22,6 +22,37 @@ export interface RpcResult<T = Record<string, unknown>> {
 }
 
 /**
+ * Canonical lower_snake refusal tokens raised by DATABASE GUARDS rather than by
+ * an RPC body. The 074/075/076 write RPCs raise 'UPPER_SNAKE: human message';
+ * the schema triggers behind them raise a bare lower_snake token with no colon
+ * (see migration 183). Both are stable Product vocabulary, so both must survive
+ * normalization — but ONLY by exact match. Anything else lowercase is still an
+ * unexpected database error, so raw Postgres text can never reach the UI mapper.
+ *
+ * WAREHOUSE-DEACTIVATION-UX: without this list
+ * `emergency_outlet_warehouse_deactivation_blocked_by_active_outlet` failed the
+ * UPPER_SNAKE test below, collapsed to 'unknown_error', and the operator was
+ * told only "the operation could not be completed" — losing the one fact that
+ * makes the refusal actionable.
+ *
+ * PRB1-REVIEW-FINDING-001: migration 181's health-sector shape guard raises its
+ * own bare lower_snake token in exactly the same way, and it reached the
+ * operator as that same generic message. It is listed here as a SEPARATE entry,
+ * never aliased to the emergency token, because the two refusals have different
+ * triggers and different remedies: 183 blocks only on an active crash cabinet or
+ * rescue cart, while 181 blocks a health-sector depot on ANY active dependent
+ * outlet.
+ *
+ * This list is a CLOSED, exact-match allowlist. Membership is tested with
+ * `includes` — never by prefix, suffix, shape or pattern — so extending it
+ * admits exactly the one token added and nothing else.
+ */
+const DB_GUARD_ERROR_TOKENS: readonly string[] = [
+  'emergency_outlet_warehouse_deactivation_blocked_by_active_outlet',
+  'health_center_depot_deactivation_blocked_by_active_outlet',
+];
+
+/**
  * Normalize a Supabase RPC error into a stable code token. The migrations RAISE
  * 'CODE: human message' — we surface the CODE so the UI can map it to a
  * localized, actionable message (not_authorized / cross_org / invalid / conflict).
@@ -29,6 +60,8 @@ export interface RpcResult<T = Record<string, unknown>> {
 function rpcErrorCode(message: string | undefined): string {
   if (!message) return 'unknown_error';
   const head = message.split(':', 1)[0]?.trim() ?? message;
+  // A trigger-raised guard token, matched exactly — never by prefix or shape.
+  if (DB_GUARD_ERROR_TOKENS.includes(head)) return head;
   // Codes are UPPER_SNAKE tokens; anything else is an unexpected DB error.
   return /^[A-Z0-9_]+$/.test(head) ? head : 'unknown_error';
 }
