@@ -127,6 +127,28 @@ function cli(args, { debug = false } = {}) {
   return transcript;
 }
 
+// `supabase --version` prints the version alone on STDOUT, but the CLI's own
+// update checker writes a two-line upgrade advisory to STDERR whenever a newer
+// release exists upstream. cli() merges both streams -- deliberately, and that
+// merge must stay, because the db-push transcript parsing below depends on it.
+// The consequence is that the merged --version transcript stopped being a bare
+// version string the moment v2.116.0 shipped upstream, and a whole-string
+// equality against it began failing while the installed executable was still
+// exactly 2.115.0 and the pin was genuinely satisfied.
+//
+// So read the version OUT of the transcript instead, with a FULL-LINE anchored
+// match. The advisory lines are prose and never consist solely of a version, so
+// they cannot match, and the first match is always stdout's own report because
+// cli() concatenates stdout before stderr. This is deliberately NOT a substring
+// or `includes()` test: an advisory naming the expected version while a
+// DIFFERENT binary is installed would then pass, which is strictly worse than
+// the bug it replaces. No match at all is a hard failure -- an unreadable
+// version is never a pass.
+function installedCliVersion(transcript) {
+  const m = transcript.match(/^[ \t]*v?(\d+\.\d+\.\d+)[ \t]*$/m);
+  return m ? m[1] : null;
+}
+
 async function main() {
   if (!DB_URL) fail('ACCEPTANCE_DB_URL is required.');
   const local = localManifest();
@@ -135,7 +157,9 @@ async function main() {
   }
 
   console.log('== 0. pinned CLI ==');
-  const version = cli(['--version']).trim();
+  const versionTranscript = cli(['--version']);
+  const version = installedCliVersion(versionTranscript);
+  if (version === null) fail(`could not determine the installed Supabase CLI version.${showTranscript(versionTranscript)}`);
   if (version !== EXPECTED_CLI) fail(`Supabase CLI is ${version}, expected exactly ${EXPECTED_CLI}.`);
   ok(`Supabase CLI ${version}`);
 
