@@ -2261,6 +2261,24 @@ export const T: Dict = {
   net_err_invalid:        { ar: 'مدخل غير صالح',                                en: 'Invalid input' },
   net_err_not_found:      { ar: 'العنصر غير موجود',                             en: 'Item not found' },
   net_err_generic:        { ar: 'تعذّر إتمام العملية',                          en: 'The operation could not be completed' },
+  /* WAREHOUSE-DEACTIVATION-UX — the exact refusal migration 183 raises when an
+     ACTIVE crash cabinet / rescue cart still names the warehouse being
+     deactivated. Names the dependency AND the way out, because the operator
+     can fix this themselves; the database guard itself is untouched. */
+  net_err_wh_deactivate_blocked_emergency_outlet: {
+    ar: 'لا يمكن إلغاء تفعيل المخزن لوجود منفذ طوارئ فعّال مرتبط به. أوقف منفذ الطوارئ أو أعد ربطه بمخزن آخر ثم أعد المحاولة.',
+    en: 'This warehouse cannot be deactivated while an active emergency outlet depends on it. Stand down or reassign the emergency outlet, then try again.',
+  },
+  /* PRB1-REVIEW-FINDING-001 — the health-sector sibling of the key above: the
+     exact refusal migration 181 raises when ANY active outlet still names the
+     health-center depot being deactivated. Deliberately its OWN copy, not a
+     reuse of the emergency wording: 181 is not limited to emergency outlets, so
+     the operator must be pointed at every active outlet on the depot. Plural-safe
+     ("one or more"), because the guard fires on the first of possibly many. */
+  net_err_depot_deactivate_blocked_active_outlet: {
+    ar: 'لا يمكن إلغاء تفعيل مذخر المركز الصحي لوجود منفذ فعّال واحد أو أكثر مرتبط به. أوقف المنافذ الفعّالة أو أعد ربطها أولاً ثم أعد المحاولة.',
+    en: 'This health-center depot cannot be deactivated while one or more active outlets depend on it. Stand down or reassign the active outlets, then try again.',
+  },
 
   /* ── Inventory Management & Intake Center (INVENTORY-CENTER-INTAKE-A) ──
      Replaces the Availability Editor. There is deliberately NO manual
@@ -2350,6 +2368,19 @@ export const T: Dict = {
   inv_available:          { ar: 'المتاح',                                       en: 'Available' },
   inv_no_stock:           { ar: 'لا يوجد رصيد في هذا المخزن',                   en: 'No stock in this warehouse' },
   inv_no_movements:       { ar: 'لا توجد حركات',                                en: 'No movements' },
+  /* UAT-DEFECT-004 / UAT-DEFECT-005 — a FAILED read is not an empty result.
+     Both of these exist so a read failure can say so plainly instead of
+     borrowing the empty state ('no movements') or the permission state
+     ('you have no warehouse permissions'), neither of which was ever
+     established when the read did not return. */
+  inv_ledger_read_failed: {
+    ar: 'تعذّر تحميل سجل الحركات. هذا لا يعني عدم وجود حركات — أعد المحاولة.',
+    en: 'The movement ledger could not be loaded. This does not mean there are no movements — please retry.',
+  },
+  inv_scope_read_failed: {
+    ar: 'تعذّر تحميل المخازن والمنافذ المتاحة لك. هذا ليس قرار صلاحيات — أعد المحاولة.',
+    en: 'Your warehouses and outlets could not be loaded. This is not a permission decision — please retry.',
+  },
   inv_derived_notice:     { ar: 'حالة التوفر تُشتق من سجل المخزن ولا تُدخل يدويًا', en: 'Availability condition is derived from the ledger and is never entered by hand' },
   inv_center_denied:      { ar: 'لا تملك صلاحية على أي مخزن',                   en: 'You have no warehouse permissions' },
   inv_read_only_scope:    { ar: 'عرض فقط — لا تملك صلاحية الكتابة في هذا المخزن', en: 'Read-only — you cannot write to this warehouse' },

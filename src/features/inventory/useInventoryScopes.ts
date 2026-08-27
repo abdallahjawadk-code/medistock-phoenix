@@ -248,7 +248,20 @@ export function useInventoryScopes(
     // the catalog itself, in the same round trip, so there is no second
     // pending source that could let a not-yet-loaded scope render as a real
     // (empty) answer.
-    loading: visible.loading || (Boolean(orgId) && data === null),
+    //
+    // UAT-DEFECT-005 — FAIL CLOSED IS NOT THE SAME AS NEVER SETTLING.
+    // `data === null` is true for TWO different reasons: the catalog has not
+    // arrived yet, and the catalog read FAILED. Treating both as "still
+    // loading" made this hook non-terminating on failure — useAsync had
+    // already set loading=false and error=<message>, but this line put
+    // loading back to true forever. Every consumer renders its error branch
+    // as `!loading && error`, so the two states were mutually exclusive and
+    // the failure surfaced as an eternal spinner instead of an actionable
+    // error. Excluding the errored case makes the machine converge:
+    // loading -> success, or loading -> error, always. It does NOT open the
+    // gate — on error `data` is still null, so every `manageable*` list stays
+    // empty and no scope becomes selectable.
+    loading: visible.loading || (Boolean(orgId) && data === null && visible.error === null),
   };
 }
 

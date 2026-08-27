@@ -228,30 +228,72 @@ describe('M182 · Production-recorded function-body replay parity', () => {
 });
 
 /**
- * The local Supabase CLI provisions a public-schema TABLE default ACL granting
- * `anon` MAINTAIN/REFERENCES/TRIGGER/TRUNCATE on every future postgres-owned
- * table. Measured directly on a pristine CLI stack with zero Phoenix
- * migrations:
+ * The local Supabase CLI provisions public-schema default ACLs that grant the
+ * client-facing roles far more than either Production or
+ * tools/pg-rig/bootstrap.sql does. RE-MEASURED 2026-08-27 on a pristine stack
+ * with ZERO Phoenix migrations (CLI 2.116.0, postgres 17.6.1.165 — the exact
+ * images CI resolves today):
  *
- *     postgres | public | table | anon | MAINTAIN,REFERENCES,TRIGGER,TRUNCATE
+ *     postgres | public | table    | anon | arwdDxtm
+ *     postgres | public | FUNCTION | {postgres, anon, authenticated, service_role} = EXECUTE
  *
- * Production does not have it (`ANON_PUBLIC_RELATION_PRIVILEGES = {}`) and
- * neither does tools/pg-rig/bootstrap.sql. Left alone it produced 81 anon
- * relation tuples over 27 relations at ceiling 193 — every one of them an
- * explicit ACL row inherited at CREATE time, none from PUBLIC and none from
- * role membership — which migration 194 correctly refused.
+ * Production has neither (`ANON_PUBLIC_RELATION_PRIVILEGES = {}`), and the rig
+ * models a FUNCTION default for service_role ONLY.
  *
- * The CONTRACT these assertions defend is "zero final anon relation
- * privileges", not the number 81. They pin the normalization's exact shape so
- * that a future edit cannot silently re-open the source.
+ * AN EARLIER REVISION OF THIS FILE RECORDED A NARROWER TABLE MEASUREMENT —
+ * `anon | MAINTAIN,REFERENCES,TRIGGER,TRUNCATE` — and asserted that naming
+ * SELECT/INSERT/UPDATE/DELETE "would be guesswork because the default never
+ * granted them". That was true of the older platform and is now FALSE. The
+ * measured default is the full `arwdDxtm`, so the four-privilege revoke left
+ * `anon` holding INSERT/SELECT/UPDATE/DELETE on every table created before
+ * migration 109, and migration 191 fail-closed with "anon holds a direct
+ * SELECT on a topology table". Naming all eight is now measurement, not
+ * guesswork — and the negative assertion that forbade naming them has been
+ * replaced by a positive one pinning the exact measured set.
+ *
+ * Each un-normalized row takes a fresh replay down at a different migration,
+ * every one of them fail-closed, all three reproduced in a disposable replay:
+ *
+ *   * anon FUNCTION EXECUTE          -> 045 aborts P0004 ("anon must NOT have
+ *     EXECUTE on phoenix_update_my_whatsapp_phone"). 045 REVOKEs FROM PUBLIC,
+ *     which cannot remove a DIRECT anon grant.
+ *   * authenticated FUNCTION EXECUTE -> 109 aborts P0004 ("default-privilege
+ *     lockdown incomplete: ... still grants EXECUTE to authenticated").
+ *   * anon TABLE SELECT              -> 191 aborts P0001 (above).
+ *
+ * Migration 109 cannot clear the function rows itself: it revokes function
+ * defaults at GLOBAL scope — the only scope Postgres honours when no
+ * schema-scoped row exists, per 109's own documented quirk — while this
+ * platform provisions a SCHEMA-scoped row. The two scopes never intersect.
+ *
+ * With both normalizations the disposable replay reached ceiling 200/200 with
+ * zero anon relation privilege tuples in `public`, exactly Production's
+ * contract. The CONTRACT these assertions defend is "zero final anon relation
+ * privileges" and "no client-facing role inherits a function default", not any
+ * particular tuple count. They pin each normalization's exact shape so that a
+ * future edit cannot silently re-open the source.
  */
 describe('E2E workflow · anon platform normalization', () => {
+  /** The exact measured anon TABLE default: arwdDxtm, all eight. */
+  const TABLE_PRIVILEGES = ['INSERT', 'SELECT', 'UPDATE', 'DELETE', 'MAINTAIN', 'REFERENCES', 'TRIGGER', 'TRUNCATE'];
+
   const NORMALIZATION =
-    'ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public REVOKE MAINTAIN, REFERENCES, TRIGGER, TRUNCATE ON TABLES FROM anon;';
+    'ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public REVOKE '
+    + 'INSERT, SELECT, UPDATE, DELETE, MAINTAIN, REFERENCES, TRIGGER, TRUNCATE ON TABLES FROM anon;';
+
+  const FUNCTION_NORMALIZATION =
+    'ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public REVOKE '
+    + 'EXECUTE ON FUNCTIONS FROM anon, authenticated;';
 
   it('revokes the exact proven default privileges, from the exact proven principal', () => {
     expect(WORKFLOW).toContain(NORMALIZATION);
     expect(WORKFLOW).toContain('E2E-ANON-PLATFORM-NORMALIZATION');
+  });
+
+  it('revokes the FUNCTION default EXECUTE from both proven-divergent principals', () => {
+    // anon is proven by 045, authenticated by 109. service_role is NOT named —
+    // its EXECUTE default is a real platform fact the mirror installs below.
+    expect(WORKFLOW).toContain(FUNCTION_NORMALIZATION);
   });
 
   it('is scoped to the proven owner, schema and object type', () => {
@@ -260,21 +302,51 @@ describe('E2E workflow · anon platform normalization', () => {
     expect(NORMALIZATION).toMatch(/FOR ROLE postgres/);
     expect(NORMALIZATION).toMatch(/IN SCHEMA public/);
     expect(NORMALIZATION).toMatch(/ON TABLES FROM anon;$/);
+    // The function revoke is schema-scoped for the same reason: the platform's
+    // row is schema-scoped, and a global revoke would not remove it.
+    expect(FUNCTION_NORMALIZATION).toMatch(/FOR ROLE postgres/);
+    expect(FUNCTION_NORMALIZATION).toMatch(/IN SCHEMA public/);
+    expect(FUNCTION_NORMALIZATION).toMatch(/ON FUNCTIONS FROM anon, authenticated;$/);
   });
 
-  it('does not over-revoke: no blanket REVOKE ALL from anon or PUBLIC', () => {
-    // §I: minimum privilege set only. SELECT/INSERT/UPDATE/DELETE were never
-    // granted to anon by this default, so naming them would be guesswork.
+  it('names the EXACT measured privilege set — no more, no less', () => {
+    // Positive pin. The earlier negative form (forbidding SELECT/INSERT/UPDATE/
+    // DELETE) encoded a stale measurement and is deliberately not reinstated.
+    for (const priv of TABLE_PRIVILEGES) expect(NORMALIZATION).toContain(priv);
+    // Exactly eight privileges, so a future edit cannot quietly add a ninth.
+    const named = NORMALIZATION.replace(/^.*REVOKE /, '').replace(/ ON TABLES.*$/, '').split(', ');
+    expect(named.sort()).toEqual([...TABLE_PRIVILEGES].sort());
+    // The function revoke is EXECUTE only — the sole privilege a function has.
+    expect(FUNCTION_NORMALIZATION.replace(/^.*REVOKE /, '').replace(/ ON FUNCTIONS.*$/, '')).toBe('EXECUTE');
+  });
+
+  it('does not over-revoke: no blanket REVOKE ALL, and never from PUBLIC', () => {
+    // Minimum measured privilege set only, on both object classes.
     expect(EXEC_WORKFLOW).not.toMatch(/REVOKE ALL[^\n;]*ON TABLES FROM anon/i);
+    expect(EXEC_WORKFLOW).not.toMatch(/REVOKE ALL[^\n;]*ON FUNCTIONS FROM/i);
     expect(EXEC_WORKFLOW).not.toMatch(/REVOKE[^\n;]*ON TABLES FROM PUBLIC/i);
-    expect(NORMALIZATION).not.toMatch(/\bSELECT\b|\bINSERT\b|\bUPDATE\b|\bDELETE\b/);
+    expect(EXEC_WORKFLOW).not.toMatch(/REVOKE[^\n;]*ON FUNCTIONS FROM PUBLIC/i);
+    // No wildcard/broadening: every revoke stays schema-scoped to public.
+    for (const line of EXEC_WORKFLOW.split('\n').filter((l) => /ALTER DEFAULT PRIVILEGES[^\n;]*REVOKE/.test(l))) {
+      expect(line).toContain('IN SCHEMA public');
+    }
   });
 
   it('does not disturb the authenticated / service_role platform baseline', () => {
-    // The anon revoke must not be widened to the roles whose baseline the
+    // The anon TABLE revoke must not be widened to the roles whose baseline the
     // mirror deliberately installs.
     expect(NORMALIZATION).not.toMatch(/authenticated|service_role/);
+    // The FUNCTION revoke names authenticated by measurement (109 refuses it),
+    // but service_role must NEVER be stripped — 109's own VERIFY asserts it
+    // keeps a default EXECUTE, and H-23 depends on it for pre-109 functions.
+    expect(FUNCTION_NORMALIZATION).not.toMatch(/service_role/);
     for (const stmt of PLATFORM_BASELINE_STATEMENTS) expect(WORKFLOW).toContain(stmt);
+  });
+
+  it('normalizes the PLATFORM, never Phoenix objects after creation', () => {
+    // No per-function REVOKE bolted on after the migration created it, and no
+    // edit to the immutable migration that would otherwise be the easy way out.
+    expect(EXEC_WORKFLOW).not.toMatch(/REVOKE[^\n;]*ON FUNCTION public\.phoenix_/i);
   });
 
   it('runs BEFORE migration 001 creates any Phoenix table', () => {
@@ -283,6 +355,11 @@ describe('E2E workflow · anon platform normalization', () => {
     const catIdx = WORKFLOW.indexOf('cat supabase/migrations/001_phoenix_core_schema.sql');
     expect(normIdx).toBeGreaterThan(-1);
     expect(catIdx).toBeGreaterThan(normIdx);
+    // Both revokes must sit inside that pre-001 window, not after the cat.
+    expect(WORKFLOW.indexOf(NORMALIZATION)).toBeGreaterThan(normIdx);
+    expect(WORKFLOW.indexOf(NORMALIZATION)).toBeLessThan(catIdx);
+    expect(WORKFLOW.indexOf(FUNCTION_NORMALIZATION)).toBeGreaterThan(normIdx);
+    expect(WORKFLOW.indexOf(FUNCTION_NORMALIZATION)).toBeLessThan(catIdx);
   });
 
   it('the post-start proof asserts the anon surface is empty', () => {

@@ -172,3 +172,93 @@ describe('the ops-purge contract file reports honestly off Windows', () => {
     expect(OPS_TEST).toContain("it('contains no character PowerShell would treat as a smart-quote delimiter'");
   });
 });
+
+/**
+ * THE DISPOSABLE-PLATFORM AUTHORIZATION BASELINE.
+ *
+ * The local Supabase CLI provisions public-schema default ACLs that neither
+ * Production nor tools/pg-rig/bootstrap.sql carries. Measured on a pristine
+ * stack with ZERO Phoenix migrations (CLI 2.116.0 / postgres 17.6.1.165):
+ *
+ *   postgres | public | table    | anon | arwdDxtm
+ *   postgres | public | FUNCTION | {postgres, anon, authenticated, service_role} = EXECUTE
+ *
+ * Left un-normalized, each one takes the replay down at a different migration,
+ * both fail-closed and both proven in a disposable full replay:
+ *   * anon FUNCTION EXECUTE          -> 045 aborts P0004
+ *   * authenticated FUNCTION EXECUTE -> 109 aborts P0004
+ *   * anon TABLE SELECT (etc.)       -> 191 aborts P0001
+ *
+ * These assertions pin the SHAPE of the remediation, not merely its presence:
+ * revoke-only, exact owner, exact schema, exact principals, exact privileges,
+ * and service_role never stripped. A future "simplification" to REVOKE ALL, or
+ * dropping a principal, or widening a grant, fails here rather than in a
+ * 90-second CI job — or, worse, silently.
+ */
+describe('E2E disposable-platform default-ACL normalization', () => {
+  /** The exact statements the pre-001 bootstrap emits, as executable echo lines. */
+  const TABLE_REVOKE =
+    'echo "ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public REVOKE '
+    + 'INSERT, SELECT, UPDATE, DELETE, MAINTAIN, REFERENCES, TRIGGER, TRUNCATE ON TABLES FROM anon;"';
+  const FUNCTION_REVOKE =
+    'echo "ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public REVOKE '
+    + 'EXECUTE ON FUNCTIONS FROM anon, authenticated;"';
+  const SERVICE_ROLE_FUNCTION_GRANT =
+    'echo "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT EXECUTE ON FUNCTIONS TO service_role;"';
+
+  it('revokes the FUNCTION default EXECUTE from anon and authenticated', () => {
+    // Emitted as an echo line, so a comment describing it cannot satisfy this.
+    expect(E2E_YML).toContain(FUNCTION_REVOKE);
+  });
+
+  it('scopes the FUNCTION revoke exactly: owner postgres, schema public, EXECUTE only', () => {
+    const stmt = FUNCTION_REVOKE;
+    expect(stmt).toContain('FOR ROLE postgres');
+    expect(stmt).toContain('IN SCHEMA public');
+    expect(stmt).toContain('REVOKE EXECUTE ON FUNCTIONS');
+    // Never a blanket revoke, and never aimed at service_role.
+    expect(stmt).not.toContain('REVOKE ALL');
+    expect(stmt).not.toContain('service_role');
+  });
+
+  it('revokes the full measured anon TABLE privilege set, not just the four legacy ones', () => {
+    // The four-privilege form left anon holding INSERT/SELECT/UPDATE/DELETE on
+    // every pre-109 table, which migration 191 correctly refuses.
+    expect(E2E_YML).toContain(TABLE_REVOKE);
+    for (const priv of ['INSERT', 'SELECT', 'UPDATE', 'DELETE', 'MAINTAIN', 'REFERENCES', 'TRIGGER', 'TRUNCATE']) {
+      expect(TABLE_REVOKE).toContain(priv);
+    }
+    expect(TABLE_REVOKE).toContain('FROM anon;');
+    expect(TABLE_REVOKE).not.toContain('REVOKE ALL');
+  });
+
+  it('keeps the service_role FUNCTION EXECUTE default (H-23) intact', () => {
+    // The normalization must not disturb service_role's platform baseline;
+    // migration 109's own VERIFY also asserts service_role keeps it.
+    expect(E2E_YML).toContain(SERVICE_ROLE_FUNCTION_GRANT);
+  });
+
+  it('never revokes anything from service_role in the pre-001 bootstrap', () => {
+    const revokes = E2E_YML.split('\n').filter((l) => l.includes('echo "ALTER DEFAULT PRIVILEGES') && l.includes('REVOKE'));
+    expect(revokes.length).toBeGreaterThanOrEqual(2);
+    for (const line of revokes) expect(line).not.toContain('service_role');
+  });
+
+  it('keeps the table and sequence baseline mirror and the schema CREATE grant unchanged', () => {
+    // Normalization is additive-revoke only: nothing already established here
+    // may be dropped, and no grant may be widened.
+    expect(E2E_YML).toContain('echo "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES    TO authenticated, service_role;"');
+    expect(E2E_YML).toContain('echo "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO authenticated, service_role;"');
+    expect(E2E_YML).toContain('echo "GRANT CREATE ON SCHEMA public TO service_role;"');
+    // anon/authenticated must never be handed CREATE on public.
+    expect(E2E_YML).not.toContain('GRANT CREATE ON SCHEMA public TO anon');
+    expect(E2E_YML).not.toContain('GRANT CREATE ON SCHEMA public TO authenticated');
+  });
+
+  it('normalizes the PLATFORM before 001, never Phoenix objects afterwards', () => {
+    // The whole point: no per-function REVOKE bolted on after creation, and the
+    // committed migration files stay immutable.
+    expect(code(E2E_YML)).toContain('cat supabase/migrations/001_phoenix_core_schema.sql');
+    expect(E2E_YML).not.toContain('REVOKE EXECUTE ON FUNCTION public.phoenix_update_my_whatsapp_phone');
+  });
+});

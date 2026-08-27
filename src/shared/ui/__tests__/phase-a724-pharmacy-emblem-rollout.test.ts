@@ -471,7 +471,38 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
       // the browser-local light/dark startup reconciliation; it does not alter
       // Auth, RBAC, routing authority, Supabase access or environment handling.
       // Keep the exemption exact so every other src/app file still fails closed.
-      'src/app/App.tsx'
+      'src/app/App.tsx',
+      // PR #169 / PRB-1 — UAT-DEFECT-004's movement-ledger repair. This entry is
+      // TEST-ONLY: phoenix-guardrails.test.ts is an assertion file. It adds no
+      // migration, no policy, no RLS, no grant, no dependency and no runtime
+      // code, and makes no Supabase client call.
+      //
+      // It is registered because the repair had to CORRECT this guard, not
+      // widen it. The old assertion REQUIRED `actor_name_snapshot` to appear in
+      // features/inventory/warehouse-intake.service.ts, and additionally
+      // exempted that file from the shared no-snapshot-fields rule. But
+      // public.warehouse_stock_movements names that column `actor_name`
+      // (migration 060) and `actor_name_snapshot` was never added to that table
+      // by any migration — so the guard was pinning a SELECT of a column that
+      // does not exist, which is the 42703 behind UAT-DEFECT-004's permanent
+      // "No movements". Both halves of the change are STRICTLY TIGHTER:
+      // `toContain` became `not.toContain`, and the file-level exemption was
+      // deleted so the file now satisfies the shared rule like every other one.
+      // No assertion was weakened and no exemption was added there.
+      //
+      // Registered AFTER this unit's first CI run caught the omission — the
+      // third time in this file's history, and for a NEW reason worth recording:
+      // the file was not untracked this time, it was MODIFIED. phase-a724 pins
+      // `BASE` to a historical commit while the sibling phase-a diff guards use
+      // `git diff --name-only HEAD`. An edit to a watched file clears those
+      // guards the moment it is committed, and does the OPPOSITE here —
+      // committing makes the path permanently visible to this guard, and only
+      // an EXCLUDED entry ever satisfies it.
+      //
+      // Registered by EXACT filename; no wildcard and no directory exemption,
+      // so every other file under src/shared/supabase still fails this guard
+      // closed.
+      'src/shared/supabase/__tests__/phoenix-guardrails.test.ts'
     ];
     const changed=execSync(`git diff --name-only ${BASE}`,{cwd:ROOT,encoding:'utf8'}).split('\n').map(l=>l.trim()).filter(Boolean);
     const prohibited=changed.filter(f=>WATCHED.some(p=>f===p||f.startsWith(p+'/'))&&!EXCLUDED.includes(f));

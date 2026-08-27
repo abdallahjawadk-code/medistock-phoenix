@@ -1039,10 +1039,15 @@ describe('Actor snapshot anti-spoofing: frontend services never pass snapshot fi
     expect(content).not.toContain('actor_identity_version');
   });
 
-  it('features/inventory/warehouse-intake.service.ts only READS actor_name_snapshot, never passes any snapshot field to a write', () => {
+  it('features/inventory/warehouse-intake.service.ts names NO snapshot field at all', () => {
     const content = readSrc('features/inventory/warehouse-intake.service.ts');
-    // The only permitted occurrence is the read-only ledger SELECT projection.
-    expect(content).toContain('actor_name_snapshot');
+    // UAT-DEFECT-004: this guard used to REQUIRE `actor_name_snapshot` here,
+    // pinning the read-only ledger projection to a column migration 060 never
+    // created — so the guard was actively holding the 42703 defect in place.
+    // The ledger's actor column is `actor_name`, so the file needs no
+    // exemption from the general no-snapshot-fields rule below, and this
+    // assertion is the strictly tighter one.
+    expect(content).not.toContain('actor_name_snapshot');
     expect(content).not.toMatch(/p_actor_[a-z_]*snapshot\s*:/);
     expect(content).not.toMatch(/\.insert\([^)]*actor_name_snapshot/s);
     expect(content).not.toContain('actor_email_snapshot');
@@ -1071,15 +1076,13 @@ describe('Actor snapshot anti-spoofing: frontend services never pass snapshot fi
       // never queries Supabase itself and never passes the field back to any
       // write call.
       .filter(path => !path.endsWith(join('status', 'OutletAvailabilityReportModal.tsx')))
-      // INVENTORY-CENTER-INTAKE-A: getWarehouseStockMovements SELECTs
-      // actor_name_snapshot for the read-only warehouse ledger view — the same
-      // documented category as availability.service.ts's movement history.
-      // warehouse_stock_movements grants SELECT only (migration 065), and the
-      // two write paths in this file (phoenix_receive_warehouse_stock /
-      // phoenix_apply_warehouse_stock_movement) pass no snapshot parameter —
-      // the RPC derives the actor from auth.uid() server-side. Pinned by the
-      // dedicated assertion below.
-      .filter(path => !path.endsWith(join('inventory', 'warehouse-intake.service.ts')));
+      // UAT-DEFECT-004: warehouse-intake.service.ts used to be exempted here
+      // because getWarehouseStockMovements SELECTed actor_name_snapshot. That
+      // column does not exist on warehouse_stock_movements (migration 060
+      // names it actor_name), so the read failed with 42703 and the exemption
+      // was protecting the defect. The projection is corrected, so the file is
+      // no longer exempt: it must satisfy the shared rule like every other.
+      ;
     files.forEach(path => {
       const content = readFile(path);
       SNAPSHOT_FIELDS.forEach(field => {
