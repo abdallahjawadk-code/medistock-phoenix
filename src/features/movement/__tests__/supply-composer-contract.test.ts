@@ -143,3 +143,129 @@ describe('institution and warehouse are always paired', () => {
     expect(party).toContain('warehouses.filter(w => w.organizationId === selectedOrganizationId)');
   });
 });
+
+/**
+ * PHOENIX-DSO-1 — material identity must survive the whole compose path.
+ *
+ * The pre-existing test "the composer carries centralItemId through to the RPC"
+ * scans confirmAndCreate for `centralItemId: line.centralItemId` and passes. It
+ * always passed — including while the defect was live — because it verifies the
+ * LAST link of the chain and says nothing about whether the line ever received
+ * an identity. The defect lived two links earlier: getWarehouseStock did not
+ * project the identity columns, so both StockCandidate mapping sites wrote
+ * null, draftLineFromStock faithfully copied those nulls, and
+ * _phoenix_150_send_direct_v1 then refused the line with
+ * direct_request_line_material_mismatch.
+ *
+ * These tests pin the two mapping sites and the projection, so the chain cannot
+ * be broken again at the point where it actually broke.
+ */
+describe('PHOENIX-DSO-1: material identity survives the compose path', () => {
+  const service = readFileSync(join(ROOT, 'src', 'features', 'network', 'network.service.ts'), 'utf8');
+  /** The fields _phoenix_150_send_direct_v1 matches stock to a request line on. */
+  const IDENTITY = ['centralItemId', 'concentration', 'dosageForm', 'unit'] as const;
+
+  /**
+   * A BRACE-MATCHED body, unlike the fixed-width `bodyOf` above.
+   *
+   * `bodyOf` slices a constant 2600 characters forward, which for `loadStock`
+   * runs several hundred characters past the start of `enterReview`. A test
+   * named for one mapping site would then be reading both, and could pass
+   * because the OTHER site satisfied it. That is precisely the weakness that
+   * let the pre-existing "carries centralItemId through to the RPC" test stay
+   * green for the entire life of this defect, so these tests do not reuse it.
+   */
+  function scopedBody(source: string, declaration: string): string {
+    const start = source.indexOf(declaration);
+    expect(start, `declaration not found: ${declaration}`).toBeGreaterThan(-1);
+    const open = source.indexOf('{', start);
+    expect(open, `no body found for: ${declaration}`).toBeGreaterThan(-1);
+    let depth = 0;
+    for (let i = open; i < source.length; i++) {
+      if (source[i] === '{') depth++;
+      else if (source[i] === '}') {
+        depth--;
+        if (depth === 0) return source.slice(start, i + 1);
+      }
+    }
+    throw new Error(`unbalanced braces for: ${declaration}`);
+  }
+
+  it('scopedBody really does isolate one mapping site from the other', () => {
+    // the guard on the guard: if this ever fails, every per-site test below is
+    // silently reading the wrong function
+    const load = scopedBody(composer, 'const loadStock');
+    const review = scopedBody(composer, 'const enterReview');
+    expect(load).not.toContain('const enterReview');
+    expect(review).not.toContain('const loadStock');
+    expect(load).toContain('setStockLoading');      // unique to loadStock
+    expect(review).toContain('revalidateAgainstFreshStock'); // unique to enterReview
+  });
+
+  it('getWarehouseStock projects every field the send RPC matches on', () => {
+    const select = /\.from\('warehouse_stock'\)\s*\.select\('([^']+)'\)/.exec(service);
+    expect(select, 'getWarehouseStock select() not found').not.toBeNull();
+    for (const column of ['central_item_id', 'concentration', 'dosage_form', 'unit', 'scientific_name']) {
+      expect(select![1], `projection is missing ${column}`).toContain(column);
+    }
+  });
+
+  it('WarehouseStockBatch carries every identity field', () => {
+    const shape = bodyOf(service, 'export interface WarehouseStockBatch');
+    for (const field of IDENTITY) {
+      expect(shape, `WarehouseStockBatch is missing ${field}`).toContain(`${field}:`);
+    }
+  });
+
+  it('the loadStock mapping site carries identity from the stock row', () => {
+    const body = scopedBody(composer, 'const loadStock');
+    for (const field of IDENTITY) {
+      expect(body, `loadStock drops ${field}`).toContain(`${field}: b.${field}`);
+    }
+  });
+
+  it('the enterReview re-fetch carries identity from the stock row', () => {
+    const body = scopedBody(composer, 'const enterReview');
+    for (const field of IDENTITY) {
+      expect(body, `enterReview drops ${field}`).toContain(`${field}: b.${field}`);
+    }
+  });
+
+  it('neither mapping site hard-codes an identity field back to null', () => {
+    for (const declaration of ['const loadStock', 'const enterReview']) {
+      const body = scopedBody(composer, declaration);
+      for (const field of IDENTITY) {
+        expect(body, `${declaration} nulls ${field}`).not.toContain(`${field}: null`);
+      }
+    }
+  });
+
+  it('no fallback value is substituted for a missing identity', () => {
+    // A default would make a line that matches nothing look like one that
+    // matches something, which is worse than the original defect.
+    for (const declaration of ['const loadStock', 'const enterReview']) {
+      const body = scopedBody(composer, declaration);
+      for (const field of IDENTITY) {
+        const assignment = `${field}: b.${field}`;
+        const at = body.indexOf(assignment);
+        expect(at, `${declaration} does not carry ${field}`).toBeGreaterThan(-1);
+        const following = body.slice(at + assignment.length, at + assignment.length + 12);
+        expect(following, `${declaration} defaults ${field}`).not.toContain('??');
+        expect(following, `${declaration} defaults ${field}`).not.toContain('||');
+      }
+    }
+  });
+
+  it('the repair introduces no `as any` escape hatch', () => {
+    expect(composer).not.toMatch(/as any/);
+    expect(bodyOf(service, 'export async function getWarehouseStock')).not.toMatch(/as any/);
+  });
+
+  it('identity still travels from the line to the RPC unchanged', () => {
+    // the pre-existing guarantee, kept explicit alongside the new ones
+    const body = bodyOf(composer, 'const confirmAndCreate');
+    for (const field of IDENTITY) {
+      expect(body, `confirmAndCreate drops ${field}`).toContain(`${field}: line.${field}`);
+    }
+  });
+});

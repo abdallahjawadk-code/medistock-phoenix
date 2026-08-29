@@ -465,6 +465,20 @@ export interface WarehouseStockBatch {
   batchNumber: string | null; expiryDate: string | null;
   onHandQuantity: number; reservedQuantity: number; availableQuantity: number;
   nationalCode: string | null;
+  /**
+   * The MATERIAL-IDENTITY fields the direct-supply send RPC matches on.
+   * `_phoenix_150_send_direct_v1` resolves stock to a transfer request line by
+   * central_item_id, scientific_name, concentration, dosage_form and unit, and
+   * requires exactly one matching material_identity_key. A caller that composes
+   * a request line out of a batch therefore has to be able to READ them —
+   * leaving them off this shape is what let a composed line be persisted with no
+   * identity and then be refused at send time with
+   * `direct_request_line_material_mismatch`.
+   */
+  centralItemId: string | null;
+  concentration: string | null;
+  dosageForm: string | null;
+  unit: string | null;
   materialIdentityKey: string | null;
   internalBatchReference: string | null;
   supplyType: string | null;
@@ -475,6 +489,10 @@ interface WarehouseStockRow {
   batch_number: string | null; expiry_date: string | null;
   on_hand_quantity: number; reserved_quantity: number; available_quantity: number;
   national_code: string | null;
+  central_item_id: string | null;
+  concentration: string | null;
+  dosage_form: string | null;
+  unit: string | null;
   material_identity_key: string | null;
   internal_batch_reference: string | null;
   supply_type: string | null;
@@ -484,7 +502,7 @@ export async function getWarehouseStock(warehouseId: string): Promise<WarehouseS
   if (!supabaseConfigured) return [];
   const { data, error } = await supabase
     .from('warehouse_stock')
-    .select('id, warehouse_id, scientific_name, batch_number, expiry_date, on_hand_quantity, reserved_quantity, available_quantity, national_code, material_identity_key, internal_batch_reference, supply_type, purchase_origin')
+    .select('id, warehouse_id, scientific_name, batch_number, expiry_date, on_hand_quantity, reserved_quantity, available_quantity, national_code, central_item_id, concentration, dosage_form, unit, material_identity_key, internal_batch_reference, supply_type, purchase_origin')
     .eq('warehouse_id', warehouseId)
     .gt('on_hand_quantity', 0)
     .order('expiry_date', { ascending: true, nullsFirst: false });
@@ -494,6 +512,14 @@ export async function getWarehouseStock(warehouseId: string): Promise<WarehouseS
     batchNumber: r.batch_number, expiryDate: r.expiry_date,
     onHandQuantity: r.on_hand_quantity, reservedQuantity: r.reserved_quantity,
     availableQuantity: r.available_quantity, nationalCode: r.national_code,
+    // The send RPC's matching fields, carried straight through with NO
+    // substitution: a row whose identity is genuinely null stays null, because
+    // inventing a value here would make a line that matches nothing look like a
+    // line that matches something.
+    centralItemId: r.central_item_id,
+    concentration: r.concentration,
+    dosageForm: r.dosage_form,
+    unit: r.unit,
     // Mapped straight through. A row that somehow arrives without the canonical
     // key stays null and is refused by isExactReleaseCandidate — never
     // reconstructed from the partial material fields above.
