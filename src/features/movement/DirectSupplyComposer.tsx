@@ -118,6 +118,17 @@ export function DirectSupplyComposer({
 
   const issues = useMemo(() => validateDraft(lines, 'supply'), [lines]);
   const confirmable = useMemo(() => draftIsConfirmable(lines, 'supply'), [lines]);
+  /**
+   * The official-letter number is REQUIRED, not optional.
+   *
+   * phoenix_create_direct_warehouse_transfer_request (migration 077) takes the
+   * number ONLY from p_request_number and raises request_number_required on an
+   * empty or whitespace-only value. MediStock generates the trace identity, not
+   * this number, so there is nothing to fall back to. Trimmed here so that a
+   * whitespace-only entry is refused locally rather than becoming a raw 400.
+   * draftIsConfirmable deliberately stays line-only; this is a header field.
+   */
+  const referenceMissing = externalReference.trim() === '';
 
   const partiesComplete = Boolean(sourceWarehouseId && destinationOrgId && destinationWarehouseId);
   const sourceWarehouse = sourceWarehouses.find(w => w.id === sourceWarehouseId) ?? null;
@@ -154,7 +165,7 @@ export function DirectSupplyComposer({
   // ── the ONLY place this file persists anything ────────────────────────────
 
   const confirmAndCreate = async () => {
-    if (!confirmable || committing) return;
+    if (!confirmable || referenceMissing || committing) return;
     setCommitting(true);
     setError(null);
 
@@ -255,7 +266,7 @@ export function DirectSupplyComposer({
   const footer = step === 'review' && !result
     ? (
       <PhoenixButton
-        disabled={!confirmable || committing}
+        disabled={!confirmable || referenceMissing || committing}
         onClick={confirmAndCreate}
         data-testid="confirm-create-supply-request"
       >
@@ -344,6 +355,15 @@ export function DirectSupplyComposer({
               <div><strong>{t('inv_notes', lang)}:</strong> {notes.trim() || '—'}</div>
             </div>
           </PhoenixCard>
+
+          {referenceMissing && (
+            <div
+              data-testid="supply-external-reference-required"
+              style={{ background: 'var(--warn2)', border: '1px solid var(--warn)', borderRadius: 'var(--r3)', padding: '10px 14px', fontSize: '12px', color: 'var(--warn)' }}
+            >
+              {t('mv_external_reference_required', lang)}
+            </div>
+          )}
 
           {staleKeys.length > 0 && (
             <div style={{

@@ -58,7 +58,9 @@ describe('receipt workbook structure', () => {
     const joined = text.join(' | ');
     expect(joined).toContain('Supply Dispatch Receipt');
     expect(joined).toContain(TRACE);
-    expect(joined).toContain('Official letter / external document number — optional');
+    // OWNER RULING (artifact 299): required, not optional.
+    expect(joined).toContain('Official letter / external document number — required');
+    expect(joined).not.toContain('external document number — optional');
     expect(joined).toContain('OPS-77');
     expect(joined).toContain('Babil Health — Central Store');
     expect(joined).toContain('Al-Sadiq Hospital — Hospital Depot');

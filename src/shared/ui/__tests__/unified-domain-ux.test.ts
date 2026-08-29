@@ -111,9 +111,19 @@ describe('the new domain terminology is total across AR/EN', () => {
     expect(strings).toContain('مشتريات فرعية');
   });
 
-  it('the external reference is the optional official-letter field', () => {
-    expect(strings).toContain('رقم الكتاب أو المستند الخارجي — اختياري');
-    expect(strings).toContain('ينشئ MediStock رقم الطلب والتتبع الرسمي تلقائيًا');
+  // OWNER RULING (artifact 299): the official-letter number is REQUIRED, in
+  // both the forward and the return composer. The previous form of this test
+  // asserted the opposite. It rested on the sequential-auto-numbering proposal
+  // (docs/phoenix/proposals/sequential-document-numbers.md), which is marked
+  // PROPOSAL ONLY - never applied, never approved - while the live RPCs
+  // (migrations 069 and 077) have refused an empty number since 2026-07-17.
+  it('the external reference is the REQUIRED official-letter field', () => {
+    expect(strings).toContain('رقم الكتاب أو المستند الخارجي — مطلوب');
+    expect(strings).not.toContain('رقم الكتاب أو المستند الخارجي — اختياري');
+    // the hint no longer promises an auto-generated ORDER number, because
+    // nothing generates one; MediStock generates the TRACE identity only.
+    expect(strings).toContain('ينشئ MediStock رقم التتبع الرسمي تلقائيًا');
+    expect(strings).not.toContain('ينشئ MediStock رقم الطلب والتتبع الرسمي تلقائيًا');
   });
 });
 
