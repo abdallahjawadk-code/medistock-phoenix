@@ -145,7 +145,13 @@ vi.mock('@/features/movement/paper-reference.service', () => ({
 const BATCH: WarehouseStockBatch = {
   id: 'b1', warehouseId: 'wh-1', scientificName: 'Paracetamol', batchNumber: 'LOT-9',
   expiryDate: '2027-01-01', onHandQuantity: 40, reservedQuantity: 0, availableQuantity: 40,
-  nationalCode: null, materialIdentityKey: null, internalBatchReference: null,
+  nationalCode: null,
+  // PHOENIX-DSO-1 widened WarehouseStockBatch with the fields the direct-supply
+  // send RPC matches on. This ledger fixture does not exercise supply, so it
+  // carries them as null - which the type now makes an explicit choice rather
+  // than a silent omission.
+  centralItemId: null, concentration: null, dosageForm: null, unit: null,
+  materialIdentityKey: null, internalBatchReference: null,
   supplyType: 'kimadia', purchaseOrigin: null,
 };
 

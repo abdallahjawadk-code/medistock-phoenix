@@ -731,7 +731,26 @@ describe('DB-REMOVED-OUTLET-MATERIAL-MARKER-053-A: DB-only phase — no frontend
       'src/features/inventory/InventoryIntelligencePanel.tsx',
       'src/features/inventory/InventoryDraftDocumentDialog.tsx',
     ];
-    const STAGE_AUTHORIZED = [...DELEGATED_AUTHORIZED, ...G3_2_AUTHORIZED, ...G4_1_AUTHORIZED, ...G4_2_AUTHORIZED, ...G5_AUTHORIZED, ...TS_REGULATORY_UX_AUTHORIZED];
+        // PHOENIX-DSO-1 — direct-supply material-identity repair. A separately
+    // reviewed defect fix, confirmed independently before any edit: the Direct
+    // Supply composer built its StockCandidate rows with central_item_id,
+    // concentration, dosage_form and unit forced to null, so every request line
+    // it created carried no material identity. _phoenix_150_send_direct_v1
+    // resolves stock to a line on exactly those fields, so the send was refused
+    // with direct_request_line_material_mismatch and the composed request could
+    // never be dispatched. The fix carries the identity through from the
+    // authoritative stock row.
+    //
+    // NO schema, migration, RLS, RPC, permission, FEFO or copy change. The
+    // companion edit to src/features/network/network.service.ts (widening the
+    // getWarehouseStock projection so the identity exists to carry) is already
+    // outside this guard's pathspec, and the tests land under
+    // src/**/__tests__/** which the pathspec excludes. Registered by EXACT
+    // path, so any sibling file still fails this guard closed.
+    const PHOENIX_DSO_1_AUTHORIZED = [
+      'src/features/movement/DirectSupplyComposer.tsx',
+    ];
+    const STAGE_AUTHORIZED = [...DELEGATED_AUTHORIZED, ...G3_2_AUTHORIZED, ...G4_1_AUTHORIZED, ...G4_2_AUTHORIZED, ...G5_AUTHORIZED, ...TS_REGULATORY_UX_AUTHORIZED, ...PHOENIX_DSO_1_AUTHORIZED];
     const delegatedFiles = [...diff.matchAll(/^diff --git a\/(.+?) b\//gm)].map(match => match[1]).sort();
     expect(delegatedFiles.filter(f => !STAGE_AUTHORIZED.includes(f))).toEqual([]);
   });

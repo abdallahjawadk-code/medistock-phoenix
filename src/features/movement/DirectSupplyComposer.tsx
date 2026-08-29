@@ -87,12 +87,18 @@ export function DirectSupplyComposer({
       const batches = await getWarehouseStock(warehouseId);
       setStock(batches.map(b => ({
         warehouseStockId: b.id,
-        centralItemId: null,
+        // MATERIAL IDENTITY — carried from the authoritative stock row, never
+        // nulled and never defaulted. The send RPC matches a request line to
+        // stock on central_item_id + scientific_name + concentration +
+        // dosage_form + unit; a line composed without them matches nothing and
+        // is refused with direct_request_line_material_mismatch, which made
+        // every composed request unsendable against identity-bearing stock.
+        centralItemId: b.centralItemId,
         scientificName: b.scientificName,
         tradeName: null,
-        concentration: null,
-        dosageForm: null,
-        unit: null,
+        concentration: b.concentration,
+        dosageForm: b.dosageForm,
+        unit: b.unit,
         nationalCode: b.nationalCode,
         batchNumber: b.batchNumber,
         internalBatchReference: null,
@@ -125,9 +131,16 @@ export function DirectSupplyComposer({
     if (!sourceWarehouseId) return;
     const batches = await getWarehouseStock(sourceWarehouseId).catch(() => null);
     if (!batches) return;
+    // Same MATERIAL IDENTITY contract as loadStock, and load-bearing for the
+    // same reason: this re-fetch calls setStock(fresh), and the shell allows
+    // stepping BACK to the materials step, where draftLineFromStock composes new
+    // lines out of exactly these candidates. Dropping the identity here would
+    // therefore reintroduce the defect for any line added after visiting review.
+    // (revalidateAgainstFreshStock itself only adjusts maxQuantity — it never
+    // rewrites a line's identity — so it is not the mechanism at risk.)
     const fresh: StockCandidate[] = batches.map(b => ({
-      warehouseStockId: b.id, centralItemId: null, scientificName: b.scientificName,
-      tradeName: null, concentration: null, dosageForm: null, unit: null,
+      warehouseStockId: b.id, centralItemId: b.centralItemId, scientificName: b.scientificName,
+      tradeName: null, concentration: b.concentration, dosageForm: b.dosageForm, unit: b.unit,
       nationalCode: b.nationalCode, batchNumber: b.batchNumber, internalBatchReference: null,
       expiryDate: b.expiryDate, onHandQuantity: b.onHandQuantity,
       reservedQuantity: b.reservedQuantity, availableQuantity: b.availableQuantity,
