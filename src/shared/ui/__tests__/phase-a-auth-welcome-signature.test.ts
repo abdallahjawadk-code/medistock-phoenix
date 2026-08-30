@@ -229,33 +229,14 @@ describe('Phase A7.2 premium living auth & welcome signature contract', () => {
     // ADDITIVE. Zero deletions proves no existing key was edited, renamed or
     // removed, which is a stricter reading of "untouched" than the previous
     // blanket no-diff.
-    //
-    // GI-OBS-1 / OWNER RULING (evidence artifact 299). The blanket "zero
-    // deletions" form of this check cannot express an AUTHORISED correction to
-    // an existing key, and one was ruled: the official-letter number is
-    // REQUIRED, so mv_external_reference and mv_external_reference_hint had to
-    // stop describing it as optional. The live RPCs have refused an empty
-    // number since migrations 069 and 077.
-    //
-    // The guard is NOT relaxed to a larger deletion budget - that would let any
-    // key be edited. It is narrowed to its actual purpose: every REMOVED line
-    // must belong to one of the exactly-named authorised keys. Any other edited
-    // or deleted key still fails this closed, which is stricter than a count.
-    const AUTHORISED_EDITED_KEYS = [
-      'mv_external_reference:',
-      'mv_external_reference_hint:',
-    ];
-    let diff = '';
+    let numstat = '';
     try {
-      diff = execSync('git diff HEAD -- src/shared/i18n/strings.ts', { cwd: ROOT, encoding: 'utf8' });
+      numstat = execSync('git diff --numstat HEAD -- src/shared/i18n/strings.ts', { cwd: ROOT, encoding: 'utf8' });
     } catch { /* ignore */ }
-    const removed = diff
-      .split('\n')
-      .filter(line => line.startsWith('-') && !line.startsWith('---'));
-    const unauthorised = removed.filter(
-      line => !AUTHORISED_EDITED_KEYS.some(key => line.includes(key)),
-    );
-    expect(unauthorised, `unauthorised string deletions:\n${unauthorised.join('\n')}`).toEqual([]);
+    const deletions = numstat.trim()
+      ? Number(numstat.trim().split('\n')[0].split('\t')[1])
+      : 0;
+    expect(deletions).toBe(0);
   });
 
   // ─── 3. No fabricated data, no invented functionality ──────────────────────

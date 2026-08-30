@@ -144,10 +144,13 @@ export function DirectReturnComposer({
   /**
    * The official-letter number is REQUIRED, not optional.
    *
-   * phoenix_request_direct_warehouse_return (migration 069) raises
-   * return_number_required on an empty or whitespace-only value, and nothing
-   * generates this number on the operator's behalf. Trimmed so a
-   * whitespace-only entry is refused here instead of becoming a raw 400.
+   * Both RPCs this composer can reach normalise the number the same way and
+   * refuse it when it is blank: phoenix_request_direct_warehouse_return
+   * (migration 077) and, for the recall mode, phoenix_recall_warehouse_transfer_line
+   * (migration 185) each compute NULLIF(btrim(p_return_number), '') and raise
+   * return_number_required when it is NULL. Nothing generates this number on
+   * the operator's behalf. Trimmed so a whitespace-only entry is refused here
+   * instead of becoming a raw 400.
    */
   const referenceMissing = externalReference.trim() === '';
   const partiesComplete = Boolean(sourceOrgId && sourceWarehouseId && destinationWarehouseId);

@@ -44,7 +44,8 @@ describe('nothing is persisted before confirmation', () => {
   it('confirmAndCreate refuses unless the draft is confirmable', () => {
     // OWNER RULING (artifact 299): stricter guard - an empty or whitespace-only
     // return number is refused here, before phoenix_request_direct_warehouse_return
-    // (migration 069) can answer return_number_required.
+    // (migration 077) - or, in recall mode, phoenix_recall_warehouse_transfer_line
+    // (migration 185) - can answer return_number_required.
     expect(bodyOf(composer, 'const confirmAndCreate'))
       .toMatch(/if \(!canConfirm \|\| referenceMissing \|\| committing\) return;/);
     expect(composer).toContain("const canConfirm = confirmable && (mode !== 'recall' || lines.length === 1)");
