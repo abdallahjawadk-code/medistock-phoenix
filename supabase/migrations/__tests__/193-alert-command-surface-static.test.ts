@@ -82,13 +82,13 @@ describe('193 · registration and file hygiene', () => {
     expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.indexOf(NAME) + 2]).toBe(NEXT_2);
     expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.indexOf(NAME) + 3]).toBe(NEXT_3);
     expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.indexOf(NAME) + 4]).toBe(NEXT_4);
-    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1]).toBe(NEXT_7);
-    // The ceiling is now 200; `[2-9]\d\d` would match it, so this asserts
+    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1]).toBe('201_phoenix_organization_archive_dependency_guard.sql');
+    // The ceiling is now 201; `[2-9]\d\d` would match it, so this asserts
     // numerically that nothing sits ABOVE the ceiling.
-    expect(REVIEWED_MIGRATION_FILES.filter(f => Number(f.slice(0, 3)) > 200)).toHaveLength(0);
+    expect(REVIEWED_MIGRATION_FILES.filter(f => Number(f.slice(0, 3)) > 201)).toHaveLength(0);
     expect(readdirSync(MIGRATIONS_DIR)
-      .filter(f => /^\d{3}_.*\.sql$/.test(f) && Number(f.slice(0, 3)) > 200)).toEqual([]);
-    expect(isReviewedMigrationFile('201_unreviewed_test_migration.sql')).toBe(false);
+      .filter(f => /^\d{3}_.*\.sql$/.test(f) && Number(f.slice(0, 3)) > 201)).toEqual([]);
+    expect(isReviewedMigrationFile('202_unreviewed_test_migration.sql')).toBe(false);
   });
 
   it('carries no CR bytes', () => {
@@ -108,7 +108,7 @@ describe('193 · registration and file hygiene', () => {
     // 200 (UAT-BUG-001, demo-purge auth boundary) is the newest chain member;
     // it edits nothing here, so this count moves by exactly one.
     const others = readdirSync(MIGRATIONS_DIR).filter(f => f.endsWith('.sql') && f !== NAME);
-    expect(others).toHaveLength(199);
+    expect(others).toHaveLength(200);
   });
 });
 

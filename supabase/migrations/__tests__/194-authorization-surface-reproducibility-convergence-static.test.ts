@@ -301,10 +301,10 @@ describe('194 · static · historical immutability and rig coupling', () => {
   // schema qualification) is now the reviewed successor to 195. This relaxes
   // ONLY which future migration numbers may exist; every M194 assertion in
   // this file is unchanged.
-  it('no migration numbered 201 or higher exists', () => {
+  it('no migration numbered 202 or higher exists', () => {
     const above = readdirSync(MIGRATIONS_DIR)
       .filter((f) => /^\d{3}_.*\.sql$/.test(f))
-      .filter((f) => Number(f.slice(0, 3)) >= 201);
+      .filter((f) => Number(f.slice(0, 3)) >= 202);
     expect(above).toEqual([]);
   });
 

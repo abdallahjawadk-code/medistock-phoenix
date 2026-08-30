@@ -57,7 +57,7 @@ const THIRTY = [
 ];
 
 describe('M198 static — identity and placement', () => {
-  it('is registered at 198, below the 200 ceiling, with no 201+ present', () => {
+  it('is registered at 198, below the 201 ceiling, with no 202+ present', () => {
     // RAC-2 landed 199 (Command Center read contract) directly after this
     // migration, so 198 is no longer the newest file. It must still exist
     // exactly once, still sit at index 197, and 199 must be the ONLY thing
@@ -68,9 +68,10 @@ describe('M198 static — identity and placement', () => {
     expect(files.slice(198)).toEqual([
       '199_phoenix_command_center_read_contract.sql',
       '200_phoenix_demo_purge_auth_boundary_correction.sql',
+      '201_phoenix_organization_archive_dependency_guard.sql',
     ]);
-    expect(files.filter((f) => Number(f.slice(0, 3)) > 200)).toEqual([]);
-    expect(files).toHaveLength(200);
+    expect(files.filter((f) => Number(f.slice(0, 3)) > 201)).toEqual([]);
+    expect(files).toHaveLength(201);
   });
 
   it('carries no MANUAL APPLY ONLY banner, so the pinned executor will accept it', () => {

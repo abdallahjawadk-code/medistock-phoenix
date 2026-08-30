@@ -65,7 +65,7 @@ describe('183 registration and shape', () => {
       .toBe('182_phoenix_health_center_facility_scoped_rbac.sql');
   });
 
-  it('is followed by exactly 184 through 200, and nothing beyond them', () => {
+  it('is followed by exactly 184 through 201, and nothing beyond them', () => {
     // M191 (G4.2 canonical facility/scope topology read contract) is the new
     // ceiling.
     // The successor list stays EXACT and the nothing-beyond regex is narrowed by
@@ -89,14 +89,15 @@ describe('183 registration and shape', () => {
       '198_phoenix_secdef_search_path_convergence.sql',
       '199_phoenix_command_center_read_contract.sql',
       '200_phoenix_demo_purge_auth_boundary_correction.sql',
+      '201_phoenix_organization_archive_dependency_guard.sql',
     ];
     const i = REVIEWED_MIGRATION_FILES.indexOf(NAME);
     expect(REVIEWED_MIGRATION_FILES.slice(i + 1)).toEqual(SUCCESSORS);
     expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1])
       .toBe(SUCCESSORS[SUCCESSORS.length - 1]);
-    // The ceiling is now 200; `[2-9]\d\d` would match it, so this asserts
+    // The ceiling is now 201; `[2-9]\d\d` would match it, so this asserts
     // numerically that nothing sits ABOVE the ceiling.
-    expect(REVIEWED_MIGRATION_FILES.filter(f => Number(f.slice(0, 3)) > 200)).toHaveLength(0);
+    expect(REVIEWED_MIGRATION_FILES.filter(f => Number(f.slice(0, 3)) > 201)).toHaveLength(0);
   });
 
   it('is a single transaction, manual-apply only', () => {

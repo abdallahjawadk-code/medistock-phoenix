@@ -15,6 +15,38 @@ export interface OrgDeleteImpact {
   canPurge: boolean;
 }
 
+/**
+ * ISW1-D1 — sentinel thrown when any organization impact count could not be read.
+ *
+ * A count that FAILED is not a count of zero. supabase-js resolves a failed
+ * count read to `{ data: null, error, count: null }`, so the previous
+ * `res.count ?? 0` silently converted an unavailable safety read into the exact
+ * value that opens the archive gate. Callers must treat this as "dependencies
+ * unknown", never as "dependencies absent".
+ */
+export const IMPACT_READ_UNAVAILABLE = 'IMPACT_READ_UNAVAILABLE';
+
+/** Shape of a PostgREST head+count response, narrowed to what the gate needs. */
+interface CountReadResult {
+  error: { message?: string } | null;
+  count: number | null;
+}
+
+/**
+ * Fail closed on any impact count that was not actually verified. Only a read
+ * that both succeeded and returned a real number may reach `canArchive`.
+ */
+function requireCount(res: CountReadResult, table: string): number {
+  if (res.error || typeof res.count !== 'number') {
+    console.error(
+      `[phoenix] organization impact count unavailable for ${table}:`,
+      res.error ?? 'no count returned',
+    );
+    throw new Error(IMPACT_READ_UNAVAILABLE);
+  }
+  return res.count;
+}
+
 export async function getOrgDeleteImpact(orgId: string): Promise<OrgDeleteImpact> {
   if (!supabaseConfigured) throw new Error('Supabase not configured');
 
@@ -26,19 +58,21 @@ export async function getOrgDeleteImpact(orgId: string): Promise<OrgDeleteImpact
     supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('organization_id', orgId),
   ]);
 
-  let activeStatusReports = 0;
-  try {
-    const srRes = await supabase.from('institution_item_status_reports')
-      .select('id', { count: 'exact', head: true })
-      .eq('organization_id', orgId).eq('is_active', true);
-    activeStatusReports = srRes.count ?? 0;
-  } catch { /* table may not exist */ }
+  // ISW1-D1: institution_item_status_reports has existed since migration 006, so
+  // it is present wherever this code runs. The previous try/catch could not have
+  // covered an absent table anyway — PostgREST reports an unknown relation by
+  // RESOLVING with `error`, never by throwing — so the catch only ever hid a
+  // transport failure behind a fabricated zero.
+  const srRes = await supabase.from('institution_item_status_reports')
+    .select('id', { count: 'exact', head: true })
+    .eq('organization_id', orgId).eq('is_active', true);
 
-  const wh = whRes.count ?? 0;
-  const dp = dpRes.count ?? 0;
-  const qr = qrRes.count ?? 0;
-  const avail = availRes.count ?? 0;
-  const profiles = profileRes.count ?? 0;
+  const wh = requireCount(whRes, 'warehouses');
+  const dp = requireCount(dpRes, 'distribution_points');
+  const qr = requireCount(qrRes, 'qr_tokens');
+  const avail = requireCount(availRes, 'item_availability');
+  const profiles = requireCount(profileRes, 'profiles');
+  const activeStatusReports = requireCount(srRes, 'institution_item_status_reports');
 
   return {
     activeWarehouses: wh,

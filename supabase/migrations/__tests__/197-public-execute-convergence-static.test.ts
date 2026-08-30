@@ -27,7 +27,7 @@ const SIX = [
 ];
 
 describe('M197 static — identity and placement', () => {
-  it('is registered at 197, below the 200 ceiling, with no 201+ present', () => {
+  it('is registered at 197, below the 201 ceiling, with no 202+ present', () => {
     // I-5 landed 198 (SECDEF search_path convergence) directly after this
     // migration, so 197 is no longer the newest file. It must still exist
     // exactly once, still sit at index 196, and 198 must be the ONLY thing
@@ -39,9 +39,10 @@ describe('M197 static — identity and placement', () => {
       '198_phoenix_secdef_search_path_convergence.sql',
       '199_phoenix_command_center_read_contract.sql',
       '200_phoenix_demo_purge_auth_boundary_correction.sql',
+      '201_phoenix_organization_archive_dependency_guard.sql',
     ]);
-    expect(files.filter((f) => Number(f.slice(0, 3)) > 200)).toEqual([]);
-    expect(files).toHaveLength(200);
+    expect(files.filter((f) => Number(f.slice(0, 3)) > 201)).toEqual([]);
+    expect(files).toHaveLength(201);
   });
 
   it('carries no MANUAL APPLY ONLY banner, so the pinned executor will accept it', () => {

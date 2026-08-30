@@ -1549,6 +1549,10 @@ export const T: Dict = {
   dw_users_count:     { ar: 'مستخدمون',                          en: 'Users' },
   dw_ready:           { ar: 'جاهز للأرشفة',                      en: 'Ready to archive' },
   dw_blocked:         { ar: 'محظور — يجب حذف التبعيات أولاً',    en: 'Blocked — clear dependencies first' },
+  // ISW1-D1: shown when an impact count could not be read. The dependencies are
+  // UNKNOWN, not zero, so the archive action stays unavailable until a retry
+  // succeeds.
+  dw_impact_unavailable: { ar: 'تعذّر التحقق من التبعيات، لذلك الأرشفة غير متاحة. أعد المحاولة.', en: 'Dependencies could not be verified, so archiving is unavailable. Please retry.' },
   // BUGFIX-HIDE-CLEARED-PORT-CONTENTS-A: honest wording — clear_port_availability
   // (migration 042) zeroes quantity/condition rather than deleting rows, so
   // the success message must not imply a destructive delete.
