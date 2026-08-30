@@ -115,8 +115,9 @@ describe('the new domain terminology is total across AR/EN', () => {
   // both the forward and the return composer. The previous form of this test
   // asserted the opposite. It rested on the sequential-auto-numbering proposal
   // (docs/phoenix/proposals/sequential-document-numbers.md), which is marked
-  // PROPOSAL ONLY - never applied, never approved - while the live RPCs
-  // (migrations 069 and 077) have refused an empty number since 2026-07-17.
+  // PROPOSAL ONLY - never applied, never approved - while the RPCs the two
+  // composers actually call have refused an empty number since migration 077
+  // landed on 2026-07-19 (and 185, for a recall, on 2026-08-16).
   it('the external reference is the REQUIRED official-letter field', () => {
     expect(strings).toContain('رقم الكتاب أو المستند الخارجي — مطلوب');
     expect(strings).not.toContain('رقم الكتاب أو المستند الخارجي — اختياري');

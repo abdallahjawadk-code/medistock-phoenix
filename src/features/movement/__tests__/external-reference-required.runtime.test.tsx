@@ -9,8 +9,9 @@
  * ONLY lines. An operator following the label could therefore reach Confirm
  * with the field empty, and the server refused the call outright —
  * `request_number_required` for the forward path (migration 077) and
- * `return_number_required` for the return path (migration 069) — surfacing a
- * raw lower_snake token as an HTTP 400.
+ * `return_number_required` for the return path — migration 077 for a return
+ * request, migration 185 for a recall — surfacing a raw lower_snake token as
+ * an HTTP 400.
  *
  * OWNER RULING (evidence artifact 299): the number is REQUIRED, the scope is
  * BOTH composers, and no migration is authorised — the client is brought into
