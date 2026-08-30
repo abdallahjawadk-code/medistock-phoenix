@@ -143,7 +143,10 @@ describe('receipt HTML', () => {
 
   it('labels an operator-typed number as an external reference, never a serial', () => {
     const html = buildReceiptHtml({ document: doc(), selectedFields: selection, lang: 'en' });
-    expect(html).toContain('Official letter / external document number — optional');
+    // OWNER RULING (artifact 299): the field is required, so the printed label
+    // must not describe it as optional.
+    expect(html).toContain('Official letter / external document number — required');
+    expect(html).not.toContain('external document number — optional');
     expect(html).toContain('OPS-77');
     expect(html).not.toMatch(/official serial|serial number/i);
   });

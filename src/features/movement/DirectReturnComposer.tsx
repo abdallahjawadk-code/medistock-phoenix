@@ -141,6 +141,18 @@ export function DirectReturnComposer({
   const issues = useMemo(() => validateDraft(lines, 'return'), [lines]);
   const confirmable = useMemo(() => draftIsConfirmable(lines, 'return'), [lines]);
   const canConfirm = confirmable && (mode !== 'recall' || lines.length === 1);
+  /**
+   * The official-letter number is REQUIRED, not optional.
+   *
+   * Both RPCs this composer can reach normalise the number the same way and
+   * refuse it when it is blank: phoenix_request_direct_warehouse_return
+   * (migration 077) and, for the recall mode, phoenix_recall_warehouse_transfer_line
+   * (migration 185) each compute NULLIF(btrim(p_return_number), '') and raise
+   * return_number_required when it is NULL. Nothing generates this number on
+   * the operator's behalf. Trimmed so a whitespace-only entry is refused here
+   * instead of becoming a raw 400.
+   */
+  const referenceMissing = externalReference.trim() === '';
   const partiesComplete = Boolean(sourceOrgId && sourceWarehouseId && destinationWarehouseId);
 
   const source = institutionWarehouses.find(w => w.id === sourceWarehouseId) ?? null;
@@ -173,7 +185,7 @@ export function DirectReturnComposer({
   // ── the ONLY place this file persists anything ────────────────────────────
 
   const confirmAndCreate = async () => {
-    if (!canConfirm || committing) return;
+    if (!canConfirm || referenceMissing || committing) return;
     setCommitting(true);
     setError(null);
 
@@ -282,7 +294,7 @@ export function DirectReturnComposer({
   const footer = step === 'review' && !result
     ? (
       <PhoenixButton
-        disabled={!canConfirm || committing}
+        disabled={!canConfirm || referenceMissing || committing}
         onClick={confirmAndCreate}
         data-testid="confirm-create-return-request"
       >
@@ -402,6 +414,15 @@ export function DirectReturnComposer({
               <div><strong>{t('mv_external_reference', lang)}:</strong> {externalReference.trim() || '—'}</div>
             </div>
           </PhoenixCard>
+
+          {referenceMissing && (
+            <div
+              data-testid="return-external-reference-required"
+              style={{ background: 'var(--warn2)', border: '1px solid var(--warn)', borderRadius: 'var(--r3)', padding: '10px 14px', fontSize: '12px', color: 'var(--warn)' }}
+            >
+              {t('mv_external_reference_required', lang)}
+            </div>
+          )}
 
           {staleKeys.length > 0 && (
             <div style={{ background: 'var(--warn2)', border: '1px solid var(--warn)', borderRadius: 'var(--r3)', padding: '10px 14px', fontSize: '12px', color: 'var(--warn)' }}>

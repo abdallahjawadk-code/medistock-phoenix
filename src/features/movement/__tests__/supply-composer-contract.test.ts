@@ -33,7 +33,12 @@ describe('no persistence before explicit confirmation', () => {
   });
 
   it('confirmAndCreate refuses to run unless the draft is confirmable', () => {
-    expect(bodyOf(composer, 'const confirmAndCreate')).toMatch(/if \(!confirmable \|\| committing\) return;/);
+    // OWNER RULING (artifact 299): the guard is now STRICTER - it also refuses
+    // an empty or whitespace-only official-letter number, which the forward RPC
+    // (migration 077) rejects with request_number_required. Asserted as one
+    // expression so a future edit cannot drop a clause and still match.
+    expect(bodyOf(composer, 'const confirmAndCreate'))
+      .toMatch(/if \(!confirmable \|\| referenceMissing \|\| committing\) return;/);
   });
 
   it('neither the parties nor the materials step can reach a create/add-line call', () => {

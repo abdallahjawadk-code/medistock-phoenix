@@ -2708,8 +2708,9 @@ export const T: Dict = {
 
   // An operator-typed number is NOT a controlled serial — no atomic allocator
   // exists in the database, so it is labelled honestly wherever it appears.
-  mv_external_reference:  { ar: 'رقم الكتاب أو المستند الخارجي — اختياري',        en: 'Official letter / external document number — optional' },
-  mv_external_reference_hint: { ar: 'أدخل رقم الكتاب أو المحضر الورقي إن وجد. ينشئ MediStock رقم الطلب والتتبع الرسمي تلقائيًا.', en: 'Enter the paper letter/minute number if one exists. MediStock generates the official order and trace numbers automatically.' },
+  mv_external_reference:  { ar: 'رقم الكتاب أو المستند الخارجي — مطلوب',          en: 'Official letter / external document number — required' },
+  mv_external_reference_hint: { ar: 'أدخل رقم الكتاب أو المحضر الورقي المعتمد. ينشئ MediStock رقم التتبع الرسمي تلقائيًا.', en: 'Enter the approved paper letter/minute number. MediStock generates the official trace number automatically.' },
+  mv_external_reference_required: { ar: 'رقم الكتاب أو المستند الخارجي مطلوب. أدخل الرقم قبل تثبيت الطلب.', en: 'The official letter / external document number is required. Enter it before confirming the request.' },
   mv_not_available:       { ar: 'غير متاح',                                      en: 'Not available' },
   mv_no_lines:            { ar: 'لا توجد مواد',                                  en: 'No materials' },
   mv_page:                { ar: 'صفحة',                                          en: 'Page' },
