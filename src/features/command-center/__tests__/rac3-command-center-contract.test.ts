@@ -357,15 +357,23 @@ describe('RAC-3 · I) no backend or migration change', () => {
    */
   it('adds no migration and touches no SQL', () => {
     const M200 = 'supabase/migrations/200_phoenix_demo_purge_auth_boundary_correction.sql';
+    // ISW1-D1: migration 201 is the server half of the organization
+    // archive-safety repair — a BEFORE UPDATE OF status guard that refuses
+    // archiving while canonical dependencies live. Registered by EXACT
+    // filename, exactly as M200 was, so this guard still fails closed for any
+    // OTHER migration or supabase/ file. RAC-3's own subject (the command
+    // centre) is untouched by it.
+    const M201 = 'supabase/migrations/201_phoenix_organization_archive_dependency_guard.sql';
+    const ALLOWED_SQL = [M200, M201];
     const changed = execSync(
       'git diff --name-only b707f073d60b4cc61205c35003ab491f3aed7468',
       { cwd: process.cwd(), encoding: 'utf8' },
     ).split('\n').map(l => l.trim()).filter(Boolean);
-    expect(changed.filter(f => f.endsWith('.sql') && f !== M200)).toEqual([]);
+    expect(changed.filter(f => f.endsWith('.sql') && !ALLOWED_SQL.includes(f))).toEqual([]);
     expect(changed.filter(f =>
       f.startsWith('supabase/')
       && !f.startsWith('supabase/migrations/__tests__/')
-      && f !== M200)).toEqual([]);
+      && !ALLOWED_SQL.includes(f))).toEqual([]);
   });
 
   /**

@@ -68,9 +68,9 @@ describe('193 · registration and file hygiene', () => {
     expect(REVIEWED_MIGRATION_FILES.filter(f => f.startsWith('193_'))).toEqual([NAME]);
   });
 
-  it('is immediately followed by 194 through 200, the new ceiling, and 201 stays absent', () => {
-    expect(getMaximumReviewedMigrationNumber()).toBe(200);
-    expect(getNextUnreviewedMigrationNumber()).toBe(201);
+  it('is immediately followed by 194 through 201, the new ceiling, and 202 stays absent', () => {
+    expect(getMaximumReviewedMigrationNumber()).toBe(201);
+    expect(getNextUnreviewedMigrationNumber()).toBe(202);
     const NEXT = '194_phoenix_authorization_surface_reproducibility_convergence.sql';
     const NEXT_2 = '195_phoenix_auth_helper_profile_schema_qualification.sql';
     const NEXT_3 = '196_phoenix_secdef_relation_schema_qualification.sql';
@@ -78,11 +78,13 @@ describe('193 · registration and file hygiene', () => {
     const NEXT_5 = '198_phoenix_secdef_search_path_convergence.sql';
     const NEXT_6 = '199_phoenix_command_center_read_contract.sql';
     const NEXT_7 = '200_phoenix_demo_purge_auth_boundary_correction.sql';
+    const NEXT_8 = '201_phoenix_organization_archive_dependency_guard.sql';
     expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.indexOf(NAME) + 1]).toBe(NEXT);
     expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.indexOf(NAME) + 2]).toBe(NEXT_2);
     expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.indexOf(NAME) + 3]).toBe(NEXT_3);
     expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.indexOf(NAME) + 4]).toBe(NEXT_4);
-    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1]).toBe('201_phoenix_organization_archive_dependency_guard.sql');
+    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.indexOf(NAME) + 7]).toBe(NEXT_7);
+    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1]).toBe(NEXT_8);
     // The ceiling is now 201; `[2-9]\d\d` would match it, so this asserts
     // numerically that nothing sits ABOVE the ceiling.
     expect(REVIEWED_MIGRATION_FILES.filter(f => Number(f.slice(0, 3)) > 201)).toHaveLength(0);
