@@ -68,9 +68,9 @@ describe('193 · registration and file hygiene', () => {
     expect(REVIEWED_MIGRATION_FILES.filter(f => f.startsWith('193_'))).toEqual([NAME]);
   });
 
-  it('is immediately followed by 194 through 201, the new ceiling, and 202 stays absent', () => {
-    expect(getMaximumReviewedMigrationNumber()).toBe(201);
-    expect(getNextUnreviewedMigrationNumber()).toBe(202);
+  it('is immediately followed by 194 through 202, the new ceiling, and 203 stays absent', () => {
+    expect(getMaximumReviewedMigrationNumber()).toBe(202);
+    expect(getNextUnreviewedMigrationNumber()).toBe(203);
     const NEXT = '194_phoenix_authorization_surface_reproducibility_convergence.sql';
     const NEXT_2 = '195_phoenix_auth_helper_profile_schema_qualification.sql';
     const NEXT_3 = '196_phoenix_secdef_relation_schema_qualification.sql';
@@ -79,18 +79,19 @@ describe('193 · registration and file hygiene', () => {
     const NEXT_6 = '199_phoenix_command_center_read_contract.sql';
     const NEXT_7 = '200_phoenix_demo_purge_auth_boundary_correction.sql';
     const NEXT_8 = '201_phoenix_organization_archive_dependency_guard.sql';
+    const NEXT_9 = '202_phoenix_organization_archive_reciprocal_guard.sql';
     expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.indexOf(NAME) + 1]).toBe(NEXT);
     expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.indexOf(NAME) + 2]).toBe(NEXT_2);
     expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.indexOf(NAME) + 3]).toBe(NEXT_3);
     expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.indexOf(NAME) + 4]).toBe(NEXT_4);
     expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.indexOf(NAME) + 7]).toBe(NEXT_7);
-    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1]).toBe(NEXT_8);
-    // The ceiling is now 201; `[2-9]\d\d` would match it, so this asserts
+    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1]).toBe(NEXT_9);
+    // The ceiling is now 202; `[2-9]\d\d` would match it, so this asserts
     // numerically that nothing sits ABOVE the ceiling.
-    expect(REVIEWED_MIGRATION_FILES.filter(f => Number(f.slice(0, 3)) > 201)).toHaveLength(0);
+    expect(REVIEWED_MIGRATION_FILES.filter(f => Number(f.slice(0, 3)) > 202)).toHaveLength(0);
     expect(readdirSync(MIGRATIONS_DIR)
-      .filter(f => /^\d{3}_.*\.sql$/.test(f) && Number(f.slice(0, 3)) > 201)).toEqual([]);
-    expect(isReviewedMigrationFile('202_unreviewed_test_migration.sql')).toBe(false);
+      .filter(f => /^\d{3}_.*\.sql$/.test(f) && Number(f.slice(0, 3)) > 202)).toEqual([]);
+    expect(isReviewedMigrationFile('203_unreviewed_test_migration.sql')).toBe(false);
   });
 
   it('carries no CR bytes', () => {
@@ -107,10 +108,10 @@ describe('193 · registration and file hygiene', () => {
   });
 
   it('edits no historical migration — it is self-contained', () => {
-    // 200 (UAT-BUG-001, demo-purge auth boundary) is the newest chain member;
-    // it edits nothing here, so this count moves by exactly one.
+    // 202 (ISW2, organization archive reciprocal guard) is the newest chain
+    // member; it edits nothing here, so this count moves by exactly one.
     const others = readdirSync(MIGRATIONS_DIR).filter(f => f.endsWith('.sql') && f !== NAME);
-    expect(others).toHaveLength(200);
+    expect(others).toHaveLength(201);
   });
 });
 

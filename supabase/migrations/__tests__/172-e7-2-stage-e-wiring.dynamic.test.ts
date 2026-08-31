@@ -233,6 +233,15 @@ run('E7-2 · Stage-E application wiring (dynamic)',()=>{
       // unaffected. Listed here so this guard stays exhaustive and still fails
       // closed on any unlisted new file.
       '201_phoenix_organization_archive_dependency_guard.sql',
+      // ISW2 (202): adds organizations.archived_at plus a reciprocal
+      // child-side guard (warehouses/distribution_points/qr_tokens/
+      // item_availability) keyed on that marker. It closes 201's disclosed
+      // known-residual race and adds no Stage-E SQL — no corridor, route,
+      // dispatch or supply semantics are touched — so the "Stage E still
+      // ends at 171" assertion above is unaffected. Listed here so this
+      // guard stays exhaustive and still fails closed on any unlisted new
+      // file.
+      '202_phoenix_organization_archive_reciprocal_guard.sql',
     ];
     it('Stage E still ends at 171 — E7-2 introduced no new SQL',()=>{
       const files=readdirSync(join(__dirname,'..')).filter(f=>/^\d{3}_.*\.sql$/.test(f));

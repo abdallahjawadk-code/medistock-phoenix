@@ -207,6 +207,7 @@ export const REVIEWED_MIGRATION_FILES: readonly string[] = Object.freeze([
   '199_phoenix_command_center_read_contract.sql',
   '200_phoenix_demo_purge_auth_boundary_correction.sql',
   '201_phoenix_organization_archive_dependency_guard.sql',
+  '202_phoenix_organization_archive_reciprocal_guard.sql',
 ]);
 
 const REVIEWED_SET: ReadonlySet<string> = new Set(REVIEWED_MIGRATION_FILES);

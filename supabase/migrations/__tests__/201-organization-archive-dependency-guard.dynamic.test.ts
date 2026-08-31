@@ -185,10 +185,15 @@ run('201 · organization archive dependency guard', () => {
     await reset([]);
     await archiveAsAdmin();
     expect(await statusOf(ORG)).toBe('inactive');
-    // Dependencies appearing later must not make a NO-OP re-archive throw.
-    await asAdmin(
+    // Closed by 202: a LIVE dependency appearing later is now refused outright
+    // (see the reciprocal-guard suite) rather than silently landing. What
+    // remains true from M201 alone is the re-archive itself: OLD.status is
+    // already 'inactive', so the guard's early-return skips the dependency
+    // check entirely and a redundant re-archive is a harmless no-op.
+    const err = await rejects(() => asAdmin(
       `INSERT INTO warehouses (id,organization_id,name,name_ar,warehouse_kind,is_main,status)
-       VALUES ($1,$2,'W201b','مخزن','institution',false,'active')`, [randomUUID(), ORG]);
+       VALUES ($1,$2,'W201b','مخزن','institution',false,'active')`, [randomUUID(), ORG]));
+    expect(err.message).toContain('dependency_write_blocked_by_archived_organization');
     await archiveAsAdmin();
     expect(await statusOf(ORG)).toBe('inactive');
   });
@@ -247,11 +252,11 @@ run('201 · organization archive dependency guard', () => {
 
   // ── concurrency ───────────────────────────────────────────────────────────
   it('decides the archive against a true count, never a stale one', async () => {
-    // This is the property the fence buys, stated exactly. It is NOT the
-    // stronger claim that an archived organization can never come to hold a
-    // live dependency - see KNOWN RESIDUAL in the migration header, and the
-    // test immediately below, which pins the residual honestly rather than
-    // leaving it undocumented.
+    // This is the property the fence buys, stated exactly: the ARCHIVE
+    // decision is never made against a stale count. What happens to B's
+    // blocked write once A commits used to be the KNOWN RESIDUAL (it landed
+    // anyway) - closed by 202's reciprocal guard, proven below and in the
+    // 202 dynamic suite's schedule-A case.
     await reset([]);
     expect(await statusOf(ORG)).toBe('active');
 
@@ -266,12 +271,13 @@ run('201 · organization archive dependency guard', () => {
       // dependency behind the archive's back while the decision is being made.
       const newWh = randomUUID();
       let bDone = false;
+      let bError: any = null;
       const bInsert = b
         .query(
           `INSERT INTO warehouses (id,organization_id,name,name_ar,warehouse_kind,is_main,status)
            VALUES ($1,$2,'W201race','W','institution',false,'active')`, [newWh, ORG])
         .then(() => { bDone = true; })
-        .catch(() => { bDone = true; });
+        .catch((e: any) => { bError = e; bDone = true; });
 
       await new Promise((r) => setTimeout(r, 750));
       expect(bDone).toBe(false); // proved blocked, not merely slow-by-luck
@@ -279,13 +285,16 @@ run('201 · organization archive dependency guard', () => {
       await a.query('COMMIT');
       await bInsert;
       expect(await statusOf(ORG)).toBe('inactive');
+      // Closed by 202: B's write, unblocked once A's archive committed, is
+      // itself refused - it never lands, rather than landing and merely
+      // blocking the NEXT archive.
+      expect(bError?.message).toContain('dependency_write_blocked_by_archived_organization');
 
-      // The guard is still armed against the NEXT archive: B's warehouse is
-      // committed and visible now, so re-archiving is refused.
+      // Nothing B tried ever committed, so restoring and re-archiving is
+      // clean - there is no leftover live dependency to be refused by.
       await asAdmin(`UPDATE organizations SET status='active' WHERE id=$1`, [ORG]);
-      const err = await rejects(archiveAsAdmin);
-      expect(err.message).toContain(BLOCKED);
-      expect(await statusOf(ORG)).toBe('active');
+      await archiveAsAdmin();
+      expect(await statusOf(ORG)).toBe('inactive');
     } finally {
       try { await a.query('ROLLBACK'); } catch { /* already committed */ }
       a.release();
@@ -293,22 +302,22 @@ run('201 · organization archive dependency guard', () => {
     }
   });
 
-  it('PINS THE KNOWN RESIDUAL: a write landing after the archive is not stopped', async () => {
-    // Deliberately asserts the CURRENT, imperfect behaviour so that it is
-    // visible and cannot regress silently. A reciprocal child-side rule would
-    // close this, but status='inactive' means both 'archived' and 'built, not
-    // yet activated', and migration 181 depends on the second meaning:
-    // 181-closure-round1 inserts ACTIVE warehouses under an INACTIVE org on
-    // purpose. Closing this needs a data-model change (an explicit archived
-    // marker), which is out of ISW1-D1's scope.
-    //
-    // If a future migration adds that marker, THIS test is the one to flip.
+  it('RESIDUAL CLOSED BY 202: a write landing after the archive is now stopped', async () => {
+    // This test used to PIN the known residual (qr_token reactivation after
+    // an archive was documented as succeeding, since nothing locked or
+    // consulted the organization for an in-place status flip). Migration 202
+    // adds organizations.archived_at plus a reciprocal child-side guard keyed
+    // on that marker (not on status, which migration 181's pre-activation
+    // flow still legitimately sets to 'inactive' with no archive intended),
+    // so the exact gap this test used to document is now closed. Flipped per
+    // this test's own prior instruction: "the one to flip".
     await reset([]);
     await archiveAsAdmin();
     expect(await statusOf(ORG)).toBe('inactive');
 
     // qr_tokens is the sharpest case: an in-place status flip changes no
-    // foreign key, so nothing locks or consults the organization at all.
+    // foreign key, so nothing locks or consults the organization at all
+    // except the 202 reciprocal guard added specifically for this path.
     const qt = randomUUID();
     const qk = randomUUID();
     const wh = randomUUID();
@@ -330,19 +339,24 @@ run('201 · organization archive dependency guard', () => {
     await archiveAsAdmin(); // legal: nothing is live
     expect(await statusOf(ORG)).toBe('inactive');
 
-    // Documented gap: this currently SUCCEEDS.
-    await asAdmin(`UPDATE qr_tokens SET status='active' WHERE id=$1`, [qk]);
+    // Closed by 202: reactivating a token under an archived organization is
+    // now REFUSED, not silently accepted.
+    const err = await rejects(() => asAdmin(`UPDATE qr_tokens SET status='active' WHERE id=$1`, [qk]));
+    expect(err.message).toContain('dependency_write_blocked_by_archived_organization');
+    expect(err.code).toBe('23514');
     const live = await asAdmin(
       `SELECT count(*)::int n FROM qr_tokens WHERE organization_id=$1 AND status='active'`, [ORG]);
-    expect(live.rows[0].n).toBe(1);
+    expect(live.rows[0].n).toBe(0);
     expect(await statusOf(ORG)).toBe('inactive');
 
-    // What DOES hold: the organization can never be archived AGAIN while that
-    // token is live, so the gate itself never decides on a stale count.
+    // Because the reactivation was itself refused, the token never became
+    // live - restoring and re-archiving the organization is clean, with no
+    // leftover dependency to be refused by. (Contrast the OLD residual
+    // narrative, where the token DID become live and blocked the next
+    // archive; 202 closes the gap earlier, at the write itself.)
     await asAdmin(`UPDATE organizations SET status='active' WHERE id=$1`, [ORG]);
-    const err = await rejects(archiveAsAdmin);
-    expect(err.message).toContain(BLOCKED);
-    expect(await statusOf(ORG)).toBe('active');
+    await archiveAsAdmin();
+    expect(await statusOf(ORG)).toBe('inactive');
   });
   it('the reverse interleaving is refused: a dependency committed first blocks the archive', async () => {
     await reset([]);
