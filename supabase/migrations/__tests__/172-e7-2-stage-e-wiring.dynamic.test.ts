@@ -226,6 +226,13 @@ run('E7-2 · Stage-E application wiring (dynamic)',()=>{
       // unaffected. Listed here so this guard stays exhaustive and still fails
       // closed on any unlisted new file.
       '200_phoenix_demo_purge_auth_boundary_correction.sql',
+      // ISW1-D1 (201): adds a BEFORE UPDATE OF status guard on organizations
+      // that refuses archiving while canonical dependencies live. It adds no
+      // Stage-E SQL — no corridor, route, dispatch or supply semantics are
+      // touched — so the "Stage E still ends at 171" assertion above is
+      // unaffected. Listed here so this guard stays exhaustive and still fails
+      // closed on any unlisted new file.
+      '201_phoenix_organization_archive_dependency_guard.sql',
     ];
     it('Stage E still ends at 171 — E7-2 introduced no new SQL',()=>{
       const files=readdirSync(join(__dirname,'..')).filter(f=>/^\d{3}_.*\.sql$/.test(f));
