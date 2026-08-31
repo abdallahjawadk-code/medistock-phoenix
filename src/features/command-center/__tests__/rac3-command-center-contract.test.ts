@@ -364,7 +364,11 @@ describe('RAC-3 · I) no backend or migration change', () => {
     // OTHER migration or supabase/ file. RAC-3's own subject (the command
     // centre) is untouched by it.
     const M201 = 'supabase/migrations/201_phoenix_organization_archive_dependency_guard.sql';
-    const ALLOWED_SQL = [M200, M201];
+    // ISW2: migration 202 closes the post-archive dependency-write race 201
+    // disclosed as a known residual. Registered by EXACT filename, exactly as
+    // M200/M201 were. RAC-3's own subject is untouched by it.
+    const M202 = 'supabase/migrations/202_phoenix_organization_archive_reciprocal_guard.sql';
+    const ALLOWED_SQL = [M200, M201, M202];
     const changed = execSync(
       'git diff --name-only b707f073d60b4cc61205c35003ab491f3aed7468',
       { cwd: process.cwd(), encoding: 'utf8' },

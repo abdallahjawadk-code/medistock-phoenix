@@ -52,7 +52,7 @@ describe('no client-side document-number sequence exists',()=>{
     const text=readFileSync(proposal,'utf8');
     expect(text).toMatch(/PROPOSAL ONLY/i); expect(text).toMatch(/not applied/i);
   });
-  it('179–201 introduce no numbering and no 202+ migration exists',()=>{
+  it('179–202 introduce no numbering and no 203+ migration exists',()=>{
     const migrations=readdirSync(join(ROOT,'supabase','migrations')).filter(f=>f.endsWith('.sql'));
     // P0 HOTFIX 178: adds SECURITY DEFINER to Migration 171's outlet
     // owner-kind guard so its FOR SHARE row lock stops failing with 42501 for
@@ -169,7 +169,16 @@ describe('no client-side document-number sequence exists',()=>{
     // table, sequence, counter, max()+1 logic, generated identity, document
     // number or business write. Boundary moves to 199 so the next unknown
     // migration still fails closed.
-    const beyond=migrations.filter(f=>/^(1[89]\d|[2-9]\d\d)_/.test(f)&&!/^(179|180|181|182|183|184|185|186|187|188|189|190|191|192|193|194|195|196|197|198|199|200|201)_/.test(f));
+    // ISW1-D1 / M201: adds a BEFORE UPDATE OF status guard on organizations
+    // refusing archival while canonical dependencies live. No table, sequence,
+    // counter, max()+1 logic, generated identity or document number.
+    // ISW2 / M202: adds organizations.archived_at plus a reciprocal
+    // child-side guard on warehouses/distribution_points/qr_tokens/
+    // item_availability. No sequence, counter, max()+1 logic, generated
+    // numeric identity or document number of any kind — archived_at is a
+    // timestamp stamped by a trigger, not an issued number. Boundary moves to
+    // 202 so the next unknown migration still fails closed.
+    const beyond=migrations.filter(f=>/^(1[89]\d|[2-9]\d\d)_/.test(f)&&!/^(179|180|181|182|183|184|185|186|187|188|189|190|191|192|193|194|195|196|197|198|199|200|201|202)_/.test(f));
     expect(beyond).toEqual([]);
     for(const f of [
       '200_phoenix_demo_purge_auth_boundary_correction.sql',
