@@ -67,6 +67,7 @@ import {
   clearPortAvailability,
   classifyClearPortItemsError,
   archiveOrganization,
+  IMPACT_READ_UNAVAILABLE,
 } from '@/shared/supabase/services/lifecycle.service';
 // This screen no longer writes item_availability quantity at all. item_availability
 // is a read-only projection (migration 083); "Remove from outlet" is a CATALOGUE
@@ -2496,10 +2497,18 @@ function OrgCleanupWizard({ orgId, lang, actorRole, onDone, onToast }: {
       {impact.loading && <PhoenixLoadingState label={t('loading', lang)} />}
 
       {!impact.loading && impact.error && (
-        <PhoenixErrorState title={t('load_error', lang)} message={impact.error} onRetry={impact.reload} />
+        <PhoenixErrorState
+          title={t('load_error', lang)}
+          message={impact.error === IMPACT_READ_UNAVAILABLE ? t('dw_impact_unavailable', lang) : impact.error}
+          onRetry={impact.reload}
+        />
       )}
 
-      {!impact.loading && d && (
+      {/* ISW1-D1: `impact.data` deliberately survives a failed refresh in
+          useAsync, so rendering on `d` alone would keep a STALE impact card —
+          and a stale `canArchive` — on screen after the counts became
+          unreadable. The gate must close the moment the counts are unknown. */}
+      {!impact.loading && !impact.error && d && (
         <PhoenixCard className="nexus-io-danger-card" padding="16px">
           <div style={{ fontSize: '12.5px', fontWeight: 700, marginBottom: '10px' }}>{t('dw_impact', lang)}</div>
 

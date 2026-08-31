@@ -502,7 +502,43 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
       // Registered by EXACT filename; no wildcard and no directory exemption,
       // so every other file under src/shared/supabase still fails this guard
       // closed.
-      'src/shared/supabase/__tests__/phoenix-guardrails.test.ts'
+      'src/shared/supabase/__tests__/phoenix-guardrails.test.ts',
+      // ISW1-D1 (organization archive fail-closed): registered by EXACT
+      // filename, like every entry above. IS-W1 proved that a failed impact
+      // count was silently read as ZERO, so the archive gate opened on unknown
+      // data and the server accepted `PATCH /rest/v1/organizations -> 204`
+      // against an organization whose warehouses, outlets, QR tokens and
+      // availability rows were all still live.
+      //
+      // Every entry below is STRICTLY TIGHTER than what it replaces:
+      //   * the lifecycle service now inspects `.error` on every impact count
+      //     and throws instead of fabricating a zero — no path that previously
+      //     refused now permits;
+      //   * migration 201 ADDS a BEFORE UPDATE OF status guard that refuses
+      //     archiving while canonical dependencies live. It grants nothing,
+      //     relaxes nothing, and leaves RLS and the 181 activation guard
+      //     untouched;
+      //   * the migration __tests__ entries are ceiling pins moved from 200 to
+      //     201 — the same maintenance every landed migration has required —
+      //     plus the two new suites that prove the repair.
+      // No assertion was weakened and no directory exemption was added, so every
+      // other file under supabase/ and src/shared/supabase still fails closed.
+      'src/shared/supabase/services/lifecycle.service.ts',
+      'src/shared/supabase/services/__tests__/isw1-d1-org-impact-fail-closed.test.ts',
+      'supabase/migrations/201_phoenix_organization_archive_dependency_guard.sql',
+      'supabase/migrations/__tests__/201-organization-archive-dependency-guard.dynamic.test.ts',
+      'supabase/migrations/__tests__/181-health-sector-topology-static.test.ts',
+      'supabase/migrations/__tests__/182-health-center-facility-scoped-rbac-static.test.ts',
+      'supabase/migrations/__tests__/183-emergency-outlet-integrity-static.test.ts',
+      'supabase/migrations/__tests__/184-canonical-supply-cycle-static.test.ts',
+      'supabase/migrations/__tests__/189-inter-org-alert-canonical-identity-static.test.ts',
+      'supabase/migrations/__tests__/190-inter-org-alert-cqrs-boundary-static.test.ts',
+      'supabase/migrations/__tests__/191-canonical-scope-topology-static.test.ts',
+      'supabase/migrations/__tests__/192-anon-read-surface-convergence-static.test.ts',
+      'supabase/migrations/__tests__/193-alert-command-surface-static.test.ts',
+      'supabase/migrations/__tests__/194-authorization-surface-reproducibility-convergence-static.test.ts',
+      'supabase/migrations/__tests__/197-public-execute-convergence-static.test.ts',
+      'supabase/migrations/__tests__/198-secdef-search-path-convergence-static.test.ts'
     ];
     const changed=execSync(`git diff --name-only ${BASE}`,{cwd:ROOT,encoding:'utf8'}).split('\n').map(l=>l.trim()).filter(Boolean);
     const prohibited=changed.filter(f=>WATCHED.some(p=>f===p||f.startsWith(p+'/'))&&!EXCLUDED.includes(f));

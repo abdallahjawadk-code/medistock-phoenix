@@ -65,10 +65,11 @@ describe('192 · registration and file hygiene', () => {
     const NEXT_6 = '198_phoenix_secdef_search_path_convergence.sql';
     const NEXT_7 = '199_phoenix_command_center_read_contract.sql';
     const NEXT_8 = '200_phoenix_demo_purge_auth_boundary_correction.sql';
-    expect(getMaximumReviewedMigrationNumber()).toBe(200);
-    expect(getNextUnreviewedMigrationNumber()).toBe(201);
-    expect(REVIEWED_MIGRATION_FILES.slice(REVIEWED_MIGRATION_FILES.indexOf(NAME) + 1)).toEqual([NEXT, NEXT_2, NEXT_3, NEXT_4, NEXT_5, NEXT_6, NEXT_7, NEXT_8]);
-    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1]).toBe(NEXT_8);
+    const NEXT_9 = '201_phoenix_organization_archive_dependency_guard.sql';
+    expect(getMaximumReviewedMigrationNumber()).toBe(201);
+    expect(getNextUnreviewedMigrationNumber()).toBe(202);
+    expect(REVIEWED_MIGRATION_FILES.slice(REVIEWED_MIGRATION_FILES.indexOf(NAME) + 1)).toEqual([NEXT, NEXT_2, NEXT_3, NEXT_4, NEXT_5, NEXT_6, NEXT_7, NEXT_8, NEXT_9]);
+    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1]).toBe(NEXT_9);
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^193_/.test(f))).toEqual([NEXT]);
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^194_/.test(f))).toEqual([NEXT_2]);
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^195_/.test(f))).toEqual([NEXT_3]);
@@ -76,10 +77,12 @@ describe('192 · registration and file hygiene', () => {
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^197_/.test(f))).toEqual([NEXT_5]);
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^198_/.test(f))).toEqual([NEXT_6]);
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^199_/.test(f))).toEqual([NEXT_7]);
-    // The ceiling is now 200; `[2-9]\d\d` would match the ceiling itself, so
+    expect(REVIEWED_MIGRATION_FILES.filter(f => /^200_/.test(f))).toEqual([NEXT_8]);
+    expect(REVIEWED_MIGRATION_FILES.filter(f => /^201_/.test(f))).toEqual([NEXT_9]);
+    // The ceiling is now 201; `[2-9]\d\d` would match the ceiling itself, so
     // this asserts numerically that nothing sits ABOVE it.
-    expect(REVIEWED_MIGRATION_FILES.filter(f => Number(f.slice(0, 3)) > 200)).toHaveLength(0);
-    expect(isReviewedMigrationFile('201_unreviewed_test_migration.sql')).toBe(false);
+    expect(REVIEWED_MIGRATION_FILES.filter(f => Number(f.slice(0, 3)) > 201)).toHaveLength(0);
+    expect(isReviewedMigrationFile('202_unreviewed_test_migration.sql')).toBe(false);
   });
 
   it('carries no CR bytes', () => {
@@ -97,7 +100,7 @@ describe('192 · registration and file hygiene', () => {
     // 200 (UAT-BUG-001) is the newest reviewed chain member and does not edit
     // M192, so this count moves by exactly one.
     const others = readdirSync(MIGRATIONS_DIR).filter(f => f.endsWith('.sql') && f !== NAME);
-    expect(others).toHaveLength(199);
+    expect(others).toHaveLength(200);
   });
 });
 
