@@ -185,11 +185,12 @@ run('201 · organization archive dependency guard', () => {
     await reset([]);
     await archiveAsAdmin();
     expect(await statusOf(ORG)).toBe('inactive');
-    // A second, redundant archive of an already-inactive organization is a
-    // no-op and must not raise.
+    // Dependencies appearing later must not make a NO-OP re-archive throw.
+    await asAdmin(
+      `INSERT INTO warehouses (id,organization_id,name,name_ar,warehouse_kind,is_main,status)
+       VALUES ($1,$2,'W201b','مخزن','institution',false,'active')`, [randomUUID(), ORG]);
     await archiveAsAdmin();
     expect(await statusOf(ORG)).toBe('inactive');
-    await asAdmin(`UPDATE organizations SET status='active' WHERE id=$1`, [ORG]);
   });
 
   it('does not interfere with unrelated column updates on a dependency-holding org', async () => {
@@ -245,47 +246,46 @@ run('201 · organization archive dependency guard', () => {
   });
 
   // ── concurrency ───────────────────────────────────────────────────────────
-  it('a dependency cannot land under an organization the archive just closed', async () => {
+  it('decides the archive against a true count, never a stale one', async () => {
+    // This is the property the fence buys, stated exactly. It is NOT the
+    // stronger claim that an archived organization can never come to hold a
+    // live dependency - see KNOWN RESIDUAL in the migration header, and the
+    // test immediately below, which pins the residual honestly rather than
+    // leaving it undocumented.
     await reset([]);
     expect(await statusOf(ORG)).toBe('active');
 
     const a = await rig.pool.connect();
     const b = await rig.pool.connect();
     try {
-      // Session A opens the archive transaction and takes the guard's FOR UPDATE
-      // fence on the organization row.
       await a.query('BEGIN');
       await a.query(`UPDATE organizations SET status='inactive' WHERE id=$1`, [ORG]);
 
-      // Session B tries to add a dependency for the same organization. Its
-      // foreign key needs FOR KEY SHARE on that row, which conflicts with the
-      // fence, so this must NOT complete while A is open.
+      // B's foreign key needs FOR KEY SHARE on the organization row, which
+      // conflicts with the guard's FOR UPDATE fence, so B cannot commit a
+      // dependency behind the archive's back while the decision is being made.
       const newWh = randomUUID();
       let bDone = false;
-      let bError = '';
       const bInsert = b
         .query(
           `INSERT INTO warehouses (id,organization_id,name,name_ar,warehouse_kind,is_main,status)
            VALUES ($1,$2,'W201race','W','institution',false,'active')`, [newWh, ORG])
         .then(() => { bDone = true; })
-        .catch((e: any) => { bDone = true; bError = e?.message ?? String(e); });
+        .catch(() => { bDone = true; });
 
       await new Promise((r) => setTimeout(r, 750));
       expect(bDone).toBe(false); // proved blocked, not merely slow-by-luck
 
       await a.query('COMMIT');
       await bInsert;
-
-      // Serialization ALONE would let B simply proceed once A committed, which
-      // is how this invariant used to be defeated purely by ordering. The
-      // reciprocal guard refuses it instead.
-      expect(bError).toContain('organization_archived_dependency_not_permitted');
       expect(await statusOf(ORG)).toBe('inactive');
-      const live = await asAdmin(
-        `SELECT count(*)::int n FROM warehouses WHERE organization_id=$1 AND status<>'archived'`, [ORG]);
-      expect(live.rows[0].n).toBe(0);
 
+      // The guard is still armed against the NEXT archive: B's warehouse is
+      // committed and visible now, so re-archiving is refused.
       await asAdmin(`UPDATE organizations SET status='active' WHERE id=$1`, [ORG]);
+      const err = await rejects(archiveAsAdmin);
+      expect(err.message).toContain(BLOCKED);
+      expect(await statusOf(ORG)).toBe('active');
     } finally {
       try { await a.query('ROLLBACK'); } catch { /* already committed */ }
       a.release();
@@ -293,79 +293,56 @@ run('201 · organization archive dependency guard', () => {
     }
   });
 
-  it('an in-place reactivation cannot slip under an archived organization', async () => {
-    // The sharpest ordering: organization_id never changes, so no foreign key
-    // check runs and nothing would otherwise touch the organizations row.
+  it('PINS THE KNOWN RESIDUAL: a write landing after the archive is not stopped', async () => {
+    // Deliberately asserts the CURRENT, imperfect behaviour so that it is
+    // visible and cannot regress silently. A reciprocal child-side rule would
+    // close this, but status='inactive' means both 'archived' and 'built, not
+    // yet activated', and migration 181 depends on the second meaning:
+    // 181-closure-round1 inserts ACTIVE warehouses under an INACTIVE org on
+    // purpose. Closing this needs a data-model change (an explicit archived
+    // marker), which is out of ISW1-D1's scope.
+    //
+    // If a future migration adds that marker, THIS test is the one to flip.
     await reset([]);
+    await archiveAsAdmin();
+    expect(await statusOf(ORG)).toBe('inactive');
+
+    // qr_tokens is the sharpest case: an in-place status flip changes no
+    // foreign key, so nothing locks or consults the organization at all.
     const qt = randomUUID();
     const qk = randomUUID();
     const wh = randomUUID();
     const dp = randomUUID();
+    await asAdmin(`UPDATE organizations SET status='active' WHERE id=$1`, [ORG]);
     await asAdmin(
       `INSERT INTO warehouses (id,organization_id,name,name_ar,warehouse_kind,is_main,status)
-       VALUES ($1,$2,'W201rq','W','institution',false,'archived')`, [wh, ORG]);
+       VALUES ($1,$2,'W201res','W','institution',false,'archived')`, [wh, ORG]);
     await asAdmin(
       `INSERT INTO distribution_points (id,warehouse_id,organization_id,name,name_ar,point_type,status)
-       VALUES ($1,$2,$3,'P201rq','P','pharmacy','archived')`, [dp, wh, ORG]);
+       VALUES ($1,$2,$3,'P201res','P','pharmacy','archived')`, [dp, wh, ORG]);
     await asAdmin(
       `INSERT INTO qr_targets (id,organization_id,target_type,target_id,label,status)
-       VALUES ($1,$2,'distribution_point',$3,'Q201rq','active')`, [qt, ORG, dp]);
+       VALUES ($1,$2,'distribution_point',$3,'Q201res','active')`, [qt, ORG, dp]);
     await asAdmin(
       `INSERT INTO qr_tokens (id,qr_target_id,organization_id,public_id,token_hash,status)
-       VALUES ($1,$2,$3,'rq' || substr(md5(random()::text),1,14), encode(digest('rq','sha256'),'hex'),'disabled')`,
+       VALUES ($1,$2,$3,'res' || substr(md5(random()::text),1,13), encode(digest('res','sha256'),'hex'),'disabled')`,
       [qk, qt, ORG]);
-
-    // Nothing is live, so the archive is legal.
-    await archiveAsAdmin();
+    await archiveAsAdmin(); // legal: nothing is live
     expect(await statusOf(ORG)).toBe('inactive');
 
-    // Now every reactivation path must be refused.
-    const q = await rejects(() => asAdmin(`UPDATE qr_tokens SET status='active' WHERE id=$1`, [qk]));
-    expect(q.message).toContain('organization_archived_dependency_not_permitted');
-    const w = await rejects(() => asAdmin(`UPDATE warehouses SET status='active' WHERE id=$1`, [wh]));
-    expect(w.message).toContain('organization_archived_dependency_not_permitted');
-    const d = await rejects(() => asAdmin(`UPDATE distribution_points SET status='active' WHERE id=$1`, [dp]));
-    expect(d.message).toContain('organization_archived_dependency_not_permitted');
-
+    // Documented gap: this currently SUCCEEDS.
+    await asAdmin(`UPDATE qr_tokens SET status='active' WHERE id=$1`, [qk]);
     const live = await asAdmin(
-      `SELECT (SELECT count(*) FROM warehouses WHERE organization_id=$1 AND status<>'archived') w,
-              (SELECT count(*) FROM distribution_points WHERE organization_id=$1 AND status<>'archived') d,
-              (SELECT count(*) FROM qr_tokens WHERE organization_id=$1 AND status='active') q`, [ORG]);
-    expect(live.rows[0]).toEqual({ w: '0', d: '0', q: '0' });
-
-    // Reactivating the ORGANISATION first is the supported order, and it works.
-    await asAdmin(`UPDATE organizations SET status='active' WHERE id=$1`, [ORG]);
-    await asAdmin(`UPDATE warehouses SET status='active' WHERE id=$1`, [wh]);
-    expect((await asAdmin(`SELECT status FROM warehouses WHERE id=$1`, [wh])).rows[0].status).toBe('active');
-  });
-
-  it('refuses a brand-new dependency under an already-archived organization', async () => {
-    await reset([]);
-    await archiveAsAdmin();
+      `SELECT count(*)::int n FROM qr_tokens WHERE organization_id=$1 AND status='active'`, [ORG]);
+    expect(live.rows[0].n).toBe(1);
     expect(await statusOf(ORG)).toBe('inactive');
-    const e = await rejects(() => asAdmin(
-      `INSERT INTO warehouses (id,organization_id,name,name_ar,warehouse_kind,is_main,status)
-       VALUES ($1,$2,'W201new','W','institution',false,'active')`, [randomUUID(), ORG]));
-    expect(e.message).toContain('organization_archived_dependency_not_permitted');
-    expect(e.code).toBe('23514');
-    await asAdmin(`UPDATE organizations SET status='active' WHERE id=$1`, [ORG]);
-  });
 
-  it('still allows an ARCHIVED dependency row to be written under an archived organization', async () => {
-    // The reciprocal guard judges liveness, not history: archiving more of an
-    // archived organization's estate must stay possible.
-    await reset([]);
-    const wh = randomUUID();
-    await asAdmin(
-      `INSERT INTO warehouses (id,organization_id,name,name_ar,warehouse_kind,is_main,status)
-       VALUES ($1,$2,'W201hist','W','institution',false,'active')`, [wh, ORG]);
-    await asAdmin(`UPDATE warehouses SET status='archived' WHERE id=$1`, [wh]);
-    await archiveAsAdmin();
-    expect(await statusOf(ORG)).toBe('inactive');
-    // An archived-to-archived no-op write is still permitted.
-    await asAdmin(`UPDATE warehouses SET status='archived' WHERE id=$1`, [wh]);
-    expect((await asAdmin(`SELECT status FROM warehouses WHERE id=$1`, [wh])).rows[0].status).toBe('archived');
+    // What DOES hold: the organization can never be archived AGAIN while that
+    // token is live, so the gate itself never decides on a stale count.
     await asAdmin(`UPDATE organizations SET status='active' WHERE id=$1`, [ORG]);
+    const err = await rejects(archiveAsAdmin);
+    expect(err.message).toContain(BLOCKED);
+    expect(await statusOf(ORG)).toBe('active');
   });
   it('the reverse interleaving is refused: a dependency committed first blocks the archive', async () => {
     await reset([]);

@@ -139,77 +139,11 @@ describe('the server guard ships alongside the UI guard', () => {
     expect(MIGRATION).toContain('REVOKE ALL ON FUNCTION public._phoenix_organization_archive_dependency_guard_v1() FROM PUBLIC');
   });
 
-  it('carries no manual-apply banner and is one transaction', () => {
+  it('installs exactly one trigger and carries no manual-apply banner', () => {
+    expect((MIGRATION.match(/^CREATE TRIGGER/gm) ?? [])).toHaveLength(1);
     expect(MIGRATION).not.toMatch(/MANUAL APPLY ONLY/i);
     expect(MIGRATION).not.toContain('\r');
     expect((MIGRATION.match(/^BEGIN;$/gm) ?? [])).toHaveLength(1);
     expect((MIGRATION.match(/^COMMIT;$/gm) ?? [])).toHaveLength(1);
-  });
-
-  it('installs exactly the five triggers the two halves need, and no others', () => {
-    const triggers = (MIGRATION.match(/^CREATE TRIGGER (\w+)/gm) ?? [])
-      .map((l) => l.replace('CREATE TRIGGER ', ''))
-      .sort();
-    expect(triggers).toEqual([
-      'distribution_points_archived_org_guard_trg',
-      'item_availability_archived_org_guard_trg',
-      'organizations_archive_dependency_guard_trg',
-      'qr_tokens_archived_org_guard_trg',
-      'warehouses_archived_org_guard_trg',
-    ]);
-    // Every CREATE TRIGGER is preceded by its own DROP ... IF EXISTS, so the
-    // migration is re-runnable.
-    expect((MIGRATION.match(/^DROP TRIGGER IF EXISTS/gm) ?? [])).toHaveLength(triggers.length);
-  });
-});
-
-describe('the reciprocal half closes the ordering hole', () => {
-  const MIGRATION = readFileSync(
-    join(ROOT, 'supabase/migrations/201_phoenix_organization_archive_dependency_guard.sql'),
-    'utf8',
-  );
-
-  // The archive fence alone only makes the count TRUE AT DECISION TIME. It does
-  // not stop the loser of the race from landing afterwards, so without this
-  // second half the invariant is defeatable purely by ordering — reproduced on a
-  // real rig for both an INSERT and an in-place status flip before it was added.
-  it('refuses a live dependency under an archived organization', () => {
-    expect(MIGRATION).toContain("RAISE EXCEPTION 'organization_archived_dependency_not_permitted'");
-    expect(MIGRATION).toContain("IF v_org_status = 'inactive' THEN");
-  });
-
-  it('defines liveness per table exactly as the archive guard counts it', () => {
-    expect(MIGRATION).toContain("IF TG_TABLE_NAME = 'item_availability' THEN");
-    expect(MIGRATION).toContain("v_is_live := (NEW.status = 'active');");
-    expect(MIGRATION).toContain("v_is_live := (NEW.status IS DISTINCT FROM 'archived');");
-  });
-
-  it('takes the reciprocal FOR SHARE fence on the organization row', () => {
-    // FOR SHARE conflicts with the archive guard's FOR UPDATE, so the two halves
-    // can never both decide against a stale view of each other.
-    expect(MIGRATION).toMatch(/FROM public\.organizations o\s+WHERE o\.id = NEW\.organization_id\s+FOR SHARE/);
-  });
-
-  it('never masks a missing organization - the foreign key owns that error', () => {
-    expect(MIGRATION).toContain('IF NOT FOUND THEN');
-  });
-
-  it('is SECURITY DEFINER, search_path pinned, and not executable by PUBLIC', () => {
-    expect(MIGRATION).toContain(
-      'REVOKE ALL ON FUNCTION public._phoenix_archived_organization_dependency_guard_v1() FROM PUBLIC',
-    );
-    // Line-anchored: the header prose also discusses SECURITY DEFINER, and a
-    // comment must never satisfy a contract check.
-    expect((MIGRATION.match(/^SECURITY DEFINER$/gm) ?? [])).toHaveLength(2);
-    expect((MIGRATION.match(/^SET search_path TO 'public', 'pg_temp'$/gm) ?? [])).toHaveLength(2);
-  });
-
-  it('guards only the columns that can change liveness or ownership', () => {
-    expect(MIGRATION).toContain('BEFORE INSERT OR UPDATE OF status, organization_id ON public.warehouses');
-    expect(MIGRATION).toContain('BEFORE INSERT OR UPDATE OF status, organization_id ON public.distribution_points');
-    expect(MIGRATION).toContain('BEFORE INSERT OR UPDATE OF status, organization_id ON public.qr_tokens');
-    // item_availability has no liveness status - only creation or a change of
-    // owner can grow the count.
-    expect(MIGRATION).toContain('BEFORE INSERT OR UPDATE OF organization_id ON public.item_availability');
   });
 });

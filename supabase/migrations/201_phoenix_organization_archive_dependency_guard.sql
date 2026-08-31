@@ -61,39 +61,41 @@
 --   before and never reaches this function. Every object is schema-qualified,
 --   search_path is pinned, and EXECUTE is revoked from PUBLIC.
 --
--- CONCURRENCY — WHY ONE GUARD IS NOT ENOUGH
+-- CONCURRENCY - WHAT THE FENCE DOES AND DOES NOT BUY
 --   `UPDATE organizations SET status=...` takes FOR NO KEY UPDATE on the row,
 --   which DELIBERATELY does not conflict with the FOR KEY SHARE a child
---   INSERT's foreign key takes — that is exactly what those lock modes are for.
+--   INSERT's foreign key takes - that is exactly what those lock modes are for.
 --   Counting without more would therefore leave a window in which a dependency
---   commits between the count and the archive, so the guard takes an explicit
---   FOR UPDATE on the organization row BEFORE counting.
+--   commits between the count and the archive. The guard takes an explicit
+--   FOR UPDATE on the organization row BEFORE counting, which does conflict
+--   with FOR KEY SHARE. A dependency insert that overlaps the archive must
+--   either commit first - and then be COUNTED, blocking the archive - or wait
+--   behind the archive transaction.
 --
---   That fence alone is still NOT the invariant, and this was proved rather
---   than assumed. Serialization only makes the count TRUE AT DECISION TIME; it
---   does not stop the loser of the race from landing afterwards:
+--   So the archive DECISION is always made against a true, non-stale count.
+--   That is the property this migration establishes, and it is precisely the
+--   one the defect destroyed.
 --
---     A: BEGIN; UPDATE organizations SET status='inactive'  -- fence, count 0
---     B: UPDATE qr_tokens SET status='active' WHERE id=...   -- no FK re-check,
---                                                            -- nothing locks
---                                                            -- organizations
---     A: COMMIT;                                             -- archived
---     B: commits                                             -- token now live
+-- KNOWN RESIDUAL - recorded rather than papered over
+--   This does NOT make "an archived organization never holds a live
+--   dependency" a total invariant. A write that lands AFTER the archive
+--   transaction commits can still create or reactivate a dependency
+--   underneath an archived organization - either by waiting out the fence,
+--   or, for qr_tokens, without touching organizations at all (an in-place
+--   status flip changes no foreign key, and qr_tokens carries no trigger that
+--   locks the parent). Both were reproduced on a real rig.
 --
---   Final state: an archived organization holding a live dependency — the exact
---   outcome ISW1-D1 exists to prevent. The same happens to a WAREHOUSE insert,
---   which DOES block on the fence but then simply proceeds once the archive
---   commits. An in-place status flip is worse still: organization_id never
---   changes, so no foreign key check runs and nothing touches organizations at
---   all.
---
---   The invariant therefore needs BOTH halves, and this migration ships both:
---     1. an organization may not be archived while dependencies are live;
---     2. a dependency may not be created or made live under an ALREADY archived
---        organization.
---   Each half takes the same organization-row lock, so the two orderings are
---   symmetric: whichever transaction commits second sees the other's effect and
---   is refused. Reactivate the organization first, then its dependencies.
+--   The reciprocal child-side rule that would close it - "no dependency may
+--   become live under an archived organization" - is NOT implementable here.
+--   public.organizations has no archived_at or equivalent, so status='inactive'
+--   means BOTH "archived" and "built but not yet activated", and migration 181
+--   depends on the second meaning: a health-sector organization is created
+--   inactive and its ACTIVE warehouses, depots and facilities are inserted
+--   underneath it before the activation guard validates the finished topology.
+--   A blanket child-side rule refuses exactly that flow - proved by
+--   181-closure-round1.dynamic.test.ts, which fails against it. Separating the
+--   two meanings is a data-model change, out of scope for this repair, and is
+--   recorded as its own finding rather than smuggled in here.
 -- ============================================================================
 
 BEGIN;
@@ -166,106 +168,5 @@ CREATE TRIGGER organizations_archive_dependency_guard_trg
   BEFORE UPDATE OF status ON public.organizations
   FOR EACH ROW
   EXECUTE FUNCTION public._phoenix_organization_archive_dependency_guard_v1();
-
--- ---------------------------------------------------------------------------
--- HALF TWO — the reciprocal rule, without which half one is defeatable purely
--- by ordering (see CONCURRENCY above). A dependency may not be created, moved
--- into, or made live under an organization that is already archived.
---
--- SECURITY DEFINER for the same reason as half one: the organization's status
--- must be read authoritatively, not through the caller's RLS view. It grants
--- nothing — the INSERT/UPDATE itself remains fully subject to the dependency
--- table's own RLS.
--- ---------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public._phoenix_archived_organization_dependency_guard_v1()
-RETURNS trigger
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path TO 'public', 'pg_temp'
-AS $function$
-DECLARE
-  v_is_live       boolean;
-  v_org_status    text;
-BEGIN
-  -- "Live" is defined exactly as the archive guard counts it, table by table,
-  -- so the two halves can never disagree about what blocks an archive.
-  --
-  -- Written as branches rather than one CASE expression on purpose:
-  -- item_availability has no `status` column, and a single SQL CASE resolves
-  -- every field reference in it, so naming NEW.status anywhere in that
-  -- expression fails on that table with `record "new" has no field "status"`.
-  -- PL/pgSQL prepares each branch lazily, so a branch never taken is never
-  -- resolved.
-  IF TG_TABLE_NAME = 'item_availability' THEN
-    -- Every row counts toward the archive contract; there is no liveness flag.
-    v_is_live := true;
-  ELSIF TG_TABLE_NAME = 'qr_tokens' THEN
-    v_is_live := (NEW.status = 'active');
-  ELSIF TG_TABLE_NAME IN ('warehouses', 'distribution_points') THEN
-    v_is_live := (NEW.status IS DISTINCT FROM 'archived');
-  ELSE
-    v_is_live := false;
-  END IF;
-
-  IF NOT v_is_live THEN
-    RETURN NEW;
-  END IF;
-
-  -- The same organization-row fence the archive guard takes, from the other
-  -- side. FOR SHARE conflicts with that guard's FOR UPDATE, so the two can
-  -- never both decide against a stale view of each other.
-  SELECT o.status INTO v_org_status
-    FROM public.organizations o
-   WHERE o.id = NEW.organization_id
-     FOR SHARE;
-
-  -- No row yet: the foreign key raises its own, better error. Never mask it.
-  IF NOT FOUND THEN
-    RETURN NEW;
-  END IF;
-
-  IF v_org_status = 'inactive' THEN
-    RAISE EXCEPTION 'organization_archived_dependency_not_permitted'
-      USING ERRCODE = '23514',
-      DETAIL = format(
-        '%s cannot be created or made live while organization %s is archived',
-        TG_TABLE_NAME, NEW.organization_id
-      ),
-      HINT = 'Reactivate the organization before adding or reactivating its warehouses, outlets, QR tokens or availability rows.';
-  END IF;
-
-  RETURN NEW;
-END;
-$function$;
-
-REVOKE ALL ON FUNCTION public._phoenix_archived_organization_dependency_guard_v1() FROM PUBLIC;
-
--- Column lists keep the guard off every write that cannot change liveness or
--- ownership: a rename, a note, a quantity edit never pays for this check.
-DROP TRIGGER IF EXISTS warehouses_archived_org_guard_trg ON public.warehouses;
-CREATE TRIGGER warehouses_archived_org_guard_trg
-  BEFORE INSERT OR UPDATE OF status, organization_id ON public.warehouses
-  FOR EACH ROW
-  EXECUTE FUNCTION public._phoenix_archived_organization_dependency_guard_v1();
-
-DROP TRIGGER IF EXISTS distribution_points_archived_org_guard_trg ON public.distribution_points;
-CREATE TRIGGER distribution_points_archived_org_guard_trg
-  BEFORE INSERT OR UPDATE OF status, organization_id ON public.distribution_points
-  FOR EACH ROW
-  EXECUTE FUNCTION public._phoenix_archived_organization_dependency_guard_v1();
-
-DROP TRIGGER IF EXISTS qr_tokens_archived_org_guard_trg ON public.qr_tokens;
-CREATE TRIGGER qr_tokens_archived_org_guard_trg
-  BEFORE INSERT OR UPDATE OF status, organization_id ON public.qr_tokens
-  FOR EACH ROW
-  EXECUTE FUNCTION public._phoenix_archived_organization_dependency_guard_v1();
-
--- item_availability has no liveness status in the archive contract — every row
--- counts — so only creation or a change of owner can grow that count.
-DROP TRIGGER IF EXISTS item_availability_archived_org_guard_trg ON public.item_availability;
-CREATE TRIGGER item_availability_archived_org_guard_trg
-  BEFORE INSERT OR UPDATE OF organization_id ON public.item_availability
-  FOR EACH ROW
-  EXECUTE FUNCTION public._phoenix_archived_organization_dependency_guard_v1();
 
 COMMIT;
