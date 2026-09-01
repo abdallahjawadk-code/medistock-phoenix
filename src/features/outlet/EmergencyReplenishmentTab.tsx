@@ -201,6 +201,7 @@ function ReplenishForm({
       <h3 style={{ fontSize: '14px', fontWeight: 700, marginBottom: '4px' }}>{t('repl_routine', lang)}</h3>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '12px' }}>
         <PhoenixSelect
+          id="repl-route"
           label={t('repl_route', lang)}
           value={routeId}
           onChange={e => setRouteId(e.target.value)}
@@ -214,6 +215,7 @@ function ReplenishForm({
           <p style={{ fontSize: '12px', color: 'var(--warn)' }}>{t('repl_no_stock', lang)}</p>
         ) : (
           <PhoenixSelect
+            id="repl-batch"
             label={t('repl_batch', lang)}
             value={stockId}
             onChange={e => setStockId(e.target.value)}
@@ -321,6 +323,7 @@ function ReverseForm({
       <p style={{ fontSize: '11.5px', color: 'var(--t3)', lineHeight: 1.6 }}>{t('repl_reverse_hint', lang)}</p>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '12px' }}>
         <PhoenixSelect
+          id="rev-route"
           label={t('repl_route', lang)}
           value={routeId}
           onChange={e => { setRouteId(e.target.value); setBatchId(''); }}
@@ -330,6 +333,7 @@ function ReverseForm({
           <p style={{ fontSize: '12px', color: 'var(--t3)' }}>{t('repl_no_reversible', lang)}</p>
         ) : (
           <PhoenixSelect
+            id="rev-batch"
             label={t('repl_batch', lang)}
             value={batchId}
             onChange={e => setBatchId(e.target.value)}
