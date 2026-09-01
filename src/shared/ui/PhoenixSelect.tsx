@@ -1,5 +1,6 @@
 import { useId, type SelectHTMLAttributes } from 'react';
 import { PhoenixIcon } from './PhoenixIcon';
+import { fieldId } from './field-id';
 
 interface Option {
   value: string;
@@ -14,7 +15,7 @@ interface Props extends SelectHTMLAttributes<HTMLSelectElement> {
 
 export function PhoenixSelect({ label, options, error, id, className = '', ...props }: Props) {
   const generatedId = useId();
-  const selectId = id ?? label?.toLowerCase().replace(/\s+/g, '-') ?? generatedId;
+  const selectId = id ?? fieldId(generatedId, label);
   const errorId = `${selectId}-error`;
 
   return (
