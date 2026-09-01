@@ -50,6 +50,31 @@ export function DispenseContextDialog({ open, movement, lang, canRecord, onClose
     requestIdRef.current = null;
   }
 
+  /**
+   * Switching beneficiary type must not leave another type's value behind —
+   * the same invariant DispenseComposerDialog.selectBeneficiaryType() already
+   * holds for the composer.
+   *
+   * Without this, a patient identifier typed before switching to
+   * internal_order stayed in component state and was submitted ALONGSIDE an
+   * internal_order discriminator. The write was still refused server-side
+   * (migration 134's phoenix_movement_dispense_context_type_fields_chk keeps
+   * patient-only columns NULL for an internal_order row, so no contradictory
+   * row could ever be persisted) — but the operator was blocked from
+   * completing an otherwise-legitimate recording by an unmapped error, and
+   * the patient-only fields left the client inside a request that has no
+   * legitimate need to carry them.
+   *
+   * `notes` is deliberately NOT cleared: it is shared by both beneficiary
+   * types, not type-specific.
+   */
+  function selectBeneficiaryType(next: DispenseBeneficiaryType) {
+    setBeneficiaryType(next);
+    setPatientIdentifier(''); setPatientName(''); setPatientReferenceType('');
+    setInternalOrderReference('');
+    setError(null);
+  }
+
   function resetAndClose() {
     if (busy) return;
     reset();
@@ -75,14 +100,22 @@ export function DispenseContextDialog({ open, movement, lang, canRecord, onClose
     setError(null);
     if (!requestIdRef.current) requestIdRef.current = crypto.randomUUID();
     try {
+      // Defence in depth: send ONLY the fields the ACTIVE beneficiary
+      // discriminator admits. selectBeneficiaryType() already clears the other
+      // type's state on every switch; this second gate means that even if
+      // stale state somehow survived (a future edit, an unforeseen code path),
+      // a patient-only value still could not reach the wire on a non-patient
+      // record — and vice versa.
+      const isPatient = beneficiaryType === 'patient';
+      const isInternalOrder = beneficiaryType === 'internal_order';
       await recordDispenseContext({
         requestId: requestIdRef.current,
         movementId: movement!.id,
         beneficiaryType,
-        patientIdentifier: patientIdentifier.trim() || undefined,
-        patientName: patientName.trim() || undefined,
-        patientReferenceType: patientReferenceType || undefined,
-        internalOrderReference: internalOrderReference.trim() || undefined,
+        patientIdentifier: isPatient ? (patientIdentifier.trim() || undefined) : undefined,
+        patientName: isPatient ? (patientName.trim() || undefined) : undefined,
+        patientReferenceType: isPatient ? (patientReferenceType || undefined) : undefined,
+        internalOrderReference: isInternalOrder ? (internalOrderReference.trim() || undefined) : undefined,
         notes: notes.trim() || undefined,
       });
       requestIdRef.current = null;
@@ -118,7 +151,7 @@ export function DispenseContextDialog({ open, movement, lang, canRecord, onClose
             <PhoenixSelect
               label={t('dc_beneficiary_type_label', lang)}
               value={beneficiaryType}
-              onChange={e => setBeneficiaryType(e.target.value as DispenseBeneficiaryType)}
+              onChange={e => selectBeneficiaryType(e.target.value as DispenseBeneficiaryType)}
               options={[
                 // STAGE-F-172: 'crash_cart' is retired for NEW dispensing.
                 // The cart is a real outlet holding real outlet_stock, fed by

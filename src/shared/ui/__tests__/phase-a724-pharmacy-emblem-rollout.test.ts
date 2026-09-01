@@ -548,7 +548,8 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
       // as M201 was. RAC-3's own subject is untouched by it, and no other
       // file under supabase/ or src/shared/supabase changed.
       'supabase/migrations/202_phoenix_organization_archive_reciprocal_guard.sql',
-      'supabase/migrations/__tests__/202-organization-archive-reciprocal-guard.dynamic.test.ts'
+      'supabase/migrations/__tests__/202-organization-archive-reciprocal-guard.dynamic.test.ts',
+      'supabase/migrations/__tests__/134-dispense-context-beneficiary-field-exclusivity.dynamic.test.ts',
     ];
     const changed=execSync(`git diff --name-only ${BASE}`,{cwd:ROOT,encoding:'utf8'}).split('\n').map(l=>l.trim()).filter(Boolean);
     const prohibited=changed.filter(f=>WATCHED.some(p=>f===p||f.startsWith(p+'/'))&&!EXCLUDED.includes(f));

@@ -186,8 +186,26 @@ describe('G2) Stage-F patient dispensing contract (Migration 172)', () => {
     expect(dialog).toContain("patientIdentifier.trim() !== ''");
   });
 
-  it('sends patientReferenceType to the service on submit', () => {
-    expect(dialog).toContain('patientReferenceType: patientReferenceType || undefined');
+  it('sends patientReferenceType to the service on submit, gated on the active discriminator', () => {
+    // The document type still reaches the service for a patient record. Since
+    // the beneficiary-field-leak repair it is additionally gated on the ACTIVE
+    // beneficiary type, so a value left over from an abandoned patient entry
+    // can never ride along on an internal_order record. Behavioural proof:
+    // src/features/outlet/__tests__/dispense-context-beneficiary-isolation.runtime.test.tsx
+    expect(dialog).toContain('patientReferenceType: isPatient ? (patientReferenceType || undefined) : undefined');
+  });
+
+  it("switching beneficiary type clears the other type's fields, and the payload is discriminator-gated", () => {
+    // Both halves of the defence. (a) the switch is centralised and clears:
+    expect(dialog).toContain('function selectBeneficiaryType(next: DispenseBeneficiaryType)');
+    expect(dialog).toContain('onChange={e => selectBeneficiaryType(e.target.value as DispenseBeneficiaryType)}');
+    // (b) every type-specific field in the submit payload is discriminator-gated,
+    // so stale state could not reach the wire even if it somehow survived:
+    expect(dialog).toContain('patientIdentifier: isPatient ?');
+    expect(dialog).toContain('patientName: isPatient ?');
+    expect(dialog).toContain('internalOrderReference: isInternalOrder ?');
+    // `notes` is shared by both beneficiary types and must NOT be gated or cleared.
+    expect(dialog).toContain('notes: notes.trim() || undefined');
   });
 
   it('the service exposes a Stage-F-narrowed document type without losing history', () => {
