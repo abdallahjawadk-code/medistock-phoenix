@@ -538,7 +538,17 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
       'supabase/migrations/__tests__/193-alert-command-surface-static.test.ts',
       'supabase/migrations/__tests__/194-authorization-surface-reproducibility-convergence-static.test.ts',
       'supabase/migrations/__tests__/197-public-execute-convergence-static.test.ts',
-      'supabase/migrations/__tests__/198-secdef-search-path-convergence-static.test.ts'
+      'supabase/migrations/__tests__/198-secdef-search-path-convergence-static.test.ts',
+      // ISW2: migration 202 closes the post-archive dependency-write race
+      // migration 201 disclosed as a known residual - a reciprocal child-side
+      // guard on warehouses/distribution_points/qr_tokens/item_availability,
+      // keyed on a new organizations.archived_at column rather than status
+      // (status='inactive' also means "pre-activation", which 181's
+      // construction flow depends on). Registered by EXACT filename, exactly
+      // as M201 was. RAC-3's own subject is untouched by it, and no other
+      // file under supabase/ or src/shared/supabase changed.
+      'supabase/migrations/202_phoenix_organization_archive_reciprocal_guard.sql',
+      'supabase/migrations/__tests__/202-organization-archive-reciprocal-guard.dynamic.test.ts'
     ];
     const changed=execSync(`git diff --name-only ${BASE}`,{cwd:ROOT,encoding:'utf8'}).split('\n').map(l=>l.trim()).filter(Boolean);
     const prohibited=changed.filter(f=>WATCHED.some(p=>f===p||f.startsWith(p+'/'))&&!EXCLUDED.includes(f));
