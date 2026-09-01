@@ -392,7 +392,25 @@ describe('RAC-3 · I) no backend or migration change', () => {
    * version bump, which a filename check never could.
    */
   it('changes no dependency — only the release version may differ', () => {
-    const BASE = 'b707f073d60b4cc61205c35003ab491f3aed7468';
+    // SECURITY-BROWSERSLIST-4-28-7: the audited dependency baseline advances
+    // from b707f073 to d4bd65d2, the reviewed security commit that resolves
+    // GHSA-c83g-rgw3-j3cx and GHSA-73wf-gq98-2v4g by lifting browserslist off
+    // the vulnerable <=4.28.6 range (4.28.4 -> 4.28.8, plus that package's own
+    // data subtree: update-browserslist-db, baseline-browser-mapping,
+    // caniuse-lite, electron-to-chromium, node-releases). That commit changes
+    // package-lock.json ONLY — no manifest edit, no override, no added or
+    // removed package, 501 entries before and after — and is evidenced in
+    // artifacts 475-478.
+    //
+    // Registering the new baseline by EXACT commit, exactly as migrations 200,
+    // 201 and 202 were registered by exact filename in the guard above. The
+    // assertion itself is untouched and stays byte-exact: the browserslist
+    // cluster is NOT normalised or exempted, no range or allowlist is
+    // introduced, and any dependency drift away from d4bd65d2 still fails
+    // closed. The five package.json fields asserted below are byte-identical
+    // between b707f073 and d4bd65d2, so advancing the pin changes what the
+    // approved graph IS, never how strictly it is enforced.
+    const BASE = 'd4bd65d2910969c3f088ad002b396b6583ec58f9';
     const jsonAt = (ref: string, file: string) => JSON.parse(
       execSync(`git show ${ref}:${file}`, { cwd: process.cwd(), encoding: 'utf8' }),
     );
