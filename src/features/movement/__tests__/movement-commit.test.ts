@@ -94,31 +94,113 @@ describe('commitDraft — header then lines', () => {
   });
 });
 
-describe('planRetry — never blindly re-send a non-idempotent add-line', () => {
+describe("planRetry 'batch' identity — OutletDispatchComposer (a dispatch line commits to one physical batch)", () => {
   const server: ServerRequestLine[] = [
-    { id: 's1', scientificName: 'Amoxicillin', batchNumber: 'B-a', expiryDate: '2027-06-30', originalTransferLineId: null, requestedQuantity: 10 },
+    { id: 's1', scientificName: 'Amoxicillin', batchNumber: 'B-a', expiryDate: '2027-06-30', concentration: null, dosageForm: null, unit: null, originalTransferLineId: null, requestedQuantity: 10 },
   ];
 
   it('re-sends only the lines with no canonical server counterpart', () => {
-    const plan = planRetry([line('a'), line('b')], server, 'supply');
+    const plan = planRetry([line('a'), line('b')], server, 'batch');
     expect(plan.alreadyPresent).toEqual(['a']);
     expect(plan.toSend.map(l => l.idempotencyKey)).toEqual(['b']);
   });
 
   it('re-sends nothing when every line already landed', () => {
-    expect(planRetry([line('a')], server, 'supply').toSend).toEqual([]);
+    expect(planRetry([line('a')], server, 'batch').toSend).toEqual([]);
   });
 
   it('re-sends everything when the server has no lines at all', () => {
-    expect(planRetry([line('a'), line('b')], [], 'supply').toSend).toHaveLength(2);
+    expect(planRetry([line('a'), line('b')], [], 'batch').toSend).toHaveLength(2);
   });
 
-  it('matches RETURN lines on provenance, not on the typed name', () => {
+  it('does NOT match two different batches of the same material', () => {
+    // line('a') and line('b') share scientificName 'Amoxicillin' but each
+    // line() call gives them distinct batchNumber ('B-a' vs 'B-b') -- a
+    // dispatch line must not conflate them.
+    const plan = planRetry([line('a'), line('b')], server, 'batch');
+    expect(plan.alreadyPresent).toEqual(['a']); // only the matching batch
+    expect(plan.toSend.map(l => l.idempotencyKey)).toEqual(['b']); // the OTHER batch is genuinely unsent
+  });
+});
+
+describe('planRetry — RETURN lines always match on provenance', () => {
+  it('matches on originalTransferLineId, not on the typed name', () => {
     const returnDraft = [line('a', { originalTransferLineId: 'otl-1', scientificName: 'renamed by operator' })];
     const returnServer: ServerRequestLine[] = [
-      { id: 's1', scientificName: 'Amoxicillin', batchNumber: null, expiryDate: null, originalTransferLineId: 'otl-1', requestedQuantity: 5 },
+      { id: 's1', scientificName: 'Amoxicillin', batchNumber: null, expiryDate: null, concentration: null, dosageForm: null, unit: null, originalTransferLineId: 'otl-1', requestedQuantity: 5 },
     ];
     expect(planRetry(returnDraft, returnServer, 'return').toSend).toEqual([]);
+  });
+});
+
+describe("planRetry 'material' identity — DirectSupplyComposer (PHX-DEFECT-2026-09-02-DIRECT-SUPPLY-COMPOSER-RETRY-DUPLICATE-LINE)", () => {
+  // A supply REQUEST line has no batch/expiry server-side at all (network.
+  // service.ts's TransferRequestLine has no such columns -- batch is chosen
+  // later, at dispatch). DirectSupplyComposer.tsx's retryUnsent therefore
+  // always passes batchNumber: null, expiryDate: null for every reloaded
+  // server line -- exactly reproduced here -- and the real, comparable
+  // identity is scientificName + concentration + dosageForm + unit.
+  function materialLine(key: string, over: Partial<DraftLine> = {}): DraftLine {
+    return line(key, { concentration: '500mg', dosageForm: 'Tablet', unit: 'box', batchNumber: null, expiryDate: null, ...over });
+  }
+  function serverMaterialLine(over: Partial<ServerRequestLine> = {}): ServerRequestLine {
+    return {
+      id: 's1', scientificName: 'Amoxicillin', batchNumber: null, expiryDate: null,
+      concentration: '500mg', dosageForm: 'Tablet', unit: 'box', originalTransferLineId: null,
+      requestedQuantity: 10, ...over,
+    };
+  }
+
+  it('DEFECT, now fixed: a real-shaped server line (no batch/expiry) IS recognized as the draft line that already succeeded', () => {
+    const plan = planRetry([materialLine('a')], [serverMaterialLine()], 'material');
+    expect(plan.alreadyPresent).toEqual(['a']);
+    expect(plan.toSend).toEqual([]);
+  });
+
+  it('re-sends only the lines with no canonical server counterpart', () => {
+    const plan = planRetry(
+      [materialLine('a'), materialLine('b', { scientificName: 'Paracetamol', concentration: '250mg', dosageForm: 'Syrup', unit: 'bottle' })],
+      [serverMaterialLine()],
+      'material',
+    );
+    expect(plan.alreadyPresent).toEqual(['a']);
+    expect(plan.toSend.map(l => l.idempotencyKey)).toEqual(['b']);
+  });
+
+  it('re-sends everything when the server has no lines at all', () => {
+    expect(planRetry([materialLine('a'), materialLine('b')], [], 'material').toSend).toHaveLength(2);
+  });
+
+  it('a real batch/expiry MISMATCH between draft and server never blocks the match (batch is not part of this identity)', () => {
+    // materialLine('a') carries batchNumber: null (matching the real call
+    // site), but even a draft line that DID carry a real batch number must
+    // still match -- material identity ignores it entirely.
+    const draftWithRealBatch = materialLine('a', { batchNumber: 'LOT-9', expiryDate: '2027-01-01' });
+    const plan = planRetry([draftWithRealBatch], [serverMaterialLine()], 'material');
+    expect(plan.toSend).toEqual([]);
+  });
+
+  it('line-result correlation is deterministic: two draft lines sharing one material identity (different batches) correlate 1:1, not all-or-nothing, with one server line', () => {
+    // Two GENUINELY DIFFERENT draft lines (different picked stock batches),
+    // both requesting the exact same material -- validateDraft allows this
+    // (it dedupes on warehouseStockId, not material identity). Exactly one
+    // has landed server-side; the OTHER must remain retryable, not be
+    // silently matched to its sibling's success.
+    const first = materialLine('a', { warehouseStockId: 'stock-batch-1', batchNumber: 'LOT-9' });
+    const second = materialLine('b', { warehouseStockId: 'stock-batch-2', batchNumber: 'LOT-4' });
+    const plan = planRetry([first, second], [serverMaterialLine()], 'material');
+    expect(plan.alreadyPresent).toEqual(['a']);
+    expect(plan.toSend.map(l => l.idempotencyKey)).toEqual(['b']);
+  });
+
+  it('a repeated failure remains retryable across multiple retry cycles', () => {
+    // First retry cycle: still only the original server line exists (the
+    // retried line failed again) -- planRetry must keep offering it.
+    const stillFailing = materialLine('b', { scientificName: 'Paracetamol', concentration: '250mg', dosageForm: 'Syrup', unit: 'bottle' });
+    const plan1 = planRetry([materialLine('a'), stillFailing], [serverMaterialLine()], 'material');
+    expect(plan1.toSend.map(l => l.idempotencyKey)).toEqual(['b']);
+    const plan2 = planRetry([materialLine('a'), stillFailing], [serverMaterialLine()], 'material');
+    expect(plan2.toSend.map(l => l.idempotencyKey)).toEqual(['b']);
   });
 });
 

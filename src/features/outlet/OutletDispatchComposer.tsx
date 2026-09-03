@@ -312,8 +312,13 @@ export function OutletDispatchComposer({
 
     const plan = planRetry(lines, serverLines.map(l => ({
       id: l.id, scientificName: l.scientificName, batchNumber: l.batchNumber,
-      expiryDate: l.expiryDate, originalTransferLineId: null, requestedQuantity: l.sentQuantity,
-    })), 'supply');
+      expiryDate: l.expiryDate,
+      // Unused on this path: a dispatch line commits to one specific physical
+      // batch, so 'batch' identity below matches on batchNumber/expiryDate,
+      // not material identity.
+      concentration: null, dosageForm: null, unit: null,
+      originalTransferLineId: null, requestedQuantity: l.sentQuantity,
+    })), 'batch');
 
     const retried = await commitDraft(plan.toSend, {
       createHeader: () => Promise.resolve({ ok: true, data: { id: result.requestId as string } }),

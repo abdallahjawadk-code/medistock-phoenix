@@ -253,8 +253,14 @@ export function DirectReturnComposer({
     const plan = planRetry(lines, serverLines.map(l => ({
       id: l.id,
       scientificName: l.scientificName,
+      // Unused on this path: a return line always carries a real
+      // originalTransferLineId, so planRetry matches on provenance and never
+      // falls back to either identity key these feed.
       batchNumber: null,
       expiryDate: null,
+      concentration: null,
+      dosageForm: null,
+      unit: null,
       originalTransferLineId: l.originalTransferLineId,
       requestedQuantity: l.requestedQuantity,
     })), 'return');

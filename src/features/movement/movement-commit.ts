@@ -20,7 +20,7 @@
  * Every dependency is injected, so the whole protocol is testable without a
  * database and without mocking the Supabase client.
  */
-import type { DraftLine, MovementDirection } from './composer-model';
+import type { DraftLine } from './composer-model';
 
 export interface RpcOutcome {
   ok: boolean;
@@ -153,12 +153,41 @@ async function addLines<L extends { idempotencyKey: string }>(
   return results;
 }
 
+/**
+ * What identifies "the same line" between a draft and a reloaded canonical
+ * server line, when there is no provenance anchor to match on:
+ *
+ *   - 'material' — a forward SUPPLY request line. The server never persists
+ *     batch/expiry for it at all (network.service.ts's TransferRequestLine has
+ *     no such columns — batch is chosen later, at dispatch), so the only
+ *     identity a reload can agree on is scientificName + concentration +
+ *     dosageForm + unit, the same "material identity" this module's callers
+ *     already use to match stock to a request line.
+ *   - 'batch' — an outlet DISPATCH line. Unlike a request, a dispatch commits
+ *     to one specific physical batch (WarehouseDispatchLine carries real
+ *     batchNumber/expiryDate server-side), so batch/expiry is the correct and
+ *     available identity here — material identity alone would conflate two
+ *     different batches of the same material dispatched together.
+ *
+ *   - 'return' — a RETURN request line. Matches on `originalTransferLineId`
+ *     (the provenance anchor every return line carries) — a caller passes
+ *     this to name its real basis explicitly, even though the provenance
+ *     check below applies before either basis is consulted, for any caller
+ *     whose line happens to carry one.
+ */
+export type RetryIdentityBasis = 'material' | 'batch' | 'return';
+
 /** A canonical server line, as reloaded before any retry. */
 export interface ServerRequestLine {
   id: string;
   scientificName: string;
+  /** Used only when the caller's identity basis is 'batch'. */
   batchNumber: string | null;
   expiryDate: string | null;
+  /** Used only when the caller's identity basis is 'material'. */
+  concentration: string | null;
+  dosageForm: string | null;
+  unit: string | null;
   originalTransferLineId: string | null;
   requestedQuantity: number;
 }
@@ -170,24 +199,65 @@ export interface ServerRequestLine {
  * actually landed would duplicate it. The ONLY safe basis for retry is the
  * canonical server state, so this takes the reloaded lines and returns just the
  * draft lines with no server counterpart.
+ *
+ * PHX-DEFECT-2026-09-02-DIRECT-SUPPLY-COMPOSER-RETRY-DUPLICATE-LINE: this used
+ * to take a single MovementDirection and, for anything but 'return', always
+ * compared scientificName + batchNumber + expiryDate. That is correct for an
+ * outlet dispatch line (a real batch/expiry, server-side) but was silently
+ * wrong for a supply REQUEST line, which never persists batch/expiry at all —
+ * a caller reloading canonical request lines could only ever supply null
+ * there, which could never agree with a real draft line's real (non-null)
+ * batch/expiry. Every supply-direction retry therefore resent every line,
+ * including ones that had already landed. `direction` conflated two genuinely
+ * different server data shapes that both happen to pass 'supply'; the
+ * explicit `identity` parameter replaces it so each caller states its own real
+ * identity basis instead.
+ *
+ * A MULTISET, not a boolean set: two draft lines may legitimately share one
+ * identity (e.g. two different batches of the same material requested
+ * together under 'material' — validateDraft dedupes on the per-stock-row
+ * identity, not the material identity, so this is a real, allowed shape). If
+ * one such line succeeds and its sibling fails, the server now holds exactly
+ * one line for that shared key. Consuming one server occurrence per matched
+ * draft line (rather than a yes/no "is this key present anywhere") leaves the
+ * genuinely-unsent sibling retryable instead of silently matching it to its
+ * sibling's success.
  */
 export function planRetry(
   draft: readonly DraftLine[],
   serverLines: readonly ServerRequestLine[],
-  direction: MovementDirection,
+  identity: RetryIdentityBasis,
 ): { toSend: DraftLine[]; alreadyPresent: string[] } {
-  const key = (l: { scientificName: string; batchNumber: string | null; expiryDate: string | null; originalTransferLineId: string | null }) =>
-    direction === 'return' && l.originalTransferLineId
-      ? `prov:${l.originalTransferLineId}`
-      : `name:${l.scientificName.trim().toLowerCase()}|${(l.batchNumber ?? '').trim().toLowerCase()}|${l.expiryDate ?? ''}`;
+  const norm = (v: string | null) => (v ?? '').trim().toLowerCase();
+  const key = (l: {
+    scientificName: string; batchNumber: string | null; expiryDate: string | null;
+    concentration: string | null; dosageForm: string | null; unit: string | null;
+    originalTransferLineId: string | null;
+  }) => {
+    if (l.originalTransferLineId) return `prov:${l.originalTransferLineId}`;
+    return identity === 'material'
+      ? `name:${norm(l.scientificName)}|${norm(l.concentration)}|${norm(l.dosageForm)}|${norm(l.unit)}`
+      : `name:${norm(l.scientificName)}|${norm(l.batchNumber)}|${l.expiryDate ?? ''}`;
+  };
 
-  const present = new Set(serverLines.map(key));
+  const remaining = new Map<string, number>();
+  for (const line of serverLines) {
+    const k = key(line);
+    remaining.set(k, (remaining.get(k) ?? 0) + 1);
+  }
+
   const toSend: DraftLine[] = [];
   const alreadyPresent: string[] = [];
 
   for (const line of draft) {
-    if (present.has(key(line))) alreadyPresent.push(line.idempotencyKey);
-    else toSend.push(line);
+    const k = key(line);
+    const count = remaining.get(k) ?? 0;
+    if (count > 0) {
+      remaining.set(k, count - 1);
+      alreadyPresent.push(line.idempotencyKey);
+    } else {
+      toSend.push(line);
+    }
   }
   return { toSend, alreadyPresent };
 }
