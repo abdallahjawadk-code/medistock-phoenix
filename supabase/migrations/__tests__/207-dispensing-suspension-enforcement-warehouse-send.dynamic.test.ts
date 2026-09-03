@@ -40,13 +40,18 @@ import { buildRig, rigAvailable } from '../../../tools/pg-rig/rig.mjs';
 
 const run = rigAvailable() ? describe : describe.skip;
 
-const ORG = '00000000-0000-0000-0000-000000207001';
-const ORG_DEST = '00000000-0000-0000-0000-000000207002';
-const CENTRAL = '00000000-0000-0000-0000-000000207101';
-const INST = '00000000-0000-0000-0000-000000207102';
-const DIRECT_DEST = '00000000-0000-0000-0000-000000207103';
-const OUTLET = '00000000-0000-0000-0000-000000207301';
-const ROUTE = '00000000-0000-0000-0000-000000207201';
+// 171 pairs organization_kind with institution_class exactly: a central
+// warehouse belongs to a pharmacy_department_authority (institution_class
+// NULL), an institution warehouse and its outlets to a care_institution.
+// The routed and direct corridors therefore source from the AUTHORITY org
+// and the dispatch corridor stays inside the CARE org — the same split
+// 165/166/167's fixtures use.
+const ORG_AUTH = '00000000-0000-0000-0000-000000207001'; // pharmacy_department_authority
+const ORG = '00000000-0000-0000-0000-000000207002';      // care_institution / hospital
+const CENTRAL = '00000000-0000-0000-0000-000000207101';  // central warehouse, ORG_AUTH
+const WH = '00000000-0000-0000-0000-000000207102';       // institution warehouse, ORG
+const OUTLET = '00000000-0000-0000-0000-000000207301';   // pharmacy under WH
+const ROUTE = '00000000-0000-0000-0000-000000207201';    // CENTRAL -> WH
 const ITEM = '00000000-0000-0000-0000-000000207501';
 
 let sequence = 0;
@@ -64,11 +69,14 @@ run('207 dispensing-suspension enforcement (guarded warehouse sends) — dynamic
       c.query(`SELECT on_hand_quantity FROM warehouse_stock WHERE id=$1`, [stockId])
         .then((r: any) => r.rows[0].on_hand_quantity));
 
-  const suspend = async () => {
+  /** Suspension is per (central_item_id, organization_id): the routed and
+   *  direct corridors source from ORG_AUTH's central warehouse, the dispatch
+   *  corridor from ORG's own institution warehouse. */
+  const suspend = async (organizationId: string) => {
     let id = '';
     await rig.asUser(rig.superAdminId, async (c: any) => {
       const r = await call(c, 'phoenix_suspend_material_dispensing', [
-        randomUUID(), ITEM, ORG, 'quality_investigation',
+        randomUUID(), ITEM, organizationId, 'quality_investigation',
       ]);
       id = r.suspension_id;
     }, { commit: true });
@@ -84,26 +92,32 @@ run('207 dispensing-suspension enforcement (guarded warehouse sends) — dynamic
     }, { commit: true });
   };
 
-  /** One CENTRAL warehouse batch of the suspendable material. */
-  const insertStock = async (name: string, batch: string, expiry: string, quantity = 50) => {
+  /** One batch of the suspendable material in the named warehouse. */
+  const insertStock = async (
+    organizationId: string, warehouseId: string,
+    name: string, batch: string, expiry: string, quantity = 50,
+  ) => {
     const id = randomUUID();
     await rig.asAdmin((c: any) => c.query(
       `INSERT INTO warehouse_stock(
          id,organization_id,warehouse_id,central_item_id,scientific_name,concentration,
          dosage_form,unit,national_code,has_no_national_code,batch_number,has_no_batch_number,
          expiry_date,on_hand_quantity,reserved_quantity,movement_seq
-       ) VALUES($1,'${ORG}','${CENTRAL}','${ITEM}',$2,'10 mg','tablet','box',NULL,true,$3,false,$4,$5,0,1)`,
-      [id, name, batch, expiry, quantity],
+       ) VALUES($1,$2,$3,'${ITEM}',$4,'10 mg','tablet','box',NULL,true,$5,false,$6,$7,0,1)`,
+      [id, organizationId, warehouseId, name, batch, expiry, quantity],
     ));
     return id;
   };
+
+  const insertCentralStock = (name: string, batch: string, expiry: string) =>
+    insertStock(ORG_AUTH, CENTRAL, name, batch, expiry);
 
   const createApprovedDirectRequest = async (materialName: string, quantity: number) => {
     let transferRequestId = '';
     let transferRequestLineId = '';
     await rig.asUser(rig.superAdminId, async (c: any) => {
       const head = await call(c, 'phoenix_create_direct_warehouse_transfer_request', [
-        CENTRAL, ORG_DEST, DIRECT_DEST, uniq('P207-DIRECT-REQ'), null,
+        CENTRAL, ORG, WH, uniq('P207-DIRECT-REQ'), null,
       ]);
       const line = await call(c, 'phoenix_add_warehouse_transfer_request_line', [
         head.transfer_request_id, materialName, quantity,
@@ -127,24 +141,23 @@ run('207 dispensing-suspension enforcement (guarded warehouse sends) — dynamic
     rig = await buildRig({ upTo: 208 });
     await rig.asAdmin(async (c: any) => {
       await c.query(`
-        INSERT INTO organizations(id,name,name_ar,code) VALUES
-          ('${ORG}','Send 207','إرسال ٢٠٧','p207-org'),
-          ('${ORG_DEST}','Dest 207','وجهة ٢٠٧','p207-dest')
+        INSERT INTO organizations(id,name,name_ar,code,organization_kind,institution_class) VALUES
+          ('${ORG_AUTH}','Authority 207','هيئة ٢٠٧','p207-auth','pharmacy_department_authority',NULL),
+          ('${ORG}','Care 207','رعاية ٢٠٧','p207-org','care_institution','hospital')
         ON CONFLICT (id) DO NOTHING;`);
       await c.query(`
         INSERT INTO warehouses(id,organization_id,name,name_ar,status,warehouse_kind,code) VALUES
-          ('${CENTRAL}','${ORG}','Central 207','مركزي ٢٠٧','active','central','p207-wc'),
-          ('${INST}','${ORG}','Inst 207','مؤسسة ٢٠٧','active','institution','p207-wi'),
-          ('${DIRECT_DEST}','${ORG_DEST}','Direct 207','مباشر ٢٠٧','active','institution','p207-wd')
+          ('${CENTRAL}','${ORG_AUTH}','Central 207','مركزي ٢٠٧','active','central','p207-wc'),
+          ('${WH}','${ORG}','Inst 207','مؤسسة ٢٠٧','active','institution','p207-wi')
         ON CONFLICT (id) DO NOTHING;`);
       await c.query(`
-        INSERT INTO distribution_points(id,warehouse_id,organization_id,name,name_ar,point_type,status)
-        VALUES('${OUTLET}','${CENTRAL}','${ORG}','Outlet 207','منفذ ٢٠٧','pharmacy','active')
+        INSERT INTO distribution_points(id,warehouse_id,organization_id,name,name_ar,point_type,status,clinical_location_kind)
+        VALUES('${OUTLET}','${WH}','${ORG}','Outlet 207','منفذ ٢٠٧','pharmacy','active','non_emergency')
         ON CONFLICT DO NOTHING;`);
       await c.query(`
         INSERT INTO warehouse_supply_routes(
           id,source_warehouse_id,target_warehouse_id,source_warehouse_kind,target_warehouse_kind,is_active
-        ) VALUES('${ROUTE}','${CENTRAL}','${INST}','central','institution',true)
+        ) VALUES('${ROUTE}','${CENTRAL}','${WH}','central','institution',true)
         ON CONFLICT (id) DO NOTHING;`);
       await c.query(`
         INSERT INTO central_items(id,name,name_ar,unit,status)
@@ -159,9 +172,9 @@ run('207 dispensing-suspension enforcement (guarded warehouse sends) — dynamic
     const material = uniq('P207-ROUTED');
     // Two lots so that selecting the LATE one genuinely requires an override:
     // without 207's check this call would take the override branch and send.
-    const early = await insertStock(material, uniq('P207-R-EARLY'), '2028-01-01');
-    const late = await insertStock(material, uniq('P207-R-LATE'), '2029-01-01');
-    const suspensionId = await suspend();
+    const early = await insertCentralStock(material, uniq('P207-R-EARLY'), '2028-01-01');
+    const late = await insertCentralStock(material, uniq('P207-R-LATE'), '2029-01-01');
+    const suspensionId = await suspend(ORG_AUTH);
 
     await rig.asUser(rig.superAdminId, async (c: any) => {
       await expect(call(c, 'phoenix_send_warehouse_transfer_line_fefo_guarded', [
@@ -183,11 +196,11 @@ run('207 dispensing-suspension enforcement (guarded warehouse sends) — dynamic
 
   it('DIRECT send refuses a suspended material on an approved request, override included, and debits nothing', async () => {
     const material = uniq('P207-DIRECT');
-    const early = await insertStock(material, uniq('P207-D-EARLY'), '2028-02-01');
-    const late = await insertStock(material, uniq('P207-D-LATE'), '2029-02-01');
+    const early = await insertCentralStock(material, uniq('P207-D-EARLY'), '2028-02-01');
+    const late = await insertCentralStock(material, uniq('P207-D-LATE'), '2029-02-01');
     const { transferRequestId, transferRequestLineId } =
       await createApprovedDirectRequest(material, 5);
-    const suspensionId = await suspend();
+    const suspensionId = await suspend(ORG_AUTH);
 
     await rig.asUser(rig.superAdminId, async (c: any) => {
       await expect(call(c, 'phoenix_send_direct_warehouse_transfer_line_fefo_guarded', [
@@ -203,13 +216,13 @@ run('207 dispensing-suspension enforcement (guarded warehouse sends) — dynamic
 
   it('DISPATCH draft-time add-line refuses a suspended material, override included', async () => {
     const material = uniq('P207-ADDLINE');
-    const early = await insertStock(material, uniq('P207-A-EARLY'), '2028-03-01');
-    const late = await insertStock(material, uniq('P207-A-LATE'), '2029-03-01');
-    const suspensionId = await suspend();
+    const early = await insertStock(ORG, WH, material, uniq('P207-A-EARLY'), '2028-03-01');
+    const late = await insertStock(ORG, WH, material, uniq('P207-A-LATE'), '2029-03-01');
+    const suspensionId = await suspend(ORG);
 
     await rig.asUser(rig.superAdminId, async (c: any) => {
       const head = await call(c, 'phoenix_create_warehouse_dispatch', [
-        CENTRAL, OUTLET, uniq('P207-A-DISPATCH'), null, null, null,
+        WH, OUTLET, uniq('P207-A-DISPATCH'), null, null, null,
       ]);
       await expect(call(c, 'phoenix_add_dispatch_line_fefo_guarded', [
         head.dispatch_id, late, 10, true, 'documented FEFO exception', randomUUID(),
@@ -223,13 +236,13 @@ run('207 dispensing-suspension enforcement (guarded warehouse sends) — dynamic
 
   it('SEND-TIME gate: a dispatch whose line was added BEFORE the suspension is refused, stays draft and debits nothing — then sends normally once lifted', async () => {
     const material = uniq('P207-SENDTIME');
-    const stockId = await insertStock(material, uniq('P207-S-ONLY'), '2028-04-01');
+    const stockId = await insertStock(ORG, WH, material, uniq('P207-S-ONLY'), '2028-04-01');
 
     // Line added while the material is perfectly dispensable.
     let dispatchId = '';
     await rig.asUser(rig.superAdminId, async (c: any) => {
       const head = await call(c, 'phoenix_create_warehouse_dispatch', [
-        CENTRAL, OUTLET, uniq('P207-S-DISPATCH'), null, null, null,
+        WH, OUTLET, uniq('P207-S-DISPATCH'), null, null, null,
       ]);
       dispatchId = head.dispatch_id;
       const added = await call(c, 'phoenix_add_dispatch_line', [dispatchId, stockId, 10]);
@@ -237,7 +250,7 @@ run('207 dispensing-suspension enforcement (guarded warehouse sends) — dynamic
     }, { commit: true });
 
     // …the material is suspended only afterwards.
-    const suspensionId = await suspend();
+    const suspensionId = await suspend(ORG);
 
     const sendRequestId = randomUUID();
     await rig.asUser(rig.superAdminId, async (c: any) => {
