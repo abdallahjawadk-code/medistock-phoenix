@@ -3,7 +3,7 @@
  * disposable Postgres with 001->203 applied in order, driving the real RPCs.
  *
  * Proves:
- *   1. central_warehouse_manager can suspend a material org-wide; the badge
+ *   1. institution_admin can suspend a material org-wide; the badge
  *      RPC reflects is_suspended=true with the coded reason.
  *   2. Idempotent replay: the same request_id returns the same suspension_id
  *      and creates no second row.
@@ -32,9 +32,9 @@ const ORG_B = '00000000-0000-0000-0000-000000203002';
 const WH_A = '00000000-0000-0000-0000-000000203101';
 const DP_A = '00000000-0000-0000-0000-000000203301';
 
-const CWM_A = '00000000-0000-0000-0000-000000203401'; // central_warehouse_manager, org A
+const IA_A = '00000000-0000-0000-0000-000000203401'; // institution_admin, org A
 const OO_A = '00000000-0000-0000-0000-000000203402';  // outlet_officer, org A — must be denied
-const CWM_B = '00000000-0000-0000-0000-000000203403'; // central_warehouse_manager, org B — cross-org denial
+const IA_B = '00000000-0000-0000-0000-000000203403'; // institution_admin, org B — cross-org denial
 
 const ITEM_A = '00000000-0000-0000-0000-000000203501'; // central_items row, target of every test
 
@@ -67,14 +67,14 @@ run('203 material-dispensing-suspension domain — dynamic', () => {
         ON CONFLICT (id) DO NOTHING;`);
 
       await c.query(`INSERT INTO auth.users (id,email) VALUES
-        ('${CWM_A}','p203-cwma@rig'),('${OO_A}','p203-ooa@rig'),('${CWM_B}','p203-cwmb@rig')
+        ('${IA_A}','p203-iaa@rig'),('${OO_A}','p203-ooa@rig'),('${IA_B}','p203-iab@rig')
         ON CONFLICT (id) DO NOTHING;`);
-      await c.query(`UPDATE profiles SET role='central_warehouse_manager',status='active',organization_id='${ORG_A}' WHERE id='${CWM_A}';`);
+      await c.query(`UPDATE profiles SET role='institution_admin',status='active',organization_id='${ORG_A}' WHERE id='${IA_A}';`);
       await c.query(`UPDATE profiles SET role='outlet_officer',status='active',organization_id='${ORG_A}' WHERE id='${OO_A}';`);
-      await c.query(`UPDATE profiles SET role='central_warehouse_manager',status='active',organization_id='${ORG_B}' WHERE id='${CWM_B}';`);
+      await c.query(`UPDATE profiles SET role='institution_admin',status='active',organization_id='${ORG_B}' WHERE id='${IA_B}';`);
 
       await c.query(`INSERT INTO profile_scope_assignments (profile_id, organization_id, scope_type, warehouse_id, is_active)
-        VALUES ('${CWM_A}','${ORG_A}','warehouse','${WH_A}',true)
+        VALUES ('${IA_A}','${ORG_A}','warehouse','${WH_A}',true)
         ON CONFLICT DO NOTHING;`);
       await c.query(`INSERT INTO profile_scope_assignments (profile_id, organization_id, scope_type, distribution_point_id, is_active)
         VALUES ('${OO_A}','${ORG_A}','distribution_point','${DP_A}',true)
@@ -90,9 +90,9 @@ run('203 material-dispensing-suspension domain — dynamic', () => {
       [[ITEM_A], ORG_A, null],
     )).rows[0];
 
-  it('central_warehouse_manager suspends org-wide; the badge shows is_suspended with the coded reason', async () => {
+  it('institution_admin suspends org-wide; the badge shows is_suspended with the coded reason', async () => {
     let suspensionId = '';
-    await rig.asUser(CWM_A, async (c: any) => {
+    await rig.asUser(IA_A, async (c: any) => {
       const r = await call(c, 'phoenix_suspend_material_dispensing',
         [randomUUID(), ITEM_A, ORG_A, 'quality_investigation']);
       expect(r.ok).toBe(true);
@@ -115,7 +115,7 @@ run('203 material-dispensing-suspension domain — dynamic', () => {
   it('is idempotent on request_id replay — no second row, same suspension_id', async () => {
     const requestId = randomUUID();
     let first = '';
-    await rig.asUser(CWM_A, async (c: any) => {
+    await rig.asUser(IA_A, async (c: any) => {
       const r1 = await call(c, 'phoenix_suspend_material_dispensing',
         [requestId, ITEM_A, ORG_A, 'regulatory_hold']);
       first = r1.suspension_id;
@@ -141,7 +141,7 @@ run('203 material-dispensing-suspension domain — dynamic', () => {
   });
 
   it('cross-org denial: an org-B admin cannot suspend an org-A-scoped row', async () => {
-    await rig.asUser(CWM_B, async (c: any) => {
+    await rig.asUser(IA_B, async (c: any) => {
       await expect(call(c, 'phoenix_suspend_material_dispensing',
         [randomUUID(), ITEM_A, ORG_A, 'regulatory_hold']),
       ).rejects.toThrow(/forbidden_material_dispensing_suspension_create/);
@@ -149,7 +149,7 @@ run('203 material-dispensing-suspension domain — dynamic', () => {
   });
 
   it("reason_code='other' without reason_detail is rejected", async () => {
-    await rig.asUser(CWM_A, async (c: any) => {
+    await rig.asUser(IA_A, async (c: any) => {
       await expect(call(c, 'phoenix_suspend_material_dispensing',
         [randomUUID(), ITEM_A, ORG_A, 'other']),
       ).rejects.toThrow(/reason_detail_required_for_other/);
@@ -158,19 +158,19 @@ run('203 material-dispensing-suspension domain — dynamic', () => {
 
   it('lift requires a reason, then succeeds and flips the badge; a second lift is rejected; the row is then immutable', async () => {
     let suspensionId = '';
-    await rig.asUser(CWM_A, async (c: any) => {
+    await rig.asUser(IA_A, async (c: any) => {
       const r = await call(c, 'phoenix_suspend_material_dispensing',
         [randomUUID(), ITEM_A, ORG_A, 'recall_investigation']);
       suspensionId = r.suspension_id;
     }, { commit: true });
 
-    await rig.asUser(CWM_A, async (c: any) => {
+    await rig.asUser(IA_A, async (c: any) => {
       await expect(call(c, 'phoenix_lift_material_dispensing_suspension',
         [randomUUID(), suspensionId, null]),
       ).rejects.toThrow(/lift_reason_required/);
     });
 
-    await rig.asUser(CWM_A, async (c: any) => {
+    await rig.asUser(IA_A, async (c: any) => {
       const r = await call(c, 'phoenix_lift_material_dispensing_suspension',
         [randomUUID(), suspensionId, 'investigation closed, cleared']);
       expect(r.ok).toBe(true);
@@ -178,7 +178,7 @@ run('203 material-dispensing-suspension domain — dynamic', () => {
       expect(b.is_suspended).toBe(false);
     }, { commit: true });
 
-    await rig.asUser(CWM_A, async (c: any) => {
+    await rig.asUser(IA_A, async (c: any) => {
       await expect(call(c, 'phoenix_lift_material_dispensing_suspension',
         [randomUUID(), suspensionId, 'trying again']),
       ).rejects.toThrow(/suspension_already_lifted/);
@@ -195,7 +195,7 @@ run('203 material-dispensing-suspension domain — dynamic', () => {
   it('a future effective_start is not active yet', async () => {
     let suspensionId = '';
     const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-    await rig.asUser(CWM_A, async (c: any) => {
+    await rig.asUser(IA_A, async (c: any) => {
       const r = await call(c, 'phoenix_suspend_material_dispensing',
         [randomUUID(), ITEM_A, ORG_A, 'supply_integrity_concern', null, null, null,
           tomorrow, null]);
