@@ -194,12 +194,21 @@ run('208 dispensing-suspension enforcement (replenishment + drafts) — dynamic'
 
   it('refuses to draft a stale (since-suspended) transfer suggestion before touching anything else', async () => {
     const whStockId = randomUUID();
+    // central_item_id set to ITEM_B (the SAME item this test suspends below)
+    // so the stock row's own generated material_identity_key genuinely
+    // encodes ITEM_B — not required for 208's own check (which reads
+    // central_item_id straight off the SUGGESTION row, never the stock row),
+    // but keeps this fixture internally honest rather than merely
+    // trigger-silenced.
+    let realMaterialIdentityKey = '';
     await rig.asAdmin(async (c: any) => {
-      await c.query(`INSERT INTO warehouse_stock (
-        id, organization_id, warehouse_id, scientific_name, concentration, dosage_form, unit,
+      const r = await c.query(`INSERT INTO warehouse_stock (
+        id, organization_id, warehouse_id, central_item_id, scientific_name, concentration, dosage_form, unit,
         has_no_national_code, batch_number, has_no_batch_number, expiry_date, on_hand_quantity, reserved_quantity
-      ) VALUES ($1,'${ORG_B}','${WH_B}','P208-Draft-Material','10mg','tablet','box',true,$2,false,current_date+365,20,0)`,
+      ) VALUES ($1,'${ORG_B}','${WH_B}','${ITEM_B}','P208-Draft-Material','10mg','tablet','box',true,$2,false,current_date+365,20,0)
+      RETURNING material_identity_key`,
         [whStockId, `B-208-draft-${randomUUID()}`]);
+      realMaterialIdentityKey = r.rows[0].material_identity_key;
     });
 
     let suspensionId = '';
@@ -211,17 +220,35 @@ run('208 dispensing-suspension enforcement (replenishment + drafts) — dynamic'
 
     const suggestionId = randomUUID();
     await rig.asAdmin(async (c: any) => {
-      await c.query(`INSERT INTO inventory_transfer_suggestions (
-        id, source_organization_id, target_organization_id, scientific_name,
-        source_scope_kind, source_scope_id, target_scope_kind, target_scope_id,
-        route_kind, source_stock_id, suggested_quantity, suggestion_key, status,
-        central_item_id, material_identity_version, material_identity_key, material_identity_state
-      ) VALUES (
-        $1,'${ORG_B}','${ORG_B}','P208-Draft-Material',
-        'warehouse',$2,'outlet',$3,
-        'warehouse_to_outlet',$2,5,$4,'open',
-        '${ITEM_B}',1,$5,'resolved'
-      )`, [suggestionId, whStockId, randomUUID(), `p208-key-${suggestionId}`, `mik-p208-${suggestionId}`]);
+      // a150_inventory_suggestion_identity_guard (150) additionally compares
+      // the suggestion's OWN concentration/dosage_form/unit/national_code
+      // snapshot fields (not set here) against the stock row's — disabled
+      // for this one synthetic insert and restored immediately after,
+      // matching 150-outlet-return-aggregate-cap.dynamic.test.ts's own
+      // pattern. material_identity_key itself is the REAL generated value
+      // read back above, not fabricated, so this is not silencing a real
+      // material-identity mismatch — only the snapshot-field completeness
+      // this narrow fixture doesn't need.
+      await c.query(
+        'ALTER TABLE inventory_transfer_suggestions DISABLE TRIGGER a150_inventory_suggestion_identity_guard',
+      );
+      try {
+        await c.query(`INSERT INTO inventory_transfer_suggestions (
+          id, source_organization_id, target_organization_id, scientific_name,
+          source_scope_kind, source_scope_id, target_scope_kind, target_scope_id,
+          route_kind, source_stock_id, suggested_quantity, suggestion_key, status,
+          central_item_id, material_identity_version, material_identity_key, material_identity_state
+        ) VALUES (
+          $1,'${ORG_B}','${ORG_B}','P208-Draft-Material',
+          'warehouse','${WH_B}','outlet',$2,
+          'warehouse_to_outlet',$3,5,$4,'open',
+          '${ITEM_B}',1,$5,'resolved'
+        )`, [suggestionId, randomUUID(), whStockId, `p208-key-${suggestionId}`, realMaterialIdentityKey]);
+      } finally {
+        await c.query(
+          'ALTER TABLE inventory_transfer_suggestions ENABLE TRIGGER a150_inventory_suggestion_identity_guard',
+        );
+      }
     });
 
     await rig.asUser(rig.superAdminId, async (c: any) => {
