@@ -220,11 +220,17 @@ export function DirectSupplyComposer({
     const plan = planRetry(lines, serverLines.map(l => ({
       id: l.id,
       scientificName: l.scientificName,
+      // A request line has no batch/expiry server-side at all -- see
+      // planRetry's own doc comment. 'material' identity below matches on
+      // these real fields instead.
       batchNumber: null,
       expiryDate: null,
+      concentration: l.concentration,
+      dosageForm: l.dosageForm,
+      unit: l.unit,
       originalTransferLineId: null,
       requestedQuantity: l.requestedQuantity,
-    })), 'supply');
+    })), 'material');
 
     const retried = await commitDraft(plan.toSend, {
       // The header exists — creating another would duplicate the request.
