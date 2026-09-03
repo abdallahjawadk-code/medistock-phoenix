@@ -561,8 +561,10 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
       'supabase/migrations/205_phoenix_dispensing_suspension_enforcement_fefo.sql',
       'supabase/migrations/206_phoenix_dispensing_suspension_enforcement_suggestions.sql',
       'supabase/migrations/207_phoenix_dispensing_suspension_enforcement_warehouse_send.sql',
+      'supabase/migrations/208_phoenix_dispensing_suspension_enforcement_replenishment_and_drafts.sql',
       'supabase/migrations/__tests__/203-material-dispensing-suspension.dynamic.test.ts',
       'supabase/migrations/__tests__/204-dispensing-suspension-enforcement-dispense.dynamic.test.ts',
+      'supabase/migrations/__tests__/208-dispensing-suspension-enforcement-replenishment-and-drafts.dynamic.test.ts',
     ];
     const changed=execSync(`git diff --name-only ${BASE}`,{cwd:ROOT,encoding:'utf8'}).split('\n').map(l=>l.trim()).filter(Boolean);
     const prohibited=changed.filter(f=>WATCHED.some(p=>f===p||f.startsWith(p+'/'))&&!EXCLUDED.includes(f));
