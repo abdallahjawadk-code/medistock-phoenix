@@ -1,8 +1,8 @@
 # Suspended-from-Dispensing (203-208) — Consolidated UAT Supplement
 
 **Status: both PRs CI-green, independently verified against a real disposable
-Postgres. Neither PR is merged; no Production migration was applied; no
-Production data was touched.**
+Postgres. Neither PR is merged; no Production migration applied; no
+Production data touched.**
 
 This supplement is the single change-impact/UAT record for the whole
 203-208 domain and its UI (PR #181 + PR #182), plus the accompanying
@@ -14,130 +14,224 @@ per-migration ceremony file set.
 
 | # | Item | Where |
 |---|---|---|
-| 1 | `material_dispensing_suspensions` domain (table, RLS, permission keys, suspend/lift/status RPCs) | [203_phoenix_material_dispensing_suspension.sql](../../supabase/migrations/203_phoenix_material_dispensing_suspension.sql) |
+| 1 | `material_dispensing_suspensions` domain (table, RLS, permission keys, suspend/lift/status RPCs) | [203](../../supabase/migrations/203_phoenix_material_dispensing_suspension.sql) |
 | 2 | Dispense-time enforcement | [204](../../supabase/migrations/204_phoenix_dispensing_suspension_enforcement_dispense.sql) |
-| 3 | FEFO-time enforcement | [205](../../supabase/migrations/205_phoenix_dispensing_suspension_enforcement_fefo.sql) |
-| 4 | Suggestion-generation enforcement | [206](../../supabase/migrations/206_phoenix_dispensing_suspension_enforcement_suggestions.sql) |
-| 5 | Warehouse-dispatch send enforcement | [207](../../supabase/migrations/207_phoenix_dispensing_suspension_enforcement_warehouse_send.sql) |
+| 3 | FEFO-candidate-engine enforcement | [205](../../supabase/migrations/205_phoenix_dispensing_suspension_enforcement_fefo.sql) |
+| 4 | Suggestion-generation enforcement (intra-org + cross-org) | [206](../../supabase/migrations/206_phoenix_dispensing_suspension_enforcement_suggestions.sql) |
+| 5 | All four guarded warehouse-send functions | [207](../../supabase/migrations/207_phoenix_dispensing_suspension_enforcement_warehouse_send.sql) |
 | 6 | Emergency-replenishment + stale-draft enforcement | [208](../../supabase/migrations/208_phoenix_dispensing_suspension_enforcement_replenishment_and_drafts.sql) |
-| 7 | Admin management panel, org-wide AND outlet-scoped suspend/lift UI | `MaterialDispensingSuspensionPanel.tsx` |
-| 8 | Proactive بموقوف الصرف badge in the outlet dispense picker and the warehouse-dispatch/direct-supply stock pickers | `OutletOperationsScreen.tsx`, `DispenseComposerDialog.tsx`, `StockMaterialPicker.tsx` |
-| 9 | Quarantine domain audit/closure (zero gaps found; structural isolation, not a runtime gate) | [QUARANTINE-DOMAIN-AUDIT.md](../QUARANTINE-DOMAIN-AUDIT.md) |
+| 7 | Admin panel: org-wide **and** outlet-scoped suspend/lift, correct per-scope RBAC | `MaterialDispensingSuspensionPanel.tsx` |
+| 8 | Proactive موقوف الصرف badge before submission, in the outlet dispense list and both warehouse-side stock pickers | `OutletOperationsScreen.tsx`, `DispenseComposerDialog.tsx`, `StockMaterialPicker.tsx` |
+| 9 | Quarantine domain audit/closure (zero gaps; structural isolation, not a runtime gate) | [QUARANTINE-DOMAIN-AUDIT.md](../QUARANTINE-DOMAIN-AUDIT.md) |
 
 Every dispensing/FEFO/replenishment/suggestion/warehouse-send RPC audited
-for this work now gates on `_phoenix_is_material_dispensing_suspended_v1`
+for this work gates on `_phoenix_is_material_dispensing_suspended_v1`
 before it can move stock or generate a live suggestion for a suspended
-material — org-wide and outlet-scoped, checked at the exact scope each
-call site itself operates at (org-wide only for warehouse-side sends,
-matching 207; org-wide-or-this-outlet for outlet-side dispensing/
-replenishment, matching 204/208).
+material — checked at the exact scope each call site itself operates at
+(org-wide only for warehouse-side sends, matching 207; org-wide-or-this-outlet
+for outlet-side dispensing/replenishment, matching 204/208).
 
-## 2. Two real defects found and fixed during this work (not merely
-   "tests run"; each is a genuine server-side or fixture bug caught by a
-   real pg-rig failure and root-caused before being fixed)
+## 2. Dynamic enforcement coverage — one suite per enforcement point
 
-1. **203's lift RPC self-collision** (found via CI, not local review): the
-   immutability trigger correctly protected `request_fingerprint`, but the
-   lift RPC illegally reused that same column for its own replay
-   fingerprint, silently defeating both its own idempotency AND create's
-   replay-detection after a lift. One root cause, five cascading test
-   failures across two files, all traced to it before the fix (dedicated
-   `lift_request_fingerprint` column + index).
-2. **208's first draft regressed two later migrations** (found via CI, not
-   local review): the emergency-replenishment body was based on 168's
-   *original* text instead of 180's current one (dropping 180's
-   initial-provisioning-first gate), and the draft-from-suggestion body was
-   based on 150's *original* text instead of 151's current
-   wrapper-plus-delegate architecture (dropping 151's route-policy-gate
-   call). Both were re-derived from the actual current definition on disk
-   — confirmed by grepping every migration for the latest
-   `CREATE OR REPLACE FUNCTION`, never assumed from the introducing
-   migration number — and the fix was verified with a byte-for-byte `diff`
-   against the real source showing only the intended one-check addition in
-   each function. Two further fixture-only bugs in the new dynamic test
-   (a wrong `source_scope_id`, a fabricated `material_identity_key`, a
-   placeholder `target_scope_id` with no backing row) were caught by the
-   same CI round-trips and fixed the same way — real logs, real root
-   cause, no guessing.
+Every one of the six migrations has its own `*.dynamic.test.ts` executing
+against a real disposable `postgres:18` with `001 → 208` applied in order
+(this repository's `pg-rig` CI job). **No enforcement migration is left
+with static-only coverage.**
 
-Full narrative for both is in each migration's own header comment and in
-the git history of PR #181 (5 commits, each fixing one CI-caught issue).
+| Migration | Dynamic suite | Core proof |
+|---|---|---|
+| 203 | `203-material-dispensing-suspension` | Domain, RLS, permission keys, suspend/lift idempotency + immutability |
+| 204 | `204-…-enforcement-dispense` | Dispense refused; sibling outlet unaffected; lift restores |
+| 205 | `205-…-enforcement-fefo` | Suspended material leaves the candidate list while a **different, non-suspended material at the same warehouse keeps its batch**; a point-scoped suspension hides candidates at that outlet only while a second outlet stays eligible; org-wide reaches both; `central_item_id IS NULL` rows unchanged; lift restores FEFO order |
+| 206 | `206-…-enforcement-suggestions` | An identical surplus/deficit corridor yields a real suggestion for a free material (positive control) and **none** for a suspended one — intra-org *and* cross-org — and lifting makes it suggestible again |
+| 207 | `207-…-enforcement-warehouse-send` | All four guarded paths refuse, **including with `p_fefo_override = true` and a valid reason from an actor who genuinely holds `inventory.fefo_override`**; a dispatch whose line was added *before* the suspension is refused at send time, stays `draft`, writes no movement row, and sends normally once lifted. Every refusal is asserted together with the stock balance, so "refused" can never silently mean "refused after a partial debit" |
+| 208 | `208-…-enforcement-replenishment-and-drafts` | Suspended source refused even with a non-suspended sibling batch present (candidate-starvation is not the gate); non-suspended replenishes; lift restores; a stale since-suspended suggestion cannot be drafted |
 
-## 3. Acceptance matrix
+## 3. Two real defects found and fixed during this work
 
-| Check | PR #181 (db) | PR #182 (ui) | Real / real data source |
-|---|---|---|---|
-| `PostgreSQL pg-rig` (real disposable Postgres, `001→208` applied in order) | ✅ pass, 7m51s | ✅ pass, 7m37s | 153 dynamic test files, 2442 individual assertions passed, 0 failed |
-| `Security and quality gates` (typecheck + lint + non-DB Vitest) | ✅ pass, 3m57s | ✅ pass, 4m21s | 453 test files passed, 0 failed |
-| `Authenticated browser acceptance` (disposable local Supabase E2E) | ✅ pass, 8m47s | n/a (181-only job) | — |
-| `Vercel` preview deploy | ✅ pass | ✅ pass | — |
-| Migration 208's own dynamic suite | ✅ 4/4 tests | ✅ 4/4 tests | Suspended-source replenishment refused (with a non-suspended sibling present, proving it is a real gate, not FEFO-starvation), non-suspended material replenishes normally, lift restores replenishment, stale suspended suggestion cannot be drafted |
-| Freeze-guard / governance cascade (16 files, migration-numbering conventions) | ✅ local, folded into quality gates | ✅ same | 630 assertions |
-| Quarantine domain | ✅ audited, zero gaps | — | 27 pre-existing dynamic suites spanning its full history; see the audit doc |
+Each was caught by an actual CI failure and root-caused before being
+fixed — neither was found by review alone.
 
-Every number above is read directly from the actual CI run logs
-(`gh run view --job <id> --log`), not estimated — job IDs:
-[181 pg-rig](https://github.com/abdallahjawadk-code/medistock-phoenix/actions/runs/33783031789/job/100741058748) ·
-[182 pg-rig](https://github.com/abdallahjawadk-code/medistock-phoenix/actions/runs/33783052818/job/100741121610) ·
-[181 quality gates](https://github.com/abdallahjawadk-code/medistock-phoenix/actions/runs/33783031789/job/100741059073) ·
-[182 quality gates](https://github.com/abdallahjawadk-code/medistock-phoenix/actions/runs/33783052818/job/100741121093).
+1. **203's lift RPC self-collision.** The immutability trigger correctly
+   protected `request_fingerprint`, but the lift RPC reused that same
+   column for its own replay fingerprint, silently defeating both its own
+   idempotency and create's replay detection after a lift. One root
+   cause, five cascading failures across two suites. Fixed with a
+   dedicated `lift_request_fingerprint` column and its own partial unique
+   index.
+2. **208's first draft regressed two later migrations.** It reproduced
+   `phoenix_replenish_emergency_outlet` from 168's *original* body
+   (dropping 180's initial-provisioning-first gate) and the draft bridge
+   from 150's *original* body (dropping 151's route-policy-gate and
+   delegate architecture). 180's own suite and the `r1-6` E2E matrix
+   caught it immediately. Both bases were re-derived from the current
+   definition on disk — located by grepping every migration for the
+   latest `CREATE OR REPLACE FUNCTION`, never assumed from the
+   introducing migration number — and the fix was verified with a
+   byte-for-byte `diff` against source showing only the intended one-check
+   addition in each function. 208 now redefines the *delegate*, leaving
+   151's wrapper untouched.
 
-## 4. PR heads and file scope
+## 4. Acceptance matrix
 
-- **PR #181** — `feat/material-dispensing-suspension-db` → `master`.
-  Head `d2fc0531f544a2ef5d6c37d1d72639eb322786d8`. 30 files: migrations
-  203-208, their dynamic tests, the design doc, and the freeze-guard
-  cascade update for migration 208's numbering.
-- **PR #182** — `feat/material-dispensing-suspension-ui` →
-  `feat/material-dispensing-suspension-db` (stacked). Head
-  `f72c690b77485786d5cddd31d1ea766c116e7191`. 16 files: the admin panel,
-  the two permission hooks, the three picker/composer surfaces carrying
-  the proactive badge, one real bug fix in an unrelated composer
-  (`OutletDispatchComposer.tsx`'s `toCandidates` was hardcoding
-  `centralItemId: null`, silently disabling the badge on that one screen),
-  the Quarantine audit doc, and the two governance tests the new picker
-  reachability required updating.
+| Check | PR #181 (db) | PR #182 (ui) |
+|---|---|---|
+| `PostgreSQL pg-rig` (real disposable Postgres, `001→208` in order) | ✅ | ✅ |
+| `Security and quality gates` (typecheck + lint + build + full non-dynamic Vitest) | ✅ | ✅ |
+| `Authenticated browser acceptance` (disposable local Supabase E2E) | ✅ | n/a (job runs on #181) |
+| `Vercel` preview deploy | ✅ | ✅ |
+| `npm audit` | clean | clean |
 
-Neither PR has been merged. No `master` migration was applied to any
-database. No Production data was read, written, or touched — every
-verification above ran against CI's disposable Postgres containers.
+Numbers are read from the actual CI run logs (`gh run view --job <id> --log`),
+never estimated.
 
-## 5. Evidence seal
+## 5. Accounting — file counts and the two distinct heads
+
+PR file counts are the **merge-base** diffs GitHub itself reports
+(`gh pr diff <n> --name-only`), not a plain two-tree `git diff`:
+
+| PR | Base | Files |
+|---|---|---|
+| #181 `feat/material-dispensing-suspension-db` | `master` | **33** |
+| #182 `feat/material-dispensing-suspension-ui` | `feat/material-dispensing-suspension-db` | **17** |
+
+PR #181 was **30 files** until the three dynamic suites in §2 were added
+(30 + 3 = 33); the guard file registering them was already among the 30.
+An earlier revision of this document reported PR #182 as 16 files, which
+was correct only before this supplement itself was added to that PR.
+
+**Two heads, deliberately distinguished.** Documentation necessarily lands
+*after* the implementation it documents, so a single "head" would be
+ambiguous:
+
+- **Implementation head** — the commit whose code and tests CI actually
+  exercised. PR #181: `265c20b4`. PR #182: the merge of that commit into
+  the UI branch.
+- **Documentation head** — the later commit that adds or updates this
+  supplement. It changes no migration, no test and no application code.
+
+The hashes in §6 are measured at the implementation head and remain valid
+at the documentation head **because the documentation commit touches only
+this file**, which is not among the hashed set. That is a checkable claim,
+not a self-referential one.
+
+## 6. Evidence — per-file SHA-256
 
 SHA-256 of each of the eight files that constitute the domain's
-server-side and audit core (migrations 203-208 plus both docs), computed
-directly from the working tree at the exact commits above:
+server-side and audit core. These are **not ceremonial**: the six
+migration digests are exactly the `migration_sha256` input
+`apply-production-migration.yml` requires, one authorized run per
+migration (§7).
 
 ```
-bc46c2f9e984d8a5e8f40548878ff15ad9ae38410ef180aa909c0453d4cb6de8  203_phoenix_material_dispensing_suspension.sql
-a29d301361fd83b85fff14056872e0eabf05bb4c34e34ede5cb0331a3f9d13fe  204_phoenix_dispensing_suspension_enforcement_dispense.sql
-46f2b93e8cea4d05d28223b1d1f1cd4b3494a959c2352d5b61dabc463369b47c  205_phoenix_dispensing_suspension_enforcement_fefo.sql
-1a155c94068eaa364f559668b3db06526a65f674980d31e45f904dfe2c7ce079  206_phoenix_dispensing_suspension_enforcement_suggestions.sql
-44a0cb934376da07f19fe5dbea20d924a425e4daed56ce78c536fb35b2869b78  207_phoenix_dispensing_suspension_enforcement_warehouse_send.sql
-0a7a1dd1788f9e86a95a07e93bc84d662125a9cb25d3fbd06e09db9d398468bd  208_phoenix_dispensing_suspension_enforcement_replenishment_and_drafts.sql
-1b800ef8db37d6e15f9836d1221916fb50584149ecba052d36df8e9c19861ba8  QUARANTINE-DOMAIN-AUDIT.md
-41c73bba6a693b94a966924689c8db6adfddfb03445653b8285df541227c89e8  203-material-dispensing-suspension.md
+bc46c2f9e984d8a5e8f40548878ff15ad9ae38410ef180aa909c0453d4cb6de8  supabase/migrations/203_phoenix_material_dispensing_suspension.sql
+a29d301361fd83b85fff14056872e0eabf05bb4c34e34ede5cb0331a3f9d13fe  supabase/migrations/204_phoenix_dispensing_suspension_enforcement_dispense.sql
+46f2b93e8cea4d05d28223b1d1f1cd4b3494a959c2352d5b61dabc463369b47c  supabase/migrations/205_phoenix_dispensing_suspension_enforcement_fefo.sql
+1a155c94068eaa364f559668b3db06526a65f674980d31e45f904dfe2c7ce079  supabase/migrations/206_phoenix_dispensing_suspension_enforcement_suggestions.sql
+44a0cb934376da07f19fe5dbea20d924a425e4daed56ce78c536fb35b2869b78  supabase/migrations/207_phoenix_dispensing_suspension_enforcement_warehouse_send.sql
+0a7a1dd1788f9e86a95a07e93bc84d662125a9cb25d3fbd06e09db9d398468bd  supabase/migrations/208_phoenix_dispensing_suspension_enforcement_replenishment_and_drafts.sql
+1b800ef8db37d6e15f9836d1221916fb50584149ecba052d36df8e9c19861ba8  docs/phoenix/QUARANTINE-DOMAIN-AUDIT.md
+41c73bba6a693b94a966924689c8db6adfddfb03445653b8285df541227c89e8  docs/phoenix/proposals/203-material-dispensing-suspension.md
 ```
 
-**Combined seal** (SHA-256 of the eight lines above, in the order shown):
+Reproduce each line independently, from a clean checkout of the head named
+in §5:
 
+```bash
+sha256sum supabase/migrations/203_phoenix_material_dispensing_suspension.sql
 ```
-edf248399d9f00e792ddf0be3f7defe22c17b3a950949025331e098caba5bca7
-```
 
-Reproduce with `sha256sum` over the same eight paths, in this order, at
-commit `f72c690b77485786d5cddd31d1ea766c116e7191`.
+A previous revision of this document also published a single "combined
+seal" formed by hashing a local listing of the above. That value was **not
+reproducible** — the listing it hashed embedded absolute, machine-specific
+paths — and it has been removed rather than restated. The eight per-file
+digests above are the evidence; each stands on its own and is verifiable
+with one command.
 
-## 6. Recommended merge order
+## 7. There is no Staging environment — Production preflight instead
 
-1. Review and merge **PR #181** into `master` first (it is the
-   dependency; #182's base branch is #181's head).
-2. Apply the resulting `master` migrations 203-208 to Staging, then
-   re-run the acceptance matrix there before any Production step — this
-   supplement covers CI's disposable database only, not Staging/Production
-   parity, which is a separate, later gate this task was explicitly
-   scoped to never touch.
-3. Merge **PR #182** into `master` (GitHub will re-target it automatically
-   once #181 lands, or it can be rebased first).
-4. Neither PR should be merged by an agent — this is a human decision
-   point per the task's own constraints.
+**Verified, not assumed.** A previous revision of this document
+recommended applying 203-208 to Staging first. That recommendation was
+wrong and has been removed, because:
+
+- No workflow in `.github/workflows/` references a staging environment at
+  all (`apply-production-migration.yml`, `ci.yml`, `e2e-authenticated.yml`,
+  `ops-windows-acceptance.yml`, `production-demo-seed.yml` and the three
+  admin-function deploy workflows — grepping for "staging" returns
+  nothing).
+- `docs/phoenix/05-staging-deployment.md` names project ref
+  `eyrzxgfkvqybjdgyphap` as "staging", but that is the **same** ref
+  `apply-production-migration.yml` uses as `PROJECT_REF` under
+  `environment: production` with `PHOENIX_PRODUCTION_DATABASE_URL`, and
+  the same ref `.env.example` ships. That document describes the
+  001→004 era; the single project it set up is now Production. Following
+  its "staging" instruction today would point an operator **at
+  Production**.
+- `docs/phoenix/staging-rehearsal-runbook.md` lists "Staging Supabase
+  project created (owner action — account/billing)" as an *entry
+  criterion* — a prerequisite the owner would have to provision, not an
+  environment that exists.
+
+**Conclusion: there is exactly one Supabase project, and it is
+Production.** Nothing in this task created, altered or connected to it.
+
+### Separately authorized Production apply — preflight
+
+Every step below is a human action. Nothing here is automated by this
+work, and no agent may perform it.
+
+1. Merge PR #181 into `master` (human decision), then PR #182.
+2. Take a fresh owner-run backup export before the first apply.
+3. For each migration **in order — 203, 204, 205, 206, 207, 208 — run
+   `apply-production-migration.yml` once.** The workflow is
+   `workflow_dispatch`-only, pinned to `environment: production` (so it
+   requires that environment's approval), serialized on a
+   `production-migration-apply` concurrency group that is never cancelled,
+   and **applies exactly one pinned migration per run**, asserting
+   `expected_next_ceiling == expected_current_ceiling + 1`. Six migrations
+   therefore mean six separately authorized runs; there is no batch mode
+   and none should be improvised.
+4. Each run requires exactly: `confirm_sha` (the 40-hex `master` commit),
+   `migration_filename`, `migration_sha256` (§6), `expected_current_ceiling`,
+   `expected_next_ceiling`, `remote_history_version` (a 14-digit version
+   newer than every applied one), and the literal confirmation string
+   `APPLY_PRODUCTION_MIGRATION`.
+5. Before the first run, confirm Production's current ceiling really is
+   `202`. If it is not, stop: the ceiling inputs for all six runs shift
+   and must be recomputed from the real value.
+
+### Post-apply verification
+
+The workflow already performs, per run and without treating a zero exit
+code as proof: a read-only preflight proving exactly one pending
+migration, a dry-run preview, the apply, a post-apply dry-run asserting
+nothing is pending, a fresh-connection check that history reached exactly
+the pinned ceiling, and a re-check of the Major-H authorization
+invariants. A failed run is classified rather than retried or repaired.
+
+After all six runs, verify on Production:
+
+1. Migration ceiling is exactly `208`.
+2. `_phoenix_is_material_dispensing_suspended_v1` exists, is
+   `SECURITY DEFINER`, and carries `search_path = public, pg_temp`.
+3. The three domain RPCs and the `material_dispensing_suspension.*`
+   permission keys exist, with `.view_badge` granted to all five roles and
+   `.create`/`.lift`/`.view` to the administrative roles only.
+4. `material_dispensing_suspensions` is empty and carries no direct
+   `INSERT`/`UPDATE`/`DELETE` grant to `authenticated`.
+5. A read-only smoke of the badge RPC returns `is_suspended = false` for
+   any real `central_item_id` — i.e. the new gate is installed and inert
+   until someone deliberately suspends something.
+
+Steps 2-5 are read-only and mutate nothing.
+
+## 8. Recommended merge order
+
+1. **PR #181** into `master` — it is the dependency (#182's base branch is
+   #181's head).
+2. **PR #182** into `master` — GitHub retargets it automatically once #181
+   lands.
+3. Then, and only then, the separately authorized Production apply in §7.
+
+Merging is a human decision point; no agent merged, deployed, or mutated
+any database in producing this work.
