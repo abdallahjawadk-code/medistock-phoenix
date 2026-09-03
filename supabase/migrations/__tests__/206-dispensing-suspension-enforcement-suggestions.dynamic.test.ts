@@ -13,8 +13,12 @@
  *      fixture genuinely produces suggestions) while a suspended material
  *      yields none — the demand signal still exists, only the source is gone.
  *   2. Lifting the suspension makes the same material suggestible again.
- *   3. CROSS-ORG (phoenix_suggest_cross_org_inventory_transfer): same
- *      contrast on the central_to_institution corridor.
+ *   3. CROSS-ORG (phoenix_suggest_cross_org_inventory_transfer): the same
+ *      contrast on the central_to_institution corridor, where the refusal
+ *      is EXPLICIT — asked about one named material whose source pool 206
+ *      has emptied, the engine raises no_eligible_fefo_batch rather than
+ *      returning quietly. No live suggestion exists either way; only the
+ *      rejection proves the gated call was actually reached.
  *
  * Each recompute/suggest call runs in its OWN committed transaction: both
  * engines open TEMP TABLE ... ON COMMIT DROP internally, so two calls sharing
@@ -233,10 +237,20 @@ run('206 dispensing-suspension enforcement (transfer suggestions) — dynamic', 
     // The suspension is scoped to the SOURCE organization — that is the
     // organization whose stock 206 filters on this corridor.
     const suspensionId = await suspendOrgWide(ORG_C);
+    // The two engines refuse DIFFERENTLY, and this asserts the difference
+    // rather than papering over it. The intra-org engine sweeps every
+    // material in the organization, so a filtered-out source simply yields
+    // no suggestion for it. The cross-org engine is asked about ONE named
+    // material, so when 206 empties that material's source batch pool there
+    // is nothing left to propose and it refuses outright with
+    // no_eligible_fefo_batch. Either way no live suggestion exists — which
+    // is the property that matters — but only an explicit rejection proves
+    // the cross-org call was actually reached and actually gated.
     await rig.asUser(rig.superAdminId, async (c: any) => {
-      await call(c, 'phoenix_suggest_cross_org_inventory_transfer',
-        [ORG_C, WH_C, ORG_I, WH_I, suspendedSci, null]);
-    }, { commit: true });
+      await expect(call(c, 'phoenix_suggest_cross_org_inventory_transfer',
+        [ORG_C, WH_C, ORG_I, WH_I, suspendedSci, null]),
+      ).rejects.toThrow(/no_eligible_fefo_batch/);
+    });
     expect(await openSuggestionsFor(ORG_C, suspendedSci)).toHaveLength(0);
 
     await lift(suspensionId);

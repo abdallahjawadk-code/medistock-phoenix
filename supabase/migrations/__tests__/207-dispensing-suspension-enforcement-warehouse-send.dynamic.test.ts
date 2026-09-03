@@ -176,13 +176,19 @@ run('207 dispensing-suspension enforcement (guarded warehouse sends) — dynamic
     const late = await insertCentralStock(material, uniq('P207-R-LATE'), '2029-01-01');
     const suspensionId = await suspend(ORG_AUTH);
 
+    // Each expected refusal gets its OWN transaction: the RAISE aborts the
+    // one it happens in, so a second statement in the same transaction would
+    // only ever see "current transaction is aborted" and could never observe
+    // the real error.
     await rig.asUser(rig.superAdminId, async (c: any) => {
       await expect(call(c, 'phoenix_send_warehouse_transfer_line_fefo_guarded', [
         randomUUID(), ROUTE, late, 10, uniq('P207-R-SEND'),
         null, null, null, true, 'documented FEFO exception',
       ])).rejects.toThrow(/material_dispensing_suspended/);
-      // The earliest lot is no more sendable than the late one: suspension is
-      // a material-level fact, not a FEFO-ordering question.
+    });
+    // The earliest lot is no more sendable than the late one: suspension is
+    // a material-level fact, not a FEFO-ordering question.
+    await rig.asUser(rig.superAdminId, async (c: any) => {
       await expect(call(c, 'phoenix_send_warehouse_transfer_line_fefo_guarded', [
         randomUUID(), ROUTE, early, 10, uniq('P207-R-SEND-EARLY'),
         null, null, null, false, null,
