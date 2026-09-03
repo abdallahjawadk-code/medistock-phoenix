@@ -110,9 +110,11 @@ Symmetric between release and destroy, scoped to the quarantined stock's own
 inherently a warehouse-side concept (returns land at a warehouse, not an
 outlet/distribution point), so there is no "point-scoped quarantine" to
 expose — unlike Suspended-from-Dispensing, which genuinely applies at both
-scopes because dispensing itself happens at outlets/points (see §7 of
+scopes because dispensing itself happens at outlets/points (§2 and §3 of
 [203-material-dispensing-suspension.md](proposals/203-material-dispensing-suspension.md)
-for where that distinction is exercised in the new domain's UI).
+carry that domain's optional `distribution_point_id` scope and the exact
+scope each enforcement point checks; PR #182 exposes both scopes in the
+management panel).
 
 Both RPCs reuse the pre-existing `warehouse_transfer.return_request`
 permission key rather than a dedicated `quarantine.*` key — an established

@@ -110,43 +110,49 @@ ambiguous:
 - **Documentation head** — the later commit that adds or updates this
   supplement. It changes no migration, no test and no application code.
 
-The hashes in §6 are measured at the implementation head and remain valid
-at the documentation head **because the documentation commit touches only
-this file**, which is not among the hashed set. That is a checkable claim,
-not a self-referential one.
+The digests in §6 cover **migrations only**, and no documentation commit
+touches a migration — so they are measured at the implementation head and
+remain valid at the documentation head by construction. That is a
+checkable claim, not a self-referential one.
 
-## 6. Evidence — per-file SHA-256
+## 6. Evidence — per-migration SHA-256
 
-SHA-256 of each of the eight files that constitute the domain's
-server-side and audit core. These are **not ceremonial**: the six
-migration digests are exactly the `migration_sha256` input
-`apply-production-migration.yml` requires, one authorized run per
-migration (§7).
+SHA-256 of each of the six migrations. These are **not ceremonial**: each
+is exactly the `migration_sha256` input `apply-production-migration.yml`
+requires for its own authorized run (§7).
 
 ```
-bc46c2f9e984d8a5e8f40548878ff15ad9ae38410ef180aa909c0453d4cb6de8  supabase/migrations/203_phoenix_material_dispensing_suspension.sql
-a29d301361fd83b85fff14056872e0eabf05bb4c34e34ede5cb0331a3f9d13fe  supabase/migrations/204_phoenix_dispensing_suspension_enforcement_dispense.sql
-46f2b93e8cea4d05d28223b1d1f1cd4b3494a959c2352d5b61dabc463369b47c  supabase/migrations/205_phoenix_dispensing_suspension_enforcement_fefo.sql
-1a155c94068eaa364f559668b3db06526a65f674980d31e45f904dfe2c7ce079  supabase/migrations/206_phoenix_dispensing_suspension_enforcement_suggestions.sql
-44a0cb934376da07f19fe5dbea20d924a425e4daed56ce78c536fb35b2869b78  supabase/migrations/207_phoenix_dispensing_suspension_enforcement_warehouse_send.sql
-0a7a1dd1788f9e86a95a07e93bc84d662125a9cb25d3fbd06e09db9d398468bd  supabase/migrations/208_phoenix_dispensing_suspension_enforcement_replenishment_and_drafts.sql
-1b800ef8db37d6e15f9836d1221916fb50584149ecba052d36df8e9c19861ba8  docs/phoenix/QUARANTINE-DOMAIN-AUDIT.md
-41c73bba6a693b94a966924689c8db6adfddfb03445653b8285df541227c89e8  docs/phoenix/proposals/203-material-dispensing-suspension.md
+bc46c2f9e984d8a5e8f40548878ff15ad9ae38410ef180aa909c0453d4cb6de8  203_phoenix_material_dispensing_suspension.sql
+a29d301361fd83b85fff14056872e0eabf05bb4c34e34ede5cb0331a3f9d13fe  204_phoenix_dispensing_suspension_enforcement_dispense.sql
+46f2b93e8cea4d05d28223b1d1f1cd4b3494a959c2352d5b61dabc463369b47c  205_phoenix_dispensing_suspension_enforcement_fefo.sql
+1a155c94068eaa364f559668b3db06526a65f674980d31e45f904dfe2c7ce079  206_phoenix_dispensing_suspension_enforcement_suggestions.sql
+44a0cb934376da07f19fe5dbea20d924a425e4daed56ce78c536fb35b2869b78  207_phoenix_dispensing_suspension_enforcement_warehouse_send.sql
+0a7a1dd1788f9e86a95a07e93bc84d662125a9cb25d3fbd06e09db9d398468bd  208_phoenix_dispensing_suspension_enforcement_replenishment_and_drafts.sql
 ```
 
-Reproduce each line independently, from a clean checkout of the head named
-in §5:
+Reproduce each independently, from a clean checkout of the head named in
+§5:
 
 ```bash
 sha256sum supabase/migrations/203_phoenix_material_dispensing_suspension.sql
 ```
 
-A previous revision of this document also published a single "combined
-seal" formed by hashing a local listing of the above. That value was **not
-reproducible** — the listing it hashed embedded absolute, machine-specific
-paths — and it has been removed rather than restated. The eight per-file
-digests above are the evidence; each stands on its own and is verifiable
-with one command.
+**Two things this section deliberately no longer does.**
+
+A previous revision published a single "combined seal" formed by hashing a
+local listing of these files. That value was **not reproducible** — the
+listing it hashed embedded absolute, machine-specific paths — and it is
+removed rather than restated.
+
+That revision also sealed this domain's two prose documents. That is
+removed too, for a substantive reason rather than convenience: a migration
+is immutable once applied, so a digest genuinely pins it, and the apply
+workflow consumes that digest directly as an input. A document is a living
+record — during this reconciliation alone both prose files were
+legitimately corrected, each correction invalidating a published digest
+that had guaranteed nothing. Sealing them manufactures a false sense of
+fixity and a standing maintenance trap. The migrations are sealed; the
+documents are versioned in git, which is the right instrument for them.
 
 ## 7. There is no Staging environment — Production preflight instead
 
