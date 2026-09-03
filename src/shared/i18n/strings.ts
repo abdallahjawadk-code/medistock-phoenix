@@ -3121,6 +3121,61 @@ export const T: Dict = {
   'notif_evt_warehouse_quarantine_stock_movements.quarantine_release': { ar: 'إفراج عن مادة من الحجر', en: 'Material released from quarantine' },
   'notif_evt_warehouse_quarantine_stock_movements.quarantine_destroy': { ar: 'إتلاف مادة من الحجر',   en: 'Material destroyed from quarantine' },
   'notif_evt_stocktakes.created':                     { ar: 'تسجيل جلسة جرد',              en: 'Stocktake session recorded' },
+
+  /* ── Suspended from Dispensing / موقوف الصرف (migration 203) ──────────────
+   * A deliberately separate domain from Quarantine / الحجر الصحي — see the
+   * mds_ prefixed keys below for its own badge/labels, and the qz_ prefixed
+   * keys plus inv_tab_quarantine above for quarantine's own. Never share a
+   * key or a literal string between the two domains. ── */
+  mds_badge:                    { ar: 'موقوف الصرف',                              en: 'Suspended from Dispensing' },
+  mds_badge_with_quarantine:    { ar: 'محجور + موقوف الصرف',                      en: 'Quarantined + Suspended from Dispensing' },
+  mds_status_active:            { ar: 'إيقاف صرف نشط',                            en: 'Active dispensing suspension' },
+  mds_status_lifted:            { ar: 'تم رفع إيقاف الصرف',                       en: 'Dispensing suspension lifted' },
+  mds_blocked_explanation:      { ar: 'هذا الإجراء موقوف لأن المادة موقوفة الصرف في هذا النطاق.', en: 'This action is blocked because the material is suspended from dispensing in this scope.' },
+  mds_scope_org_wide:           { ar: 'على مستوى المؤسسة بالكامل',                en: 'Organization-wide' },
+  mds_scope_point:              { ar: 'منفذ محدد',                                en: 'This outlet only' },
+
+  mds_reason_label:             { ar: 'سبب الإيقاف',                              en: 'Suspension reason' },
+  mds_reason_regulatory_hold:          { ar: 'إيقاف تنظيمي',                      en: 'Regulatory hold' },
+  mds_reason_recall_investigation:     { ar: 'قيد التحقيق ضمن استدعاء',           en: 'Recall investigation' },
+  mds_reason_clinical_safety_concern:  { ar: 'مخاوف تتعلق بالسلامة السريرية',     en: 'Clinical safety concern' },
+  mds_reason_quality_investigation:    { ar: 'تحقيق في الجودة',                   en: 'Quality investigation' },
+  mds_reason_license_or_permit_issue:  { ar: 'مشكلة في الترخيص أو التصريح',       en: 'License or permit issue' },
+  mds_reason_supply_integrity_concern: { ar: 'مخاوف تتعلق بسلامة سلسلة التوريد',  en: 'Supply integrity concern' },
+  mds_reason_other:                    { ar: 'سبب آخر',                           en: 'Other' },
+  mds_reason_detail_label:      { ar: 'التفاصيل (سرية إداريًا)',                  en: 'Explanation (administrative — restricted)' },
+  mds_reason_detail_required:   { ar: 'التفاصيل مطلوبة عند اختيار "سبب آخر".',    en: 'An explanation is required when the reason is "Other".' },
+  mds_reference_document_label: { ar: 'رقم المرجع / المستند الرسمي',              en: 'Official reference / document number' },
+  mds_effective_start_label:    { ar: 'تاريخ ووقت بدء السريان',                   en: 'Effective start' },
+  mds_effective_end_label:      { ar: 'تاريخ ووقت انتهاء السريان (اختياري)',      en: 'Effective end (optional)' },
+  mds_created_by_label:         { ar: 'أوقفه',                                    en: 'Suspended by' },
+  mds_lifted_by_label:          { ar: 'رفعه',                                     en: 'Lifted by' },
+  mds_lift_reason_label:        { ar: 'سبب رفع الإيقاف',                          en: 'Reason for lifting' },
+
+  mds_suspend_action:           { ar: 'إيقاف عن الصرف',                           en: 'Suspend from dispensing' },
+  mds_suspend_confirm_title:    { ar: 'تأكيد إيقاف الصرف',                        en: 'Confirm dispensing suspension' },
+  mds_suspend_confirm_body:     { ar: 'سيتم منع الصرف والاقتراح الآلي لهذه المادة في هذا النطاق فورًا. هذا لا يؤثر على الحجر الصحي أو المخزون الفعلي. تابع؟', en: 'Normal dispensing and automated suggestions for this material in this scope will be blocked immediately. This does not affect quarantine or physical stock. Continue?' },
+  mds_suspend_success:          { ar: 'تم إيقاف المادة عن الصرف.',                en: 'The material has been suspended from dispensing.' },
+
+  mds_lift_action:              { ar: 'رفع إيقاف الصرف',                          en: 'Lift dispensing suspension' },
+  mds_lift_confirm_title:       { ar: 'تأكيد رفع إيقاف الصرف',                    en: 'Confirm lifting the dispensing suspension' },
+  mds_lift_confirm_body:        { ar: 'سيُسمح بالصرف العادي لهذه المادة في هذا النطاق مجددًا. هذا لا يُطلق أي كمية محجورة. تابع؟', en: 'Normal dispensing for this material in this scope will be allowed again. This does not release any quarantined quantity. Continue?' },
+  mds_lift_success:             { ar: 'تم رفع إيقاف الصرف.',                      en: 'The dispensing suspension has been lifted.' },
+
+  mds_history_title:            { ar: 'سجل إيقاف الصرف',                         en: 'Dispensing-suspension history' },
+  mds_history_empty:            { ar: 'لا يوجد سجل إيقاف صرف لهذه المادة.',       en: 'No dispensing-suspension history for this material.' },
+
+  e_material_dispensing_suspended: { ar: 'المادة موقوفة الصرف في هذا النطاق حاليًا.', en: 'This material is currently suspended from dispensing in this scope.' },
+  e_forbidden_material_dispensing_suspension_create: { ar: 'لا تملك صلاحية إيقاف مواد عن الصرف.', en: 'You do not have permission to suspend materials from dispensing.' },
+  e_forbidden_material_dispensing_suspension_lift:   { ar: 'لا تملك صلاحية رفع إيقاف الصرف.',      en: 'You do not have permission to lift a dispensing suspension.' },
+  e_forbidden_material_dispensing_suspension_view_badge: { ar: 'لا تملك صلاحية عرض حالة إيقاف الصرف.', en: 'You do not have permission to view dispensing-suspension status.' },
+  e_reason_detail_required_for_other: { ar: 'التفاصيل مطلوبة عند اختيار "سبب آخر".', en: 'An explanation is required when the reason is "Other".' },
+  e_effective_end_must_be_after_start: { ar: 'يجب أن يكون تاريخ الانتهاء بعد تاريخ البدء.', en: 'The effective end must be after the effective start.' },
+  e_suspension_already_lifted:  { ar: 'تم رفع هذا الإيقاف مسبقًا.',                en: 'This suspension has already been lifted.' },
+  e_suspension_not_found:       { ar: 'لم يتم العثور على سجل إيقاف الصرف.',        en: 'Dispensing-suspension record not found.' },
+  e_lift_reason_required:       { ar: 'سبب رفع الإيقاف مطلوب.',                    en: 'A reason for lifting is required.' },
+  e_central_item_not_found:     { ar: 'المادة غير موجودة في قائمة الأصناف المركزية.', en: 'Material not found in the central item list.' },
+  e_distribution_point_not_in_organization: { ar: 'المنفذ المحدد لا ينتمي لهذه المؤسسة.', en: 'The selected outlet does not belong to this organization.' },
 };
 
 export function t(key: string, lang: Lang): string {

@@ -705,7 +705,8 @@ run('187 delegated operational access — dynamic', () => {
     const notWidened = census.rows.filter((r: any) => !r.widened).map((r: any) => r.tablename);
     expect(notWidened.sort()).toEqual([
       'inventory_alerts', 'inventory_signal_thresholds',
-      'inventory_transfer_suggestions', 'phoenix_report_snapshots',
+      'inventory_transfer_suggestions', 'material_dispensing_suspensions',
+      'phoenix_report_snapshots',
       'procurement_order_events', 'procurement_order_lines', 'procurement_orders',
       'procurement_receipt_lines', 'procurement_receipts', 'procurement_returns',
       'procurement_suppliers',

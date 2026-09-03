@@ -88,10 +88,16 @@ describe('184 · registration and file hygiene', () => {
     const NEXT_16 = '200_phoenix_demo_purge_auth_boundary_correction.sql';
     const NEXT_17 = '201_phoenix_organization_archive_dependency_guard.sql';
     const NEXT_18 = '202_phoenix_organization_archive_reciprocal_guard.sql';
+    const NEXT_19 = '203_phoenix_material_dispensing_suspension.sql';
+    const NEXT_20 = '204_phoenix_dispensing_suspension_enforcement_dispense.sql';
+    const NEXT_21 = '205_phoenix_dispensing_suspension_enforcement_fefo.sql';
+    const NEXT_22 = '206_phoenix_dispensing_suspension_enforcement_suggestions.sql';
+    const NEXT_23 = '207_phoenix_dispensing_suspension_enforcement_warehouse_send.sql';
+    const NEXT_24 = '208_phoenix_dispensing_suspension_enforcement_replenishment_and_drafts.sql';
     const numbers = REVIEWED_MIGRATION_FILES
       .map(f => Number(f.slice(0, 3)))
       .filter(n => Number.isFinite(n));
-    expect(Math.max(...numbers)).toBe(202);
+    expect(Math.max(...numbers)).toBe(208);
     expect(REVIEWED_MIGRATION_FILES.filter(f => f.startsWith('184_'))).toHaveLength(1);
     expect(REVIEWED_MIGRATION_FILES.filter(f => f.startsWith('185_'))).toEqual([NEXT]);
     expect(REVIEWED_MIGRATION_FILES.filter(f => f.startsWith('186_'))).toEqual([NEXT_2]);
@@ -111,10 +117,16 @@ describe('184 · registration and file hygiene', () => {
     expect(REVIEWED_MIGRATION_FILES.filter(f => f.startsWith('200_'))).toEqual([NEXT_16]);
     expect(REVIEWED_MIGRATION_FILES.filter(f => f.startsWith('201_'))).toEqual([NEXT_17]);
     expect(REVIEWED_MIGRATION_FILES.filter(f => f.startsWith('202_'))).toEqual([NEXT_18]);
+    expect(REVIEWED_MIGRATION_FILES.filter(f => f.startsWith('203_'))).toEqual([NEXT_19]);
+    expect(REVIEWED_MIGRATION_FILES.filter(f => f.startsWith('204_'))).toEqual([NEXT_20]);
+    expect(REVIEWED_MIGRATION_FILES.filter(f => f.startsWith('205_'))).toEqual([NEXT_21]);
+    expect(REVIEWED_MIGRATION_FILES.filter(f => f.startsWith('206_'))).toEqual([NEXT_22]);
+    expect(REVIEWED_MIGRATION_FILES.filter(f => f.startsWith('207_'))).toEqual([NEXT_23]);
+    expect(REVIEWED_MIGRATION_FILES.filter(f => f.startsWith('208_'))).toEqual([NEXT_24]);
     const i = REVIEWED_MIGRATION_FILES.indexOf(NAME);
-    expect(REVIEWED_MIGRATION_FILES.slice(i + 1)).toEqual([NEXT, NEXT_2, NEXT_3, NEXT_4, NEXT_5, NEXT_6, NEXT_7, NEXT_8, NEXT_9, NEXT_10, NEXT_11, NEXT_12, NEXT_13, NEXT_14, NEXT_15, NEXT_16, NEXT_17, NEXT_18]);
-    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1]).toBe(NEXT_18);
-    expect(REVIEWED_MIGRATION_FILES.filter(f => /^203_/.test(f))).toHaveLength(0);
+    expect(REVIEWED_MIGRATION_FILES.slice(i + 1)).toEqual([NEXT, NEXT_2, NEXT_3, NEXT_4, NEXT_5, NEXT_6, NEXT_7, NEXT_8, NEXT_9, NEXT_10, NEXT_11, NEXT_12, NEXT_13, NEXT_14, NEXT_15, NEXT_16, NEXT_17, NEXT_18, NEXT_19, NEXT_20, NEXT_21, NEXT_22, NEXT_23, NEXT_24]);
+    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1]).toBe(NEXT_24);
+    expect(REVIEWED_MIGRATION_FILES.filter(f => /^209_/.test(f))).toHaveLength(0);
   });
 
   it('carries no CR bytes', () => {

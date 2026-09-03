@@ -368,7 +368,17 @@ describe('RAC-3 · I) no backend or migration change', () => {
     // disclosed as a known residual. Registered by EXACT filename, exactly as
     // M200/M201 were. RAC-3's own subject is untouched by it.
     const M202 = 'supabase/migrations/202_phoenix_organization_archive_reciprocal_guard.sql';
-    const ALLOWED_SQL = [M200, M201, M202];
+    // MDS-203..208: the material-dispensing-suspension domain and its five
+    // enforcement migrations. Registered by EXACT filename, exactly as
+    // M200/M201/M202 were. RAC-3's own subject (the command centre) is
+    // untouched by any of them.
+    const M203 = 'supabase/migrations/203_phoenix_material_dispensing_suspension.sql';
+    const M204 = 'supabase/migrations/204_phoenix_dispensing_suspension_enforcement_dispense.sql';
+    const M205 = 'supabase/migrations/205_phoenix_dispensing_suspension_enforcement_fefo.sql';
+    const M206 = 'supabase/migrations/206_phoenix_dispensing_suspension_enforcement_suggestions.sql';
+    const M207 = 'supabase/migrations/207_phoenix_dispensing_suspension_enforcement_warehouse_send.sql';
+    const M208 = 'supabase/migrations/208_phoenix_dispensing_suspension_enforcement_replenishment_and_drafts.sql';
+    const ALLOWED_SQL = [M200, M201, M202, M203, M204, M205, M206, M207, M208];
     const changed = execSync(
       'git diff --name-only b707f073d60b4cc61205c35003ab491f3aed7468',
       { cwd: process.cwd(), encoding: 'utf8' },

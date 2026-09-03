@@ -178,7 +178,15 @@ describe('no client-side document-number sequence exists',()=>{
     // numeric identity or document number of any kind — archived_at is a
     // timestamp stamped by a trigger, not an issued number. Boundary moves to
     // 202 so the next unknown migration still fails closed.
-    const beyond=migrations.filter(f=>/^(1[89]\d|[2-9]\d\d)_/.test(f)&&!/^(179|180|181|182|183|184|185|186|187|188|189|190|191|192|193|194|195|196|197|198|199|200|201|202)_/.test(f));
+    // MDS-203..208: the material-dispensing-suspension domain and its five
+    // enforcement migrations. 203's table PK is gen_random_uuid() (a column
+    // default, the same "warehouse UUID from column default" shape 181
+    // already used) — no sequence, no counter, no max()+1, no generated
+    // numeric identity, and no document number of any kind. 204-208 only add
+    // a suspension-eligibility check and a suggestion/candidate-list filter
+    // to existing RPCs; they introduce no new identity generation at all.
+    // Boundary moves to 208 so the next unknown migration still fails closed.
+    const beyond=migrations.filter(f=>/^(1[89]\d|[2-9]\d\d)_/.test(f)&&!/^(179|180|181|182|183|184|185|186|187|188|189|190|191|192|193|194|195|196|197|198|199|200|201|202|203|204|205|206|207|208)_/.test(f));
     expect(beyond).toEqual([]);
     for(const f of [
       '200_phoenix_demo_purge_auth_boundary_correction.sql',
