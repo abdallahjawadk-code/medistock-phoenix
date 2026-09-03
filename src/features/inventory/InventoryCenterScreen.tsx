@@ -26,6 +26,8 @@ import { useOutletReturnExceptionResolvePermission } from './useOutletReturnExce
 import { useQuarantinePermission } from './useQuarantinePermission';
 import { useInventoryReadAffordance } from './useInventoryReadAffordance';
 import { QuarantinePanel } from './QuarantinePanel';
+import { useMaterialDispensingSuspensionPermission } from './useMaterialDispensingSuspensionPermission';
+import { MaterialDispensingSuspensionPanel } from './MaterialDispensingSuspensionPanel';
 import { useApproveCorrectionPermission } from './useApproveCorrectionPermission';
 import { PendingCorrectionsPanel } from './PendingCorrectionsPanel';
 import { SUPPLY_TYPES, supplyTypeLabelKey } from '@/shared/lib/supply-types';
@@ -61,7 +63,7 @@ import type { SuggestionDocumentTarget } from './suggestion-document-navigation'
  * write.
  */
 
-type Tab = 'intake' | 'stock' | 'ledger' | 'incoming' | 'dispatch' | 'returns' | 'return_exceptions' | 'quarantine' | 'corrections';
+type Tab = 'intake' | 'stock' | 'ledger' | 'incoming' | 'dispatch' | 'returns' | 'return_exceptions' | 'quarantine' | 'suspensions' | 'corrections';
 
 export function InventoryCenterScreen({
   initialSuggestionDocument,
@@ -114,6 +116,14 @@ export function InventoryCenterScreen({
   // row's own warehouse), matching 105's widened read policy.
   const quarantinePerm = useQuarantinePermission(activeOrgId, activeWarehouseId || null);
   const canDisposeQuarantine = quarantinePerm.data ?? false;
+
+  // MATERIAL-DISPENSING-SUSPENSION (203) — deliberately org-scoped, not
+  // warehouse-scoped like quarantine above: موقوف الصرف applies to a
+  // material across the organization (or one named outlet), never to one
+  // warehouse's holding. See docs/phoenix/proposals/
+  // 203-material-dispensing-suspension.md for the full domain distinction.
+  const suspensionPerm = useMaterialDispensingSuspensionPermission(activeOrgId, null);
+  const canViewSuspensions = suspensionPerm.data?.canViewDetail ?? false;
 
   // SECOND-PERSON-CORRECTION-APPROVAL — both keys are ORG-WIDE (never
   // warehouse/outlet-scoped), matching phoenix_status_center_authorized.
@@ -309,6 +319,12 @@ export function InventoryCenterScreen({
           // release/destroy stay gated on the scoped
           // warehouse_transfer.return_request key (099/105).
           ...(canViewQuarantine ? [{ id: 'quarantine' as const, labelKey: 'inv_tab_quarantine' }] : []),
+          // MATERIAL-DISPENSING-SUSPENSION (203) — a SEPARATE tab from
+          // quarantine above, never a mode of it. Visible only to
+          // material_dispensing_suspension.view holders (administrative
+          // roles by this domain's default matrix) — front-line roles still
+          // see the موقوف الصرف badge wherever dispensing itself is blocked.
+          ...(canViewSuspensions ? [{ id: 'suspensions' as const, labelKey: 'mds_badge' }] : []),
           // SECOND-PERSON-CORRECTION-APPROVAL — VISIBLE to anyone who may read
           // either scope's history; approve/reject stay gated per scope on
           // outlet_stock.approve_correction / warehouse_stock.approve_correction (098/101).
@@ -410,6 +426,8 @@ export function InventoryCenterScreen({
         /* Mutation stays on the scoped key — a viewer sees the held lots with
            no release/destroy controls. */
         <QuarantinePanel warehouseId={activeWarehouseId} canDispose={canDisposeQuarantine} />
+      ) : tab === 'suspensions' && canViewSuspensions ? (
+        <MaterialDispensingSuspensionPanel organizationId={activeOrgId ?? ''} />
       ) : tab === 'corrections' && canViewCorrections ? (
         <PendingCorrectionsPanel
           canViewOutlet={canViewOutletCorrections}

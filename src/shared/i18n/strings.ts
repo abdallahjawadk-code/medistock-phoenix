@@ -2670,6 +2670,10 @@ export const T: Dict = {
   dispense_expired_batch:         { ar: 'لا يمكن الصرف من دفعة منتهية الصلاحية',          en: 'An expired batch cannot be dispensed' },
   dispense_quantity_positive:     { ar: 'يجب أن تكون الكمية أكبر من صفر',                 en: 'Quantity must be greater than zero' },
   dispense_forbidden:             { ar: 'غير مصرّح بالصرف من هذا المنفذ',                 en: 'Not authorized to dispense at this outlet' },
+  // 204: موقوف الصرف — distinct from dispense_expired_batch/dispense_forbidden
+  // above; this component's own hand-mapped classifier, parallel to (not the
+  // same key set as) mds_blocked_explanation/e_material_dispensing_suspended.
+  dispense_material_suspended:    { ar: 'المادة موقوفة الصرف في هذا النطاق حاليًا ولا يمكن صرفها.', en: 'This material is currently suspended from dispensing in this scope and cannot be dispensed.' },
   cor_pending_title: { ar: 'تصحيحات بانتظار الاعتماد', en: 'Corrections awaiting approval' },
   cor_pending_empty_title: { ar: 'لا توجد تصحيحات معلّقة', en: 'No pending corrections' },
   cor_pending_empty_description: {

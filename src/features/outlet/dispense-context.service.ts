@@ -210,6 +210,9 @@ export function classifyDispenseContextError(error: unknown): string {
   if (message.includes('outlet_quantity_cannot_go_negative')) return 'dispense_insufficient_stock';
   if (message.includes('outlet_quantity_below_reserved')) return 'dispense_below_reserved';
   if (message.includes('expired_batch_cannot_be_dispensed')) return 'dispense_expired_batch';
+  // 204: موقوف الصرف — an independent eligibility check from expiry/quantity;
+  // see docs/phoenix/proposals/203-material-dispensing-suspension.md.
+  if (message.includes('material_dispensing_suspended')) return 'dispense_material_suspended';
   if (message.includes('quantity_must_be_positive')) return 'dispense_quantity_positive';
   if (message.includes('forbidden_outlet_stock_dispense')) return 'dispense_forbidden';
   if (code === '42501' || message.includes('forbidden_movement_context_record')) return 'dispense_context_forbidden';
