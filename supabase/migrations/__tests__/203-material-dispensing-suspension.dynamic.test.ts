@@ -48,9 +48,14 @@ run('203 material-dispensing-suspension domain — dynamic', () => {
   beforeAll(async () => {
     rig = await buildRig({ upTo: 203 });
     await rig.asAdmin(async (c: any) => {
+      // institution_class='hospital', not 'health_sector' — deliberately: a
+      // health_sector org's warehouses fall under 181's topology trigger
+      // (facility_id / is_main requirements) that this suite has no reason
+      // to satisfy. 'hospital' keeps organizations_kind_institution_class_chk
+      // satisfied with none of that extra shape.
       await c.query(`INSERT INTO organizations (id,name,name_ar,code,organization_kind,institution_class) VALUES
-        ('${ORG_A}','A','أ','p203-a','care_institution','health_sector'),
-        ('${ORG_B}','B','ب','p203-b','care_institution','health_sector') ON CONFLICT (id) DO NOTHING;`);
+        ('${ORG_A}','A','أ','p203-a','care_institution','hospital'),
+        ('${ORG_B}','B','ب','p203-b','care_institution','hospital') ON CONFLICT (id) DO NOTHING;`);
       await c.query(`INSERT INTO warehouses (id,organization_id,name,name_ar,status,warehouse_kind,code) VALUES
         ('${WH_A}','${ORG_A}','WH-A','مخزن أ','active','institution','p203-wa')
         ON CONFLICT (id) DO NOTHING;`);
