@@ -91,10 +91,12 @@ run('206 dispensing-suspension enforcement (transfer suggestions) — dynamic', 
         ('${ORG_A}','Intra 206','داخلي ٢٠٦','p206-a','care_institution','hospital'),
         ('${ORG_I}','Institution 206','مؤسسة ٢٠٦','p206-i','care_institution','hospital')
         ON CONFLICT (id) DO NOTHING;`);
-      // The central org keeps the repository's default organization_kind so
-      // its central warehouse is a legal central_to_institution source.
-      await c.query(`INSERT INTO organizations (id,name,name_ar,code) VALUES
-        ('${ORG_C}','Central 206','مركزي ٢٠٦','p206-c')
+      // 171 makes the pairing exact: a central warehouse's owner is a
+      // pharmacy_department_authority with institution_class NULL (the same
+      // shape 165/166/167's own fixtures use), and
+      // organizations_kind_institution_class_chk refuses anything else.
+      await c.query(`INSERT INTO organizations (id,name,name_ar,code,organization_kind,institution_class) VALUES
+        ('${ORG_C}','Central 206','مركزي ٢٠٦','p206-c','pharmacy_department_authority',NULL)
         ON CONFLICT (id) DO NOTHING;`);
       await c.query(`INSERT INTO warehouses (id,organization_id,name,name_ar,status,warehouse_kind,code) VALUES
         ('${WH_A}','${ORG_A}','WH A 206','مخزن أ ٢٠٦','active','institution','p206-wa'),
