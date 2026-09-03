@@ -43,8 +43,8 @@ run('204 dispensing-suspension enforcement (phoenix_dispense_outlet_stock) — d
   beforeAll(async () => {
     rig = await buildRig({ upTo: 204 });
     await rig.asAdmin(async (c: any) => {
-      await c.query(`INSERT INTO organizations (id,name,name_ar,code) VALUES
-        ('${ORG_A}','A','أ','p204-a') ON CONFLICT (id) DO NOTHING;`);
+      await c.query(`INSERT INTO organizations (id,name,name_ar,code,organization_kind,institution_class) VALUES
+        ('${ORG_A}','A','أ','p204-a','care_institution','health_sector') ON CONFLICT (id) DO NOTHING;`);
       await c.query(`INSERT INTO warehouses (id,organization_id,name,name_ar,status,warehouse_kind,code) VALUES
         ('${WH_A}','${ORG_A}','WH-A','مخزن أ','active','institution','p204-wa')
         ON CONFLICT (id) DO NOTHING;`);

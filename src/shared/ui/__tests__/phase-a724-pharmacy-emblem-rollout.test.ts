@@ -550,6 +550,19 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
       'supabase/migrations/202_phoenix_organization_archive_reciprocal_guard.sql',
       'supabase/migrations/__tests__/202-organization-archive-reciprocal-guard.dynamic.test.ts',
       'supabase/migrations/__tests__/134-dispense-context-beneficiary-field-exclusivity.dynamic.test.ts',
+      // MDS-203..207: the material-dispensing-suspension domain and its four
+      // enforcement migrations, plus the two dynamic tests written for this
+      // slice (203's domain RPCs, 204's dispense enforcement). Registered by
+      // EXACT filename, exactly as M201/M202 were. A7.2.4's own subject is
+      // untouched by any of them, and no other file under supabase/ or
+      // src/shared/supabase changed.
+      'supabase/migrations/203_phoenix_material_dispensing_suspension.sql',
+      'supabase/migrations/204_phoenix_dispensing_suspension_enforcement_dispense.sql',
+      'supabase/migrations/205_phoenix_dispensing_suspension_enforcement_fefo.sql',
+      'supabase/migrations/206_phoenix_dispensing_suspension_enforcement_suggestions.sql',
+      'supabase/migrations/207_phoenix_dispensing_suspension_enforcement_warehouse_send.sql',
+      'supabase/migrations/__tests__/203-material-dispensing-suspension.dynamic.test.ts',
+      'supabase/migrations/__tests__/204-dispensing-suspension-enforcement-dispense.dynamic.test.ts',
     ];
     const changed=execSync(`git diff --name-only ${BASE}`,{cwd:ROOT,encoding:'utf8'}).split('\n').map(l=>l.trim()).filter(Boolean);
     const prohibited=changed.filter(f=>WATCHED.some(p=>f===p||f.startsWith(p+'/'))&&!EXCLUDED.includes(f));

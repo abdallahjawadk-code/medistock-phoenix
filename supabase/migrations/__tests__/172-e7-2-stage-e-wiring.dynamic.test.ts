@@ -242,6 +242,16 @@ run('E7-2 · Stage-E application wiring (dynamic)',()=>{
       // guard stays exhaustive and still fails closed on any unlisted new
       // file.
       '202_phoenix_organization_archive_reciprocal_guard.sql',
+      // MDS-203..207: the material-dispensing-suspension domain and its four
+      // enforcement migrations. They add no Stage-E SQL — no corridor, route,
+      // dispatch or supply semantics are touched — so the "Stage E still ends
+      // at 171" assertion above is unaffected. Listed here so this guard
+      // stays exhaustive and still fails closed on any unlisted new file.
+      '203_phoenix_material_dispensing_suspension.sql',
+      '204_phoenix_dispensing_suspension_enforcement_dispense.sql',
+      '205_phoenix_dispensing_suspension_enforcement_fefo.sql',
+      '206_phoenix_dispensing_suspension_enforcement_suggestions.sql',
+      '207_phoenix_dispensing_suspension_enforcement_warehouse_send.sql',
     ];
     it('Stage E still ends at 171 — E7-2 introduced no new SQL',()=>{
       const files=readdirSync(join(__dirname,'..')).filter(f=>/^\d{3}_.*\.sql$/.test(f));
