@@ -574,8 +574,24 @@ function SupplySourceDrilldown({ orgId, bucket, lang, onToast }: {
 }) {
   const [open, setOpen] = useState(false);
   const [xlsxBusy, setXlsxBusy] = useState(false);
+  /**
+   * PHX-DEFECT-2026-09-02-SUPPLY-SOURCE-DRILLDOWN-LOADING-STATE-UNREACHABLE:
+   * while closed, this used to resolve to `Promise.resolve([])`, which
+   * committed `detail.data = []` before the bucket was ever opened. useAsync
+   * never resets `data` back to null on a new fetch (by design -- it is what
+   * lets a reload keep showing prior data elsewhere in this file), so the
+   * instant `open` flipped true and the real fetch began, `detail.data` was
+   * STILL that placeholder `[]` -- a real, non-null value the render logic
+   * below could not tell apart from "already loaded, genuinely empty".
+   * A never-settling promise leaves `data` truthfully unset (null) while
+   * closed, so the very first open correctly hits the loading branch, and a
+   * genuinely empty *result* (after the real fetch resolves) still renders
+   * the real empty state exactly as before. The placeholder promise is
+   * intentionally discarded, not awaited: nothing here ever needs it to
+   * settle, since nothing renders while `open` is false.
+   */
   const detail = useAsync(
-    () => (open ? getSupplySourcesDetail(orgId, bucket.key) : Promise.resolve<SupplySourceDetailRow[]>([])),
+    () => (open ? getSupplySourcesDetail(orgId, bucket.key) : new Promise<SupplySourceDetailRow[]>(() => {})),
     [orgId, bucket.key, open],
   );
 
