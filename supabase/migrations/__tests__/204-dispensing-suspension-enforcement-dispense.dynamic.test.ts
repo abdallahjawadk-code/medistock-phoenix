@@ -26,7 +26,7 @@ const WH_A = '00000000-0000-0000-0000-000000204101';
 const DP_A = '00000000-0000-0000-0000-000000204301'; // suspended-scope outlet
 const DP_A2 = '00000000-0000-0000-0000-000000204302'; // sibling outlet, same org
 
-const CWM_A = '00000000-0000-0000-0000-000000204401'; // suspends/lifts
+const IA_A = '00000000-0000-0000-0000-000000204401'; // institution_admin, org A — suspends/lifts
 const OO_A = '00000000-0000-0000-0000-000000204402';   // dispenses at DP_A
 const OO_A2 = '00000000-0000-0000-0000-000000204403';  // dispenses at DP_A2
 
@@ -60,14 +60,14 @@ run('204 dispensing-suspension enforcement (phoenix_dispense_outlet_stock) — d
         ON CONFLICT (id) DO NOTHING;`);
 
       await c.query(`INSERT INTO auth.users (id,email) VALUES
-        ('${CWM_A}','p204-cwma@rig'),('${OO_A}','p204-ooa@rig'),('${OO_A2}','p204-ooa2@rig')
+        ('${IA_A}','p204-iaa@rig'),('${OO_A}','p204-ooa@rig'),('${OO_A2}','p204-ooa2@rig')
         ON CONFLICT (id) DO NOTHING;`);
-      await c.query(`UPDATE profiles SET role='central_warehouse_manager',status='active',organization_id='${ORG_A}' WHERE id='${CWM_A}';`);
+      await c.query(`UPDATE profiles SET role='institution_admin',status='active',organization_id='${ORG_A}' WHERE id='${IA_A}';`);
       await c.query(`UPDATE profiles SET role='outlet_officer',status='active',organization_id='${ORG_A}' WHERE id='${OO_A}';`);
       await c.query(`UPDATE profiles SET role='outlet_officer',status='active',organization_id='${ORG_A}' WHERE id='${OO_A2}';`);
 
       await c.query(`INSERT INTO profile_scope_assignments (profile_id, organization_id, scope_type, warehouse_id, is_active)
-        VALUES ('${CWM_A}','${ORG_A}','warehouse','${WH_A}',true)
+        VALUES ('${IA_A}','${ORG_A}','warehouse','${WH_A}',true)
         ON CONFLICT DO NOTHING;`);
       await c.query(`INSERT INTO profile_scope_assignments (profile_id, organization_id, scope_type, distribution_point_id, is_active)
         VALUES ('${OO_A}','${ORG_A}','distribution_point','${DP_A}',true),
@@ -95,7 +95,7 @@ run('204 dispensing-suspension enforcement (phoenix_dispense_outlet_stock) — d
     const otherStockId = await seedOutletStock(ORG_A, DP_A, ITEM_OTHER, 'P204-Other');
 
     let suspensionId = '';
-    await rig.asUser(CWM_A, async (c: any) => {
+    await rig.asUser(IA_A, async (c: any) => {
       const r = await call(c, 'phoenix_suspend_material_dispensing',
         [randomUUID(), ITEM_SUSPENDED, ORG_A, 'regulatory_hold']);
       suspensionId = r.suspension_id;
@@ -119,7 +119,7 @@ run('204 dispensing-suspension enforcement (phoenix_dispense_outlet_stock) — d
       expect(r.quantity_after).toBe(95);
     }, { commit: true });
 
-    await rig.asUser(CWM_A, async (c: any) => {
+    await rig.asUser(IA_A, async (c: any) => {
       const r = await call(c, 'phoenix_lift_material_dispensing_suspension',
         [randomUUID(), suspensionId, 'hold cleared']);
       expect(r.ok).toBe(true);
@@ -137,7 +137,7 @@ run('204 dispensing-suspension enforcement (phoenix_dispense_outlet_stock) — d
     const stockAtA = await seedOutletStock(ORG_A, DP_A, ITEM_SUSPENDED, 'P204-Scoped-A');
     const stockAtA2 = await seedOutletStock(ORG_A, DP_A2, ITEM_SUSPENDED, 'P204-Scoped-A2');
 
-    await rig.asUser(CWM_A, async (c: any) => {
+    await rig.asUser(IA_A, async (c: any) => {
       await call(c, 'phoenix_suspend_material_dispensing',
         [randomUUID(), ITEM_SUSPENDED, ORG_A, 'clinical_safety_concern', DP_A]);
     }, { commit: true });
