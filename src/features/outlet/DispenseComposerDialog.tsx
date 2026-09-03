@@ -9,6 +9,10 @@ import {
   type DispenseBeneficiaryType, type PatientReferenceType,
 } from './dispense-context.service';
 import type { OutletStockRow } from './outlet-stock.service';
+import {
+  materialDispensingSuspensionReasonLabel,
+  type MaterialDispensingSuspensionBadge,
+} from '@/features/inventory/material-dispensing-suspension.service';
 
 interface Props {
   open: boolean;
@@ -18,6 +22,15 @@ interface Props {
   lots?: readonly OutletStockRow[];
   lang: 'ar' | 'en';
   canDispense: boolean;
+  /**
+   * The outlet stock list's own badge lookup for `lot`, carried in rather
+   * than re-fetched, so this dialog and the list row it was opened from can
+   * never disagree. Defense-in-depth only: this composer's own submit gate
+   * (below) is what makes it unreachable in the normal flow (the "Dispense"
+   * button never renders for a suspended row) — migration 204 is the actual
+   * authority, and refuses even a request that somehow bypassed both.
+   */
+  suspension?: MaterialDispensingSuspensionBadge | null;
   onClose: () => void;
   onSuccess: (quantityAfter: number) => void;
 }
@@ -48,7 +61,7 @@ const labelStyle = {
  * enforced here is re-enforced server-side; this is preflight, not
  * authorization.
  */
-export function DispenseComposerDialog({ open, lot, lots, lang, canDispense, onClose, onSuccess }: Props) {
+export function DispenseComposerDialog({ open, lot, lots, lang, canDispense, suspension, onClose, onSuccess }: Props) {
   const [quantity, setQuantity] = useState('');
   const [beneficiaryType, setBeneficiaryType] = useState<DispenseBeneficiaryType>('patient');
   const [patientName, setPatientName] = useState('');
@@ -114,8 +127,10 @@ export function DispenseComposerDialog({ open, lot, lots, lang, canDispense, onC
   const patientRefIncomplete = beneficiaryType === 'patient' && patientIdentifier.trim() === '';
   const internalOrderMissing = beneficiaryType === 'internal_order' && internalOrderReference.trim() === '';
 
+  const suspended = suspension?.isSuspended ?? false;
+
   const canSubmit =
-    canDispense && !busy &&
+    canDispense && !suspended && !busy &&
     qtyNum !== null && Number.isInteger(qtyNum) && qtyNum > 0 && !qtyExceeds &&
     !patientNameMissing && !patientRefIncomplete && !internalOrderMissing;
 
@@ -187,7 +202,12 @@ export function DispenseComposerDialog({ open, lot, lots, lang, canDispense, onC
         )}
       </div>
 
-      {!canDispense ? (
+      {suspended ? (
+        <p style={{ fontSize: '12.5px', color: 'var(--err)', textAlign: 'center' }} dir="auto">
+          {t('mds_blocked_explanation', lang)}
+          {suspension?.reasonCode ? ` — ${materialDispensingSuspensionReasonLabel(suspension.reasonCode, lang)}` : ''}
+        </p>
+      ) : !canDispense ? (
         <p style={{ fontSize: '12.5px', color: 'var(--err)', textAlign: 'center' }} dir="auto">{t('dsp_no_permission', lang)}</p>
       ) : (
         <>

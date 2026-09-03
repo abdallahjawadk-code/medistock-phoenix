@@ -15,9 +15,15 @@ import { PhoenixCard } from '@/shared/ui/PhoenixCard';
 import { PhoenixInput } from '@/shared/ui/PhoenixInput';
 import { PhoenixButton } from '@/shared/ui/PhoenixButton';
 import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
+import { PhoenixStatusBadge } from '@/shared/ui/PhoenixStatusBadge';
+import { useAsync } from '@/shared/lib/useAsync';
 import { t } from '@/shared/i18n/strings';
 import type { Lang } from '@/shared/lib/types';
 import { searchStock, recommendFefo, isExpired, type StockCandidate } from '../composer-model';
+import {
+  getMaterialDispensingSuspensionBadges,
+  materialDispensingSuspensionReasonLabel,
+} from '@/features/inventory/material-dispensing-suspension.service';
 
 const dash = (v: string | null | undefined) => (v === null || v === undefined || v === '' ? '—' : v);
 
@@ -28,15 +34,35 @@ interface Props {
   usedStockIds: readonly string[];
   onAdd: (stock: StockCandidate, quantity: number) => void;
   loading?: boolean;
+  /**
+   * The SOURCE warehouse's organization — enables the proactive موقوف الصرف
+   * badge. Checked org-wide only (distribution_point_id always null), because
+   * this is a warehouse-side send: migrations 207/150 gate
+   * phoenix_send_warehouse_dispatch et al. on the exact same org-wide-only
+   * scope, never a destination outlet's own suspension (a suspension local
+   * to one outlet does not stop a warehouse dispatching to a DIFFERENT
+   * outlet). Omit to skip the check entirely (e.g. a caller with no org
+   * context yet) — the picker still works, just without the badge.
+   */
+  organizationId?: string | null;
 }
 
-export function StockMaterialPicker({ lang, candidates, usedStockIds, onAdd, loading }: Props) {
+export function StockMaterialPicker({ lang, candidates, usedStockIds, onAdd, loading, organizationId }: Props) {
   const [query, setQuery] = useState('');
   const [quantities, setQuantities] = useState<Record<string, string>>({});
 
   const used = useMemo(() => new Set(usedStockIds), [usedStockIds]);
   const results = useMemo(() => searchStock(candidates, query), [candidates, query]);
   const fefo = useMemo(() => recommendFefo(candidates), [candidates]);
+
+  const centralItemIds = useMemo(
+    () => Array.from(new Set(candidates.map(c => c.centralItemId).filter((id): id is string => id !== null))).sort(),
+    [candidates],
+  );
+  const suspensionBadges = useAsync(
+    () => getMaterialDispensingSuspensionBadges({ centralItemIds, organizationId: organizationId ?? '', distributionPointId: null }),
+    [centralItemIds.join(','), organizationId],
+  );
 
   if (loading) return <p style={{ fontSize: '12.5px', color: 'var(--t2)' }}>…</p>;
 
@@ -56,9 +82,13 @@ export function StockMaterialPicker({ lang, candidates, usedStockIds, onAdd, loa
           {results.map(stock => {
             const expired = isExpired(stock.expiryDate);
             const alreadyUsed = used.has(stock.warehouseStockId);
-            // Expired or fully-committed stock is shown but not dispatchable —
-            // hiding it would leave the operator wondering where it went.
-            const blocked = expired || stock.availableQuantity <= 0 || alreadyUsed;
+            const suspension = stock.centralItemId ? suspensionBadges.data?.get(stock.centralItemId) : undefined;
+            const suspended = suspension?.isSuspended ?? false;
+            // Expired, fully-committed, or suspended stock is shown but not
+            // dispatchable — hiding it would leave the operator wondering
+            // where it went (same rule already applied to expired/used rows;
+            // suspended only adds a third reason, never a different policy).
+            const blocked = expired || stock.availableQuantity <= 0 || alreadyUsed || suspended;
             const typed = quantities[stock.warehouseStockId] ?? '';
             const quantity = Number(typed);
             const quantityValid = Number.isInteger(quantity) && quantity > 0 && quantity <= stock.availableQuantity;
@@ -69,6 +99,11 @@ export function StockMaterialPicker({ lang, candidates, usedStockIds, onAdd, loa
                   <div style={{ minWidth: 0 }}>
                     <div style={{ fontSize: '13px', fontWeight: 700 }}>
                       {stock.scientificName}
+                      {suspended && (
+                        <span style={{ marginInlineStart: '8px' }}>
+                          <PhoenixStatusBadge variant="err" label={t('mds_badge', lang)} />
+                        </span>
+                      )}
                       {fefo?.warehouseStockId === stock.warehouseStockId && (
                         <span style={{
                           marginInlineStart: '8px', fontSize: '10px', fontWeight: 700,
@@ -99,6 +134,12 @@ export function StockMaterialPicker({ lang, candidates, usedStockIds, onAdd, loa
                     {alreadyUsed && (
                       <div style={{ fontSize: '11.5px', color: 'var(--warn)', fontWeight: 700, marginTop: '3px' }}>
                         {t('mv_e_duplicate_material_batch', lang)}
+                      </div>
+                    )}
+                    {suspended && (
+                      <div style={{ fontSize: '11.5px', color: 'var(--err)', fontWeight: 700, marginTop: '3px' }} dir="auto">
+                        {t('mds_blocked_explanation', lang)}
+                        {suspension?.reasonCode ? ` — ${materialDispensingSuspensionReasonLabel(suspension.reasonCode, lang)}` : ''}
                       </div>
                     )}
                   </div>

@@ -73,6 +73,8 @@ const REVIEWED: readonly ReviewedTuple[] = [
     'Read model of the caller’s OWN operational resources. Note this is the read symbol imported from a module that also exports delegated-scope writers — those writers are NOT reachable, which is the mixed-module control below.'),
   t(3, `${SVC}/scope-topology.service.ts`, 'getOrganizationScopeTopology', 'phoenix_query_organization_scope_topology',
     'Read model (191 canonical scope topology read contract).'),
+  t(3, `${INV}/material-dispensing-suspension.service.ts`, 'getMaterialDispensingSuspensionBadges', 'phoenix_get_material_dispensing_suspension_status',
+    'Read model (203, view_badge permission — broadly granted, coded-reason-only: returns only central_item_id/is_suspended/reason_code/effective_start, never reason_detail/reference_document/lift fields). Reached from InventoryCenterScreen via MaterialDispensingSuspensionPanel.'),
 
   // ── screen 6 · QR ──────────────────────────────────────────────────────────
   t(6, `${SVC}/delegated-access.service.ts`, 'getMyOperationalResourceCatalog', 'phoenix_my_operational_resource_catalog',
@@ -109,6 +111,8 @@ const REVIEWED: readonly ReviewedTuple[] = [
     'Same own-resource read model, reached from the outlet surface.'),
   t(18, `${SVC}/scope-topology.service.ts`, 'getOrganizationScopeTopology', 'phoenix_query_organization_scope_topology',
     'Same canonical topology read model, reached from the outlet surface.'),
+  t(18, `${INV}/material-dispensing-suspension.service.ts`, 'getMaterialDispensingSuspensionBadges', 'phoenix_get_material_dispensing_suspension_status',
+    'Same read model as screen 3, reached here for the proactive موقوف الصرف badge on the outlet stock list (204/OutletStockTab) — broadly granted view_badge permission, no sensitive fields returned.'),
 ];
 
 const REVIEWED_KEYS = new Set(REVIEWED.map(tupleKey));

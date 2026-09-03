@@ -340,6 +340,7 @@ export function DirectSupplyComposer({
           candidates={stock}
           usedStockIds={lines.map(l => l.warehouseStockId).filter((v): v is string => Boolean(v))}
           loading={stockLoading}
+          organizationId={sourceWarehouse?.organizationId ?? null}
           onAdd={(candidate, quantity) =>
             setLines(previous => [...previous, draftLineFromStock(candidate, quantity, newKey())])}
         />

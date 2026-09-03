@@ -27,6 +27,16 @@ export interface OutletStockRow {
    *  and passed back as expectedGeneration to phoenix_count_outlet_stock_guarded
    *  so a stale correction cannot silently overwrite a fresher one. */
   generation: number;
+  /**
+   * Migration 060's original central_items identity (never a client-side
+   * derivation). NULL for legacy/unresolved rows — the same "cannot be
+   * suspended because there is nothing resolved to key a suspension on"
+   * exemption 204 itself applies server-side. Read here so the outlet stock
+   * list can ask phoenix_get_material_dispensing_suspension_status once per
+   * unique material and show the موقوف الصرف badge proactively, before the
+   * operator opens the dispense composer and the server refuses it.
+   */
+  centralItemId: string | null;
 }
 
 interface OutletStockDbRow {
@@ -34,12 +44,12 @@ interface OutletStockDbRow {
   dosage_form: string | null; unit: string | null; national_code: string | null;
   batch_number: string | null; internal_batch_reference: string | null; expiry_date: string | null;
   on_hand_quantity: number; reserved_quantity: number; available_quantity: number;
-  movement_seq: number | string;
+  movement_seq: number | string; central_item_id: string | null;
 }
 
 const OUTLET_STOCK_COLUMNS =
   'id, scientific_name, trade_name, concentration, dosage_form, unit, national_code, ' +
-  'batch_number, internal_batch_reference, expiry_date, on_hand_quantity, reserved_quantity, available_quantity, movement_seq';
+  'batch_number, internal_batch_reference, expiry_date, on_hand_quantity, reserved_quantity, available_quantity, movement_seq, central_item_id';
 
 /** Current on-hand batches at one outlet, soonest-expiry first. RLS-scoped, read-only. */
 export async function getOutletStock(distributionPointId: string): Promise<OutletStockRow[]> {
@@ -55,6 +65,7 @@ export async function getOutletStock(distributionPointId: string): Promise<Outle
     internalBatchReference: r.internal_batch_reference, expiryDate: r.expiry_date,
     onHandQuantity: r.on_hand_quantity, reservedQuantity: r.reserved_quantity, availableQuantity: r.available_quantity,
     generation: typeof r.movement_seq === 'string' ? Number(r.movement_seq) : r.movement_seq,
+    centralItemId: r.central_item_id,
   }));
 }
 

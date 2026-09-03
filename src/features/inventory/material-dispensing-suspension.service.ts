@@ -1,4 +1,5 @@
 import { supabase, supabaseConfigured } from '@/shared/supabase/client';
+import { t } from '@/shared/i18n/strings';
 
 /**
  * MATERIAL-DISPENSING-SUSPENSION — thin client over migration 203's domain
@@ -181,4 +182,17 @@ export async function getMaterialDispensingSuspensionBadges(input: {
     });
   }
   return map;
+}
+
+/**
+ * The single bilingual label for a coded reason, shared by every surface
+ * that shows a موقوف الصرف badge/reason (the management panel and the
+ * proactive picker badges) so the two never drift into different wording
+ * for the same `reason_code`. Falls back to the raw code for an unknown
+ * value rather than throwing.
+ */
+export function materialDispensingSuspensionReasonLabel(reasonCode: string, lang: 'ar' | 'en'): string {
+  const key = `mds_reason_${reasonCode}`;
+  const label = t(key, lang);
+  return label === key ? reasonCode : label;
 }

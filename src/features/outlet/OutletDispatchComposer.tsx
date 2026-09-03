@@ -85,7 +85,14 @@ async function deriveDispatchLineRequestId(line: {
 
 const toCandidates = (batches: Awaited<ReturnType<typeof getWarehouseStock>>): StockCandidate[] =>
   batches.map(b => ({
-    warehouseStockId: b.id, centralItemId: null, scientificName: b.scientificName,
+    // centralItemId carried straight through (not hardcoded null like the
+    // trade name/concentration/dosage form/unit fields this composer never
+    // displays): it is required for the موقوف الصرف picker badge
+    // (StockMaterialPicker) to resolve at all, and getWarehouseStock already
+    // reads the real column — dropping it here would silently disable the
+    // badge for every institution-warehouse dispatch composed through this
+    // screen while working correctly everywhere else.
+    warehouseStockId: b.id, centralItemId: b.centralItemId, scientificName: b.scientificName,
     tradeName: null, concentration: null, dosageForm: null, unit: null,
     nationalCode: b.nationalCode, batchNumber: b.batchNumber, internalBatchReference: null,
     expiryDate: b.expiryDate, onHandQuantity: b.onHandQuantity,
@@ -403,6 +410,7 @@ export function OutletDispatchComposer({
           candidates={stock}
           usedStockIds={lines.map(l => l.warehouseStockId).filter((v): v is string => Boolean(v))}
           loading={stockLoading || fefoCheckBusy}
+          organizationId={activeOrgId}
           onAdd={(candidate, quantity) => void handlePick(candidate, quantity)}
         />
       )}

@@ -3138,6 +3138,9 @@ export const T: Dict = {
   mds_blocked_explanation:      { ar: 'هذا الإجراء موقوف لأن المادة موقوفة الصرف في هذا النطاق.', en: 'This action is blocked because the material is suspended from dispensing in this scope.' },
   mds_scope_org_wide:           { ar: 'على مستوى المؤسسة بالكامل',                en: 'Organization-wide' },
   mds_scope_point:              { ar: 'منفذ محدد',                                en: 'This outlet only' },
+  mds_scope_selector_label:     { ar: 'نطاق الإيقاف',                             en: 'Suspension scope' },
+  mds_scope_outlet_select_label: { ar: 'اختر المنفذ',                            en: 'Select the outlet' },
+  mds_scope_no_outlets:         { ar: 'لا توجد منافذ ضمن نطاق صلاحيتك لإيقاف الصرف فيها.', en: 'There are no outlets in your permitted scope to suspend dispensing at.' },
 
   mds_reason_label:             { ar: 'سبب الإيقاف',                              en: 'Suspension reason' },
   mds_reason_regulatory_hold:          { ar: 'إيقاف تنظيمي',                      en: 'Regulatory hold' },

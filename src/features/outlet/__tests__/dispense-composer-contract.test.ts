@@ -139,7 +139,10 @@ describe('D) retry safety', () => {
   });
 
   it('disables submit while a request is in flight', () => {
-    expect(composer).toMatch(/canDispense && !busy/);
+    // 204/mds_badge: a suspended material's own gate (!suspended) sits
+    // between canDispense and !busy now — still refuses in-flight resubmits,
+    // just no longer the very next token after canDispense.
+    expect(composer).toMatch(/canDispense && !suspended && !busy/);
   });
 });
 

@@ -91,6 +91,7 @@ const STOCK: OutletStockRow = {
   id: 'stock-synth-1', scientificName: 'Synthetic Amoxicillin', tradeName: null, concentration: null,
   dosageForm: null, unit: null, nationalCode: null, batchNumber: 'BATCH-SYNTH-REPL', internalBatchReference: null,
   expiryDate: null, onHandQuantity: 10, reservedQuantity: 0, availableQuantity: 10, generation: 1,
+  centralItemId: null,
 };
 
 const REVERSIBLE: ReversibleBatch = {
