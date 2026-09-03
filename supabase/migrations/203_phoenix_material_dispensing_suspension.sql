@@ -73,7 +73,13 @@ CREATE TABLE IF NOT EXISTS public.material_dispensing_suspensions (
   lifted_at               timestamptz,
   lift_reason             text,
 
-  request_fingerprint     text,
+  -- Two SEPARATE fingerprints, not one reused across both operations: create
+  -- and lift are different idempotency scopes, and a lift that overwrote a
+  -- single shared column would erase the create's own replay key — a REPLAY
+  -- of the ORIGINAL suspend request_id, arriving after a lift, would then
+  -- find nothing and mint a second row instead of recognizing the duplicate.
+  request_fingerprint      text,
+  lift_request_fingerprint text,
 
   CONSTRAINT mds_reason_detail_required_for_other CHECK (
     reason_code <> 'other' OR NULLIF(btrim(reason_detail), '') IS NOT NULL
@@ -103,6 +109,9 @@ CREATE INDEX IF NOT EXISTS mds_point_idx
 CREATE UNIQUE INDEX IF NOT EXISTS mds_request_fingerprint_idx
   ON public.material_dispensing_suspensions (request_fingerprint)
   WHERE request_fingerprint IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS mds_lift_request_fingerprint_idx
+  ON public.material_dispensing_suspensions (lift_request_fingerprint)
+  WHERE lift_request_fingerprint IS NOT NULL;
 
 ALTER TABLE public.material_dispensing_suspensions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.material_dispensing_suspensions FORCE ROW LEVEL SECURITY;
@@ -143,7 +152,8 @@ BEGIN
   END IF;
 
   IF NEW.lifted_at IS NULL OR NEW.lifted_by IS NULL
-     OR NULLIF(btrim(NEW.lift_reason), '') IS NULL THEN
+     OR NULLIF(btrim(NEW.lift_reason), '') IS NULL
+     OR NEW.lift_request_fingerprint IS NULL THEN
     RAISE EXCEPTION 'suspension_lift_fields_incomplete' USING ERRCODE = '23514';
   END IF;
 
@@ -458,7 +468,7 @@ BEGIN
 
   SELECT * INTO v_existing
   FROM public.material_dispensing_suspensions
-  WHERE id = p_suspension_id AND lifted_at IS NOT NULL AND request_fingerprint = v_fp;
+  WHERE id = p_suspension_id AND lifted_at IS NOT NULL AND lift_request_fingerprint = v_fp;
   IF FOUND THEN
     RETURN jsonb_build_object('ok', true, 'idempotent_replay', true, 'suspension_id', v_existing.id);
   END IF;
@@ -486,7 +496,7 @@ BEGIN
 
   UPDATE public.material_dispensing_suspensions
      SET lifted_by = v_actor, lifted_at = now(), lift_reason = v_lift_reason,
-         request_fingerprint = v_fp
+         lift_request_fingerprint = v_fp
    WHERE id = v_s.id;
 
   INSERT INTO public.audit_logs (
