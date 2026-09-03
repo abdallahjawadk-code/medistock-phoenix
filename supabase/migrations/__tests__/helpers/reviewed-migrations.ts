@@ -208,6 +208,11 @@ export const REVIEWED_MIGRATION_FILES: readonly string[] = Object.freeze([
   '200_phoenix_demo_purge_auth_boundary_correction.sql',
   '201_phoenix_organization_archive_dependency_guard.sql',
   '202_phoenix_organization_archive_reciprocal_guard.sql',
+  '203_phoenix_material_dispensing_suspension.sql',
+  '204_phoenix_dispensing_suspension_enforcement_dispense.sql',
+  '205_phoenix_dispensing_suspension_enforcement_fefo.sql',
+  '206_phoenix_dispensing_suspension_enforcement_suggestions.sql',
+  '207_phoenix_dispensing_suspension_enforcement_warehouse_send.sql',
 ]);
 
 const REVIEWED_SET: ReadonlySet<string> = new Set(REVIEWED_MIGRATION_FILES);
