@@ -252,6 +252,12 @@ run('E7-2 · Stage-E application wiring (dynamic)',()=>{
       '205_phoenix_dispensing_suspension_enforcement_fefo.sql',
       '206_phoenix_dispensing_suspension_enforcement_suggestions.sql',
       '207_phoenix_dispensing_suspension_enforcement_warehouse_send.sql',
+      // MDS-208: closes the replenishment-corridor and stale-draft
+      // enforcement gaps identified during discovery. Modifies two existing
+      // function bodies (168's replenish RPC, 150's draft-from-suggestion
+      // RPC) — no Stage-E SQL, so the "Stage E still ends at 171" assertion
+      // above is unaffected. Listed here so this guard stays exhaustive.
+      '208_phoenix_dispensing_suspension_enforcement_replenishment_and_drafts.sql',
     ];
     it('Stage E still ends at 171 — E7-2 introduced no new SQL',()=>{
       const files=readdirSync(join(__dirname,'..')).filter(f=>/^\d{3}_.*\.sql$/.test(f));
