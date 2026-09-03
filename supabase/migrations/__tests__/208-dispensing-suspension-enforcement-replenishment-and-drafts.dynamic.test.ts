@@ -38,6 +38,7 @@ const ITEM_OTHER = '00000000-0000-0000-0000-000000208502';
 // ── Part B fixtures: a stale transfer suggestion ─────────────────────────────
 const ORG_B = '00000000-0000-0000-0000-000000208002';
 const WH_B = '00000000-0000-0000-0000-000000208102';
+const OUTLET_B = '00000000-0000-0000-0000-000000208303'; // pharmacy, the suggestion's target
 const ITEM_B = '00000000-0000-0000-0000-000000208503';
 
 run('208 dispensing-suspension enforcement (replenishment + drafts) — dynamic', () => {
@@ -60,7 +61,8 @@ run('208 dispensing-suspension enforcement (replenishment + drafts) — dynamic'
         ON CONFLICT (id) DO NOTHING;`);
       await c.query(`INSERT INTO distribution_points (id,warehouse_id,organization_id,name,name_ar,point_type,status,clinical_location_kind) VALUES
         ('${PH_A}','${WH_A}','${ORG_A}','Pharmacy A','صيدلية أ','pharmacy','active','non_emergency'),
-        ('${CART_A}','${WH_A}','${ORG_A}','Cart A','عربة أ','rescue_cart','active','emergency')
+        ('${CART_A}','${WH_A}','${ORG_A}','Cart A','عربة أ','rescue_cart','active','emergency'),
+        ('${OUTLET_B}','${WH_B}','${ORG_B}','Outlet B','منفذ ب','pharmacy','active','non_emergency')
         ON CONFLICT DO NOTHING;`);
       await c.query(`INSERT INTO central_items (id,name,name_ar,unit,status) VALUES
         ('${ITEM_SUSPENDED}','P208 Suspended Drug','دواء موقوف P208','box','active'),
@@ -240,10 +242,10 @@ run('208 dispensing-suspension enforcement (replenishment + drafts) — dynamic'
           central_item_id, material_identity_version, material_identity_key, material_identity_state
         ) VALUES (
           $1,'${ORG_B}','${ORG_B}','P208-Draft-Material',
-          'warehouse','${WH_B}','outlet',$2,
-          'warehouse_to_outlet',$3,5,$4,'open',
-          '${ITEM_B}',1,$5,'resolved'
-        )`, [suggestionId, randomUUID(), whStockId, `p208-key-${suggestionId}`, realMaterialIdentityKey]);
+          'warehouse','${WH_B}','outlet','${OUTLET_B}',
+          'warehouse_to_outlet',$2,5,$3,'open',
+          '${ITEM_B}',1,$4,'resolved'
+        )`, [suggestionId, whStockId, `p208-key-${suggestionId}`, realMaterialIdentityKey]);
       } finally {
         await c.query(
           'ALTER TABLE inventory_transfer_suggestions ENABLE TRIGGER a150_inventory_suggestion_identity_guard',
