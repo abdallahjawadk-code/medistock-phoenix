@@ -6,7 +6,21 @@
 -- bodies. Both reads are now done; both had a genuine, source-backed reason
 -- to act.
 --
--- ── A. phoenix_replenish_emergency_outlet (168) ─────────────────────────────
+-- CORRECTNESS NOTE (self-caught before this migration ever reached a green
+-- CI run): the first draft of this migration based part A on 168's ORIGINAL
+-- body and part B on 150's ORIGINAL body — silently regressing 180's
+-- initial-provisioning-first gate and 151's route-policy-gate
+-- re-architecture the moment either function was redefined. pg-rig caught it
+-- immediately (180's own dynamic suite: "REJECT replenishing an
+-- UNCOMMISSIONED emergency outlet" started SUCCEEDING). Fixed by re-deriving
+-- both bases from the CURRENT latest redefinition on disk — confirmed via
+-- `grep -l "CREATE OR REPLACE FUNCTION public.<name>"` across every migration
+-- before writing a single line — never from an earlier migration number or
+-- from memory. Part B's fix additionally changes WHICH function this
+-- migration redefines: not the thin 151 wrapper (untouched below), but the
+-- internal delegate it calls into — see §B.
+--
+-- ── A. phoenix_replenish_emergency_outlet (latest: 180) ─────────────────────
 --
 -- This is a real outlet_stock-to-outlet_stock physical movement (pharmacy →
 -- crash cabinet / rescue cart) — "replenishment" in the brief's own words,
@@ -24,10 +38,12 @@
 -- reason, and the debit proceeds against v_src_stock, loaded directly by id,
 -- with no suspension check anywhere in the path. Fixed the same way as 207:
 -- an explicit, unconditional check placed immediately after the source stock
--- row is loaded, ahead of the FEFO revalidation — never satisfiable via
--- p_fefo_override_reason.
+-- row is loaded (and its own expiry check), ahead of the FEFO revalidation —
+-- never satisfiable via p_fefo_override_reason, and placed AFTER 180's
+-- initial-provisioning-first gate so that gate's own refusal is untouched.
 --
--- ── B. phoenix_create_transfer_draft_from_suggestion (150) ──────────────────
+-- ── B. _phoenix_150_delegate_create_transfer_draft_from_suggestion
+--      (latest: 151) ───────────────────────────────────────────────────────
 --
 -- Converts an already-suggested transfer into a real draft line
 -- (warehouse_transfer_request_lines / warehouse_dispatch_lines /
@@ -47,11 +63,27 @@
 --
 -- It is added anyway, for two source-backed reasons rather than none: (1)
 -- fail-fast UX — no drafted document should exist that is guaranteed to be
--- refused the moment someone tries to send it, and (2) the RPC is already
--- reachable and cheap to check here, with inventory_transfer_suggestions'
--- own central_item_id/source_organization_id/source_scope_kind/
--- source_scope_id columns (verified present in 150/206's INSERT lists) —
--- no new lookup is required to add it correctly.
+-- refused the moment someone tries to send it, and (2) the check is cheap to
+-- add here, with inventory_transfer_suggestions' own
+-- central_item_id/source_organization_id/source_scope_kind/source_scope_id
+-- columns (verified present in 150/206's INSERT lists) — no new lookup is
+-- required.
+--
+-- 151 restructured the public wrapper phoenix_create_transfer_draft_from_
+-- suggestion into a thin authorize-then-delegate shape: the wrapper checks
+-- material-identity resolution and calls the route-policy-gate helper, then
+-- delegates the entire lock/eligibility/lineage/corridor body — INCLUDING
+-- its own idempotent-replay early return for an already-'accepted'
+-- suggestion — to _phoenix_150_delegate_create_transfer_draft_from_
+-- suggestion. The wrapper is left untouched below (no CREATE OR REPLACE):
+-- the check is added to the DELEGATE instead, and specifically AFTER its
+-- idempotent-replay return and its 'suggestion_not_open' check — never
+-- before them. Placing it any earlier (e.g. in the wrapper, ahead of the
+-- delegate call) would run the check on every call including a replay of an
+-- ALREADY-'accepted' suggestion, and a material suspended AFTER a draft was
+-- already created must never turn a safe idempotent replay of that
+-- completed action into a fresh refusal — only a still-'open' suggestion's
+-- FIRST conversion to a draft is what this migration gates.
 --
 -- PRECONDITIONS: 207 applied.
 -- ============================================================================
@@ -70,10 +102,23 @@ BEGIN
      WHERE p.proname = 'phoenix_replenish_emergency_outlet'
        AND p.pronamespace = 'public'::regnamespace
   ) THEN
-    RAISE EXCEPTION '208 PRECONDITION FAILED: 168 missing — apply 168 first';
+    RAISE EXCEPTION '208 PRECONDITION FAILED: phoenix_replenish_emergency_outlet missing — apply 180 first';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_proc p
+     WHERE p.proname = '_phoenix_150_delegate_create_transfer_draft_from_suggestion'
+       AND p.pronamespace = 'public'::regnamespace
+  ) THEN
+    RAISE EXCEPTION '208 PRECONDITION FAILED: _phoenix_150_delegate_create_transfer_draft_from_suggestion missing — apply 151 first';
   END IF;
 END;
 $precond$;
+
+-- ============================================================================
+-- A. phoenix_replenish_emergency_outlet — 180's COMPLETE body, verbatim,
+--    plus ONE new check (marked "208:" below). No other line differs from
+--    the currently-live 180 definition.
+-- ============================================================================
 
 CREATE OR REPLACE FUNCTION public.phoenix_replenish_emergency_outlet(
   p_request_id               uuid,
@@ -202,6 +247,10 @@ BEGIN
       RAISE EXCEPTION 'request_id_conflict' USING ERRCODE = '23505',
         DETAIL = 'same request_id previously submitted with a different payload';
     END IF;
+    -- 180: this return is deliberately UPSTREAM of the initial-first gate
+    -- below. A request that already completed successfully keeps its
+    -- authorized replay semantics permanently, including one completed before
+    -- this migration was applied. The gate governs fresh movement only.
     RETURN jsonb_build_object(
       'ok', true,
       'idempotent_replay', true,
@@ -329,6 +378,34 @@ BEGIN
 
   ELSE
     RAISE EXCEPTION 'unsupported_institution_class_for_route' USING ERRCODE = '23514';
+  END IF;
+
+  -- ══════════════════════════════════════════════════════════════════════════
+  -- 180 — INITIAL-FIRST GATE (the ONLY statement 180 added to 168's body)
+  -- ══════════════════════════════════════════════════════════════════════════
+  -- Routine replenishment tops an emergency outlet UP; it does not commission
+  -- one. Commissioning is initial provisioning, and it must have actually
+  -- DELIVERED — a lifecycle that exists but delivered nothing leaves
+  -- consumed_at NULL and does not open this corridor.
+  --
+  -- Reached only on the fresh path: authorization, the replay probe and its
+  -- successful return, route activity and the whole Shape H/I topology are all
+  -- already behind us, and nothing has been resolved, locked, debited,
+  -- credited or written yet.
+  --
+  -- The predicate names only the durable 166 marker. No status, no
+  -- outlet_stock, no on_hand_quantity, no available_quantity: a later fall to
+  -- zero must not close a corridor that a consumed lifecycle opened, and a
+  -- nonzero balance must never open one that no lifecycle did.
+  IF NOT EXISTS (
+    SELECT 1
+    FROM public.warehouse_dispatches d
+    WHERE d.destination_distribution_point_id = v_route.destination_point_id
+      AND d.is_initial_provisioning
+      AND d.initial_provisioning_consumed_at IS NOT NULL
+  ) THEN
+    RAISE EXCEPTION 'initial_provisioning_required_before_replenishment'
+      USING ERRCODE = '23514';
   END IF;
 
   -- Authorization already enforced above (before the replay probe) against
@@ -600,12 +677,16 @@ END;
 $$;
 
 -- ============================================================================
--- B. phoenix_create_transfer_draft_from_suggestion (150) — early, deliberate
---    fail-fast refusal for a since-suspended suggestion. Not the primary
---    gate (207 already is); see header.
+-- B. _phoenix_150_delegate_create_transfer_draft_from_suggestion — 151's
+--    COMPLETE body, verbatim, plus ONE new check (marked "208:" below),
+--    placed AFTER the idempotent-replay return and the 'suggestion_not_open'
+--    check — see the header comment for why. The public wrapper
+--    phoenix_create_transfer_draft_from_suggestion is NOT redefined here: it
+--    is untouched, and simply calls this (now suspension-aware) delegate as
+--    it already did.
 -- ============================================================================
 
-CREATE OR REPLACE FUNCTION public.phoenix_create_transfer_draft_from_suggestion(
+CREATE OR REPLACE FUNCTION public._phoenix_150_delegate_create_transfer_draft_from_suggestion(
   p_suggestion_id uuid,
   p_document_number text
 )
@@ -615,27 +696,102 @@ SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
 DECLARE
+  v_actor uuid := auth.uid();
+  v_doc text := NULLIF(btrim(p_document_number), '');
   v_s public.inventory_transfer_suggestions%ROWTYPE;
-  v_source_key text;
-  v_result jsonb;
-  v_line_key text;
-  v_line_id uuid;
-  v_line record;
+  v_initial_source_org uuid;
+  v_initial_target_org uuid;
+  v_policy_minutes integer;
+  v_src_key text;
+  v_tgt_key text;
+  v_src_threshold_key text;
+  v_tgt_threshold_key text;
+  v_lock_a text;
+  v_lock_b text;
+  v_src_pos record;
+  v_tgt_pos record;
+  v_headroom integer;
+  v_deficit integer;
+  v_batch_available integer;
+  v_batch_committed integer;
+  v_batch_remaining integer;
+  v_returnable integer;
+  v_eligible integer;
+  v_src_central_item_id uuid;
+  v_src_concentration text;
+  v_src_dosage_form text;
+  v_src_unit text;
+  v_src_scientific_name text;
+  v_create_result jsonb;
+  v_line_result jsonb;
+  v_request_id uuid;
+  v_request_line_id uuid;
+  v_dispatch_id uuid;
+  v_dispatch_line_id uuid;
+  v_return_request_id uuid;
+  v_return_request_line_id uuid;
+  r record;
 BEGIN
-  SELECT * INTO v_s FROM public.inventory_transfer_suggestions
-  WHERE id=p_suggestion_id;
+  IF v_actor IS NULL THEN RAISE EXCEPTION 'not_authenticated'; END IF;
+  IF v_doc IS NULL THEN RAISE EXCEPTION 'document_number_required'; END IF;
+
+  SELECT * INTO v_s
+  FROM public.inventory_transfer_suggestions
+  WHERE id = p_suggestion_id;
   IF NOT FOUND THEN RAISE EXCEPTION 'suggestion_not_found'; END IF;
-  IF v_s.material_identity_state<>'resolved'
-     OR v_s.material_identity_version<>1 OR v_s.material_identity_key IS NULL THEN
-    RAISE EXCEPTION 'suggestion_material_identity_unresolved';
+  v_initial_source_org := v_s.source_organization_id;
+  v_initial_target_org := v_s.target_organization_id;
+
+  v_lock_a := LEAST(v_initial_source_org::text, v_initial_target_org::text);
+  v_lock_b := GREATEST(v_initial_source_org::text, v_initial_target_org::text);
+  PERFORM public._phoenix_lock_inventory_resources(ARRAY[
+    'inv_suggest:' || v_lock_a,
+    'inv_suggest:' || v_lock_b
+  ]);
+
+  SELECT * INTO v_s
+  FROM public.inventory_transfer_suggestions
+  WHERE id = p_suggestion_id
+  FOR UPDATE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'suggestion_not_found'; END IF;
+  IF v_s.source_organization_id IS DISTINCT FROM v_initial_source_org
+     OR v_s.target_organization_id IS DISTINCT FROM v_initial_target_org THEN
+    RAISE EXCEPTION 'suggestion_changed_retry';
   END IF;
 
-  -- 208: موقوف الصرف — a suggestion can go stale between suggest-time (206
-  -- already filters suspended materials out of fresh suggestions) and
-  -- draft-time if a suspension is applied in between. Fail fast here rather
-  -- than let an operator draft a document that 207's send-time gates will
-  -- refuse anyway. distribution_point scope only applies when the SOURCE is
-  -- an outlet; a warehouse source checks org-wide only, matching 205/206/207.
+  IF v_s.status = 'accepted' THEN
+    IF v_s.accepted_by = v_actor THEN
+      IF v_s.lineage_state = 'line_deleted' THEN
+        RAISE EXCEPTION 'suggestion_draft_line_deleted';
+      END IF;
+      RETURN jsonb_build_object(
+        'ok', true, 'suggestion_id', v_s.id, 'idempotent_replay', true,
+        'route_kind', v_s.route_kind, 'quantity', v_s.suggested_quantity,
+        'document_number', v_s.draft_document_number,
+        'warehouse_transfer_request_id', v_s.draft_warehouse_transfer_request_id,
+        'warehouse_transfer_request_line_id', v_s.draft_warehouse_transfer_request_line_id,
+        'warehouse_dispatch_id', v_s.draft_warehouse_dispatch_id,
+        'warehouse_dispatch_line_id', v_s.draft_warehouse_dispatch_line_id,
+        'outlet_return_request_id', v_s.draft_outlet_return_request_id,
+        'outlet_return_request_line_id', v_s.draft_outlet_return_request_line_id
+      );
+    END IF;
+    RAISE EXCEPTION 'suggestion_already_drafted';
+  END IF;
+  IF v_s.status <> 'open' THEN RAISE EXCEPTION 'suggestion_not_open'; END IF;
+
+  PERFORM public._phoenix_authorize_suggestion_draft_route_v1(v_actor, v_s);
+
+  -- 208: موقوف الصرف — placed exactly here: strictly AFTER the 'accepted'
+  -- idempotent-replay return above (an already-completed draft must always
+  -- replay successfully, regardless of any suspension applied since) AND
+  -- after authorization (204/205/207's own ordering: an unauthorized actor
+  -- never learns a material's suspension state before being told they are
+  -- not authorized), but strictly BEFORE every lock/eligibility step below
+  -- (fail fast, before touching anything else once authorized).
+  -- distribution_point scope only applies when the SOURCE is an outlet; a
+  -- warehouse source checks org-wide only, matching 205/206/207's own scope
+  -- choice.
   IF v_s.central_item_id IS NOT NULL AND public._phoenix_is_material_dispensing_suspended_v1(
     v_s.central_item_id, v_s.source_organization_id,
     CASE WHEN v_s.source_scope_kind = 'outlet' THEN v_s.source_scope_id ELSE NULL END
@@ -643,69 +799,309 @@ BEGIN
     RAISE EXCEPTION 'material_dispensing_suspended';
   END IF;
 
-  IF v_s.source_scope_kind='warehouse' THEN
-    SELECT ws.material_identity_key INTO v_source_key
-    FROM public.warehouse_stock ws
-    WHERE ws.id=v_s.source_stock_id
-      AND ws.organization_id=v_s.source_organization_id
-      AND ws.warehouse_id=v_s.source_scope_id;
-  ELSE
-    SELECT os.material_identity_key INTO v_source_key
-    FROM public.outlet_stock os
-    WHERE os.id=v_s.source_stock_id
-      AND os.organization_id=v_s.source_organization_id
-      AND os.distribution_point_id=v_s.source_scope_id;
-  END IF;
-  IF v_source_key IS DISTINCT FROM v_s.material_identity_key THEN
-    RAISE EXCEPTION 'suggestion_source_material_identity_mismatch';
+  SELECT staleness_minutes INTO v_policy_minutes
+  FROM public.inventory_suggestion_policy
+  WHERE organization_id = v_s.source_organization_id;
+  IF v_s.last_validated_at IS NULL
+     OR v_s.last_validated_at < now() - make_interval(mins => COALESCE(v_policy_minutes, 30)) THEN
+    UPDATE public.inventory_transfer_suggestions
+    SET status = 'expired', updated_at = now()
+    WHERE id = v_s.id;
+    RAISE EXCEPTION 'suggestion_stale_revalidate_required';
   END IF;
 
+  v_src_key := 'inv_position:' || v_s.source_organization_id::text || ':'
+               || v_s.source_scope_kind || ':' || v_s.source_scope_id::text || ':'
+               || lower(btrim(v_s.scientific_name)) || ':'
+               || COALESCE(NULLIF(btrim(v_s.national_code), ''), '*');
+  v_tgt_key := 'inv_position:' || v_s.target_organization_id::text || ':'
+               || v_s.target_scope_kind || ':' || v_s.target_scope_id::text || ':'
+               || lower(btrim(v_s.scientific_name)) || ':'
+               || COALESCE(NULLIF(btrim(v_s.national_code), ''), '*');
+  v_src_threshold_key := 'inv_threshold:' || v_s.source_organization_id::text || ':'
+                         || v_s.source_scope_kind || ':' || lower(btrim(v_s.scientific_name));
+  v_tgt_threshold_key := 'inv_threshold:' || v_s.target_organization_id::text || ':'
+                         || v_s.target_scope_kind || ':' || lower(btrim(v_s.scientific_name));
+
+  IF v_s.route_kind = 'outlet_to_warehouse' THEN
+    PERFORM public._phoenix_lock_inventory_resources(ARRAY[
+      'inv_provline:' || v_s.provenance_dispatch_line_id::text
+    ]);
+  END IF;
   PERFORM public._phoenix_lock_inventory_resources(ARRAY[
-    'inv_material:' || v_s.material_identity_key
+    v_src_key, v_tgt_key, v_src_threshold_key, v_tgt_threshold_key
   ]);
-  PERFORM set_config('phoenix.material_identity_v1',v_s.material_identity_key,true);
 
-  v_result:=public._phoenix_150_delegate_create_transfer_draft_from_suggestion(
-    p_suggestion_id,p_document_number
+  IF v_s.route_kind = 'outlet_to_warehouse' THEN
+    PERFORM 1
+    FROM public.warehouse_dispatch_lines wdl
+    WHERE wdl.id = v_s.provenance_dispatch_line_id
+    FOR SHARE;
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'suggestion_no_longer_available: provenance_gone';
+    END IF;
+  END IF;
+
+  FOR r IN
+    SELECT *
+    FROM (VALUES
+      (v_s.source_scope_kind, v_s.source_scope_id, v_s.source_organization_id),
+      (v_s.target_scope_kind, v_s.target_scope_id, v_s.target_organization_id)
+    ) AS x(scope_kind, scope_id, organization_id)
+    ORDER BY scope_kind, scope_id
+  LOOP
+    IF r.scope_kind = 'warehouse' THEN
+      PERFORM 1 FROM public.warehouses w
+      WHERE w.id = r.scope_id AND w.organization_id = r.organization_id
+      FOR UPDATE;
+    ELSE
+      PERFORM 1 FROM public.distribution_points dp
+      WHERE dp.id = r.scope_id AND dp.organization_id = r.organization_id
+      FOR UPDATE;
+    END IF;
+    IF NOT FOUND THEN RAISE EXCEPTION 'scope_not_in_organization'; END IF;
+  END LOOP;
+
+  FOR r IN
+    SELECT q.stock_kind, q.stock_id
+    FROM (
+      SELECT 'warehouse'::text AS stock_kind, ws.id AS stock_id
+      FROM public.warehouse_stock ws
+      WHERE lower(ws.scientific_name) = lower(btrim(v_s.scientific_name))
+        AND (v_s.national_code IS NULL OR ws.national_code IS NOT DISTINCT FROM v_s.national_code)
+        AND (
+          (v_s.source_scope_kind = 'warehouse'
+           AND ws.organization_id = v_s.source_organization_id
+           AND ws.warehouse_id = v_s.source_scope_id)
+          OR
+          (v_s.target_scope_kind = 'warehouse'
+           AND ws.organization_id = v_s.target_organization_id
+           AND ws.warehouse_id = v_s.target_scope_id)
+        )
+      UNION ALL
+      SELECT 'outlet'::text AS stock_kind, os.id AS stock_id
+      FROM public.outlet_stock os
+      WHERE lower(os.scientific_name) = lower(btrim(v_s.scientific_name))
+        AND (v_s.national_code IS NULL OR os.national_code IS NOT DISTINCT FROM v_s.national_code)
+        AND (
+          (v_s.source_scope_kind = 'outlet'
+           AND os.organization_id = v_s.source_organization_id
+           AND os.distribution_point_id = v_s.source_scope_id)
+          OR
+          (v_s.target_scope_kind = 'outlet'
+           AND os.organization_id = v_s.target_organization_id
+           AND os.distribution_point_id = v_s.target_scope_id)
+        )
+    ) q
+    ORDER BY q.stock_kind, q.stock_id
+  LOOP
+    IF r.stock_kind = 'warehouse' THEN
+      PERFORM 1 FROM public.warehouse_stock ws WHERE ws.id = r.stock_id FOR UPDATE;
+    ELSE
+      PERFORM 1 FROM public.outlet_stock os WHERE os.id = r.stock_id FOR UPDATE;
+    END IF;
+  END LOOP;
+
+  SELECT * INTO v_src_pos FROM public._phoenix_live_suggestion_scope_position(
+    v_s.source_organization_id, v_s.source_scope_kind, v_s.source_scope_id,
+    v_s.scientific_name, v_s.national_code);
+  SELECT * INTO v_tgt_pos FROM public._phoenix_live_suggestion_scope_position(
+    v_s.target_organization_id, v_s.target_scope_kind, v_s.target_scope_id,
+    v_s.scientific_name, v_s.national_code);
+
+  v_headroom := GREATEST(
+    COALESCE(v_src_pos.live_available, 0) - COALESCE(v_src_pos.target_max, 0), 0
+  );
+  IF v_headroom <= 0 THEN
+    RAISE EXCEPTION 'suggestion_no_longer_available: no_source_surplus';
+  END IF;
+  v_headroom := v_headroom - COALESCE((
+    SELECT sum(c.source_commitment)
+    FROM public.inventory_transfer_suggestions s
+    CROSS JOIN LATERAL public.phoenix_inventory_suggestion_commitments(s.id) c
+    WHERE s.source_scope_kind = v_s.source_scope_kind
+      AND s.source_scope_id = v_s.source_scope_id
+      AND s.source_organization_id = v_s.source_organization_id
+      AND lower(s.scientific_name) = lower(v_s.scientific_name)
+      AND s.national_code IS NOT DISTINCT FROM v_s.national_code
+      AND s.id <> v_s.id
+      AND c.is_active
+  ), 0);
+  IF v_headroom <= 0 THEN
+    RAISE EXCEPTION 'suggestion_no_longer_available: source_surplus_committed';
+  END IF;
+
+  v_deficit := GREATEST(
+    COALESCE(v_tgt_pos.reorder_point, 0) - COALESCE(v_tgt_pos.live_available, 0), 0
+  );
+  IF v_deficit <= 0 THEN
+    RAISE EXCEPTION 'suggestion_no_longer_available: no_target_shortfall';
+  END IF;
+  v_deficit := v_deficit - COALESCE((
+    SELECT sum(c.target_commitment)
+    FROM public.inventory_transfer_suggestions s
+    CROSS JOIN LATERAL public.phoenix_inventory_suggestion_commitments(s.id) c
+    WHERE s.target_scope_kind = v_s.target_scope_kind
+      AND s.target_scope_id = v_s.target_scope_id
+      AND s.target_organization_id = v_s.target_organization_id
+      AND lower(s.scientific_name) = lower(v_s.scientific_name)
+      AND s.national_code IS NOT DISTINCT FROM v_s.national_code
+      AND s.id <> v_s.id
+      AND c.is_active
+  ), 0);
+  IF v_deficit <= 0 THEN
+    RAISE EXCEPTION 'suggestion_no_longer_available: target_shortfall_committed';
+  END IF;
+
+  IF v_s.source_scope_kind = 'warehouse' THEN
+    SELECT ws.available_quantity, ws.central_item_id, ws.concentration,
+           ws.dosage_form, ws.unit, ws.scientific_name
+      INTO v_batch_available, v_src_central_item_id, v_src_concentration,
+           v_src_dosage_form, v_src_unit, v_src_scientific_name
+    FROM public.warehouse_stock ws
+    WHERE ws.id = v_s.source_stock_id
+      AND ws.warehouse_id = v_s.source_scope_id
+      AND ws.organization_id = v_s.source_organization_id
+      AND lower(ws.scientific_name) = lower(v_s.scientific_name)
+      AND (v_s.national_code IS NULL OR ws.national_code = v_s.national_code)
+      AND (ws.expiry_date IS NULL OR ws.expiry_date >= current_date)
+    FOR UPDATE;
+  ELSE
+    SELECT os.available_quantity, os.central_item_id, os.concentration,
+           os.dosage_form, os.unit, os.scientific_name
+      INTO v_batch_available, v_src_central_item_id, v_src_concentration,
+           v_src_dosage_form, v_src_unit, v_src_scientific_name
+    FROM public.outlet_stock os
+    WHERE os.id = v_s.source_stock_id
+      AND os.distribution_point_id = v_s.source_scope_id
+      AND os.organization_id = v_s.source_organization_id
+      AND lower(os.scientific_name) = lower(v_s.scientific_name)
+      AND (v_s.national_code IS NULL OR os.national_code = v_s.national_code)
+      AND (os.expiry_date IS NULL OR os.expiry_date >= current_date)
+    FOR UPDATE;
+  END IF;
+  IF v_batch_available IS NULL THEN
+    RAISE EXCEPTION 'suggestion_no_longer_available: batch_gone_or_identity_mismatch';
+  END IF;
+
+  SELECT COALESCE(sum(c.batch_commitment), 0)::integer
+    INTO v_batch_committed
+  FROM public.inventory_transfer_suggestions s
+  CROSS JOIN LATERAL public.phoenix_inventory_suggestion_commitments(s.id) c
+  WHERE s.source_stock_id = v_s.source_stock_id
+    AND s.id <> v_s.id
+    AND c.is_active;
+  v_batch_remaining := v_batch_available - v_batch_committed;
+
+  IF v_s.route_kind = 'outlet_to_warehouse' THEN
+    SELECT COALESCE(wdl.received_quantity, 0) - wdl.returned_quantity
+      INTO v_returnable
+    FROM public.warehouse_dispatch_lines wdl
+    WHERE wdl.id = v_s.provenance_dispatch_line_id
+      AND wdl.status IN ('accepted', 'accepted_with_difference')
+    FOR SHARE;
+    IF v_returnable IS NULL THEN
+      RAISE EXCEPTION 'suggestion_no_longer_available: provenance_gone';
+    END IF;
+    v_batch_remaining := LEAST(v_batch_remaining, v_returnable - COALESCE((
+      SELECT sum(c.provenance_commitment)
+      FROM public.inventory_transfer_suggestions s
+      CROSS JOIN LATERAL public.phoenix_inventory_suggestion_commitments(s.id) c
+      WHERE s.provenance_dispatch_line_id = v_s.provenance_dispatch_line_id
+        AND s.id <> v_s.id
+        AND c.is_active
+    ), 0));
+  END IF;
+
+  v_eligible := LEAST(v_s.suggested_quantity, v_headroom, v_deficit, v_batch_remaining);
+  IF v_eligible IS NULL OR v_eligible <= 0 THEN
+    RAISE EXCEPTION 'suggestion_no_longer_available: eligible_quantity_zero';
+  END IF;
+
+  IF v_s.route_kind = 'central_to_institution' THEN
+    v_create_result := public.phoenix_create_direct_warehouse_transfer_request(
+      v_s.source_scope_id, v_s.target_organization_id, v_s.target_scope_id,
+      v_doc, 'Auto-drafted from inventory suggestion ' || v_s.id::text);
+    v_request_id := (v_create_result->>'transfer_request_id')::uuid;
+    v_line_result := public.phoenix_add_warehouse_transfer_request_line(
+      v_request_id, v_src_scientific_name, v_eligible, v_src_central_item_id,
+      v_src_concentration, v_src_dosage_form, v_src_unit, NULL);
+    v_request_line_id := (v_line_result->>'transfer_request_line_id')::uuid;
+
+  ELSIF v_s.route_kind = 'warehouse_to_outlet' THEN
+    v_create_result := public.phoenix_create_warehouse_dispatch(
+      v_s.source_scope_id, v_s.target_scope_id, v_doc, NULL, NULL, NULL);
+    v_dispatch_id := (v_create_result->>'dispatch_id')::uuid;
+    v_line_result := public.phoenix_add_dispatch_line_fefo_guarded(
+      v_dispatch_id, v_s.source_stock_id, v_eligible, false, NULL, p_suggestion_id);
+    v_dispatch_line_id := (v_line_result->>'dispatch_line_id')::uuid;
+
+  ELSIF v_s.route_kind = 'outlet_to_warehouse' THEN
+    v_create_result := public.phoenix_request_outlet_return(
+      v_s.source_scope_id, v_doc,
+      'Auto-drafted from inventory suggestion ' || v_s.id::text);
+    v_return_request_id := (v_create_result->>'return_request_id')::uuid;
+    v_line_result := public.phoenix_add_outlet_return_request_line(
+      v_return_request_id, v_s.provenance_dispatch_line_id, v_eligible,
+      'excess', 'Auto-drafted from inventory suggestion ' || v_s.id::text);
+    v_return_request_line_id := (v_line_result->>'return_request_line_id')::uuid;
+  ELSE
+    RAISE EXCEPTION 'unsupported_route_kind: %', v_s.route_kind;
+  END IF;
+
+  IF (v_s.route_kind = 'central_to_institution' AND v_request_line_id IS NULL)
+     OR (v_s.route_kind = 'warehouse_to_outlet' AND v_dispatch_line_id IS NULL)
+     OR (v_s.route_kind = 'outlet_to_warehouse' AND v_return_request_line_id IS NULL) THEN
+    RAISE EXCEPTION 'draft_line_id_missing';
+  END IF;
+
+  UPDATE public.inventory_transfer_suggestions
+  SET status = 'accepted',
+      accepted_at = now(),
+      accepted_by = v_actor,
+      draft_document_number = v_doc,
+      draft_warehouse_transfer_request_id = v_request_id,
+      draft_warehouse_transfer_request_line_id = v_request_line_id,
+      draft_warehouse_dispatch_id = v_dispatch_id,
+      draft_warehouse_dispatch_line_id = v_dispatch_line_id,
+      draft_outlet_return_request_id = v_return_request_id,
+      draft_outlet_return_request_line_id = v_return_request_line_id,
+      lineage_version = 1,
+      lineage_state = 'linked',
+      suggested_quantity = v_eligible,
+      updated_at = now()
+  WHERE id = p_suggestion_id;
+
+  INSERT INTO public.audit_logs (
+    organization_id, actor_id, actor_role, action,
+    entity_type, entity_id, entity_label, payload
+  )
+  VALUES (
+    v_s.target_organization_id, v_actor, public.phoenix_my_role(), 'update',
+    'inventory_transfer_suggestion', p_suggestion_id,
+    v_s.route_kind || ':' || v_s.scientific_name,
+    jsonb_build_object(
+      'lifecycle', 'draft_created',
+      'document_number', v_doc,
+      'quantity', v_eligible,
+      'route_kind', v_s.route_kind,
+      'warehouse_transfer_request_line_id', v_request_line_id,
+      'warehouse_dispatch_line_id', v_dispatch_line_id,
+      'outlet_return_request_line_id', v_return_request_line_id
+    )
   );
 
-  IF v_s.route_kind='central_to_institution' THEN
-    v_line_id:=(v_result->>'warehouse_transfer_request_line_id')::uuid;
-    SELECT l.* INTO v_line FROM public.warehouse_transfer_request_lines l
-    WHERE l.id=v_line_id;
-    IF NOT FOUND THEN RAISE EXCEPTION 'draft_line_id_missing'; END IF;
-    v_line_key:=public._phoenix_material_identity_v1(
-      v_line.central_item_id,v_line.scientific_name,v_s.national_code,
-      v_line.concentration,v_line.dosage_form,v_line.unit
-    );
-  ELSIF v_s.route_kind='warehouse_to_outlet' THEN
-    v_line_id:=(v_result->>'warehouse_dispatch_line_id')::uuid;
-    SELECT l.* INTO v_line FROM public.warehouse_dispatch_lines l
-    WHERE l.id=v_line_id AND l.warehouse_stock_id=v_s.source_stock_id;
-    IF NOT FOUND THEN RAISE EXCEPTION 'draft_line_id_missing'; END IF;
-    v_line_key:=public._phoenix_material_identity_v1(
-      v_line.central_item_id,v_line.scientific_name,v_line.national_code,
-      v_line.concentration,v_line.dosage_form,v_line.unit
-    );
-  ELSIF v_s.route_kind='outlet_to_warehouse' THEN
-    v_line_id:=(v_result->>'outlet_return_request_line_id')::uuid;
-    SELECT l.* INTO v_line FROM public.outlet_return_request_lines l
-    WHERE l.id=v_line_id AND l.source_outlet_stock_id=v_s.source_stock_id
-      AND l.original_dispatch_line_id=v_s.provenance_dispatch_line_id
-      AND l.original_inbound_movement_id=v_s.provenance_inbound_movement_id;
-    IF NOT FOUND THEN RAISE EXCEPTION 'draft_line_id_missing'; END IF;
-    v_line_key:=public._phoenix_material_identity_v1(
-      v_line.central_item_id,v_line.scientific_name,v_line.national_code,
-      v_line.concentration,v_line.dosage_form,v_line.unit
-    );
-  ELSE
-    RAISE EXCEPTION 'unsupported_route_kind: %',v_s.route_kind;
-  END IF;
-
-  IF v_line_key IS DISTINCT FROM v_s.material_identity_key THEN
-    RAISE EXCEPTION 'draft_line_material_identity_mismatch';
-  END IF;
-  RETURN v_result;
+  RETURN jsonb_build_object(
+    'ok', true, 'suggestion_id', p_suggestion_id, 'status', 'accepted',
+    'quantity', v_eligible, 'route_kind', v_s.route_kind,
+    'document_number', v_doc,
+    'warehouse_transfer_request_id', v_request_id,
+    'warehouse_transfer_request_line_id', v_request_line_id,
+    'warehouse_dispatch_id', v_dispatch_id,
+    'warehouse_dispatch_line_id', v_dispatch_line_id,
+    'outlet_return_request_id', v_return_request_id,
+    'outlet_return_request_line_id', v_return_request_line_id
+  );
 END;
 $$;
 
@@ -717,9 +1113,17 @@ BEGIN
     RAISE EXCEPTION '208 VERIFY FAILED: phoenix_replenish_emergency_outlet missing after redefinition';
   END IF;
   IF to_regprocedure(
+    'public._phoenix_150_delegate_create_transfer_draft_from_suggestion(uuid,text)'
+  ) IS NULL THEN
+    RAISE EXCEPTION '208 VERIFY FAILED: _phoenix_150_delegate_create_transfer_draft_from_suggestion missing after redefinition';
+  END IF;
+  -- The public wrapper was never redefined by this migration — confirm it is
+  -- still exactly what 151 left it as, still reachable, and still the only
+  -- path a client calls.
+  IF to_regprocedure(
     'public.phoenix_create_transfer_draft_from_suggestion(uuid,text)'
   ) IS NULL THEN
-    RAISE EXCEPTION '208 VERIFY FAILED: phoenix_create_transfer_draft_from_suggestion missing after redefinition';
+    RAISE EXCEPTION '208 VERIFY FAILED: phoenix_create_transfer_draft_from_suggestion (151 wrapper) missing';
   END IF;
   RAISE NOTICE 'DISPENSING-SUSPENSION-ENFORCEMENT-REPLENISHMENT-AND-DRAFTS-208: verified.';
 END;
