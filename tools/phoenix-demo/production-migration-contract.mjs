@@ -16,15 +16,31 @@
 //
 // THE CENTRAL SAFETY PROOF
 // ------------------------
-// `supabase db push` applies EVERY pending migration; it has no "just this
-// one" flag. So the executor never relies on the push to limit itself.
-// Instead it proves, from the same two inputs the push itself consumes — the
-// local supabase/migrations directory and Production's
-// supabase_migrations.schema_migrations — that the pending set (local minus
-// remote) contains EXACTLY ONE version, and that this version is the one the
-// operator pinned. Local history must be contiguous 1..expectedNext and remote
-// contiguous 1..expectedCurrent, so no other file can be in flight. If that
-// proof does not hold the run refuses before the CLI is ever invoked.
+// `supabase db push` applies EVERY migration in whatever directory it is
+// pointed at; it has no "just this one" flag. So the executor never points it
+// at the repository, and never relies on this contract's reasoning about the
+// repository to limit it either. It is pointed at a SHADOW WORKSPACE
+// (build-shadow-migration-workspace.mjs) built from exactly two things: the
+// already-applied aliases Production's own history reports, plus the one
+// migration this function names as `targetVersion`. That construction is what
+// bounds the push to exactly one migration — proven independently, twice, by
+// the two `supabase db push --dry-run` transcripts the workflow checks before
+// and after the real push (assertDryRunNamesOnlyTarget).
+//
+// TWO NAMESPACES
+// --------------
+// This function reasons about two DIFFERENT things named "the local
+// migrations", and conflating them was the cause of a real incident (run
+// 33822028630, 2026-09-04): the REPOSITORY CATALOGUE (every file under
+// supabase/migrations) may legitimately extend past the pinned target —
+// several reviewed migrations routinely land in one PR before being applied
+// one at a time — while the AUTHORIZED EXECUTION SET for THIS run is always
+// exactly the applied aliases plus the one pinned target, regardless of how
+// far the catalogue reaches. This function validates the catalogue is sound
+// (unique, contiguous, no gaps) and that it contains the pinned target
+// exactly once with the pinned name and hash; it does NOT require the
+// catalogue to stop at the target, and does not compute the pending set from
+// the whole catalogue as a gate. See the inline comments at steps 4 and 6.
 //
 // SECRETS: nothing here logs, returns, or embeds a connection string. The one
 // function that touches it (assertProjectRefPinned) reads only its username
@@ -222,6 +238,32 @@ export function decideProductionMigrationApply({
   }
 
   // ---- 4. Local checkout history -----------------------------------------
+  // TWO NAMESPACES, NOT ONE, as of the 203-208 incident (run 33822028630):
+  //
+  //   REPOSITORY CATALOGUE  = every migration file in supabase/migrations.
+  //     It may legitimately extend beyond `next` -- several migrations are
+  //     routinely reviewed and merged together in one PR (204-208 alongside
+  //     203 is the normal shape, not an anomaly). This block validates the
+  //     catalogue is internally SOUND -- unique, strictly increasing, no gaps
+  //     from 1 to its own highest -- and nothing more. `localCeiling` is that
+  //     highest version, kept for observability only; it is never compared to
+  //     `next`.
+  //
+  //   AUTHORIZED EXECUTION SET = the applied aliases (remoteCanonical.mapping)
+  //     plus exactly this one pinned target. It is bounded by construction,
+  //     not by a ceiling check here: buildShadowMigrationWorkspace() is handed
+  //     only those two inputs and never iterates the catalogue beyond them, so
+  //     204-208 sitting in the catalogue can never become eligible for a run
+  //     pinned at 203 -- proven in build-shadow-migration-workspace.test.ts.
+  //     The CLI is then run against that shadow workspace only, and its own
+  //     dry-run transcript is independently checked (assertDryRunNamesOnlyTarget)
+  //     to name the target and nothing else -- a second, live proof that does
+  //     not depend on this function's reasoning at all.
+  //
+  // A prior revision required localCeiling === next, which conflated the two
+  // namespaces and refused the ordinary, intended shape above with
+  // LOCAL_CEILING_MISMATCH. That check is gone. What still refuses below --
+  // unchanged -- is the checkout genuinely not containing the pinned target.
   if (!Array.isArray(localMigrations) || localMigrations.length === 0) {
     refuse('LOCAL_HISTORY_EMPTY', 'This checkout contains no migrations at all.');
   }
@@ -231,15 +273,6 @@ export function decideProductionMigrationApply({
     'This checkout\'s migration set',
     { empty: 'LOCAL_HISTORY_EMPTY', notIncreasing: 'LOCAL_HISTORY_NOT_INCREASING', gap: 'LOCAL_HISTORY_GAP' },
   );
-  // Catches BOTH "an unexpected future migration exists locally" and "this
-  // checkout does not actually contain the migration being applied".
-  if (localCeiling !== next) {
-    refuse(
-      'LOCAL_CEILING_MISMATCH',
-      `This checkout's migration ceiling is ${localCeiling}, expected exactly ${next}. ` +
-        'Applying from a checkout whose ceiling is not the pinned next version could push more than one migration.',
-    );
-  }
 
   const targets = localSorted.filter((m) => m.version === next);
   if (targets.length !== 1) {
@@ -292,27 +325,25 @@ export function decideProductionMigrationApply({
     );
   }
 
-  // ---- 6. The pending set, proven to be exactly one ------------------------
+  // ---- 6. The decision -----------------------------------------------------
+  // `pendingVersions` is CATALOGUE-minus-remote (production-migration-history's
+  // pendingCanonical): with 204-208 legitimately unapplied alongside target
+  // 203, it is [203,204,205,206,207,208], not [203] alone -- so it is kept
+  // here purely for logging/observability and never gates the decision. The
+  // single-pending guarantee this repository actually needs is proven on the
+  // AUTHORIZED EXECUTION SET, not the catalogue: step 4 already proved the
+  // checkout contains exactly one canonical file at `next` matching the
+  // pinned name and hash; remoteSet (below) already proves whether `next` is
+  // applied; and the shadow workspace + its two independent CLI dry-run
+  // proofs (assertDryRunNamesOnlyTarget) bound the actual push to that one
+  // migration regardless of how many later files sit in the catalogue.
   const pendingVersions = (remoteCanonical.pendingCanonical ?? []).slice().sort((a, b) => a - b);
 
   if (remoteCeiling === current && !remoteSet.has(next)) {
-    if (pendingVersions.length !== 1 || pendingVersions[0] !== next) {
-      refuse(
-        'PENDING_SET_NOT_SINGLE',
-        `The pending set is [${pendingVersions.join(', ')}], expected exactly [${next}]. ` +
-          '`supabase db push` applies every pending migration, so it may only run when exactly one is pending.',
-      );
-    }
     return { decision: 'APPLY', targetVersion: next, pendingVersions, remoteCeiling, localCeiling };
   }
 
   if (remoteCeiling === next && remoteSet.has(next)) {
-    if (pendingVersions.length !== 0) {
-      refuse(
-        'PENDING_SET_NOT_SINGLE',
-        `Production already reports ceiling ${next}, yet the pending set is [${pendingVersions.join(', ')}] rather than empty.`,
-      );
-    }
     return { decision: 'ALREADY_APPLIED', targetVersion: next, pendingVersions, remoteCeiling, localCeiling };
   }
 

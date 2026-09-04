@@ -77,6 +77,29 @@ describe('Production migration executor — dispatch envelope', () => {
   });
 });
 
+describe('Production migration executor — the pinned target must exist, not the catalogue equal it', () => {
+  // REGRESSION — run 33822028630, 2026-09-04. The step used to require the
+  // HIGHEST file in supabase/migrations to equal expected_next_ceiling,
+  // which refuses the ordinary shape where several reviewed migrations (e.g.
+  // 204-208) sit prepared alongside the pinned target (203) before Production
+  // reaches it. That comparison must never come back.
+  it('no longer computes or compares the highest local migration file to the pinned ceiling', () => {
+    expect(WORKFLOW).not.toMatch(/highest=\$\(ls supabase\/migrations/);
+    expect(WORKFLOW).not.toMatch(/"\$highest"\s*!=\s*"\$\{\{\s*inputs\.expected_next_ceiling/);
+  });
+
+  it('instead proves exactly one local file is numbered at the target, before installing the CLI', () => {
+    const idx = WORKFLOW.indexOf('Verify the pinned target migration exists in this checkout, exactly once');
+    const cliIdx = WORKFLOW.indexOf('Set up Supabase CLI');
+    expect(idx).toBeGreaterThan(-1);
+    expect(idx).toBeLessThan(cliIdx);
+    const block = WORKFLOW.slice(idx, cliIdx);
+    expect(block).toContain('match_count');
+    expect(block).toContain('inputs.expected_next_ceiling');
+    expect(block).toContain('inputs.migration_filename');
+  });
+});
+
 describe('Production migration executor — the single-pending proof', () => {
   it('proves exactly one pending migration BEFORE any push, from the database and the directory', () => {
     const preflightIdx = WORKFLOW.indexOf('Preflight — prove exactly one pending migration');

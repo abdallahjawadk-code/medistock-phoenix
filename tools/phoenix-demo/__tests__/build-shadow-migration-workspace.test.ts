@@ -175,6 +175,49 @@ describe('workspace construction', () => {
     expect((thrown as ShadowWorkspaceRefusal).code).toBe('TARGET_VERSION_COLLIDES');
   });
 
+  // REGRESSION — run 33822028630, 2026-09-04. Proves matrix items 4 and 5:
+  // the shadow workspace is bounded to applied aliases + the one target BY
+  // CONSTRUCTION, regardless of how far the repository catalogue extends
+  // past the target. The real incident had 204-208 prepared alongside target
+  // 203; this reproduces that shape at fixture scale (target 9, catalogue
+  // reaching 11) and proves neither 10 nor 11 ever reaches the workspace.
+  it('excludes prepared future migrations from the workspace even when the catalogue reaches past the target', () => {
+    const { dir, local, rows } = fixture();
+    // Extend the catalogue two versions past the target (9), unapplied and
+    // not referenced by `mapping` or `target` -- exactly how 204 and 205
+    // sat alongside pinned target 203 in the real incident.
+    const extended = [...local];
+    for (const v of [10, 11]) {
+      const f = `${String(v).padStart(3, '0')}_phoenix_step_${v}.sql`;
+      writeFileSync(join(dir, f), `-- canonical migration ${v}\nSELECT ${v};\n`);
+      extended.push({ version: v, filename: f });
+    }
+    const rec = reconcileMigrationHistory(rows, extended);
+    expect(rec.canonicalCeiling).toBe(8);
+
+    const ws = buildShadowMigrationWorkspace({
+      migrationsDir: dir, mapping: rec.mapping, localMigrations: extended,
+      target: { canonicalVersion: 9, filename: '009_phoenix_step_9.sql', remoteHistoryVersion: '20260823181015' },
+    });
+    scratch.push(ws.workspaceDir);
+
+    const files = readdirSync(ws.migrationsDir).sort();
+    // Applied aliases (8) + the one target (9) = 9. Not 10, not 11.
+    expect(files).toHaveLength(9);
+    expect(ws.totalMigrations).toBe(9);
+    expect(ws.aliasCount).toBe(8);
+    // The extended-catalogue versions never appear under ANY name.
+    for (const f of files) {
+      expect(f).not.toMatch(/^010_/);
+      expect(f).not.toMatch(/010_phoenix_step_10/);
+      expect(f).not.toMatch(/^011_/);
+      expect(f).not.toMatch(/011_phoenix_step_11/);
+    }
+    // The target itself is still exactly right.
+    expect(files).toContain(ws.targetAliasFilename);
+    expect(ws.targetAliasFilename).toBe('20260823181015_009_phoenix_step_9.sql');
+  });
+
   it('refuses to build inside the repository', () => {
     const { dir, local, rows } = fixture();
     const rec = reconcileMigrationHistory(rows, local);
