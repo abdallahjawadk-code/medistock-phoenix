@@ -30,7 +30,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { buildRemoteIo } from '../pg-rig/remote-io.mjs';
 import { PINNED_PROJECT_REF, assertProjectRefPinned, parseMigrationVersion } from './production-migration-contract.mjs';
-import { canonicalStem, reconcileMigrationHistory } from './production-migration-history.mjs';
+import { assertPostApplyAcceptance, canonicalStem } from './production-migration-history.mjs';
 
 const MIGRATIONS_DIR = join(process.cwd(), 'supabase', 'migrations');
 
@@ -72,39 +72,32 @@ async function main() {
     await io.end();
   }
 
-  // ---- Supabase namespace: the exact row, exactly once --------------------
-  const matches = rows.filter((r) => String(r.version) === expectedRemoteVersion);
-  if (matches.length !== 1) {
-    throw new Error(`Production history contains ${matches.length} rows with version ${expectedRemoteVersion}, expected exactly 1.`);
-  }
-  if (String(matches[0].name) !== expectedName) {
-    throw new Error(`Production row ${expectedRemoteVersion} is named ${JSON.stringify(String(matches[0].name))}, expected ${JSON.stringify(expectedName)}.`);
-  }
-
   const expectedRowCount = process.env.PHOENIX_EXPECTED_REMOTE_ROW_COUNT
     ? parseInt(process.env.PHOENIX_EXPECTED_REMOTE_ROW_COUNT, 10) : null;
-  if (expectedRowCount !== null && rows.length !== expectedRowCount) {
-    throw new Error(`Production history has ${rows.length} rows, expected exactly ${expectedRowCount}.`);
-  }
 
-  // ---- Phoenix namespace: reconciled canonical ceiling --------------------
-  const reconciled = reconcileMigrationHistory(rows, localManifest());
-  if (reconciled.canonicalCeiling !== expected) {
-    throw new Error(`Reconciled Production canonical ceiling is ${reconciled.canonicalCeiling}, expected exactly ${expected}.`);
-  }
-  const target = reconciled.mapping.find((m) => m.remoteVersion === expectedRemoteVersion);
-  if (!target || target.canonical !== expected) {
-    throw new Error(`Remote row ${expectedRemoteVersion} reconciles to canonical ${target?.canonical ?? 'nothing'}, expected ${expected}.`);
-  }
-  if (reconciled.pendingCanonical.length !== 0) {
-    throw new Error(`Canonical migrations still pending after the apply: [${reconciled.pendingCanonical.join(', ')}].`);
-  }
+  // ---- Acceptance: Supabase namespace, then Phoenix namespace -------------
+  // REPOSITORY CATALOGUE vs. AUTHORIZED EXECUTION SET. `supabase/migrations`
+  // may legitimately hold migrations reviewed and merged ahead of this one
+  // pinned dispatch; their absence from Production is expected, not drift.
+  // `assertPostApplyAcceptance` never treats that later catalogue tail as an
+  // error — it is reported below as informational only.
+  const { reconciled, laterCatalogueTail } = assertPostApplyAcceptance({
+    remoteRows: rows,
+    localMigrations: localManifest(),
+    expectedCeiling: expected,
+    expectedRemoteVersion,
+    expectedName,
+    expectedRowCount,
+  });
 
+  const tailNote = laterCatalogueTail.length
+    ? `repository catalogue tail beyond the ceiling (informational, not applied): [${laterCatalogueTail.join(', ')}]`
+    : 'nothing pending';
   console.log(
     `Post-apply verification PASS: ${rows.length} remote rows ` +
       `(${reconciled.numericRowCount} three-digit + ${reconciled.timestampRowCount} timestamp), ` +
       `row ${expectedRemoteVersion} = ${expectedName} present exactly once, ` +
-      `reconciled canonical ceiling ${reconciled.canonicalCeiling}, nothing pending.`,
+      `reconciled canonical ceiling ${reconciled.canonicalCeiling}, ${tailNote}.`,
   );
 }
 
