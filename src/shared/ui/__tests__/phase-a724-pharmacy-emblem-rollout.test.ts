@@ -569,6 +569,27 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
       'supabase/migrations/__tests__/206-dispensing-suspension-enforcement-suggestions.dynamic.test.ts',
       'supabase/migrations/__tests__/207-dispensing-suspension-enforcement-warehouse-send.dynamic.test.ts',
       'supabase/migrations/__tests__/208-dispensing-suspension-enforcement-replenishment-and-drafts.dynamic.test.ts',
+      // INTERACTIVE-GUIDE-IG1: one new file under the watched `src/app`
+      // prefix, registered by EXACT filename like every entry above.
+      //
+      // `src/app/App.tsx` is already excluded and is where the change itself
+      // lands: a `LanguagePreferenceBridge` beside the existing
+      // `ThemePreferenceBridge`, reconciling AppContext's in-memory `lang`
+      // with a versioned browser-local preference. This entry is that
+      // bridge's proof suite, and nothing else.
+      //
+      // It is STRICTLY ADDITIVE with respect to everything this guard
+      // protects. IG-1 adds no migration, touches no RPC or RLS contract, and
+      // changes no authorization decision — `src/shared/authz` and
+      // `src/shared/supabase` are untouched by it in either direction; the
+      // guide READS `isScreenAuthorized` and `myPermissions` rather than
+      // re-deriving or widening either. The one behaviour that changes is
+      // which language the shell opens in after a reload, which was
+      // previously always Arabic regardless of the operator's choice.
+      //
+      // No wildcard and no directory exemption, so every other file under
+      // `src/app` still fails this guard closed.
+      'src/app/__tests__/language-preference-bridge.runtime.test.tsx',
     ];
     const changed=execSync(`git diff --name-only ${BASE}`,{cwd:ROOT,encoding:'utf8'}).split('\n').map(l=>l.trim()).filter(Boolean);
     const prohibited=changed.filter(f=>WATCHED.some(p=>f===p||f.startsWith(p+'/'))&&!EXCLUDED.includes(f));
