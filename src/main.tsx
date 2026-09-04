@@ -26,6 +26,7 @@ import '@/shared/lib/phase-a-visual-convergence.css';
 import '@/shared/lib/phase-a-auth-welcome-signature.css';
 import { App } from '@/app/App';
 import { restoreThemeBeforeReact } from '@/shared/lib/themePreference';
+import { restoreLanguageBeforeReact } from '@/shared/lib/languagePreference';
 import { registerServiceWorker } from '@/shared/pwa/registerServiceWorker';
 
 // THEME-PERSISTENCE-HOTFIX: restore the validated browser-local preference
@@ -33,6 +34,13 @@ import { registerServiceWorker } from '@/shared/pwa/registerServiceWorker';
 // this synchronous override prevents AppContext from starting a refresh on the
 // wrong visual theme while the preference bridge aligns its in-memory state.
 restoreThemeBeforeReact();
+
+// INTERACTIVE-GUIDE-IG1: same contract, one line later, for the application
+// language. index.html ships dir="rtl"/lang="ar" as the no-preference
+// fallback; this synchronous restore prevents an English operator's refresh
+// from painting one Arabic RTL frame before LanguagePreferenceBridge aligns
+// AppContext's in-memory state.
+restoreLanguageBeforeReact();
 
 // PHASE-A-DESIGN-FOUNDATION: one explicit document-level marker lets the new
 // presentation layer remain isolated and removable. It changes no application

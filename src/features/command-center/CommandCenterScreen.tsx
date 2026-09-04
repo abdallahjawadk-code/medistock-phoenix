@@ -6,6 +6,7 @@ import { useIsMobileViewport } from '@/shared/ui/useResponsiveViewport';
 import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import { PhoenixErrorState } from '@/shared/ui/PhoenixErrorState';
 import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
+import { GUIDE_ANCHORS, guideAnchor, type GuideAnchorId } from '@/features/guide/guide.anchors';
 import { useCommandCenter } from './useCommandCenter';
 import {
   deriveCriticalSignals,
@@ -31,15 +32,23 @@ function Panel({
   icon,
   children,
   className,
+  guideId,
 }: {
   titleKey: string;
   icon: Parameters<typeof PhoenixIcon>[0]['name'];
   children: React.ReactNode;
   className?: string;
+  /** INTERACTIVE-GUIDE-IG1 — optional stable anchor, so a panel the guide
+   *  points at owns its own id here rather than gaining a wrapper element
+   *  that would change this screen's layout. */
+  guideId?: GuideAnchorId;
 }) {
   const { lang } = useApp();
   return (
-    <section className={`rac3-panel${className ? ` ${className}` : ''}`}>
+    <section
+      {...(guideId ? guideAnchor(guideId) : {})}
+      className={`rac3-panel${className ? ` ${className}` : ''}`}
+    >
       <h2 className="rac3-panel__title">
         <span className="rac3-panel__title-icon" aria-hidden="true">
           <PhoenixIcon name={icon} size={15} />
@@ -162,7 +171,7 @@ export function CommandCenterScreen({ onNavigate }: Props) {
    * first, while a desk operator reads the overview then drills down.
    */
   const signalsPanel = panels.criticalSignals ? (
-    <Panel titleKey="rac3_panel_signals" icon="warning" className="rac3-panel--signals">
+    <Panel titleKey="rac3_panel_signals" icon="warning" className="rac3-panel--signals" guideId={GUIDE_ANCHORS.dashboardSignalsPanel}>
       <CriticalSignalsPanel signals={signals} onOpenAlerts={alertsAction} />
     </Panel>
   ) : null;
@@ -186,7 +195,7 @@ export function CommandCenterScreen({ onNavigate }: Props) {
   );
 
   const kpiBlock = (
-    <section className="rac3-kpis" aria-label={t('rac3_panel_kpis', lang)}>
+    <section {...guideAnchor(GUIDE_ANCHORS.dashboardOverviewKpis)} className="rac3-kpis" aria-label={t('rac3_panel_kpis', lang)}>
       <h2 className="rac3-panel__title rac3-panel__title--bare">
         <span className="rac3-panel__title-icon" aria-hidden="true">
           <PhoenixIcon name="status" size={15} />

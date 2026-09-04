@@ -9,6 +9,7 @@ import { PhoenixMobileBottomNav } from './PhoenixMobileBottomNav';
 import { PwaInstallPrompt } from '@/shared/pwa/PwaInstallPrompt';
 import { CommandPalette } from './CommandPalette';
 import { PlatformBroadcastGate } from '@/features/platform-broadcast/PlatformBroadcastGate';
+import { useGuideHost } from '@/features/guide/GuideHost';
 
 // PRODUCTION-READINESS-CLEANUP-A: screen 2 (the former central dashboard) no
 // longer has an entry — App.tsx redirects it to the unified shell, so the
@@ -72,6 +73,11 @@ export function PhoenixAppShell({ children, currentScreen, onNavigate, onLogout 
 
   const title = t(SCREEN_TITLE_KEYS[currentScreen] ?? 'nav_decision_reports', lang);
 
+  /* INTERACTIVE-GUIDE-IG1: the shell owns "is the guide open" and hands its
+     Help entries one `open` callback. Nothing of the guide engine, its tours
+     or its stylesheet is fetched until that callback fires — see GuideHost. */
+  const { controller: guide, host: guideHost } = useGuideHost({ currentScreen, onNavigate });
+
   return (
     <div dir={dir} className="premium-shell nexus-shell" style={{
       display: 'flex',
@@ -97,6 +103,7 @@ export function PhoenixAppShell({ children, currentScreen, onNavigate, onLogout 
           onNavigate={onNavigate}
           onClose={closeSidebar}
           onLogout={onLogout}
+          onOpenGuide={guide.open}
         />
       )}
 
@@ -106,6 +113,7 @@ export function PhoenixAppShell({ children, currentScreen, onNavigate, onLogout 
           isMobile={isMobile}
           menuOpen={sidebarOpen}
           onMenuClick={toggleSidebar}
+          onOpenGuide={guide.open}
         />
 
         <main
@@ -156,6 +164,9 @@ export function PhoenixAppShell({ children, currentScreen, onNavigate, onLogout 
           renders null until a pending broadcast exists — safe to always
           mount here alongside the other always-present overlays above. */}
       <PlatformBroadcastGate />
+
+      {/* INTERACTIVE-GUIDE-IG1: renders null until the guide is opened. */}
+      {guideHost}
     </div>
   );
 }

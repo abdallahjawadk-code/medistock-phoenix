@@ -1,0 +1,277 @@
+/* ─── INTERACTIVE-GUIDE-IG1 — Guide & Help presentation ─────────────────────
+   Imported by GuideEngine.tsx and by nothing else, so Vite emits it as part
+   of the guide's own lazily-fetched chunk rather than adding it to the CSS
+   every operator downloads at login (AD-07).
+
+   Every selector is `.guide-` prefixed and unique to this feature. Colours,
+   radii, shadows and easings come from the existing token layer — no new
+   palette is introduced here.
+   ─────────────────────────────────────────────────────────────────────── */
+
+/* The guide sits above modals (1000) and below toasts (1100): a dialog opened
+   before the guide must not paint over the step describing it, while a toast
+   the application raises must still reach the operator. */
+.guide-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 1050;
+}
+
+/* ── The blocking layer ───────────────────────────────────────────────────
+   This is the guide's SAFETY surface, not a decoration. It covers the whole
+   viewport — including the element being highlighted — so a highlighted
+   operational control cannot be activated by mouse or touch while the guide
+   points at it (AD-04). The highlight ring above it is pointer-transparent,
+   so nothing punches a hole back through this layer. */
+.guide-blocker {
+  position: absolute;
+  inset: 0;
+  background: rgba(2, 5, 10, 0.45);
+  pointer-events: auto;
+}
+
+.guide-blocker--plain {
+  background: rgba(2, 5, 10, 0.55);
+}
+
+/* ── The highlight ring ───────────────────────────────────────────────────
+   Drawn on top of the blocker and explicitly pointer-transparent, so it can
+   never intercept — or re-expose — a click. */
+.guide-ring {
+  position: absolute;
+  pointer-events: none;
+  border-radius: var(--r2, 10px);
+  box-shadow:
+    0 0 0 2px var(--phoenix-gold, #ddba63),
+    0 0 0 6px color-mix(in srgb, var(--phoenix-gold, #ddba63) 28%, transparent);
+  transition: top var(--dur-fast, 140ms) var(--ease-standard, ease),
+              left var(--dur-fast, 140ms) var(--ease-standard, ease),
+              width var(--dur-fast, 140ms) var(--ease-standard, ease),
+              height var(--dur-fast, 140ms) var(--ease-standard, ease);
+}
+
+/* ── The step card ─────────────────────────────────────────────────────── */
+.guide-card {
+  position: absolute;
+  width: min(360px, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--surface, #fff);
+  color: var(--text, #10151c);
+  border: 1px solid var(--line, #e4e7ec);
+  border-radius: var(--r4, 16px);
+  box-shadow: var(--sh-xl, 0 18px 48px rgba(2, 5, 10, 0.28));
+  padding: 18px;
+  outline: none;
+}
+
+.guide-card--center {
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-start: 50%;
+  transform: translate(-50%, -50%);
+}
+
+/* The centred card is positioned from the physical centre in both directions,
+   so `translate(-50%, -50%)` must not be flipped by the RTL document. */
+[dir='rtl'] .guide-card--center {
+  transform: translate(50%, -50%);
+}
+
+.guide-card__position {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted, #67707d);
+  margin: 0 0 6px;
+}
+
+.guide-card__title {
+  font-size: 16px;
+  font-weight: 700;
+  margin: 0 0 8px;
+  line-height: 1.4;
+}
+
+.guide-card__body {
+  font-size: 14px;
+  line-height: 1.7;
+  margin: 0 0 12px;
+  color: var(--text, #10151c);
+}
+
+.guide-card__note {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--muted, #67707d);
+  margin: 0 0 12px;
+  padding-inline-start: 10px;
+  border-inline-start: 2px solid var(--line, #e4e7ec);
+}
+
+.guide-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.guide-card__spacer { flex: 1 1 auto; }
+
+.guide-btn {
+  min-height: var(--touch-target, 44px);
+  padding: 0 14px;
+  border-radius: var(--r2, 10px);
+  border: 1px solid var(--line, #e4e7ec);
+  background: var(--field, #f6f7f9);
+  color: var(--text, #10151c);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color var(--dur-fast, 140ms) var(--ease-standard, ease);
+}
+
+.guide-btn:hover:not(:disabled) { background: var(--chip, #eef1f5); }
+.guide-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.guide-btn--primary {
+  background: var(--phoenix-gold, #ddba63);
+  border-color: var(--phoenix-gold, #ddba63);
+  color: #02050a;
+}
+
+.guide-btn--quiet {
+  background: transparent;
+  border-color: transparent;
+  color: var(--muted, #67707d);
+}
+
+/* ── The Help Center ───────────────────────────────────────────────────── */
+.guide-center__panel {
+  position: relative;
+  width: min(520px, 100%);
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--surface, #fff);
+  color: var(--text, #10151c);
+  border: 1px solid var(--line, #e4e7ec);
+  border-radius: var(--r5, 20px);
+  box-shadow: var(--sh-xl, 0 18px 48px rgba(2, 5, 10, 0.28));
+  padding: clamp(16px, 4vw, 26px);
+  outline: none;
+}
+
+.guide-center__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.guide-center__title {
+  font-size: 18px;
+  font-weight: 700;
+  margin: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.guide-center__intro {
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--muted, #67707d);
+  margin: 0 0 16px;
+}
+
+.guide-center__tours {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.guide-tour-card {
+  border: 1px solid var(--line, #e4e7ec);
+  border-radius: var(--r3, 14px);
+  padding: 14px;
+  background: var(--field, #f6f7f9);
+}
+
+.guide-tour-card__title {
+  font-size: 14px;
+  font-weight: 700;
+  margin: 0 0 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.guide-tour-card__badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--chip, #eef1f5);
+  color: var(--muted, #67707d);
+}
+
+.guide-tour-card__desc {
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--muted, #67707d);
+  margin: 0 0 12px;
+}
+
+.guide-tour-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.guide-center__footer {
+  border-top: 1px solid var(--line, #e4e7ec);
+  padding-top: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.guide-center__status {
+  font-size: 12px;
+  color: var(--muted, #67707d);
+  margin: 0;
+}
+
+.guide-center__empty {
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--muted, #67707d);
+  margin: 0 0 16px;
+}
+
+/* Screen-reader-only live region: announced, never painted. */
+.guide-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ── Reduced motion ──────────────────────────────────────────────────────
+   Honoured through the media query as well as the engine's own reactive
+   check, so a preference set after the guide opened still lands. */
+@media (prefers-reduced-motion: reduce) {
+  .guide-ring,
+  .guide-btn {
+    transition: none;
+  }
+}
