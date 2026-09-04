@@ -83,6 +83,79 @@ function expectRefusal(input: Record<string, unknown>, code: string) {
   return thrown as ProductionMigrationRefusal;
 }
 
+// ===========================================================================
+// REGRESSION — real Production incident, run 33822028630, 2026-09-04.
+//
+// Migrations 203-208 were reviewed and merged to master together in one PR
+// (181). Production had applied none of them. Dispatching the executor
+// pinned to target=203 (current=202, next=203) FAILED before any database
+// connection: the workflow's cheap YAML pre-check computed the checkout's
+// migration ceiling as the highest FILE PRESENT (208) and refused because
+// 208 !== 203. The SAME conflation existed one layer down, in this contract:
+// `localCeiling` (== 208, the highest file in the whole catalogue) was
+// required to equal `next` (203), and even past that, `pendingVersions`
+// (local-minus-remote over the WHOLE catalogue) was required to be exactly
+// [203] — but with 204-208 also unapplied, it is [203,204,205,206,207,208].
+// Both checks reject a state that must be legal: the REPOSITORY CATALOGUE
+// may legitimately hold reviewed future migrations; only the AUTHORIZED
+// EXECUTION SET (the shadow workspace: applied aliases + this one target)
+// must be bounded to exactly one pending migration, and that is already
+// enforced independently by buildShadowMigrationWorkspace() and by the two
+// CLI dry-run proofs — never by this function reasoning about the whole
+// catalogue.
+// ===========================================================================
+describe('production migration executor — REGRESSION: prepared future migrations in the catalogue (run 33822028630)', () => {
+  it('APPLIES target 203 when the catalogue reaches 208 and Production is at 202 (the real incident shape)', () => {
+    const out = decideProductionMigrationApply({
+      ...baseline(),
+      expectedCurrentCeiling: '202',
+      expectedNextCeiling: '203',
+      migrationFilename: '203_phoenix_material_dispensing_suspension.sql',
+      migrationSha256: 'bc46c2f9e984d8a5e8f40548878ff15ad9ae38410ef180aa909c0453d4cb6de8',
+      localMigrations: localSet(208, { 203: { filename: '203_phoenix_material_dispensing_suspension.sql', sha256: 'bc46c2f9e984d8a5e8f40548878ff15ad9ae38410ef180aa909c0453d4cb6de8' } }),
+      remoteCanonical: canon(202, 208),
+    } as never);
+    expect(out.decision).toBe('APPLY');
+    expect(out.targetVersion).toBe(203);
+    expect(out.localCeiling).toBe(208);
+    // 204-208 are legitimately unapplied and present, so they appear in the
+    // informational pending list -- but per the shadow-workspace model that
+    // list no longer gates the decision. What matters is proven elsewhere.
+    expect(out.pendingVersions).toEqual([203, 204, 205, 206, 207, 208]);
+  });
+
+  it('remains ALREADY_APPLIED (resume-safe) for target 203 once Production reaches 203, with 204-208 still only prepared', () => {
+    const out = decideProductionMigrationApply({
+      ...baseline(),
+      expectedCurrentCeiling: '202',
+      expectedNextCeiling: '203',
+      migrationFilename: '203_phoenix_material_dispensing_suspension.sql',
+      migrationSha256: 'bc46c2f9e984d8a5e8f40548878ff15ad9ae38410ef180aa909c0453d4cb6de8',
+      localMigrations: localSet(208, { 203: { filename: '203_phoenix_material_dispensing_suspension.sql', sha256: 'bc46c2f9e984d8a5e8f40548878ff15ad9ae38410ef180aa909c0453d4cb6de8' } }),
+      remoteCanonical: canon(203, 208),
+    } as never);
+    expect(out.decision).toBe('ALREADY_APPLIED');
+    expect(out.pendingVersions).toEqual([204, 205, 206, 207, 208]);
+  });
+
+  it.each([203, 204, 205, 206, 207, 208])(
+    'sequential validity: target %i applies when Production is exactly one behind it and the catalogue reaches 208',
+    (target) => {
+      const out = decideProductionMigrationApply({
+        ...baseline(),
+        expectedCurrentCeiling: String(target - 1),
+        expectedNextCeiling: String(target),
+        migrationFilename: `${target}_phoenix_step_${target}.sql`,
+        migrationSha256: String(target).padStart(64, '0'),
+        localMigrations: localSet(208),
+        remoteCanonical: canon(target - 1, 208),
+      } as never);
+      expect(out.decision).toBe('APPLY');
+      expect(out.targetVersion).toBe(target);
+    },
+  );
+});
+
 describe('production migration executor — the happy path is exactly one pending migration', () => {
   it('APPLIES when Production is at 195, this checkout is at 196, and every pin matches', () => {
     const out = decideProductionMigrationApply(baseline() as never);
@@ -187,20 +260,34 @@ describe('production migration executor — negative controls (every one must fa
     expect(r.message).toContain('not the bytes that were reviewed');
   });
 
-  it('two pending migrations — a checkout carrying 197 as well can never push "just" 196', () => {
-    const r = expectRefusal(
-      { ...baseline(), localMigrations: localSet(197), remoteCanonical: canon(195, 197) },
-      'LOCAL_CEILING_MISMATCH',
+  // CORRECTED 2026-09-04 (run 33822028630): a checkout carrying 197 (or
+  // further) alongside the pinned target 196 is the ORDINARY shape once
+  // several migrations are reviewed together, and must APPLY -- see the
+  // dedicated REGRESSION describe block above, which proves this exhaustively
+  // for the real incident numbers. These two cases are kept, not deleted,
+  // specifically because they used to assert the wrong (refusing) behaviour
+  // and a reader diffing history should see the correction in place, not a
+  // silently vanished case.
+  it('a checkout carrying 197 as well as 196 still APPLIES 196 — the catalogue may run ahead of the target', () => {
+    const out = decideProductionMigrationApply(
+      { ...baseline(), localMigrations: localSet(197), remoteCanonical: canon(195, 197) } as never,
     );
-    expect(r.message).toContain('could push more than one migration');
+    expect(out.decision).toBe('APPLY');
+    expect(out.targetVersion).toBe(196);
+    expect(out.localCeiling).toBe(197);
   });
 
-  it('unexpected local future migration — same guard, stated as the operator would hit it', () => {
-    expectRefusal({ ...baseline(), localMigrations: localSet(198) }, 'LOCAL_CEILING_MISMATCH');
+  it('a locally-prepared future migration does not block the pinned target — same correction, stated as the operator would hit it', () => {
+    const out = decideProductionMigrationApply({ ...baseline(), localMigrations: localSet(198) } as never);
+    expect(out.decision).toBe('APPLY');
+    expect(out.localCeiling).toBe(198);
   });
 
-  it('no pending migration and no resume story — the checkout does not even contain the pinned version', () => {
-    expectRefusal({ ...baseline(), localMigrations: localSet(195) }, 'LOCAL_CEILING_MISMATCH');
+  it('the checkout genuinely not containing the pinned version still refuses — TARGET_MIGRATION_MISSING, not a ceiling mismatch', () => {
+    // localSet(195) has no version-196 file at all; distinct from the two
+    // cases above, where 196 exists and merely isn't the catalogue's highest.
+    const r = expectRefusal({ ...baseline(), localMigrations: localSet(195) }, 'TARGET_MIGRATION_MISSING');
+    expect(r.message).toContain('found 0');
   });
 
   it('unexpected Production future migration — this checkout is behind Production', () => {
@@ -236,17 +323,27 @@ describe('production migration executor — negative controls (every one must fa
     expectRefusal({ ...baseline(), remoteCanonical: undefined }, 'REMOTE_HISTORY_EMPTY');
   });
 
-  // PENDING_SET_NOT_SINGLE is a deliberate defensive backstop rather than a
-  // reachable state: local and remote histories are both required to be
-  // contiguous first, which already forces local-minus-remote to be exactly
-  // [next] on the APPLY path and [] on the resume path. It is asserted here as
-  // an existing guard, not claimed as covered behaviour.
-  it('keeps the defensive single-pending backstop in place', async () => {
+  // REMOVED 2026-09-04 (run 33822028630): PENDING_SET_NOT_SINGLE used to
+  // require the CATALOGUE's pending set (local minus remote, over every file
+  // in supabase/migrations) to be exactly [next]. Once the catalogue
+  // legitimately holds prepared future migrations, that set is routinely
+  // [next, next+1, ...] and the check refused a state that must be legal --
+  // it was reachable, and it was the second half of the real incident. The
+  // single-pending guarantee is unaffected: it is proven on the AUTHORIZED
+  // EXECUTION SET (the shadow workspace) instead, by construction and by the
+  // two independent CLI dry-run proofs, neither of which reasons about the
+  // whole catalogue. This test now proves the removal is permanent, not that
+  // the code still exists.
+  it('does not gate the decision on the catalogue-wide pending set — a wide-reaching catalogue still applies cleanly', async () => {
     const src = await import('node:fs').then((fs) =>
       fs.readFileSync(new URL('../production-migration-contract.mjs', import.meta.url), 'utf8'),
     );
-    expect(src).toContain("'PENDING_SET_NOT_SINGLE'");
-    expect(src).toContain('applies every pending migration');
+    expect(src).not.toContain('PENDING_SET_NOT_SINGLE');
+    const out = decideProductionMigrationApply(
+      { ...baseline(), localMigrations: localSet(199), remoteCanonical: canon(195, 199) } as never,
+    );
+    expect(out.decision).toBe('APPLY');
+    expect(out.pendingVersions).toEqual([196, 197, 198, 199]);
   });
 });
 
@@ -361,6 +458,38 @@ describe('production migration executor — a migration\'s own apply policy is h
     const readMig = (name: string) => readFileSync(new URL(name, dir), 'utf8');
     expect(declaresManualApplyOnly(readMig('195_phoenix_auth_helper_profile_schema_qualification.sql'))).toBe(true);
     expect(declaresManualApplyOnly(readMig('147_phoenix_secure_user_delete_history_guard.sql'))).toBe(false);
+  });
+});
+
+describe('production migration executor — migrations 203-208 are untouched by this repair', () => {
+  const dir = new URL('../../../supabase/migrations/', import.meta.url);
+  const NAMES = [
+    '203_phoenix_material_dispensing_suspension.sql',
+    '204_phoenix_dispensing_suspension_enforcement_dispense.sql',
+    '205_phoenix_dispensing_suspension_enforcement_fefo.sql',
+    '206_phoenix_dispensing_suspension_enforcement_suggestions.sql',
+    '207_phoenix_dispensing_suspension_enforcement_warehouse_send.sql',
+    '208_phoenix_dispensing_suspension_enforcement_replenishment_and_drafts.sql',
+  ];
+
+  it('all six files this repair reasons about still exist, with well-formed sequential filenames', () => {
+    for (const [i, name] of NAMES.entries()) {
+      expect(parseMigrationVersion(name), name).toBe(203 + i);
+      expect(() => readFileSync(new URL(name, dir))).not.toThrow();
+    }
+  });
+
+  // 203's identity is pinned from independently sealed campaign evidence
+  // (artifact 727 / the run-33822028630 dispatch, both computed from the
+  // canonical Git blob), not from this checkout — a real external pin, so
+  // this genuinely catches tampering rather than checking a value against
+  // itself.
+  it('migration 203 is byte-identical to its sealed identity', async () => {
+    const { createHash } = await import('node:crypto');
+    const bytes = readFileSync(new URL(NAMES[0], dir));
+    expect(createHash('sha256').update(bytes).digest('hex'))
+      .toBe('bc46c2f9e984d8a5e8f40548878ff15ad9ae38410ef180aa909c0453d4cb6de8');
+    expect(bytes.length).toBe(27173);
   });
 });
 

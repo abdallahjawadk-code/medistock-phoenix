@@ -174,7 +174,15 @@ describe('Phase A7 Phoenix Daylight visual convergence contract', () => {
         // AuthenticatedApp.tsx, App.tsx and the rest of src/shared/authz —
         // stays fully covered.
         + '":!src/shared/supabase/services/scope-topology.service.ts" '
-        + '":!src/shared/authz/__tests__/ub-facility-scope-activation.test.ts"',
+        + '":!src/shared/authz/__tests__/ub-facility-scope-activation.test.ts" '
+        // PRODUCTION-MIGRATION-EXECUTOR-REPAIR (run 33822028630): a later,
+        // separately-reviewed phase adds ONE guard test under the watched
+        // src/shared/supabase prefix — it locks in the corrected
+        // catalogue-vs-execution-set safety model for the pinned Production
+        // migration executor and adds no visual surface. Excluded BY EXACT
+        // NAME; every other watched path, the rest of src/shared/supabase
+        // included, stays fully covered.
+        + '":!src/shared/supabase/__tests__/production-migration-executor-contract.test.ts"',
         { cwd: ROOT, encoding: 'utf8' },
       );
     } catch { /* ignore */ }

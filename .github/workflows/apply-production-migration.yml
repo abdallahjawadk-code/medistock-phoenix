@@ -150,17 +150,43 @@ jobs:
           fi
           echo "Production connection secret is present."
 
-      # Cheap local guard before anything touches Production: this checkout's
-      # own ceiling must already be the pinned next version. The preflight
-      # re-proves this rigorously, hashes included.
-      - name: Verify this checkout's migration ceiling is exactly the pinned next version
+      # Cheap local guard before anything touches Production: the pinned
+      # target migration must exist in this checkout, exactly once, before
+      # spending time on a CLI download. tools/phoenix-demo/production-
+      # migration-preflight.mjs re-proves this rigorously afterward, filename
+      # and SHA-256 included — this step exists only to fail fast and cheap.
+      #
+      # CORRECTED 2026-09-04 (run 33822028630): this used to require the
+      # HIGHEST migration file in the whole checkout to equal the pinned
+      # target — which conflated the REPOSITORY CATALOGUE (every reviewed
+      # migration file, which may legitimately extend past the target — 204
+      # through 208 sat alongside pinned target 203 in that run) with the
+      # AUTHORIZED EXECUTION SET (applied aliases + this one target, bounded
+      # by build-shadow-migration-workspace.mjs regardless of catalogue size).
+      # It refused a state that was, and remains, entirely legal, before the
+      # CLI was even installed. It now checks only what this step can
+      # actually prove cheaply: that exactly one file in the catalogue is
+      # numbered as the target, and that the pinned filename exists.
+      - name: Verify the pinned target migration exists in this checkout, exactly once
         run: |
-          highest=$(ls supabase/migrations | grep -oE '^[0-9]{3}' | sort -n | tail -1)
-          if [ "$highest" != "${{ inputs.expected_next_ceiling }}" ]; then
-            echo "::error::This checkout's migration ceiling is $highest, expected exactly ${{ inputs.expected_next_ceiling }}."
+          target="${{ inputs.expected_next_ceiling }}"
+          match_count=0
+          for f in supabase/migrations/*.sql; do
+            base=$(basename "$f")
+            prefix=$(echo "$base" | grep -oE '^[0-9]{3}')
+            if [ -n "$prefix" ] && [ "$((10#$prefix))" = "$target" ]; then
+              match_count=$((match_count + 1))
+            fi
+          done
+          if [ "$match_count" != "1" ]; then
+            echo "::error::Expected exactly one migration file with numeric prefix $target in this checkout, found $match_count."
             exit 1
           fi
-          echo "Local migration ceiling confirmed: $highest"
+          if [ ! -f "supabase/migrations/${{ inputs.migration_filename }}" ]; then
+            echo "::error::Pinned migration file ${{ inputs.migration_filename }} does not exist in this checkout."
+            exit 1
+          fi
+          echo "Confirmed exactly one local migration at target version $target: ${{ inputs.migration_filename }}."
 
       # PINNED, never `latest`. Releases 2.101.0-2.109.1 carried a defect where
       # --debug disabled TLS; it was fixed in 2.111.0. A Production executor must
