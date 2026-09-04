@@ -241,6 +241,84 @@ export function reconcileMigrationHistory(remoteRows, localMigrations) {
 }
 
 /**
+ * Split a reconciled `pendingCanonical` list at the pinned ceiling.
+ *
+ * REPOSITORY CATALOGUE vs. AUTHORIZED EXECUTION SET. `supabase/migrations`
+ * may legitimately hold migrations reviewed and merged ahead of the one
+ * dispatch currently pinned -- those are not yet authorized to run and their
+ * absence from Production is expected, not drift. Once
+ * `reconcileMigrationHistory` succeeds, its own totality/one-to-one checks
+ * already guarantee `appliedCanonical` is exactly the contiguous run
+ * `1..canonicalCeiling`, so `pendingCanonical` can only hold local versions
+ * strictly greater than `canonicalCeiling`. This function still checks the
+ * boundary explicitly rather than assuming that guarantee -- a defensive
+ * backstop, not a claim that `blocking` is reachable through the public
+ * reconciliation path.
+ *
+ * @param {number[]} pendingCanonical
+ * @param {number} expectedCeiling
+ * @returns {{blocking:number[], laterCatalogueTail:number[]}}
+ */
+export function classifyPendingTail(pendingCanonical, expectedCeiling) {
+  return {
+    blocking: pendingCanonical.filter((v) => v <= expectedCeiling),
+    laterCatalogueTail: pendingCanonical.filter((v) => v > expectedCeiling),
+  };
+}
+
+/**
+ * The full post-apply acceptance decision. Pure and DB-free: the caller
+ * supplies the freshly-read remote rows and the local catalogue: this
+ * function never connects to anything.
+ *
+ * Verifies, in order: the pinned target's remote row exists exactly once and
+ * carries the pinned name (Supabase namespace); optionally the total remote
+ * row count; the reconciled canonical ceiling equals `expectedCeiling`
+ * exactly (Phoenix namespace); the target reconciles to that same ceiling;
+ * and that nothing at or before the ceiling remains pending. A repository
+ * catalogue tail strictly beyond `expectedCeiling` is never a refusal --
+ * it is returned as `laterCatalogueTail`, informational only.
+ *
+ * @param {{remoteRows:{version:string,name:string}[], localMigrations:{version:number,filename:string}[],
+ *           expectedCeiling:number, expectedRemoteVersion:string, expectedName:string,
+ *           expectedRowCount:?number}} args
+ * @returns {{reconciled:object, laterCatalogueTail:number[]}}
+ */
+export function assertPostApplyAcceptance({
+  remoteRows, localMigrations, expectedCeiling, expectedRemoteVersion, expectedName, expectedRowCount,
+}) {
+  // ---- Supabase namespace: the exact row, exactly once --------------------
+  const matches = remoteRows.filter((r) => String(r.version) === expectedRemoteVersion);
+  if (matches.length !== 1) {
+    refuse('TARGET_ROW_NOT_SINGLE', `Production history contains ${matches.length} rows with version ${expectedRemoteVersion}, expected exactly 1.`);
+  }
+  if (String(matches[0].name) !== expectedName) {
+    refuse('TARGET_ROW_NAME_MISMATCH', `Production row ${expectedRemoteVersion} is named ${JSON.stringify(String(matches[0].name))}, expected ${JSON.stringify(expectedName)}.`);
+  }
+  if (expectedRowCount !== null && expectedRowCount !== undefined && remoteRows.length !== expectedRowCount) {
+    refuse('REMOTE_ROW_COUNT_MISMATCH', `Production history has ${remoteRows.length} rows, expected exactly ${expectedRowCount}.`);
+  }
+
+  // ---- Phoenix namespace: reconciled canonical ceiling ---------------------
+  const reconciled = reconcileMigrationHistory(remoteRows, localMigrations);
+  if (reconciled.canonicalCeiling !== expectedCeiling) {
+    refuse('CEILING_MISMATCH', `Reconciled Production canonical ceiling is ${reconciled.canonicalCeiling}, expected exactly ${expectedCeiling}.`);
+  }
+  const target = reconciled.mapping.find((m) => m.remoteVersion === expectedRemoteVersion);
+  if (!target || target.canonical !== expectedCeiling) {
+    refuse('TARGET_NOT_AT_CEILING', `Remote row ${expectedRemoteVersion} reconciles to canonical ${target?.canonical ?? 'nothing'}, expected ${expectedCeiling}.`);
+  }
+
+  // ---- Repository catalogue tail: informational, never an error -----------
+  const { blocking, laterCatalogueTail } = classifyPendingTail(reconciled.pendingCanonical, expectedCeiling);
+  if (blocking.length !== 0) {
+    refuse('CANONICAL_STILL_PENDING', `Canonical migrations at or before the pinned ceiling are still pending: [${blocking.join(', ')}].`);
+  }
+
+  return { reconciled, laterCatalogueTail };
+}
+
+/**
  * Choose the remote-history version a NEW migration will be recorded under.
  * It is supplied by the operator (frozen per invocation), never invented here,
  * and must be a valid instant strictly newer than everything already applied.

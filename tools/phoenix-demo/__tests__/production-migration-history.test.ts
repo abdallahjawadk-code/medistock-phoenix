@@ -14,8 +14,10 @@ import { describe, it, expect } from 'vitest';
 import {
   HISTORICAL_REMOTE_NAME_EXCEPTIONS,
   MigrationHistoryRefusal,
+  assertPostApplyAcceptance,
   assertRemoteHistoryVersionUsable,
   canonicalStem,
+  classifyPendingTail,
   expectedRemoteName,
   isValidTimestampVersion,
   reconcileMigrationHistory,
@@ -315,5 +317,186 @@ describe('historical remote-name exception — canonical 173 only', () => {
       remoteName: M173_NAME,
     });
     expect(Object.isFrozen(HISTORICAL_REMOTE_NAME_EXCEPTIONS)).toBe(true);
+  });
+});
+
+// ===========================================================================
+// POST-APPLY ACCEPTANCE — repository catalogue tail is informational, not an
+// error.
+//
+// `verify-production-migration-applied.mjs` re-measures Production on a fresh
+// connection after `supabase db push` and must accept a state where later,
+// already-reviewed-and-merged migrations exist in this checkout's catalogue
+// but have not run yet — that is expected, not drift. It must still refuse
+// any migration at or before the pinned ceiling that is missing, duplicated,
+// misnamed, gapped, or otherwise not cleanly applied exactly once.
+// ===========================================================================
+describe('post-apply acceptance — repository catalogue tail is informational', () => {
+  /** A wider local manifest (1..210), independent of this file's own LOCAL
+   *  (197) and of this repository's real migration count, so these scenarios
+   *  can exercise ceilings past 203 without being tied to either. */
+  const WIDE_LOCAL = Array.from({ length: 210 }, (_, i) => ({
+    version: i + 1,
+    filename: `${String(i + 1).padStart(3, '0')}_phoenix_step_${i + 1}.sql`,
+  }));
+  const CATALOGUE_208 = WIDE_LOCAL.slice(0, 208);
+
+  /** Production applied through canonical `ceiling`: 172 numeric + the rest
+   *  timestamped, using the same synthetic-name convention `productionShapedRows`
+   *  falls back to past its own 197-entry LOCAL. */
+  function appliedThrough(ceiling: number) {
+    const rows: { version: string; name: string }[] = [];
+    for (let i = 1; i <= 172; i++) rows.push({ version: String(i).padStart(3, '0'), name: `legacy_name_${i}` });
+    for (let k = 0; k < ceiling - 172; k++) {
+      const canonical = 172 + k + 1;
+      rows.push({ version: stamp(k), name: `${canonical}_phoenix_step_${canonical}` });
+    }
+    return rows;
+  }
+  const targetVersionFor = (ceiling: number) => stamp(ceiling - 172 - 1);
+  const targetNameFor = (ceiling: number) => `${ceiling}_phoenix_step_${ceiling}`;
+
+  it('scenario 1 — applied through 203, catalogue to 208: PASS, [204..208] reported only as informational tail', () => {
+    const ceiling = 203;
+    const rows = appliedThrough(ceiling);
+    const { reconciled, laterCatalogueTail } = assertPostApplyAcceptance({
+      remoteRows: rows,
+      localMigrations: CATALOGUE_208,
+      expectedCeiling: ceiling,
+      expectedRemoteVersion: targetVersionFor(ceiling),
+      expectedName: targetNameFor(ceiling),
+      expectedRowCount: rows.length,
+    });
+    expect(reconciled.canonicalCeiling).toBe(203);
+    expect(laterCatalogueTail).toEqual([204, 205, 206, 207, 208]);
+  });
+
+  it('scenario 2 — target still absent after an alleged apply: FAIL', () => {
+    const ceiling = 203;
+    const rows = appliedThrough(ceiling - 1); // 203 never actually landed
+    expectRefusal(() => assertPostApplyAcceptance({
+      remoteRows: rows,
+      localMigrations: CATALOGUE_208,
+      expectedCeiling: ceiling,
+      expectedRemoteVersion: targetVersionFor(ceiling),
+      expectedName: targetNameFor(ceiling),
+      expectedRowCount: null,
+    }), 'TARGET_ROW_NOT_SINGLE');
+  });
+
+  it('scenario 3 — Production advanced beyond expected_next_ceiling: FAIL as drift', () => {
+    const rows = appliedThrough(205); // actually at 205, pinned run only expected 203
+    expectRefusal(() => assertPostApplyAcceptance({
+      remoteRows: rows,
+      localMigrations: CATALOGUE_208,
+      expectedCeiling: 203,
+      expectedRemoteVersion: targetVersionFor(203),
+      expectedName: targetNameFor(203),
+      expectedRowCount: null,
+    }), 'CEILING_MISMATCH');
+  });
+
+  it('scenario 4a — exact history version missing entirely: FAIL', () => {
+    const ceiling = 203;
+    const rows = appliedThrough(ceiling - 1);
+    expectRefusal(() => assertPostApplyAcceptance({
+      remoteRows: rows,
+      localMigrations: CATALOGUE_208,
+      expectedCeiling: ceiling,
+      expectedRemoteVersion: targetVersionFor(ceiling),
+      expectedName: targetNameFor(ceiling),
+      expectedRowCount: null,
+    }), 'TARGET_ROW_NOT_SINGLE');
+  });
+
+  it('scenario 4b — exact history version duplicated: FAIL', () => {
+    const ceiling = 203;
+    const rows = appliedThrough(ceiling);
+    rows.push({ ...rows[rows.length - 1] });
+    expectRefusal(() => assertPostApplyAcceptance({
+      remoteRows: rows,
+      localMigrations: CATALOGUE_208,
+      expectedCeiling: ceiling,
+      expectedRemoteVersion: targetVersionFor(ceiling),
+      expectedName: targetNameFor(ceiling),
+      expectedRowCount: null,
+    }), 'TARGET_ROW_NOT_SINGLE');
+  });
+
+  it('scenario 4c — exact history version mapped to the wrong migration: FAIL', () => {
+    const ceiling = 203;
+    const rows = appliedThrough(ceiling);
+    const row = rows.find((r) => r.version === targetVersionFor(ceiling))!;
+    row.name = 'not_the_pinned_migration';
+    expectRefusal(() => assertPostApplyAcceptance({
+      remoteRows: rows,
+      localMigrations: CATALOGUE_208,
+      expectedCeiling: ceiling,
+      expectedRemoteVersion: targetVersionFor(ceiling),
+      expectedName: targetNameFor(ceiling),
+      expectedRowCount: null,
+    }), 'TARGET_ROW_NAME_MISMATCH');
+  });
+
+  it('scenario 5 — an earlier unresolved gap in the applied history: FAIL', () => {
+    const ceiling = 203;
+    const rows = appliedThrough(ceiling).filter((r) => r.version !== '100');
+    expectRefusal(() => assertPostApplyAcceptance({
+      remoteRows: rows,
+      localMigrations: CATALOGUE_208,
+      expectedCeiling: ceiling,
+      expectedRemoteVersion: targetVersionFor(ceiling),
+      expectedName: targetNameFor(ceiling),
+      expectedRowCount: null,
+    }), 'REMOTE_NUMERIC_GAP');
+  });
+
+  it('scenario 6 — generic: applied ceiling 204 with [205..208] remaining: PASS (not hard-coded to 203)', () => {
+    const ceiling = 204;
+    const rows = appliedThrough(ceiling);
+    const { laterCatalogueTail } = assertPostApplyAcceptance({
+      remoteRows: rows,
+      localMigrations: CATALOGUE_208,
+      expectedCeiling: ceiling,
+      expectedRemoteVersion: targetVersionFor(ceiling),
+      expectedName: targetNameFor(ceiling),
+      expectedRowCount: rows.length,
+    });
+    expect(laterCatalogueTail).toEqual([205, 206, 207, 208]);
+  });
+
+  it('scenario 7a — classifyPendingTail refuses to let the target itself sit in the informational tail', () => {
+    const { blocking, laterCatalogueTail } = classifyPendingTail([203, 204, 205], 203);
+    expect(blocking).toEqual([203]);
+    expect(laterCatalogueTail).toEqual([204, 205]);
+  });
+
+  it('scenario 7b — end-to-end, the informational tail never contains the target itself, at every ceiling 203..208', () => {
+    for (const ceiling of [203, 204, 205, 206, 207, 208]) {
+      const rows = appliedThrough(ceiling);
+      const { laterCatalogueTail } = assertPostApplyAcceptance({
+        remoteRows: rows,
+        localMigrations: CATALOGUE_208,
+        expectedCeiling: ceiling,
+        expectedRemoteVersion: targetVersionFor(ceiling),
+        expectedName: targetNameFor(ceiling),
+        expectedRowCount: null,
+      });
+      expect(laterCatalogueTail).not.toContain(ceiling);
+      expect(laterCatalogueTail.every((v) => v > ceiling)).toBe(true);
+    }
+  });
+
+  it('still refuses a remote row-count mismatch and a target reconciled off the pinned ceiling', () => {
+    const ceiling = 203;
+    const rows = appliedThrough(ceiling);
+    expectRefusal(() => assertPostApplyAcceptance({
+      remoteRows: rows,
+      localMigrations: CATALOGUE_208,
+      expectedCeiling: ceiling,
+      expectedRemoteVersion: targetVersionFor(ceiling),
+      expectedName: targetNameFor(ceiling),
+      expectedRowCount: rows.length + 1,
+    }), 'REMOTE_ROW_COUNT_MISMATCH');
   });
 });

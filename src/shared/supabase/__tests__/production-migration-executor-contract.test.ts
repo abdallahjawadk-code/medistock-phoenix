@@ -307,3 +307,21 @@ describe('the three historical pinned workflows were not weakened to make the ex
     }
   });
 });
+
+describe('post-apply verifier — repository catalogue tail is informational, not an error', () => {
+  it('delegates acceptance to the pure, unit-tested history module instead of an inline catalogue-wide check', () => {
+    expect(VERIFY_APPLIED).toContain('assertPostApplyAcceptance');
+    // The literal false-failure text from the M203 incident must be gone —
+    // proving the buggy check was replaced, not merely bypassed elsewhere.
+    expect(VERIFY_APPLIED).not.toContain('Canonical migrations still pending after the apply');
+  });
+
+  it('still requires exactly one authorized execution target in this checkout (scenario 8 — unweakened by this repair)', () => {
+    const idx = WORKFLOW.indexOf('Verify the pinned target migration exists in this checkout, exactly once');
+    expect(idx).toBeGreaterThan(-1);
+    const block = WORKFLOW.slice(idx, idx + 900);
+    expect(block).toContain('match_count');
+    expect(block).toContain('inputs.expected_next_ceiling');
+    expect(block).toContain('inputs.migration_filename');
+  });
+});
