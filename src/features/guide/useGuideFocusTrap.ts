@@ -17,14 +17,36 @@ const FOCUSABLE_SELECTOR =
 export function useGuideFocusTrap(
   panel: HTMLElement | null,
   onEscape: () => void,
-  /** Re-run entry focus when the step changes, so a new card is reachable. */
+  /**
+   * Re-run entry focus when this changes. It is the tour and STEP identity —
+   * deliberately not the language.
+   *
+   * A language change re-renders the same card in place: React keeps the very
+   * same DOM nodes and only swaps their text, so focus survives on its own and
+   * stays on whatever the operator was using — including the guide's own
+   * language control, which is the element they just activated. Adding the
+   * language here would yank focus away from it on every switch.
+   */
   focusKey: string,
+  /**
+   * Where entry focus should land, if present. Without it, focus goes to the
+   * first focusable element, which is the language control in the card header
+   * — correct as a tab stop, wrong as the thing a new step opens on. The
+   * primary action is what an operator wants under their hands.
+   */
+  preferredSelector?: string,
 ): void {
   useEffect(() => {
     if (!panel) return;
     const focusables = () => Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
-    (focusables()[0] ?? panel).focus();
-  }, [panel, focusKey]);
+    const preferred = preferredSelector
+      ? panel.querySelector<HTMLElement>(preferredSelector)
+      : null;
+    (preferred ?? focusables()[0] ?? panel).focus();
+    // Deliberately keyed on the step alone. `preferredSelector` is a constant
+    // at every call site, and re-running entry focus on anything else — the
+    // language, most of all — is exactly what the note above rules out.
+  }, [panel, focusKey, preferredSelector]);
 
   useEffect(() => {
     if (!panel) return;

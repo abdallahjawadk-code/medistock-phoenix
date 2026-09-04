@@ -16,6 +16,7 @@ import {
 } from './guide.progress';
 import { guideText, type GuideStep, type GuideTour } from './guide.types';
 import { GuideTourOverlay } from './GuideTourOverlay';
+import { GuideLanguageControl } from './GuideLanguageControl';
 import { useGuideBackgroundInert } from './useGuideBackgroundInert';
 import { useGuideFocusTrap } from './useGuideFocusTrap';
 // Imported here and nowhere else, so Vite emits the guide's stylesheet as part
@@ -153,7 +154,10 @@ export function GuideEngine({ currentScreen, onNavigate, onClose }: Props) {
   }, []);
 
   useGuideBackgroundInert(mode.kind === 'center' ? panel?.parentElement ?? null : null);
-  useGuideFocusTrap(mode.kind === 'center' ? panel : null, onClose, `center:${lang}`);
+  /* The focus key carries no language, for the same reason the tour overlay's
+     does not: switching the language re-renders this panel in place, and focus
+     must stay on the control the operator just used. */
+  useGuideFocusTrap(mode.kind === 'center' ? panel : null, onClose, 'center');
 
   if (mode.kind === 'tour' && activeEntry) {
     return (
@@ -188,6 +192,9 @@ export function GuideEngine({ currentScreen, onNavigate, onClose }: Props) {
       >
         <div className="guide-center__head">
           <h2 id="guide-center-title" className="guide-center__title">{t('guide_center_title', lang)}</h2>
+          {/* The same canonical application-language control the tour card
+              carries, so the choice is reachable from either guide surface. */}
+          <GuideLanguageControl />
           <button
             type="button"
             className="guide-btn guide-btn--quiet"

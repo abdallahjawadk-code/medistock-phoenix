@@ -16,6 +16,7 @@ import {
 } from './guide.position';
 import { useGuideBackgroundInert } from './useGuideBackgroundInert';
 import { useGuideFocusTrap } from './useGuideFocusTrap';
+import { GuideLanguageControl } from './GuideLanguageControl';
 
 interface Props {
   tour: GuideTour;
@@ -66,10 +67,15 @@ export function GuideTourOverlay({
   const isLast = stepIndex === steps.length - 1;
 
   useGuideBackgroundInert(layer);
-  // The language is part of the focus key on purpose: switching it re-renders
-  // the copy inside the SAME step, and focus must stay on the card rather than
-  // fall back to <body>.
-  useGuideFocusTrap(cardNode, onExit, `${tour.id}:${step?.id ?? ''}:${lang}`);
+  /**
+   * The focus key is the tour and STEP, deliberately without the language.
+   *
+   * A language switch re-renders this same card in place, so focus stays
+   * exactly where the operator left it — on the guide's own language control,
+   * if that is what they just used. Entry focus for a NEW step goes to the
+   * primary action rather than to the first tab stop.
+   */
+  useGuideFocusTrap(cardNode, onExit, `${tour.id}:${step?.id ?? ''}`, '[data-guide-primary]');
 
   /**
    * Measure the target and place the card.
@@ -195,7 +201,15 @@ export function GuideTourOverlay({
         className={`guide-card${centred ? ' guide-card--center' : ''}`}
         style={cardStyle}
       >
-        <p className="guide-card__position">{positionLabel}</p>
+        {/* The card's header row. The language control lives HERE, inside the
+            guide's own surface, because the blocking layer deliberately makes
+            the topbar's copy of it unreachable while a tour runs. It changes
+            the APPLICATION language through AppContext's canonical setter —
+            see GuideLanguageControl for why that is not a second selector. */}
+        <div className="guide-card__head">
+          <p className="guide-card__position">{positionLabel}</p>
+          <GuideLanguageControl />
+        </div>
         <h2 id={titleId} className="guide-card__title">{guideText(step.title, lang)}</h2>
         <p id={bodyId} className="guide-card__body">{guideText(step.body, lang)}</p>
 
@@ -218,6 +232,7 @@ export function GuideTourOverlay({
           </button>
           <button
             type="button"
+            data-guide-primary=""
             className="guide-btn guide-btn--primary"
             onClick={() => (isLast ? onFinish() : onStepIndexChange(stepIndex + 1))}
           >

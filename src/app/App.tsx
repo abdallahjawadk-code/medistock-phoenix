@@ -118,8 +118,16 @@ function ThemePreferenceBridge({ children }: { children: ReactNode }) {
  *
  * UI-only: no account, profile or database state is involved, and a storage
  * failure never makes the application unavailable.
+ *
+ * Exported so the canonical persistence path can be proven END TO END —
+ * `AppContext.setLang` → this bridge → `persistLanguagePreference` → the one
+ * storage key — against the real provider rather than a stand-in. The guide's
+ * own language control calls that same canonical setter and nothing else, so
+ * this is the composition its persistence proof has to exercise. `<App />`
+ * itself cannot serve: it renders the authenticated shell through a lazy
+ * chunk behind a real session.
  */
-function LanguagePreferenceBridge({ children }: { children: ReactNode }) {
+export function LanguagePreferenceBridge({ children }: { children: ReactNode }) {
   const { lang, setLang } = useApp();
   const [initialLang] = useState(readLanguagePreference);
   const hydratedRef = useRef(false);

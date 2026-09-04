@@ -3212,6 +3212,14 @@ export const T: Dict = {
   guide_view_only:        { ar: 'شرح ومشاهدة فقط — لا يُنفَّذ أي إجراء من الدليل.', en: 'Explanation only — the guide performs no action.' },
   guide_target_offscreen: { ar: 'هذا الجزء غير ظاهر على الشاشة الحالية، والشرح معروض هنا.', en: 'This part is not visible on the current screen, so the explanation is shown here.' },
   guide_region_label:     { ar: 'الدليل التفاعلي',             en: 'Interactive guide' },
+  /* The guide's own entry to the APPLICATION language switch. It is not a
+     guide-language selector: it calls AppContext's canonical `toggleLang`,
+     the same setter the topbar control calls, and persists through the same
+     bridge and the same storage key. It exists because the guide is strictly
+     modal while a tour runs, which puts the topbar control out of reach — the
+     safe answer is to offer the same action inside the guide's own surface,
+     not to open a hole in the blocking layer. */
+  guide_change_app_language: { ar: 'تغيير لغة البرنامج',          en: 'Change application language' },
 };
 
 export function t(key: string, lang: Lang): string {

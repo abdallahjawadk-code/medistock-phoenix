@@ -27,6 +27,8 @@ import { createServer, type ViteDevServer } from 'vite';
 const ROOT = join(__dirname, '..');
 const HELP_ENTRY = '[data-guide-id="guide.shell.topbar.help"]';
 const LANGUAGE_CONTROL = '[data-guide-id="guide.shell.topbar.language"]';
+/** The guide's OWN application-language control, inside its modal surface. */
+const GUIDE_LANGUAGE_CONTROL = '[data-guide-language-control]';
 
 let browser: Browser;
 let server: ViteDevServer;
@@ -380,8 +382,19 @@ describe('Guide & Help — safety in a real engine', () => {
 });
 
 describe('Guide & Help — language, motion and zoom', () => {
-  it('switches language mid-tour without leaving the step or duplicating the overlay', async () => {
-    const { context, page } = await openShell({ lang: 'ar', viewport: DESKTOP });
+  /**
+   * The live-language contract, exercised the way an operator actually does it.
+   *
+   * The topbar's language control is deliberately unreachable while a tour runs
+   * — that is the blocking layer doing its job, and the safety case above
+   * proves it. The guide therefore carries the SAME action inside its own
+   * modal surface, and this is a genuine mouse click on that control: no
+   * `evaluate`, no programmatic state poke, full Playwright actionability
+   * checks, which additionally proves the control is visible, enabled and not
+   * covered by the guide's own blocker.
+   */
+  it('switches language mid-tour by REAL CLICK, without leaving the step', async () => {
+    const { context, page, foreignRequests } = await openShell({ lang: 'ar', viewport: DESKTOP });
     try {
       await openGuide(page);
       await startTour(page);
@@ -392,16 +405,82 @@ describe('Guide & Help — language, motion and zoom', () => {
       expect(before.dir).toBe('rtl');
       const beforeLeft = await page.locator('.guide-card').evaluate(n => n.getBoundingClientRect().left);
 
-      /**
-       * Driven programmatically ON PURPOSE. A real user gesture on this
-       * control is refused while a tour runs — the test above proves exactly
-       * that — so this is the only way to reach the application's own language
-       * change from inside a step. It exercises the ENGINE's reaction, which
-       * is what this case is about.
-       */
-      await page.evaluate(selector => {
-        (document.querySelector(selector) as HTMLElement).click();
-      }, LANGUAGE_CONTROL);
+      const control = page.locator(GUIDE_LANGUAGE_CONTROL);
+      expect(await control.count()).toBe(1);
+      await expect.poll(() => control.innerText()).toContain('تغيير لغة البرنامج');
+
+      await control.click();
+      await page.waitForFunction(() => document.documentElement.getAttribute('dir') === 'ltr');
+
+      const after = await currentStep(page);
+      // The tour stayed open on a byte-identical identity.
+      expect(after.tour).toBe(before.tour);
+      expect(after.step).toBe(before.step);
+      // Direction and content both changed.
+      expect(after.dir).toBe('ltr');
+      expect(await page.getAttribute('html', 'dir')).toBe('ltr');
+      expect(await page.locator('.guide-card__title').innerText()).toBe('Application language');
+      expect(await control.innerText()).toContain('Change application language');
+      // Exactly one overlay and one card — nothing was duplicated.
+      expect(await page.locator('[data-guide-tour]').count()).toBe(1);
+      expect(await page.locator('.guide-card').count()).toBe(1);
+      // The popover followed the direction change rather than staying put.
+      const afterLeft = await page.locator('.guide-card').evaluate(n => n.getBoundingClientRect().left);
+      expect(Math.abs(afterLeft - beforeLeft)).toBeGreaterThan(40);
+      expect((await cardFitsViewport(page)).inside).toBe(true);
+      // Focus is still on a real element inside the guide.
+      const focus = await page.evaluate(() => {
+        const active = document.activeElement as HTMLElement | null;
+        return {
+          isBody: active === document.body,
+          insideCard: !!active && !!active.closest('.guide-card'),
+          isControl: !!active && active.hasAttribute('data-guide-language-control'),
+        };
+      });
+      expect(focus.isBody).toBe(false);
+      expect(focus.insideCard).toBe(true);
+      expect(focus.isControl).toBe(true);
+      // And nothing left the origin.
+      expect(foreignRequests).toEqual([]);
+    } finally {
+      await closeContext(context);
+    }
+  }, 120_000);
+
+  it('switches back and forth by keyboard alone', async () => {
+    const { context, page } = await openShell({ lang: 'ar', viewport: DESKTOP });
+    try {
+      await openGuide(page);
+      await startTour(page);
+      const before = await currentStep(page);
+
+      // Reach the control with the keyboard from where a new step opens focus.
+      await page.locator(GUIDE_LANGUAGE_CONTROL).focus();
+      expect(await page.evaluate(() => document.activeElement?.hasAttribute('data-guide-language-control'))).toBe(true);
+
+      await page.keyboard.press('Enter');
+      await page.waitForFunction(() => document.documentElement.getAttribute('dir') === 'ltr');
+      expect((await currentStep(page)).step).toBe(before.step);
+
+      await page.keyboard.press(' ');
+      await page.waitForFunction(() => document.documentElement.getAttribute('dir') === 'rtl');
+      const after = await currentStep(page);
+      expect(after.tour).toBe(before.tour);
+      expect(after.step).toBe(before.step);
+      expect(await page.locator('[data-guide-tour]').count()).toBe(1);
+    } finally {
+      await closeContext(context);
+    }
+  }, 120_000);
+
+  it('switches language by touch on a phone', async () => {
+    const { context, page } = await openShell({ lang: 'ar', viewport: PHONE, hasTouch: true });
+    try {
+      await openGuide(page);
+      await startTour(page);
+      const before = await currentStep(page);
+
+      await page.locator(GUIDE_LANGUAGE_CONTROL).tap();
       await page.waitForFunction(() => document.documentElement.getAttribute('dir') === 'ltr');
 
       const after = await currentStep(page);
@@ -409,11 +488,47 @@ describe('Guide & Help — language, motion and zoom', () => {
       expect(after.step).toBe(before.step);
       expect(after.dir).toBe('ltr');
       expect(await page.locator('[data-guide-tour]').count()).toBe(1);
-      expect(await page.locator('.guide-card__title').innerText()).toBe('Application language');
-      // The popover followed the direction change rather than staying put.
-      const afterLeft = await page.locator('.guide-card').evaluate(n => n.getBoundingClientRect().left);
-      expect(Math.abs(afterLeft - beforeLeft)).toBeGreaterThan(40);
       expect((await cardFitsViewport(page)).inside).toBe(true);
+    } finally {
+      await closeContext(context);
+    }
+  }, 120_000);
+
+  it('adds no language storage of its own while the guide is open', async () => {
+    /**
+     * The anti-duplication check in a real browser. Persistence itself belongs
+     * to `LanguagePreferenceBridge` and is proven end to end against the real
+     * provider in `guide-language-canonical.runtime.test.tsx`; this harness
+     * renders the shell through the QA fixture provider, so what matters HERE
+     * is the negative: using the guide's control invents no guide-scoped
+     * language key anywhere.
+     */
+    const { context, page } = await openShell({ lang: 'ar', viewport: DESKTOP });
+    try {
+      await openGuide(page);
+      await startTour(page);
+      await page.locator(GUIDE_LANGUAGE_CONTROL).click();
+      await page.waitForFunction(() => document.documentElement.getAttribute('dir') === 'ltr');
+
+      const keys = await page.evaluate(() => Object.keys(window.localStorage).sort());
+      expect(keys.some(key => /guide/i.test(key) && /lang/i.test(key))).toBe(false);
+      expect(keys.every(key => key === 'medistock.phoenix.guide.progress')).toBe(true);
+    } finally {
+      await closeContext(context);
+    }
+  }, 120_000);
+
+  it('offers the same control on the Help Center surface', async () => {
+    const { context, page } = await openShell({ lang: 'ar', viewport: DESKTOP });
+    try {
+      await openGuide(page);
+      expect(await page.locator(`[data-guide-surface="center"] ${GUIDE_LANGUAGE_CONTROL}`).count()).toBe(1);
+      await page.locator(GUIDE_LANGUAGE_CONTROL).click();
+      await page.waitForFunction(() => document.documentElement.getAttribute('dir') === 'ltr');
+      // The Help Center is still open and now reads in English.
+      await page.locator('[data-guide-surface="center"]').waitFor({ state: 'visible' });
+      expect(await page.locator('#guide-center-title').innerText()).toBe('Guide & Help');
+      expect(await page.locator('[data-guide-surface="center"]').count()).toBe(1);
     } finally {
       await closeContext(context);
     }

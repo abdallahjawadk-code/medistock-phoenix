@@ -36,7 +36,7 @@ vi.mock('@/shared/supabase/client', () => ({
   __installQaSupabaseClient: () => undefined,
 }));
 
-let appState = {
+const appState = {
   lang: 'en' as 'ar' | 'en',
   dir: 'ltr' as 'rtl' | 'ltr',
   theme: 'light' as const,
@@ -45,7 +45,13 @@ let appState = {
   profile: { id: 'p1', full_name: 'T', role: 'super_admin' },
   session: { user: { id: 'u1' } },
   authStatus: 'authenticated',
-  toggleLang: () => undefined,
+  /**
+   * Counted rather than mocked away: this file's subject is that the guide
+   * reaches the outside world through EXACTLY this canonical setter and
+   * through nothing else, so the setter has to be observable here.
+   */
+  toggleLangCalls: 0,
+  toggleLang: () => { appState.toggleLangCalls += 1; },
   toggleTheme: () => undefined,
 };
 
@@ -66,6 +72,7 @@ beforeEach(() => {
   rpc.mockClear();
   from.mockClear();
   auth.signOut.mockClear();
+  appState.toggleLangCalls = 0;
 
   Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1440 });
   Object.defineProperty(window, 'innerHeight', { configurable: true, value: 900 });
@@ -218,5 +225,39 @@ describe('the guide performs no mutation, start to finish', () => {
     await driveWholeTour();
     const keys = Object.keys(window.localStorage);
     expect(keys).toEqual(['medistock.phoenix.guide.progress']);
+  });
+
+  /**
+   * The language control is the one control in the guide that changes
+   * APPLICATION state, so it is the one most worth proving inert on the
+   * network. It calls AppContext's canonical setter and nothing else: no RPC,
+   * no request, and no write to any key of its own.
+   */
+  it('changes the application language without any service or network call', async () => {
+    render(
+      <div>
+        <Shell />
+        <GuideEngine currentScreen={22} onNavigate={() => undefined} onClose={() => undefined} />
+      </div>,
+    );
+    await waitFor(() => expect(screen.getByRole('dialog', { name: 'Guide & Help' })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'Start tour' }));
+    await waitFor(() => expect(document.querySelector('[data-guide-tour]')).not.toBeNull());
+
+    const control = screen.getByRole('button', { name: 'Change application language' });
+    fireEvent.click(control);
+    fireEvent.click(control);
+    fireEvent.click(control);
+
+    expect(appState.toggleLangCalls).toBe(3);
+    expect(rpc).not.toHaveBeenCalled();
+    expect(from).not.toHaveBeenCalled();
+    expect(auth.signOut).not.toHaveBeenCalled();
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(beaconSpy).not.toHaveBeenCalled();
+    expect(xhrOpenSpy).not.toHaveBeenCalled();
+    expect(operationalActivations).toBe(0);
+    // Still no storage key of its own — persistence belongs to the bridge.
+    expect(Object.keys(window.localStorage)).toEqual(['medistock.phoenix.guide.progress']);
   });
 });

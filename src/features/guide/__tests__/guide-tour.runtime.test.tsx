@@ -312,14 +312,159 @@ describe('language contract', () => {
     await waitFor(() => expect(screen.getByText('Step 1 of 9')).toBeInTheDocument());
   });
 
-  it('offers no language control of its own', async () => {
+  /**
+   * The guide carries ONE language control, and it is a view over the
+   * application's own value rather than a selector of its own. The engine-level
+   * behaviour is asserted here; that it mutates the canonical state and
+   * persists through the canonical bridge is proven end to end against the real
+   * provider in `guide-language-canonical.runtime.test.tsx`.
+   */
+  it('offers exactly one language control, and it is not a selector', async () => {
     render(<Harness />);
     await startTour();
     const card = document.querySelector('.guide-card') as HTMLElement;
-    for (const label of ['EN', 'عربي', 'English', 'العربية']) {
-      expect(within(card).queryByRole('button', { name: label })).toBeNull();
-    }
+    expect(card.querySelectorAll('[data-guide-language-control]')).toHaveLength(1);
     expect(card.querySelector('select')).toBeNull();
+    expect(card.querySelectorAll('input')).toHaveLength(0);
+    // It is labelled as the APPLICATION language switch, in the current language.
+    expect(within(card).getByRole('button', { name: 'تغيير لغة البرنامج' })).toBeInTheDocument();
+  });
+
+  it('sits in the card header, not among the step actions', async () => {
+    render(<Harness />);
+    await startTour();
+    const control = document.querySelector('[data-guide-language-control]') as HTMLElement;
+    expect(control.closest('.guide-card__head')).not.toBeNull();
+    expect(control.closest('.guide-card__actions')).toBeNull();
+  });
+
+  it('calls the canonical AppContext setter and nothing else', async () => {
+    const toggleLang = vi.fn(() => {
+      appState = {
+        ...appState,
+        lang: appState.lang === 'ar' ? 'en' : 'ar',
+        dir: appState.dir === 'rtl' ? 'ltr' : 'rtl',
+      };
+      notifyAppChange?.();
+    });
+    appState = { ...baseState(), toggleLang };
+    render(<Harness />);
+    await startTour();
+    fireEvent.click(screen.getByRole('button', { name: 'تغيير لغة البرنامج' }));
+    await waitFor(() => expect(toggleLang).toHaveBeenCalledTimes(1));
+    // No storage of its own: the tour's progress key is the only thing written.
+    expect(Object.keys(window.localStorage)).toEqual([GUIDE_PROGRESS_STORAGE_KEY]);
+  });
+
+  it('keeps the tour open on the identical step, flips direction and reflows', async () => {
+    const toggleLang = vi.fn(() => {
+      appState = { ...appState, lang: 'en', dir: 'ltr' };
+      notifyAppChange?.();
+    });
+    appState = { ...baseState(), toggleLang };
+    render(<Harness />);
+    await startTour();
+    next();
+    next();
+    await waitFor(() => expect(layer().dataset.guideStep).toBe('shell.language'));
+
+    const before = {
+      tour: layer().dataset.guideTour,
+      step: layer().dataset.guideStep,
+      dir: layer().getAttribute('dir'),
+      title: (document.querySelector('.guide-card__title') as HTMLElement).textContent,
+    };
+    expect(before.dir).toBe('rtl');
+
+    fireEvent.click(screen.getByRole('button', { name: 'تغيير لغة البرنامج' }));
+    await waitFor(() => expect(screen.getByText('Application language')).toBeInTheDocument());
+
+    // Byte-identical tour and step identity.
+    expect(layer().dataset.guideTour).toBe(before.tour);
+    expect(layer().dataset.guideStep).toBe(before.step);
+    // Direction and copy changed.
+    expect(layer()).toHaveAttribute('dir', 'ltr');
+    expect((document.querySelector('.guide-card__title') as HTMLElement).textContent)
+      .not.toBe(before.title);
+    expect(screen.getByText('Step 3 of 9')).toBeInTheDocument();
+    // Exactly one overlay, and the placement was recomputed rather than dropped.
+    expect(document.querySelectorAll('[data-guide-tour]')).toHaveLength(1);
+    expect(document.querySelectorAll('.guide-card')).toHaveLength(1);
+    expect(layer().dataset.guidePlacement).toBeDefined();
+  });
+
+  it('leaves focus on the control the operator just used', async () => {
+    const toggleLang = vi.fn(() => {
+      appState = { ...appState, lang: 'en', dir: 'ltr' };
+      notifyAppChange?.();
+    });
+    appState = { ...baseState(), toggleLang };
+    render(<Harness />);
+    await startTour();
+    const control = screen.getByRole('button', { name: 'تغيير لغة البرنامج' });
+    control.focus();
+    fireEvent.click(control);
+    await waitFor(() => expect(
+      screen.getByRole('button', { name: 'Change application language' }),
+    ).toBeInTheDocument());
+    // The SAME DOM node survives the re-render, and keeps focus.
+    const after = screen.getByRole('button', { name: 'Change application language' });
+    expect(after).toBe(control);
+    expect(after).toHaveFocus();
+    expect((document.querySelector('.guide-card') as HTMLElement)
+      .contains(document.activeElement)).toBe(true);
+  });
+
+  it('is reachable and operable by keyboard alone', async () => {
+    const toggleLang = vi.fn();
+    appState = { ...baseState(), toggleLang };
+    render(<Harness />);
+    await startTour();
+    const control = screen.getByRole('button', { name: 'تغيير لغة البرنامج' });
+
+    // A new step opens on the primary action; the control is a tab stop the
+    // keyboard can reach without leaving the card.
+    expect(document.querySelector('[data-guide-primary]')).toHaveFocus();
+    control.focus();
+    expect(control).toHaveFocus();
+
+    // A <button> activates on Enter and on Space through the browser's own
+    // default behaviour; both are dispatched as the click that behaviour
+    // produces. The real key presses are exercised in the browser suite.
+    fireEvent.keyDown(control, { key: 'Enter' });
+    fireEvent.click(control);
+    fireEvent.keyDown(control, { key: ' ' });
+    fireEvent.click(control);
+    expect(toggleLang).toHaveBeenCalledTimes(2);
+  });
+
+  it('is operable by touch', async () => {
+    const toggleLang = vi.fn();
+    appState = { ...baseState(), toggleLang };
+    render(<Harness />);
+    await startTour();
+    const control = screen.getByRole('button', { name: 'تغيير لغة البرنامج' });
+    fireEvent.touchStart(control);
+    fireEvent.touchEnd(control);
+    fireEvent.click(control);
+    expect(toggleLang).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens a NEW step on the primary action, not on the language control', async () => {
+    render(<Harness />);
+    await startTour();
+    expect(document.querySelector('[data-guide-primary]')).toHaveFocus();
+    next();
+    await waitFor(() => expect(layer().dataset.guideStep).toBe('shell.navigation'));
+    expect(document.querySelector('[data-guide-primary]')).toHaveFocus();
+  });
+
+  it('offers the same control on the Help Center surface', async () => {
+    render(<Harness />);
+    await openHelpCenter();
+    const panel = document.querySelector('.guide-center__panel') as HTMLElement;
+    expect(panel.querySelectorAll('[data-guide-language-control]')).toHaveLength(1);
+    expect(within(panel).getByRole('button', { name: 'تغيير لغة البرنامج' })).toBeInTheDocument();
   });
 });
 

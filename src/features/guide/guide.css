@@ -79,11 +79,46 @@
   transform: translate(50%, -50%);
 }
 
+/* The card header: step counter on the reading side, the application-language
+   control opposite it. The control sits here rather than with the step
+   actions so it never reads as part of "Back / Next / Skip". */
+.guide-card__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
 .guide-card__position {
   font-size: 12px;
   font-weight: 600;
   color: var(--muted, #67707d);
-  margin: 0 0 6px;
+  margin: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Compact and quiet: it is available on every step, so it must not compete
+   with the step's own title or its primary action. The touch target stays at
+   the shell's own minimum on a phone. */
+.guide-lang {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  min-height: 32px;
+  padding: 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+  border-color: var(--line, #e4e7ec);
+  background: var(--field, #f6f7f9);
+  color: var(--muted, #67707d);
+}
+
+.guide-lang:hover { background: var(--chip, #eef1f5); color: var(--text, #10151c); }
+
+@media (pointer: coarse) {
+  .guide-lang { min-height: var(--touch-target, 44px); padding: 0 12px; }
 }
 
 .guide-card__title {
@@ -164,8 +199,9 @@
 
 .guide-center__head {
   display: flex;
-  align-items: flex-start;
-  gap: 12px;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
   margin-bottom: 14px;
 }
 
