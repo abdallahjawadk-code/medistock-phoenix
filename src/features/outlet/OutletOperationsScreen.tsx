@@ -51,6 +51,12 @@ import { DispenseComposerDialog } from './DispenseComposerDialog';
 import { DispenseContextViewer } from './DispenseContextViewer';
 import { CurrentMovementStatus } from './CurrentMovementStatus';
 import { getOutletStock, getOutletStockMovements, type OutletStockRow, type OutletMovementRow } from './outlet-stock.service';
+import {
+  getMaterialDispensingSuspensionBadges,
+  materialDispensingSuspensionReasonLabel,
+  type MaterialDispensingSuspensionBadge,
+} from '@/features/inventory/material-dispensing-suspension.service';
+import { PhoenixStatusBadge } from '@/shared/ui/PhoenixStatusBadge';
 import { getDispenseContext, type DispenseContext } from './dispense-context.service';
 import { getOutletReturnRequests, getOutletReturnRequestLines } from './outlet-return.service';
 import { buildOutletReturnRequestReceipt } from './outlet-receipt-source';
@@ -269,17 +275,39 @@ function OutletStockTab({ orgId, distributionPointId, lang }: { orgId: string | 
   const [dispenseLot, setDispenseLot] = useState<OutletStockRow | null>(null);
   const [correctionMessage, setCorrectionMessage] = useState<string | null>(null);
 
-  if (stock.loading && !stock.data) return <PhoenixLoadingState />;
   const rows = stock.data ?? [];
+  // PROACTIVE موقوف الصرف BADGE: one batched RPC per unique material, keyed
+  // exactly like migration 204's own dispense-time check (org-wide OR this
+  // exact outlet) — so what the badge shows and what the server enforces can
+  // never disagree. Never asked with zero ids/no org, matching the service's
+  // own early-return guard.
+  const centralItemIds = useMemo(
+    () => Array.from(new Set(rows.map(r => r.centralItemId).filter((id): id is string => id !== null))).sort(),
+    [rows],
+  );
+  const suspensionBadges = useAsync(
+    () => getMaterialDispensingSuspensionBadges({ centralItemIds, organizationId: orgId ?? '', distributionPointId }),
+    [centralItemIds.join(','), orgId, distributionPointId],
+  );
+  const badgeFor = (r: OutletStockRow): MaterialDispensingSuspensionBadge | null =>
+    (r.centralItemId && suspensionBadges.data?.get(r.centralItemId)) || null;
+
+  if (stock.loading && !stock.data) return <PhoenixLoadingState />;
   if (rows.length === 0) return <PhoenixEmptyState icon="package" title={t('or_stock_none', lang)} />;
 
   return (
     <div className="nexus-io-row-list" style={{ display: 'grid', gap: '10px' }} data-testid="outlet-stock-list">
-      {rows.map(r => (
+      {rows.map(r => {
+        const badge = badgeFor(r);
+        const suspended = badge?.isSuspended ?? false;
+        return (
         <PhoenixCard key={r.id} className={`nexus-io-stock-row${r.availableQuantity === 0 ? ' nexus-io-stock-row--zero' : ''}`}>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'flex-start' }}>
             <div style={{ minWidth: 0, flex: 1 }}>
-              <div style={{ fontSize: '13px', fontWeight: 700 }}>{r.scientificName}</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '13px', fontWeight: 700 }}>{r.scientificName}</span>
+                {suspended && <PhoenixStatusBadge variant="err" label={t('mds_badge', lang)} />}
+              </div>
               <div style={{ fontSize: '11.5px', color: 'var(--t2)', marginTop: '3px' }}>
                 {dash(r.tradeName)} · {dash(r.concentration)} · {dash(r.dosageForm)} · {dash(r.unit)}
               </div>
@@ -294,9 +322,15 @@ function OutletStockTab({ orgId, distributionPointId, lang }: { orgId: string | 
                   {' '}({t('mv_f_received_quantity', lang)}: {r.onHandQuantity} · {t('mv_returned_against', lang)}: {r.reservedQuantity})
                 </span>
               </div>
+              {suspended && (
+                <div style={{ fontSize: '11.5px', color: 'var(--err)', fontWeight: 700, marginTop: '3px' }} dir="auto">
+                  {t('mds_blocked_explanation', lang)}
+                  {badge?.reasonCode ? ` — ${materialDispensingSuspensionReasonLabel(badge.reasonCode, lang)}` : ''}
+                </div>
+              )}
             </div>
             <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-              {canDispense && r.availableQuantity > 0 && (
+              {canDispense && r.availableQuantity > 0 && !suspended && (
                 <PhoenixButton className="nexus-io-action-dispense" variant="primary" size="sm" onClick={() => setDispenseLot(r)}>
                   {t('dsp_action', lang)}
                 </PhoenixButton>
@@ -309,7 +343,8 @@ function OutletStockTab({ orgId, distributionPointId, lang }: { orgId: string | 
             </div>
           </div>
         </PhoenixCard>
-      ))}
+        );
+      })}
 
       {correctionMessage && (
         <div style={{ fontSize: '12px', color: 'var(--ok)', textAlign: 'center' }}>{correctionMessage}</div>
@@ -321,6 +356,7 @@ function OutletStockTab({ orgId, distributionPointId, lang }: { orgId: string | 
         lots={rows}
         lang={lang}
         canDispense={canDispense}
+        suspension={dispenseLot ? badgeFor(dispenseLot) : null}
         onClose={() => setDispenseLot(null)}
         onSuccess={() => {
           setDispenseLot(null);
