@@ -87,9 +87,13 @@ describe('guide permissions — tour filtering', () => {
     expect(serialised).not.toMatch(/dashboard/i);
     expect(serialised).not.toMatch(/command center/i);
     expect(serialised).not.toMatch(/مركز القيادة/);
+    // ...nor the user-facing name IG-1.1 replaced it with.
+    expect(serialised).not.toMatch(/الإحصائيات/);
+    expect(serialised).not.toMatch(/Statistics/i);
     expect(visible.every(s => s.screen === undefined)).toBe(true);
     // And the shell steps this actor IS entitled to are still all there.
-    expect(visible.map(s => s.id)).toContain('shell.navigation');
+    expect(visible.map(s => s.id)).toContain('shell.language');
+    expect(visible.map(s => s.id)).toContain('help.entry');
   });
 
   it('preserves registry order in the narrowed set', () => {

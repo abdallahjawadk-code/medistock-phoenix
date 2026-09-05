@@ -17,12 +17,15 @@ import {
 import { useGuideBackgroundInert } from './useGuideBackgroundInert';
 import { useGuideFocusTrap } from './useGuideFocusTrap';
 import { GuideLanguageControl } from './GuideLanguageControl';
+import { useGuideDrawerStep, type GuideDrawerController } from './useGuideDrawerStep';
 
 interface Props {
   tour: GuideTour;
   /** Already narrowed to what this operator may see (guide.permissions.ts). */
   steps: readonly GuideStep[];
   stepIndex: number;
+  /** IG-1.1 — the shell's own mobile drawer; see useGuideDrawerStep. */
+  drawer: GuideDrawerController;
   onStepIndexChange: (index: number) => void;
   onFinish: () => void;
   onExit: () => void;
@@ -42,17 +45,20 @@ function rectOf(element: Element): Rect {
  * renders centred, which is the same treatment a missing anchor gets. The
  * fallback never names the element it could not find (AD-05).
  */
-function resolveTarget(step: GuideStep, viewport: { width: number; height: number }): Element | null {
+function resolveTarget(
+  step: GuideStep,
+  viewport: { width: number; height: number },
+): { element: Element; anchor: string } | null {
   for (const anchor of step.anchors) {
     const element = document.querySelector(guideAnchorSelector(anchor));
     if (!element) continue;
-    if (isUsableTarget(rectOf(element), viewport)) return element;
+    if (isUsableTarget(rectOf(element), viewport)) return { element, anchor };
   }
   return null;
 }
 
 export function GuideTourOverlay({
-  tour, steps, stepIndex, onStepIndexChange, onFinish, onExit,
+  tour, steps, stepIndex, drawer, onStepIndexChange, onFinish, onExit,
 }: Props) {
   const { lang, dir } = useApp();
   const reducedMotion = usePrefersReducedMotion();
@@ -61,10 +67,37 @@ export function GuideTourOverlay({
   const measureRef = useRef<() => void>(() => undefined);
   const [targetRect, setTargetRect] = useState<Rect | null>(null);
   const [card, setCard] = useState<PositionedCard | null>(null);
+  /**
+   * Which anchor is currently resolved, or 'none'.
+   *
+   * IG-1.1 makes this load-bearing rather than incidental. A drawer-backed
+   * target does not exist at the instant its step becomes current: the guide
+   * asks the shell to open the drawer, React renders it, and only then does
+   * the anchor appear. Naming the resolved anchor gives the rest of the
+   * component something to react to when that happens.
+   */
+  const [resolvedAnchor, setResolvedAnchor] = useState('none');
+  /**
+   * Which step `targetRect` was measured for.
+   *
+   * On a step change the previous step's rectangle is still in state for one
+   * render, so a ring drawn from it would briefly highlight the element the
+   * card has just stopped describing — and, because the ring transitions its
+   * geometry, would then slide across the screen to the new one. Holding the
+   * ring back until it has been measured for the CURRENT step means it only
+   * ever appears over the thing being explained.
+   */
+  const [measuredStep, setMeasuredStep] = useState('');
 
   const step = steps[stepIndex];
   const isFirst = stepIndex === 0;
   const isLast = stepIndex === steps.length - 1;
+
+  /**
+   * IG-1.1 — hold the shell's drawer open for the steps that live inside it,
+   * and put it back exactly as it was on every way out. A no-op on desktop.
+   */
+  useGuideDrawerStep(drawer, step?.requiresDrawer === true);
 
   useGuideBackgroundInert(layer);
   /**
@@ -75,7 +108,16 @@ export function GuideTourOverlay({
    * if that is what they just used. Entry focus for a NEW step goes to the
    * primary action rather than to the first tab stop.
    */
-  useGuideFocusTrap(cardNode, onExit, `${tour.id}:${step?.id ?? ''}`, '[data-guide-primary]');
+  useGuideFocusTrap(
+    cardNode,
+    onExit,
+    // The resolved anchor is part of the key so that when a drawer-backed
+    // target finally mounts — and the drawer's own focus management has just
+    // run — focus is re-asserted into the guide card rather than left wherever
+    // the newly mounted panel put it.
+    `${tour.id}:${step?.id ?? ''}:${resolvedAnchor}`,
+    '[data-guide-primary]',
+  );
 
   /**
    * Measure the target and place the card.
@@ -89,13 +131,16 @@ export function GuideTourOverlay({
   const measure = useCallback(() => {
     if (!step) return;
     const viewport = { width: window.innerWidth, height: window.innerHeight };
-    const element = resolveTarget(step, viewport);
-    if (!element) {
+    const resolved = resolveTarget(step, viewport);
+    setMeasuredStep(step.id);
+    if (!resolved) {
       setTargetRect(null);
       setCard(null);
+      setResolvedAnchor('none');
       return;
     }
-    const rect = rectOf(element);
+    setResolvedAnchor(resolved.anchor);
+    const rect = rectOf(resolved.element);
     setTargetRect(rect);
 
     const size = cardNode
@@ -108,7 +153,58 @@ export function GuideTourOverlay({
 
   useLayoutEffect(() => {
     measure();
-  }, [measure, lang]);
+    // `drawer.isOpen` is a dependency because opening the drawer is precisely
+    // what brings a drawer-backed anchor into existence; without it the step
+    // would measure once, find nothing, and fall back to a centred card for
+    // the rest of its life.
+  }, [measure, lang, drawer.isOpen]);
+
+  /**
+   * Follow the target until it stops moving.
+   *
+   * A step's target is not necessarily where it will end up at the moment the
+   * step becomes current. The mobile drawer slides in over ~200ms, so a single
+   * measurement taken a frame or two after it opens captures the panel
+   * MID-ANIMATION and leaves the highlight permanently offset — measured at
+   * ~6px horizontally on a 375px phone, and worse on a slower device, because
+   * nothing afterwards re-measures. The same applies to any entrance
+   * animation, on any target, which is why this is not special-cased to the
+   * drawer.
+   *
+   * So: re-measure on each frame in which the target's box actually CHANGED,
+   * stop once it has been still for three frames, and give up after a second
+   * rather than polling forever. Measuring only on change keeps this to a
+   * handful of renders instead of one per frame.
+   */
+  useEffect(() => {
+    if (!step) return;
+    let raf = 0;
+    let previous = '';
+    let stableFrames = 0;
+    const deadline = (typeof performance !== 'undefined' ? performance.now() : Date.now()) + 1000;
+
+    const tick = () => {
+      const viewport = { width: window.innerWidth, height: window.innerHeight };
+      const resolved = resolveTarget(step, viewport);
+      const signature = resolved
+        ? JSON.stringify(rectOf(resolved.element))
+        : 'none';
+
+      if (signature !== previous) {
+        previous = signature;
+        stableFrames = 0;
+        measureRef.current();
+      } else {
+        stableFrames += 1;
+      }
+
+      const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      if (stableFrames < 3 && now < deadline) raf = requestAnimationFrame(tick);
+    };
+
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [step, drawer.isOpen]);
 
   useEffect(() => {
     const onChange = () => measureRef.current();
@@ -177,8 +273,20 @@ export function GuideTourOverlay({
           reading, and Escape plus the explicit control are the ways out. */}
       <div className={`guide-blocker${targetRect ? '' : ' guide-blocker--plain'}`} aria-hidden="true" />
 
-      {targetRect && (
+      {targetRect && measuredStep === step.id && (
         <div
+          /**
+           * Keyed by step so React MOUNTS a fresh ring for each one.
+           *
+           * `.guide-ring` transitions top/left/width/height, which is right
+           * while a single step's target moves — a scroll, a resize, an
+           * RTL/LTR flip. Across a step change it was wrong: the ring spent
+           * 150ms travelling from the previous element, so for that window it
+           * highlighted something the card was no longer describing. A new
+           * element has no previous value to interpolate from, so it simply
+           * appears on its target.
+           */
+          key={step.id}
           className="guide-ring"
           aria-hidden="true"
           style={{
@@ -213,10 +321,20 @@ export function GuideTourOverlay({
         <h2 id={titleId} className="guide-card__title">{guideText(step.title, lang)}</h2>
         <p id={bodyId} className="guide-card__body">{guideText(step.body, lang)}</p>
 
-        {/* Said only when the step genuinely could not be anchored, and it
-            names nothing: the operator learns that the element is not on this
-            screen, not what it is or where it lives. */}
-        {centred && step.anchors.length > 0 && (
+        {/**
+          * Said only when the step genuinely could not be anchored, and it
+          * names nothing: the operator learns that the element is not on this
+          * screen, not what it is or where it lives.
+          *
+          * IG-1.1 — keyed on the TARGET, not on the placement. A centred card
+          * has two quite different causes: no target was found, or a target
+          * was found and is being highlighted but is too large to fit a card
+          * beside it. The phone's drawer navigation list is the second case —
+          * 217x535 inside a 375x812 viewport leaves no side free — and showing
+          * "not visible on the current screen" while the ring sits over it is
+          * simply a lie to the operator.
+          */}
+        {!targetRect && measuredStep === step.id && step.anchors.length > 0 && (
           <p className="guide-card__note">{t('guide_target_offscreen', lang)}</p>
         )}
         <p className="guide-card__note">{t('guide_view_only', lang)}</p>

@@ -62,6 +62,14 @@ vi.mock('@/shared/ui/PhoenixIcon', () => ({
 
 import { GuideEngine } from '../GuideEngine';
 
+/** Desktop shape: no drawer is rendered, so the guide must never touch one. */
+const INERT_DRAWER = {
+  isAvailable: false,
+  isOpen: false,
+  open: () => undefined,
+  close: () => undefined,
+};
+
 const originalRect = Element.prototype.getBoundingClientRect;
 let fetchSpy: ReturnType<typeof vi.fn>;
 let beaconSpy: ReturnType<typeof vi.fn>;
@@ -133,7 +141,7 @@ async function driveWholeTour() {
   render(
     <div>
       <Shell />
-      <GuideEngine currentScreen={22} onNavigate={() => undefined} onClose={() => undefined} />
+      <GuideEngine currentScreen={22} onNavigate={() => undefined} drawer={INERT_DRAWER} onClose={() => undefined} />
     </div>,
   );
   await waitFor(() => expect(screen.getByRole('dialog', { name: 'Guide & Help' })).toBeInTheDocument());
@@ -187,7 +195,7 @@ describe('the guide performs no mutation, start to finish', () => {
     render(
       <div>
         <Shell />
-        <GuideEngine currentScreen={22} onNavigate={() => undefined} onClose={() => undefined} />
+        <GuideEngine currentScreen={22} onNavigate={() => undefined} drawer={INERT_DRAWER} onClose={() => undefined} />
       </div>,
     );
     await waitFor(() => expect(screen.getByRole('dialog', { name: 'Guide & Help' })).toBeInTheDocument());
@@ -237,7 +245,7 @@ describe('the guide performs no mutation, start to finish', () => {
     render(
       <div>
         <Shell />
-        <GuideEngine currentScreen={22} onNavigate={() => undefined} onClose={() => undefined} />
+        <GuideEngine currentScreen={22} onNavigate={() => undefined} drawer={INERT_DRAWER} onClose={() => undefined} />
       </div>,
     );
     await waitFor(() => expect(screen.getByRole('dialog', { name: 'Guide & Help' })).toBeInTheDocument());

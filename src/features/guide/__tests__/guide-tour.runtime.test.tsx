@@ -2,9 +2,11 @@
 import '@testing-library/jest-dom/vitest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { GUIDE_ANCHORS } from '../guide.anchors';
 import { GUIDE_PROGRESS_STORAGE_KEY } from '../guide.progress';
+import { GUIDE_REGISTRY } from '../guide.registry';
+import { permittedSteps } from '../guide.permissions';
 
 /**
  * INTERACTIVE-GUIDE-IG1 — the tour engine's RUNTIME behaviour.
@@ -50,16 +52,52 @@ vi.mock('@/shared/ui/PhoenixIcon', () => ({
 
 import { GuideEngine } from '../GuideEngine';
 
-/** A stand-in shell carrying the real anchor attributes the registry targets. */
-function Shell({ withDashboard }: { withDashboard: boolean }) {
+/**
+ * A stand-in shell carrying the real anchor attributes the registry targets.
+ *
+ * IG-1.1: it now models the two LAYOUTS rather than one, because the guide's
+ * navigation steps differ by viewport — the desktop has a sidebar, the phone
+ * has a bottom bar plus a drawer, and the drawer's contents (including the
+ * phone's Guide & Help entry) exist only while it is open. A harness that
+ * always rendered every anchor could not tell a working drawer step from a
+ * broken one.
+ */
+function Shell({
+  withDashboard,
+  viewport,
+  drawerOpen,
+}: {
+  withDashboard: boolean;
+  viewport: 'phone' | 'desktop';
+  drawerOpen: boolean;
+}) {
+  const phone = viewport === 'phone';
   return (
     <div id="test-shell">
-      <nav data-guide-id={GUIDE_ANCHORS.shellNavigationRail} aria-label="nav">
-        <button type="button">Institutions</button>
-      </nav>
+      {!phone && (
+        <nav data-guide-id={GUIDE_ANCHORS.shellNavigationRail} aria-label="nav">
+          <button type="button">Institutions</button>
+        </nav>
+      )}
+      {phone && (
+        <>
+          <button data-guide-id={GUIDE_ANCHORS.shellTopbarMenu} type="button">menu</button>
+          <nav data-guide-id={GUIDE_ANCHORS.shellNavigationBottom} aria-label="bottom">
+            <button type="button">Statistics</button>
+          </nav>
+        </>
+      )}
       <button data-guide-id={GUIDE_ANCHORS.shellTopbarLanguage} type="button">EN</button>
       <span data-guide-id={GUIDE_ANCHORS.shellTopbarNotifications}>bell</span>
-      <button data-guide-id={GUIDE_ANCHORS.shellTopbarHelp} type="button">help</button>
+      {!phone && <button data-guide-id={GUIDE_ANCHORS.shellTopbarHelp} type="button">help</button>}
+      {phone && drawerOpen && (
+        <div id="test-drawer">
+          <nav data-guide-id={GUIDE_ANCHORS.shellNavigationDrawer} aria-label="drawer nav">
+            <button type="button">Statistics</button>
+          </nav>
+          <button data-guide-id={GUIDE_ANCHORS.shellDrawerHelp} type="button">الدليل والمساعدة</button>
+        </div>
+      )}
       {withDashboard && (
         <>
           <header data-guide-id={GUIDE_ANCHORS.dashboardContextHeader}>scope</header>
@@ -71,23 +109,50 @@ function Shell({ withDashboard }: { withDashboard: boolean }) {
   );
 }
 
+/** Observable drawer transitions, so the lifecycle can be asserted directly. */
+let drawerLog: string[] = [];
+
 function Harness({
   withDashboard = true,
   onNavigate = () => undefined,
   onClose = () => undefined,
   currentScreen = 22,
+  viewport = 'desktop',
+  drawerInitiallyOpen = false,
 }: {
   withDashboard?: boolean;
   onNavigate?: (screen: number) => void;
   onClose?: () => void;
   currentScreen?: number;
+  viewport?: 'phone' | 'desktop';
+  drawerInitiallyOpen?: boolean;
 }) {
   const [, force] = useState(0);
   notifyAppChange = () => force(n => n + 1);
+
+  /**
+   * The shell's OWN drawer state, modelled exactly as PhoenixAppShell holds
+   * it: one boolean, one opener, one closer. The guide is given this and
+   * nothing else, so a second drawer state anywhere would show up here as a
+   * divergence between what the harness renders and what the guide believes.
+   */
+  const [drawerOpen, setDrawerOpen] = useState(drawerInitiallyOpen);
+  const drawer = useMemo(() => ({
+    isAvailable: viewport === 'phone',
+    isOpen: drawerOpen,
+    open: () => { drawerLog.push('open'); setDrawerOpen(true); },
+    close: () => { drawerLog.push('close'); setDrawerOpen(false); },
+  }), [viewport, drawerOpen]);
+
   return (
     <div>
-      <Shell withDashboard={withDashboard} />
-      <GuideEngine currentScreen={currentScreen} onNavigate={onNavigate} onClose={onClose} />
+      <Shell withDashboard={withDashboard} viewport={viewport} drawerOpen={drawerOpen} />
+      <GuideEngine
+        currentScreen={currentScreen}
+        onNavigate={onNavigate}
+        drawer={drawer}
+        onClose={onClose}
+      />
     </div>
   );
 }
@@ -97,9 +162,28 @@ function Harness({
  * rejects. Give the anchors a real rectangle so placement runs the same code
  * path a browser does; the card keeps a plausible size of its own.
  */
-function stubLayout() {
-  Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1440 });
+function stubLayout(width = 1440) {
+  Object.defineProperty(window, 'innerWidth', { configurable: true, value: width });
   Object.defineProperty(window, 'innerHeight', { configurable: true, value: 900 });
+  /**
+   * `useIsMobileViewport` — which `useGuideViewport` derives from — asks
+   * matchMedia first. jsdom's own implementation does not evaluate width
+   * queries, so it is answered here from the width above, following the same
+   * approach `responsive-viewport.runtime.test.tsx` already uses.
+   */
+  Object.defineProperty(window, 'matchMedia', {
+    configurable: true,
+    value: (query: string) => ({
+      matches: /max-width:\s*767px/.test(query) ? width <= 767 : false,
+      media: query,
+      onchange: null,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      addListener: () => undefined,
+      removeListener: () => undefined,
+      dispatchEvent: () => false,
+    }),
+  });
   Element.prototype.getBoundingClientRect = function fake(this: Element) {
     const guided = this.hasAttribute?.('data-guide-id');
     const box = guided
@@ -115,6 +199,7 @@ const originalRect = Element.prototype.getBoundingClientRect;
 beforeEach(() => {
   appState = baseState();
   window.localStorage.clear();
+  drawerLog = [];
   stubLayout();
 });
 
@@ -146,6 +231,43 @@ function next() {
   fireEvent.click(screen.getByRole('button', { name: 'التالي' }));
 }
 
+/**
+ * IG-1.1 — everything below derives the tour's shape from the REGISTRY as the
+ * engine filters it, never from a number written into the test.
+ *
+ * The step count is now a function of the viewport (the phone teaches two
+ * navigation surfaces, the desktop one) and of permissions. A hardcoded
+ * "9 steps" was correct exactly once, and would go on passing while the guide
+ * silently taught the wrong navigation model — which is the class of defect
+ * IG-1.1 exists to fix.
+ */
+function runtimeStepIds(
+  viewport: 'phone' | 'desktop' = 'desktop',
+  permissions: string[] = ['dashboard.view'],
+  role = 'super_admin',
+): string[] {
+  return permittedSteps(
+    GUIDE_REGISTRY.tours[0],
+    { role, permissions: new Set(permissions) },
+    viewport,
+  ).map(step => step.id);
+}
+
+/** Walk forward until `stepId` is current. Immune to registry re-ordering. */
+async function goToStep(stepId: string) {
+  for (let guard = 0; guard < 25; guard += 1) {
+    if (layer().dataset.guideStep === stepId) return;
+    next();
+    await waitFor(() => expect(layer()).toBeInTheDocument());
+  }
+  throw new Error(`the tour never reached "${stepId}"`);
+}
+
+/** Walk to the final step, whatever the filtered tour's length turns out to be. */
+async function goToLastStep() {
+  await goToStep('closing');
+}
+
 describe('tour lifecycle', () => {
   it('starts at the first step and advances and retreats', async () => {
     render(<Harness />);
@@ -153,7 +275,7 @@ describe('tour lifecycle', () => {
     expect(layer().dataset.guideStep).toBe('welcome');
 
     next();
-    await waitFor(() => expect(layer().dataset.guideStep).toBe('shell.navigation'));
+    await waitFor(() => expect(layer().dataset.guideStep).toBe('shell.navigation.desktop'));
 
     fireEvent.click(screen.getByRole('button', { name: 'السابق' }));
     await waitFor(() => expect(layer().dataset.guideStep).toBe('welcome'));
@@ -168,10 +290,7 @@ describe('tour lifecycle', () => {
   it('offers Finish on the last step and records completion', async () => {
     render(<Harness />);
     await startTour();
-    for (let i = 0; i < 8; i += 1) {
-      next();
-      await waitFor(() => expect(layer()).toBeInTheDocument());
-    }
+    await goToLastStep();
     expect(layer().dataset.guideStep).toBe('closing');
     fireEvent.click(screen.getByRole('button', { name: 'إنهاء' }));
     await waitFor(() => expect(document.querySelector('[data-guide-tour]')).toBeNull());
@@ -184,11 +303,11 @@ describe('tour lifecycle', () => {
     render(<Harness />);
     await startTour();
     next();
-    await waitFor(() => expect(layer().dataset.guideStep).toBe('shell.navigation'));
+    await waitFor(() => expect(layer().dataset.guideStep).toBe('shell.navigation.desktop'));
     fireEvent.click(screen.getByRole('button', { name: 'تخطّي الجولة' }));
     await openHelpCenter();
     const stored = JSON.parse(window.localStorage.getItem(GUIDE_PROGRESS_STORAGE_KEY) as string);
-    expect(stored.stepId).toBe('shell.navigation');
+    expect(stored.stepId).toBe('shell.navigation.desktop');
   });
 
   it('resumes at the remembered step after a fresh mount', async () => {
@@ -222,7 +341,7 @@ describe('targets and safe fallback', () => {
     render(<Harness />);
     await startTour();
     next();
-    await waitFor(() => expect(layer().dataset.guideStep).toBe('shell.navigation'));
+    await waitFor(() => expect(layer().dataset.guideStep).toBe('shell.navigation.desktop'));
     expect(document.querySelector('.guide-ring')).not.toBeNull();
     expect(layer().dataset.guidePlacement).not.toBe('center');
   });
@@ -230,11 +349,7 @@ describe('targets and safe fallback', () => {
   it('falls back to a centred card when the target is not on this screen', async () => {
     render(<Harness withDashboard={false} />);
     await startTour();
-    for (let i = 0; i < 4; i += 1) {
-      next();
-      await waitFor(() => expect(layer()).toBeInTheDocument());
-    }
-    expect(layer().dataset.guideStep).toBe('dashboard.context');
+    await goToStep('dashboard.context');
     expect(layer().dataset.guidePlacement).toBe('center');
     expect(document.querySelector('.guide-ring')).toBeNull();
     // Explains the situation, and names nothing.
@@ -248,7 +363,7 @@ describe('targets and safe fallback', () => {
     render(<Harness />);
     await startTour();
     next();
-    await waitFor(() => expect(layer().dataset.guideStep).toBe('shell.navigation'));
+    await waitFor(() => expect(layer().dataset.guideStep).toBe('shell.navigation.desktop'));
     act(() => {
       document.querySelector(`[data-guide-id="${GUIDE_ANCHORS.shellNavigationRail}"]`)?.remove();
       window.dispatchEvent(new Event('resize'));
@@ -262,7 +377,7 @@ describe('targets and safe fallback', () => {
     render(<Harness />);
     await startTour();
     next();
-    await waitFor(() => expect(layer().dataset.guideStep).toBe('shell.navigation'));
+    await waitFor(() => expect(layer().dataset.guideStep).toBe('shell.navigation.desktop'));
     const before = (document.querySelector('.guide-ring') as HTMLElement).style.top;
     Element.prototype.getBoundingClientRect = function fake(this: Element) {
       const guided = this.hasAttribute?.('data-guide-id');
@@ -282,9 +397,7 @@ describe('language contract', () => {
   it('keeps the same tour and step when the application language changes', async () => {
     render(<Harness />);
     await startTour();
-    next();
-    next();
-    await waitFor(() => expect(layer().dataset.guideStep).toBe('shell.language'));
+    await goToStep('shell.language');
     expect(screen.getByText('لغة البرنامج')).toBeInTheDocument();
 
     act(() => {
@@ -304,12 +417,12 @@ describe('language contract', () => {
   it('renders the step counter in the current language', async () => {
     render(<Harness />);
     await startTour();
-    expect(screen.getByText('الخطوة 1 من 9')).toBeInTheDocument();
+    expect(screen.getByText(`الخطوة 1 من ${runtimeStepIds().length}`)).toBeInTheDocument();
     act(() => {
       appState = { ...appState, lang: 'en', dir: 'ltr' };
       notifyAppChange?.();
     });
-    await waitFor(() => expect(screen.getByText('Step 1 of 9')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(`Step 1 of ${runtimeStepIds().length}`)).toBeInTheDocument());
   });
 
   /**
@@ -364,9 +477,7 @@ describe('language contract', () => {
     appState = { ...baseState(), toggleLang };
     render(<Harness />);
     await startTour();
-    next();
-    next();
-    await waitFor(() => expect(layer().dataset.guideStep).toBe('shell.language'));
+    await goToStep('shell.language');
 
     const before = {
       tour: layer().dataset.guideTour,
@@ -386,7 +497,8 @@ describe('language contract', () => {
     expect(layer()).toHaveAttribute('dir', 'ltr');
     expect((document.querySelector('.guide-card__title') as HTMLElement).textContent)
       .not.toBe(before.title);
-    expect(screen.getByText('Step 3 of 9')).toBeInTheDocument();
+    const languageIndex = runtimeStepIds().indexOf('shell.language');
+    expect(screen.getByText(`Step ${languageIndex + 1} of ${runtimeStepIds().length}`)).toBeInTheDocument();
     // Exactly one overlay, and the placement was recomputed rather than dropped.
     expect(document.querySelectorAll('[data-guide-tour]')).toHaveLength(1);
     expect(document.querySelectorAll('.guide-card')).toHaveLength(1);
@@ -455,7 +567,7 @@ describe('language contract', () => {
     await startTour();
     expect(document.querySelector('[data-guide-primary]')).toHaveFocus();
     next();
-    await waitFor(() => expect(layer().dataset.guideStep).toBe('shell.navigation'));
+    await waitFor(() => expect(layer().dataset.guideStep).toBe('shell.navigation.desktop'));
     expect(document.querySelector('[data-guide-primary]')).toHaveFocus();
   });
 
@@ -471,31 +583,41 @@ describe('language contract', () => {
 describe('permission-aware steps', () => {
   it('hides the Command Center steps from an actor without dashboard.view', async () => {
     appState = { ...baseState(), myPermissions: new Set<string>() };
+    const expected = runtimeStepIds('desktop', []);
     render(<Harness />);
     await startTour();
-    expect(screen.getByText('الخطوة 1 من 6')).toBeInTheDocument();
+    expect(screen.getByText(`الخطوة 1 من ${expected.length}`)).toBeInTheDocument();
 
     const seen: string[] = [];
-    for (let i = 0; i < 5; i += 1) {
+    for (let i = 0; i < expected.length; i += 1) {
       seen.push(layer().dataset.guideStep as string);
-      next();
-      await waitFor(() => expect(layer()).toBeInTheDocument());
+      if (i < expected.length - 1) {
+        next();
+        await waitFor(() => expect(layer()).toBeInTheDocument());
+      }
     }
-    seen.push(layer().dataset.guideStep as string);
+    expect(seen).toEqual(expected);
     expect(seen.some(id => id.startsWith('dashboard.'))).toBe(false);
-    expect(seen).toContain('shell.navigation');
+    expect(seen).toContain('shell.navigation.desktop');
   });
 
   it('never renders the name of a step it refused', async () => {
     appState = { ...baseState(), myPermissions: new Set<string>() };
+    const expected = runtimeStepIds('desktop', []);
     render(<Harness />);
     await startTour();
-    for (let i = 0; i < 5; i += 1) {
+    for (let i = 0; i < expected.length; i += 1) {
       const html = document.querySelector('.guide-layer')?.innerHTML ?? '';
+      // Neither the internal name nor the user-facing one may appear for an
+      // operator the Statistics steps were filtered away from.
       expect(html).not.toMatch(/مركز القيادة/);
       expect(html).not.toMatch(/Command Center/i);
-      next();
-      await waitFor(() => expect(layer()).toBeInTheDocument());
+      expect(html).not.toMatch(/الإحصائيات/);
+      expect(html).not.toMatch(/Statistics/i);
+      if (i < expected.length - 1) {
+        next();
+        await waitFor(() => expect(layer()).toBeInTheDocument());
+      }
     }
   });
 });
@@ -505,7 +627,7 @@ describe('safety', () => {
     render(<Harness />);
     await startTour();
     next();
-    await waitFor(() => expect(layer().dataset.guideStep).toBe('shell.navigation'));
+    await waitFor(() => expect(layer().dataset.guideStep).toBe('shell.navigation.desktop'));
     const blocker = document.querySelector('.guide-blocker');
     expect(blocker).not.toBeNull();
     expect(blocker).toHaveAttribute('aria-hidden', 'true');
@@ -546,11 +668,7 @@ describe('safety', () => {
     const onNavigate = vi.fn();
     render(<Harness onNavigate={onNavigate} currentScreen={21} />);
     await startTour();
-    for (let i = 0; i < 4; i += 1) {
-      next();
-      await waitFor(() => expect(layer()).toBeInTheDocument());
-    }
-    expect(layer().dataset.guideStep).toBe('dashboard.context');
+    await goToStep('dashboard.context');
     expect(onNavigate).toHaveBeenCalledWith(22);
     // Every call is the Command Center and nothing else.
     expect(onNavigate.mock.calls.every(([screen]) => screen === 22)).toBe(true);
@@ -561,10 +679,7 @@ describe('safety', () => {
     const onNavigate = vi.fn();
     render(<Harness onNavigate={onNavigate} currentScreen={21} />);
     await startTour();
-    for (let i = 0; i < 5; i += 1) {
-      next();
-      await waitFor(() => expect(layer()).toBeInTheDocument());
-    }
+    await goToLastStep();
     expect(onNavigate).not.toHaveBeenCalled();
   });
 });
@@ -583,9 +698,9 @@ describe('accessibility', () => {
     await startTour();
     const status = screen.getByRole('status');
     expect(status).toHaveAttribute('aria-live', 'polite');
-    expect(status).toHaveTextContent('الخطوة 1 من 9 — مرحبًا بك في الدليل');
+    expect(status).toHaveTextContent(`الخطوة 1 من ${runtimeStepIds().length} — مرحبًا بك في الدليل`);
     next();
-    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('الخطوة 2 من 9'));
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(`الخطوة 2 من ${runtimeStepIds().length}`));
   });
 
   it('can be completed with the keyboard alone', async () => {
@@ -593,7 +708,8 @@ describe('accessibility', () => {
     await startTour();
     // Focus lands inside the card on every step, so Enter on the primary
     // control is enough to walk the whole tour.
-    for (let i = 0; i < 8; i += 1) {
+    const total = runtimeStepIds().length;
+    for (let i = 0; i < total - 1; i += 1) {
       const primary = document.querySelector('.guide-btn--primary') as HTMLElement;
       expect(document.activeElement && (document.querySelector('.guide-card') as HTMLElement).contains(document.activeElement)).toBe(true);
       fireEvent.click(primary);
@@ -617,11 +733,11 @@ describe('accessibility', () => {
     render(<Harness />);
     await startTour();
     next();
-    await waitFor(() => expect(layer().dataset.guideStep).toBe('shell.navigation'));
+    await waitFor(() => expect(layer().dataset.guideStep).toBe('shell.navigation.desktop'));
     fireEvent.keyDown(document, { key: 'Escape' });
     await openHelpCenter();
     const stored = JSON.parse(window.localStorage.getItem(GUIDE_PROGRESS_STORAGE_KEY) as string);
     expect(stored.completedTourIds).toEqual([]);
-    expect(stored.stepId).toBe('shell.navigation');
+    expect(stored.stepId).toBe('shell.navigation.desktop');
   });
 });

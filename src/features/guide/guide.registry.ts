@@ -11,15 +11,38 @@ import type { GuideRegistry, GuideTour } from './guide.types';
  * being a literal rendering of the other.
  *
  * SCOPE. This wave ships exactly ONE low-risk orientation tour, covering the
- * shell and the Command Center. Quarantine («الحجر الصحي») and Suspended from
- * Dispensing («موقوفة الصرف») are deliberately absent — they are IG-2, behind
- * pharmaceutical copy approval, and the two concepts must never be presented
- * as interchangeable (AD-10).
+ * shell and the Statistics screen. Quarantine («الحجر الصحي») and Suspended
+ * from Dispensing («موقوفة الصرف») are deliberately absent — they are IG-2,
+ * behind pharmaceutical copy approval, and the two concepts must never be
+ * presented as interchangeable (AD-10).
  *
  * SAFETY. Every step below explains or points; none of them instructs the
  * engine to act. There is no step that submits, dispenses, disposes, archives
  * or changes an authorization, and the closing step says explicitly that a
  * real action is performed by closing the guide first.
+ *
+ * ── IG-1.1, from owner acceptance on a real phone ──────────────────────────
+ *
+ * TERMINOLOGY. The screen an operator sees is «الإحصائيات» / "Statistics".
+ * The guide used to call it «مركز القيادة» / "The Command Center", which is
+ * the INTERNAL name — the component, the route, the permission key and the
+ * anchors still carry it, correctly, and are deliberately left alone. A guide
+ * that names a screen something the screen does not call itself is simply
+ * wrong to the person reading it.
+ *
+ * NAVIGATION. The phone and the desktop do not offer the same way around, so
+ * one shared "how you move between screens" step could only be right on one of
+ * them. It used to describe the bottom bar as though it were the only option,
+ * while the phone also carries a side drawer holding the COMPLETE authorized
+ * screen list. There are now three phone steps — the quick bar, the menu
+ * button, and the full list inside the drawer — and one desktop step for the
+ * sidebar. The step COUNT therefore differs by viewport, which is why nothing
+ * may assume a fixed number of steps.
+ *
+ * ORDER. `help.entry` sits immediately after the navigation block on purpose.
+ * On a phone it and the screen-list step both need the drawer open, so keeping
+ * them adjacent means the guide borrows the drawer ONCE and gives it back
+ * once, rather than opening and closing it around the topbar steps.
  */
 
 const ORIENTATION_TOUR: GuideTour = {
@@ -29,8 +52,8 @@ const ORIENTATION_TOUR: GuideTour = {
     en: 'Quick orientation tour',
   },
   description: {
-    ar: 'تعريف بواجهة البرنامج ولوحة مركز القيادة. شرح ومشاهدة فقط، دون تنفيذ أي إجراء.',
-    en: 'An introduction to the application shell and the Command Center. Explanation only — it performs no action.',
+    ar: 'تعريف بواجهة البرنامج وشاشة الإحصائيات. شرح ومشاهدة فقط، دون تنفيذ أي إجراء.',
+    en: 'An introduction to the application shell and the Statistics screen. Explanation only — it performs no action.',
   },
   steps: [
     {
@@ -42,19 +65,82 @@ const ORIENTATION_TOUR: GuideTour = {
       },
       anchors: [],
     },
+
+    /* ── Navigation, per viewport ──────────────────────────────────────── */
+
     {
-      id: 'shell.navigation',
-      title: { ar: 'التنقّل بين الشاشات', en: 'Moving between screens' },
+      // Desktop shows a permanent sidebar and no bottom bar, so this is the
+      // whole navigation story there.
+      id: 'shell.navigation.desktop',
+      title: { ar: 'التنقّل بين الشاشات', en: 'Navigate between screens' },
       body: {
-        ar: 'من هنا تنتقل بين شاشات البرنامج. لا تظهر لك إلا الشاشات المصرَّح لك بها.',
-        en: 'This is how you move between screens. Only the screens you are authorized to open are listed.',
+        ar: 'استخدم القائمة الجانبية للتنقّل بين الشاشات المتاحة ضمن صلاحياتك.',
+        en: 'Use the sidebar to navigate between the screens available within your permissions.',
       },
-      anchors: [
-        GUIDE_ANCHORS.shellNavigationRail,
-        GUIDE_ANCHORS.shellNavigationDrawer,
-        GUIDE_ANCHORS.shellNavigationBottom,
-      ],
+      anchors: [GUIDE_ANCHORS.shellNavigationRail],
+      viewports: ['desktop'],
     },
+    {
+      // The phone's fast path — a short shortcut strip, NOT the full menu.
+      id: 'shell.navigation.quick',
+      title: { ar: 'التنقّل السريع', en: 'Quick navigation' },
+      body: {
+        ar: 'استخدم الشريط السفلي للوصول السريع إلى الشاشات الأكثر استخدامًا ضمن صلاحياتك.',
+        en: 'Use the bottom navigation bar for quick access to the screens you use most within your permissions.',
+      },
+      anchors: [GUIDE_ANCHORS.shellNavigationBottom],
+      viewports: ['phone'],
+    },
+    {
+      // The control itself, explained while the drawer is still closed. The
+      // guide is modal, so the operator is TOLD what the button does rather
+      // than asked to press it.
+      id: 'shell.navigation.menu',
+      title: { ar: 'القائمة الجانبية', en: 'Side menu' },
+      body: {
+        ar: 'استخدم زر القائمة لفتح القائمة الجانبية والوصول إلى جميع الشاشات المتاحة ضمن صلاحياتك.',
+        en: 'Use the menu button to open the side menu and access every screen available within your permissions.',
+      },
+      anchors: [GUIDE_ANCHORS.shellTopbarMenu],
+      viewports: ['phone'],
+    },
+    {
+      // ...and then the guide opens it, through the shell's own state, so the
+      // list being described is the real one this account actually has.
+      id: 'shell.navigation.all',
+      title: { ar: 'جميع الشاشات', en: 'All screens' },
+      body: {
+        ar: 'تعرض القائمة الجانبية جميع الشاشات المتاحة لحسابك فقط. وقد تختلف الخيارات الظاهرة بحسب صلاحياتك.',
+        en: 'The side menu shows only the screens available to your account. Visible options may differ according to your permissions.',
+      },
+      anchors: [GUIDE_ANCHORS.shellNavigationDrawer],
+      viewports: ['phone'],
+      requiresDrawer: true,
+    },
+
+    /* ── The way back in ───────────────────────────────────────────────── */
+
+    {
+      /**
+       * On a phone this entry lives INSIDE the drawer, which is why this step
+       * declares `requiresDrawer` and sits next to the screen-list step —
+       * owner acceptance saw it render the missing-target fallback for exactly
+       * that reason. On desktop the drawer does not exist, the flag is a
+       * no-op, and the topbar control is the target. One entry, one step, both
+       * viewports.
+       */
+      id: 'help.entry',
+      title: { ar: 'الدليل والمساعدة', en: 'Guide & Help' },
+      body: {
+        ar: 'يمكنك العودة إلى الدليل والمساعدة في أي وقت لبدء جولة جديدة، أو استئناف جولة محفوظة، أو إعادة الجولة من البداية.',
+        en: 'Return to Guide & Help at any time to start a new tour, resume saved progress, or restart a tour from the beginning.',
+      },
+      anchors: [GUIDE_ANCHORS.shellTopbarHelp, GUIDE_ANCHORS.shellDrawerHelp],
+      requiresDrawer: true,
+    },
+
+    /* ── Topbar controls ───────────────────────────────────────────────── */
+
     {
       id: 'shell.language',
       title: { ar: 'لغة البرنامج', en: 'Application language' },
@@ -73,12 +159,15 @@ const ORIENTATION_TOUR: GuideTour = {
       },
       anchors: [GUIDE_ANCHORS.shellTopbarNotifications],
     },
+
+    /* ── Statistics (internally the Command Center screen) ─────────────── */
+
     {
       id: 'dashboard.context',
-      title: { ar: 'مركز القيادة', en: 'The Command Center' },
+      title: { ar: 'الإحصائيات', en: 'Statistics' },
       body: {
-        ar: 'يلخّص مركز القيادة وضع المخزون ضمن النطاق الذي يسمح به حسابك. السطر العلوي يوضّح النطاق الذي أجاب به الخادم.',
-        en: 'The Command Center summarises stock at the scope your account is allowed to read. The line at the top states the scope the server answered at.',
+        ar: 'تعرض شاشة الإحصائيات ملخصًا للحالة التشغيلية ضمن نطاق صلاحياتك. ويبيّن شريط النطاق العلوي الجهة التي تُعرض بياناتها.',
+        en: 'Statistics provides an operational summary within your authorized scope. The scope bar at the top shows whose data is being displayed.',
       },
       anchors: [GUIDE_ANCHORS.dashboardContextHeader],
       requiresPermissions: [DASHBOARD_VIEW_PERMISSION],
@@ -106,15 +195,7 @@ const ORIENTATION_TOUR: GuideTour = {
       requiresPermissions: [DASHBOARD_VIEW_PERMISSION],
       screen: COMMAND_CENTER_SCREEN,
     },
-    {
-      id: 'help.entry',
-      title: { ar: 'الدليل والمساعدة', en: 'Guide & Help' },
-      body: {
-        ar: 'تعود من هنا إلى الدليل في أي وقت، وتستأنف جولة توقّفت أو تعيدها من البداية.',
-        en: 'Come back here at any time to reopen the guide, resume a tour you left, or restart it from the beginning.',
-      },
-      anchors: [GUIDE_ANCHORS.shellTopbarHelp, GUIDE_ANCHORS.shellDrawerHelp],
-    },
+
     {
       id: 'closing',
       title: { ar: 'قبل أن تبدأ العمل', en: 'Before you start working' },
@@ -128,7 +209,8 @@ const ORIENTATION_TOUR: GuideTour = {
 };
 
 export const GUIDE_REGISTRY: GuideRegistry = {
-  version: 1,
+  /** Bumped by IG-1.1: the step vocabulary changed shape (viewport-scoped). */
+  version: 2,
   tours: [ORIENTATION_TOUR],
 };
 

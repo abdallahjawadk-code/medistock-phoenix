@@ -1,4 +1,5 @@
 import { isScreenAuthorized } from '@/shared/authz/screen-access';
+import { isStepForViewport, type GuideViewport } from './guide.viewport';
 import type { GuideStep, GuideTour } from './guide.types';
 
 /**
@@ -37,9 +38,26 @@ export function isStepPermitted(step: GuideStep, audience: GuideAudience): boole
   return true;
 }
 
-/** The steps of `tour` this operator may see, in registry order. */
-export function permittedSteps(tour: GuideTour, audience: GuideAudience): GuideStep[] {
-  return tour.steps.filter(step => isStepPermitted(step, audience));
+/**
+ * The steps of `tour` this operator may see, in registry order.
+ *
+ * TWO independent narrowings, deliberately kept as separate predicates and
+ * composed here at the single place the engine calls:
+ *
+ *   • authorization — what this operator is allowed to be told about, and
+ *   • layout — which navigation surfaces this viewport actually renders.
+ *
+ * They must not be conflated. A step hidden because the phone has no sidebar
+ * is not a permission decision, and a step hidden because the operator lacks a
+ * capability must never be reintroduced by a wider window.
+ */
+export function permittedSteps(
+  tour: GuideTour,
+  audience: GuideAudience,
+  viewport?: GuideViewport,
+): GuideStep[] {
+  return tour.steps.filter(step => isStepPermitted(step, audience)
+    && (viewport === undefined || isStepForViewport(step, viewport)));
 }
 
 /**
@@ -51,9 +69,10 @@ export function permittedSteps(tour: GuideTour, audience: GuideAudience): GuideS
 export function permittedTours(
   tours: readonly GuideTour[],
   audience: GuideAudience,
+  viewport?: GuideViewport,
 ): { tour: GuideTour; steps: GuideStep[] }[] {
   return tours
-    .map(tour => ({ tour, steps: permittedSteps(tour, audience) }))
+    .map(tour => ({ tour, steps: permittedSteps(tour, audience, viewport) }))
     .filter(entry => entry.steps.length > 0);
 }
 

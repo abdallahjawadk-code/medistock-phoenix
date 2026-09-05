@@ -1,4 +1,5 @@
 import { lazy, Suspense, useCallback, useRef, useState } from 'react';
+import type { GuideDrawerController } from './useGuideDrawerStep';
 
 /**
  * INTERACTIVE-GUIDE-IG1 — the always-mounted, near-empty guide host.
@@ -29,6 +30,12 @@ export interface GuideHostProps {
    * operator — see guide.permissions.ts — and never as part of an action.
    */
   onNavigate: (screen: number) => void;
+  /**
+   * IG-1.1 — the shell's EXISTING mobile-drawer state, handed to the guide so
+   * two steps can point at what lives inside it. The guide borrows it and
+   * gives it back; it never keeps a copy. See useGuideDrawerStep.
+   */
+  drawer: GuideDrawerController;
 }
 
 export interface GuideController {
@@ -40,7 +47,7 @@ export interface GuideController {
  * callback the shell hands to its Help entries, so no component other than
  * this one needs to know that the engine is lazy at all.
  */
-export function useGuideHost({ currentScreen, onNavigate }: GuideHostProps): {
+export function useGuideHost({ currentScreen, onNavigate, drawer }: GuideHostProps): {
   controller: GuideController;
   host: React.ReactNode;
 } {
@@ -74,6 +81,7 @@ export function useGuideHost({ currentScreen, onNavigate }: GuideHostProps): {
         <GuideEngine
           currentScreen={currentScreen}
           onNavigate={onNavigate}
+          drawer={drawer}
           onClose={closeGuide}
         />
       </Suspense>

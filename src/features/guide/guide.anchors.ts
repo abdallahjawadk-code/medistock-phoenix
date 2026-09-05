@@ -29,6 +29,9 @@ export const GUIDE_ANCHORS = {
   shellNavigationRail:      'guide.shell.navigation.rail',
   shellNavigationDrawer:    'guide.shell.navigation.drawer',
   shellNavigationBottom:    'guide.shell.navigation.bottom',
+  /* IG-1.1 — the phone's menu button, which opens the drawer holding the
+     complete authorized screen list and the Guide & Help entry. */
+  shellTopbarMenu:          'guide.shell.topbar.menu',
   shellTopbarLanguage:      'guide.shell.topbar.language',
   shellTopbarNotifications: 'guide.shell.topbar.notifications',
   shellTopbarHelp:          'guide.shell.topbar.help',

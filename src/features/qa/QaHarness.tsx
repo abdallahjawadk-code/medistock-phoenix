@@ -39,9 +39,9 @@ __installQaSupabaseClient(createQaFixtureClient());
 // is tree-shaken from every production build, same as the rest of the module.
 (window as unknown as { __phoenixQaRpcCalls?: typeof QA_RPC_CALLS }).__phoenixQaRpcCalls = QA_RPC_CALLS;
 
-type SceneId = 'shell' | 'states' | 'institutions' | 'welcome' | 'dashboard' | 'twin' | 'inventory' | 'outlet' | 'procurement' | 'status' | 'monthly' | 'reports';
+type SceneId = 'shell' | 'states' | 'institutions' | 'welcome' | 'dashboard' | 'twin' | 'inventory' | 'outlet' | 'procurement' | 'status' | 'monthly' | 'reports' | 'statistics';
 
-const SCENE_IDS: SceneId[] = ['shell', 'states', 'institutions', 'welcome', 'dashboard', 'twin', 'inventory', 'outlet', 'procurement', 'status', 'monthly', 'reports'];
+const SCENE_IDS: SceneId[] = ['shell', 'states', 'institutions', 'welcome', 'dashboard', 'twin', 'inventory', 'outlet', 'procurement', 'status', 'monthly', 'reports', 'statistics'];
 
 function readParams() {
   const q = new URLSearchParams(window.location.search);
@@ -107,6 +107,19 @@ const MonthlyStatusScreen = lazy(() =>
 /** Screen 9 — Reports & tracking («التقارير والتتبع»). */
 const ReportsScreen = lazy(() =>
   import('@/features/reports/ReportsScreen').then(m => ({ default: m.ReportsScreen })),
+);
+/**
+ * Screen 22 — «الإحصائيات» / Statistics, the RAC-3 Command Center.
+ *
+ * Added for IG-1.1 acceptance: the interactive guide has a step that
+ * highlights this screen's scope header, and that highlight can only be
+ * captured against a screen that actually renders. Backed by the migration-199
+ * read-contract fixture in qaData.ts, so every panel is a projection of the
+ * same payload the real RPC returns, and the fixture client refuses every
+ * write as usual.
+ */
+const CommandCenterScreen = lazy(() =>
+  import('@/features/command-center/CommandCenterScreen').then(m => ({ default: m.CommandCenterScreen })),
 );
 
 // Prop-driven fixtures for the Digital Twin scene (no service calls). Shapes
@@ -179,13 +192,14 @@ export function QaHarness() {
   const handleNavigate = (n: number) =>
     setScene(n === 17 ? 'twin' : n === 11 ? 'institutions' : n === 3 ? 'inventory'
       : n === 18 ? 'outlet' : n === 19 ? 'procurement' : n === 2 ? 'dashboard'
-      : n === 12 ? 'status' : n === 20 ? 'monthly' : n === 9 ? 'reports' : 'shell');
+      : n === 12 ? 'status' : n === 20 ? 'monthly' : n === 9 ? 'reports'
+      : n === 22 ? 'statistics' : 'shell');
   // Reflect the active scene as the production screen number its nav item uses,
   // so the correct sidebar/drawer item reads as current (twin = 17 / network).
   const currentScreen = scene === 'twin' ? 17 : scene === 'institutions' ? 11
     : scene === 'inventory' ? 3 : scene === 'outlet' ? 18 : scene === 'procurement' ? 19
     : scene === 'dashboard' ? 2 : scene === 'status' ? 12 : scene === 'monthly' ? 20
-    : scene === 'reports' ? 9 : 1;
+    : scene === 'reports' ? 9 : scene === 'statistics' ? 22 : 1;
 
   return (
     <QaAppProvider persona={active} lang={lang} theme={theme} orgId={org ?? undefined}>
@@ -239,6 +253,10 @@ export function QaHarness() {
             ) : scene === 'reports' ? (
               <Suspense fallback={<PhoenixLoadingState />}>
                 <ReportsScreen />
+              </Suspense>
+            ) : scene === 'statistics' ? (
+              <Suspense fallback={<PhoenixLoadingState />}>
+                <CommandCenterScreen onNavigate={() => { /* QA: inert */ }} />
               </Suspense>
             ) : scene === 'dashboard' ? (
               <Suspense fallback={<PhoenixLoadingState />}>

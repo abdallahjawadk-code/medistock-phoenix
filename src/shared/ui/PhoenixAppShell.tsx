@@ -1,4 +1,4 @@
-import { ReactNode, useCallback, useState, useEffect } from 'react';
+import { ReactNode, useCallback, useMemo, useState, useEffect } from 'react';
 import { useApp } from '@/app/AppContext';
 import { useIsMobileViewport } from '@/shared/ui/useResponsiveViewport';
 import { t } from '@/shared/i18n/strings';
@@ -10,6 +10,7 @@ import { PwaInstallPrompt } from '@/shared/pwa/PwaInstallPrompt';
 import { CommandPalette } from './CommandPalette';
 import { PlatformBroadcastGate } from '@/features/platform-broadcast/PlatformBroadcastGate';
 import { useGuideHost } from '@/features/guide/GuideHost';
+import type { GuideDrawerController } from '@/features/guide/useGuideDrawerStep';
 
 // PRODUCTION-READINESS-CLEANUP-A: screen 2 (the former central dashboard) no
 // longer has an entry — App.tsx redirects it to the unified shell, so the
@@ -55,6 +56,7 @@ export function PhoenixAppShell({ children, currentScreen, onNavigate, onLogout 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const isMobile = useIsMobileViewport();
   const closeSidebar = useCallback(() => setSidebarOpen(false), []);
+  const openSidebar = useCallback(() => setSidebarOpen(true), []);
   const toggleSidebar = useCallback(() => setSidebarOpen(open => !open), []);
 
   // PHARMACY-PULSE-LOADER: pause decorative animations while the page is
@@ -76,7 +78,30 @@ export function PhoenixAppShell({ children, currentScreen, onNavigate, onLogout 
   /* INTERACTIVE-GUIDE-IG1: the shell owns "is the guide open" and hands its
      Help entries one `open` callback. Nothing of the guide engine, its tours
      or its stylesheet is fetched until that callback fires — see GuideHost. */
-  const { controller: guide, host: guideHost } = useGuideHost({ currentScreen, onNavigate });
+
+  /**
+   * IG-1.1 — the drawer the shell ALREADY owns, exposed to the guide.
+   *
+   * Two steps describe things that live inside it: the complete authorized
+   * screen list, and the phone's Guide & Help entry. Rather than synthesising
+   * a click on the menu button or keeping a second "is the drawer open"
+   * boolean, the guide is handed this one — the same `sidebarOpen` state the
+   * trigger, the drawer and the topbar's `aria-expanded` already read. There
+   * is therefore exactly one source of truth for whether the drawer is open,
+   * and `isAvailable` is false on desktop, where no drawer is rendered at all.
+   */
+  const guideDrawer = useMemo<GuideDrawerController>(() => ({
+    isAvailable: isMobile,
+    isOpen: sidebarOpen,
+    open: openSidebar,
+    close: closeSidebar,
+  }), [isMobile, sidebarOpen, openSidebar, closeSidebar]);
+
+  const { controller: guide, host: guideHost } = useGuideHost({
+    currentScreen,
+    onNavigate,
+    drawer: guideDrawer,
+  });
 
   return (
     <div dir={dir} className="premium-shell nexus-shell" style={{
