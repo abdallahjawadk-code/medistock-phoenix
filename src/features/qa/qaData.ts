@@ -254,6 +254,48 @@ export const QA_FIXTURES: Record<string, unknown> = {
   // gate mounts inside PhoenixAppShell, so EVERY shell-based scene calls this on
   // mount; without a fixture it logged a console error on every captured cell.
   // An empty queue is the correct clean state — no modal over the screenshot.
+  /**
+   * IG-1.1 — migration 199's Command Center read contract, so the QA gallery
+   * can render the REAL «الإحصائيات» / Statistics screen (screen 22).
+   *
+   * The guide's own acceptance needs the screen this fixture backs: proving a
+   * guide step highlights something requires the something to exist, and a
+   * harness scene that renders an empty shell can only ever prove the copy.
+   * Shapes follow CommandCenterReadContract exactly, so every panel derives
+   * from the same payload the real RPC returns.
+   */
+  'rpc:phoenix_command_center_read_contract': {
+    ok: true,
+    scope: {
+      kind: 'organization',
+      organization_id: 'qa-org',
+      warehouse_id: null,
+      distribution_point_id: null,
+    },
+    capabilities: {
+      dashboard_view: true,
+      alerts_view: true,
+      reports_view: true,
+      warehouse_stock_view: true,
+      outlet_stock_view: true,
+      warehouse_transfer_view: true,
+    },
+    summary: {
+      availability_rows: 1284,
+      quantity_units: 96450,
+      available: 1042,
+      low_stock: 118,
+      missing: 47,
+      near_expiry: 63,
+      expired: 14,
+      surplus: 92,
+    },
+    network: { organizations: 1, warehouses: 5, distribution_points: 12 },
+    trend: null,
+    trend_status: 'deferred_pending_measurement',
+    near_expiry_days: 270,
+    as_of: '2026-09-05T09:00:00.000Z',
+  },
   'rpc:phoenix_get_pending_platform_broadcasts': { ok: true, broadcasts: [] },
 
   // phoenix_get_dashboard_condition_counts → a single object of per-condition

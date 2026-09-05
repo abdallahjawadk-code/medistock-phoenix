@@ -77,6 +77,17 @@ export function GuideTourOverlay({
    * component something to react to when that happens.
    */
   const [resolvedAnchor, setResolvedAnchor] = useState('none');
+  /**
+   * Which step `targetRect` was measured for.
+   *
+   * On a step change the previous step's rectangle is still in state for one
+   * render, so a ring drawn from it would briefly highlight the element the
+   * card has just stopped describing — and, because the ring transitions its
+   * geometry, would then slide across the screen to the new one. Holding the
+   * ring back until it has been measured for the CURRENT step means it only
+   * ever appears over the thing being explained.
+   */
+  const [measuredStep, setMeasuredStep] = useState('');
 
   const step = steps[stepIndex];
   const isFirst = stepIndex === 0;
@@ -121,6 +132,7 @@ export function GuideTourOverlay({
     if (!step) return;
     const viewport = { width: window.innerWidth, height: window.innerHeight };
     const resolved = resolveTarget(step, viewport);
+    setMeasuredStep(step.id);
     if (!resolved) {
       setTargetRect(null);
       setCard(null);
@@ -148,16 +160,49 @@ export function GuideTourOverlay({
   }, [measure, lang, drawer.isOpen]);
 
   /**
-   * A drawer-backed target mounts a frame or two after its step becomes
-   * current, and `useLayoutEffect` above runs before the browser has laid the
-   * new panel out. One animation frame later the element has a real box, so
-   * measuring again is what turns the centred fallback into a real highlight.
+   * Follow the target until it stops moving.
+   *
+   * A step's target is not necessarily where it will end up at the moment the
+   * step becomes current. The mobile drawer slides in over ~200ms, so a single
+   * measurement taken a frame or two after it opens captures the panel
+   * MID-ANIMATION and leaves the highlight permanently offset — measured at
+   * ~6px horizontally on a 375px phone, and worse on a slower device, because
+   * nothing afterwards re-measures. The same applies to any entrance
+   * animation, on any target, which is why this is not special-cased to the
+   * drawer.
+   *
+   * So: re-measure on each frame in which the target's box actually CHANGED,
+   * stop once it has been still for three frames, and give up after a second
+   * rather than polling forever. Measuring only on change keeps this to a
+   * handful of renders instead of one per frame.
    */
   useEffect(() => {
-    if (!step?.requiresDrawer) return;
-    let raf = requestAnimationFrame(() => {
-      raf = requestAnimationFrame(() => measureRef.current());
-    });
+    if (!step) return;
+    let raf = 0;
+    let previous = '';
+    let stableFrames = 0;
+    const deadline = (typeof performance !== 'undefined' ? performance.now() : Date.now()) + 1000;
+
+    const tick = () => {
+      const viewport = { width: window.innerWidth, height: window.innerHeight };
+      const resolved = resolveTarget(step, viewport);
+      const signature = resolved
+        ? JSON.stringify(rectOf(resolved.element))
+        : 'none';
+
+      if (signature !== previous) {
+        previous = signature;
+        stableFrames = 0;
+        measureRef.current();
+      } else {
+        stableFrames += 1;
+      }
+
+      const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      if (stableFrames < 3 && now < deadline) raf = requestAnimationFrame(tick);
+    };
+
+    raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
   }, [step, drawer.isOpen]);
 
@@ -228,8 +273,20 @@ export function GuideTourOverlay({
           reading, and Escape plus the explicit control are the ways out. */}
       <div className={`guide-blocker${targetRect ? '' : ' guide-blocker--plain'}`} aria-hidden="true" />
 
-      {targetRect && (
+      {targetRect && measuredStep === step.id && (
         <div
+          /**
+           * Keyed by step so React MOUNTS a fresh ring for each one.
+           *
+           * `.guide-ring` transitions top/left/width/height, which is right
+           * while a single step's target moves — a scroll, a resize, an
+           * RTL/LTR flip. Across a step change it was wrong: the ring spent
+           * 150ms travelling from the previous element, so for that window it
+           * highlighted something the card was no longer describing. A new
+           * element has no previous value to interpolate from, so it simply
+           * appears on its target.
+           */
+          key={step.id}
           className="guide-ring"
           aria-hidden="true"
           style={{
@@ -277,7 +334,7 @@ export function GuideTourOverlay({
           * "not visible on the current screen" while the ring sits over it is
           * simply a lie to the operator.
           */}
-        {!targetRect && step.anchors.length > 0 && (
+        {!targetRect && measuredStep === step.id && step.anchors.length > 0 && (
           <p className="guide-card__note">{t('guide_target_offscreen', lang)}</p>
         )}
         <p className="guide-card__note">{t('guide_view_only', lang)}</p>

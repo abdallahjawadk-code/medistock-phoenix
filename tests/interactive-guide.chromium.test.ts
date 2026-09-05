@@ -68,6 +68,9 @@ interface OpenOptions {
   theme?: 'light' | 'dark';
   /** A restricted persona proves the entry is not permission-gated. */
   persona?: string;
+  /** QA gallery scene; defaults to the shell. `statistics` renders the REAL
+   *  «الإحصائيات» screen so its guide steps have their true targets. */
+  scene?: string;
 }
 
 async function openShell(options: OpenOptions) {
@@ -89,7 +92,8 @@ async function openShell(options: OpenOptions) {
 
   await page.goto(
     `${baseUrl}?qa=1&persona=${options.persona ?? 'super_admin'}`
-      + `&lang=${options.lang}&theme=${options.theme ?? 'light'}&scene=shell`,
+      + `&lang=${options.lang}&theme=${options.theme ?? 'light'}`
+      + `&scene=${options.scene ?? 'shell'}`,
     { waitUntil: 'load' },
   );
   await page.locator('.premium-topbar').waitFor({ state: 'visible' });
@@ -190,6 +194,41 @@ async function expectAnchored(page: Page, stepId: string) {
   const card = await page.locator('.guide-card').innerText();
   expect(card).not.toContain('هذا الجزء غير ظاهر على الشاشة الحالية');
   expect(card).not.toContain('This part is not visible on the current screen');
+}
+
+/**
+ * The highlight ring ends up ON its target — asserted on the SETTLED position.
+ *
+ * Two distinct things move here, and conflating them is what made the first
+ * version of this assertion flaky in CI while passing locally:
+ *
+ *   • the drawer slides in over ~200ms, so the target itself is still moving
+ *     for the first few frames after its step becomes current, and
+ *   • the ring transitions its own geometry over 150ms.
+ *
+ * The guarantee worth asserting is where the highlight COMES TO REST, so this
+ * polls until the offset stops changing rather than sampling once. The
+ * threshold is 2px, not the 12px it started at: with the engine re-measuring
+ * until the target settles, the measured offset is exactly 0 in both axes, and
+ * a loose bound would have hidden the 6px staleness that investigation found.
+ */
+async function expectRingOverTarget(page: Page, targetSelector: string) {
+  const offset = async () => page.evaluate(selector => {
+    const ring = document.querySelector('.guide-ring');
+    const target = document.querySelector(selector);
+    if (!ring || !target) return null;
+    const r = ring.getBoundingClientRect();
+    const t = target.getBoundingClientRect();
+    return Math.max(
+      Math.abs((r.x + r.width / 2) - (t.x + t.width / 2)),
+      Math.abs((r.y + r.height / 2) - (t.y + t.height / 2)),
+    );
+  }, targetSelector);
+
+  await expect.poll(offset, { timeout: 10_000 }).toBeLessThanOrEqual(2);
+  // ...and it STAYS there; a value caught mid-animation would drift away again.
+  await page.waitForTimeout(250);
+  expect(await offset()).toBeLessThanOrEqual(2);
 }
 
 /** Every rectangle the guide paints must sit inside the viewport. */
@@ -323,6 +362,45 @@ describe('IG-1.1 — responsive guide acceptance', () => {
       }
     }, 120_000);
 
+  it.each([
+    ['ar', 'الإحصائيات'],
+    ['en', 'Statistics'],
+  ] as const)('highlights the REAL «%s» screen header, not just its copy', async (lang, label) => {
+    /**
+     * The terminology case above proves the WORDS. This proves the step lands
+     * on the screen those words describe: the QA gallery's `statistics` scene
+     * renders the real RAC-3 Command Center against migration 199's read
+     * contract, so `guide.dashboard.context.header` is the screen's own scope
+     * band and not a stand-in.
+     *
+     * It also closes the loop on the rename: the screen titles itself with the
+     * same word the guide now uses.
+     */
+    const { context, page } = await openShell({ lang, viewport: DESKTOP, scene: 'statistics' });
+    try {
+      await page.locator('.rac3[data-rac3-state="ready"]').waitFor({ state: 'visible' });
+      // The screen calls itself what the guide calls it.
+      expect(await page.locator('.rac3-header__title').innerText()).toBe(label);
+
+      await openTour(page);
+      await goToStep(page, 'dashboard.context');
+      await expectAnchored(page, 'dashboard.context');
+      expect(await page.locator('.guide-card__title').innerText()).toBe(label);
+      await expectRingOverTarget(page, '[data-guide-id="guide.dashboard.context.header"]');
+
+      // ...and the two panels beside it anchor to their real targets too.
+      await goToStep(page, 'dashboard.kpis');
+      await expectAnchored(page, 'dashboard.kpis');
+      await expectRingOverTarget(page, '[data-guide-id="guide.dashboard.overview.kpis"]');
+
+      await goToStep(page, 'dashboard.signals');
+      await expectAnchored(page, 'dashboard.signals');
+      await expectRingOverTarget(page, '[data-guide-id="guide.dashboard.signals.panel"]');
+    } finally {
+      await closeContext(context);
+    }
+  }, 150_000);
+
   /* ── B. the navigation model ─────────────────────────────────────────── */
 
   for (const viewport of [PHONE, PHONE_WIDE]) {
@@ -350,6 +428,7 @@ describe('IG-1.1 — responsive guide acceptance', () => {
         await page.locator(DRAWER_NAV).waitFor({ state: 'visible' });
         await expectAnchored(page, 'shell.navigation.all');
         expect(await page.locator('.guide-ring').count()).toBe(1);
+        await expectRingOverTarget(page, DRAWER_NAV);
         expect(await page.locator('.guide-card__title').innerText()).toBe('جميع الشاشات');
 
         // The desktop step never appears here.
@@ -426,15 +505,8 @@ describe('IG-1.1 — responsive guide acceptance', () => {
         expect(cardText).not.toContain('This part is not visible on the current screen');
         expect(await page.locator('.guide-card__title').innerText()).toBe(label);
 
-        // The ring really is over the entry.
-        const ring = await page.locator('.guide-ring').boundingBox();
-        const box = await entry.boundingBox();
-        expect(ring).not.toBeNull();
-        expect(box).not.toBeNull();
-        const r = ring as { x: number; y: number; width: number; height: number };
-        const b = box as { x: number; y: number; width: number; height: number };
-        expect(Math.abs((r.x + r.width / 2) - (b.x + b.width / 2))).toBeLessThan(12);
-        expect(Math.abs((r.y + r.height / 2) - (b.y + b.height / 2))).toBeLessThan(12);
+        // The ring really is over the entry, once the drawer has stopped moving.
+        await expectRingOverTarget(page, DRAWER_HELP);
 
         // Exactly one entry and one overlay.
         expect(await page.locator(DRAWER_HELP).count()).toBe(1);
