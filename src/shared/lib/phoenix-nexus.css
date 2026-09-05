@@ -311,6 +311,44 @@ html body {
   font-weight: 700;
 }
 
+/* INTERACTIVE-GUIDE-IG1 — a shell control that NAMES ITSELF.
+   `.nexus-control` is built for a single glyph, which is correct for the bell,
+   the theme toggle and the language chip: each is a convention an operator
+   already knows. Guide & Help is not, and shipping it as a bare "i" made it
+   present but unfindable on desktop — the defect owner acceptance caught.
+   This variant keeps the same 44px hit area and the same visual language, and
+   adds the translated label beside the icon. */
+.nexus-control--labelled {
+  grid-auto-flow: column;
+  align-items: center;
+  gap: 7px;
+  padding-inline: 12px;
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.nexus-control__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Below 1024px the desktop shell still shows the sidebar (the phone layout
+   starts at 767px), but the topbar has real competition for width from the
+   screen title. The label is dropped there and the control falls back to the
+   glyph it started as — `aria-label` and `title` are rendered unconditionally,
+   so the accessible name and the tooltip are unaffected by this fallback. */
+@media (max-width: 1023px) {
+  .nexus-control--labelled {
+    padding-inline: 0;
+    gap: 0;
+  }
+
+  .nexus-control__label {
+    display: none;
+  }
+}
+
 .nexus-shell .premium-drawer-backdrop {
   background: rgba(3, 10, 20, .66);
   backdrop-filter: blur(7px);

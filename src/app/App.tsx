@@ -6,6 +6,11 @@ import {
   persistThemePreference,
   readThemePreference,
 } from '@/shared/lib/themePreference';
+import {
+  applyLanguageToDocument,
+  persistLanguagePreference,
+  readLanguagePreference,
+} from '@/shared/lib/languagePreference';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
 
 /**
@@ -97,6 +102,53 @@ function ThemePreferenceBridge({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
+/**
+ * INTERACTIVE-GUIDE-IG1 — the language counterpart of ThemePreferenceBridge.
+ *
+ * AppContext starts every mount at Arabic and keeps `lang` in memory only, so
+ * a refresh discarded an English operator's choice. This reconciles that
+ * in-memory state with the validated browser preference in a layout effect,
+ * before paint, then persists each real language transition — the SAME shape
+ * as the theme bridge directly above, deliberately, so there is one pattern
+ * for "AppContext owns the live value, storage only remembers it".
+ *
+ * AppContext stays the single owner of `lang`: nothing here introduces a
+ * second source of truth, and the interactive guide reads that one value
+ * rather than carrying a language selector of its own.
+ *
+ * UI-only: no account, profile or database state is involved, and a storage
+ * failure never makes the application unavailable.
+ *
+ * Exported so the canonical persistence path can be proven END TO END —
+ * `AppContext.setLang` → this bridge → `persistLanguagePreference` → the one
+ * storage key — against the real provider rather than a stand-in. The guide's
+ * own language control calls that same canonical setter and nothing else, so
+ * this is the composition its persistence proof has to exercise. `<App />`
+ * itself cannot serve: it renders the authenticated shell through a lazy
+ * chunk behind a real session.
+ */
+export function LanguagePreferenceBridge({ children }: { children: ReactNode }) {
+  const { lang, setLang } = useApp();
+  const [initialLang] = useState(readLanguagePreference);
+  const hydratedRef = useRef(false);
+  const setLangRef = useRef(setLang);
+  setLangRef.current = setLang;
+
+  useLayoutEffect(() => {
+    if (!hydratedRef.current && lang !== initialLang) {
+      applyLanguageToDocument(initialLang);
+      setLangRef.current(initialLang);
+      return;
+    }
+
+    hydratedRef.current = true;
+    applyLanguageToDocument(lang);
+    persistLanguagePreference(lang);
+  }, [initialLang, lang]);
+
+  return <>{children}</>;
+}
+
 function AppInner({ qid }: { qid: string | null }) {
   // ── Anon public QR scan view — bypasses auth entirely, own lazy chunk ──
   if (qid) {
@@ -130,7 +182,9 @@ export function App() {
   return (
     <AppProvider skipAuthBootstrap={!!qid}>
       <ThemePreferenceBridge>
-        <AppInner qid={qid} />
+        <LanguagePreferenceBridge>
+          <AppInner qid={qid} />
+        </LanguagePreferenceBridge>
       </ThemePreferenceBridge>
     </AppProvider>
   );

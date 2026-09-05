@@ -3183,6 +3183,43 @@ export const T: Dict = {
   e_lift_reason_required:       { ar: 'سبب رفع الإيقاف مطلوب.',                    en: 'A reason for lifting is required.' },
   e_central_item_not_found:     { ar: 'المادة غير موجودة في قائمة الأصناف المركزية.', en: 'Material not found in the central item list.' },
   e_distribution_point_not_in_organization: { ar: 'المنفذ المحدد لا ينتمي لهذه المؤسسة.', en: 'The selected outlet does not belong to this organization.' },
+  /* ── INTERACTIVE-GUIDE-IG1 — Guide & Help chrome ──────────────────────────
+     The guide's CHROME lives here, in the canonical registry, because the
+     entry control is present on every authenticated screen. The guide's tour
+     CONTENT does not: it lives in the versioned guide registry
+     (src/features/guide/guide.registry.ts), authored in the same {ar,en}
+     shape and resolved the same way, but reached only through the lazy
+     import so that an operator who never opens the guide never downloads a
+     tour (AD-07). Keep that split when IG-2 and later waves add copy. ── */
+  guide_entry:            { ar: 'الدليل والمساعدة',            en: 'Guide & Help' },
+  guide_entry_aria:       { ar: 'فتح الدليل والمساعدة',        en: 'Open Guide & Help' },
+  guide_center_title:     { ar: 'الدليل والمساعدة',            en: 'Guide & Help' },
+  guide_center_intro:     { ar: 'جولات قصيرة تشرح البرنامج. الدليل للشرح والمشاهدة فقط ولا ينفّذ أي إجراء.', en: 'Short tours that explain the application. The guide is explanation only — it performs no action.' },
+  guide_center_loading:   { ar: 'جارٍ تحميل الدليل…',          en: 'Loading the guide…' },
+  guide_no_tours:         { ar: 'لا توجد جولات متاحة لصلاحياتك حاليًا.', en: 'No tours are available for your permissions right now.' },
+  guide_start:            { ar: 'ابدأ الجولة',                 en: 'Start tour' },
+  guide_resume:           { ar: 'استئناف',                     en: 'Resume' },
+  guide_restart:          { ar: 'إعادة من البداية',            en: 'Restart' },
+  guide_reset_progress:   { ar: 'مسح تقدّم الدليل',            en: 'Reset guide progress' },
+  guide_reset_done:       { ar: 'تم مسح تقدّم الدليل.',        en: 'Guide progress has been reset.' },
+  guide_completed:        { ar: 'مكتملة',                      en: 'Completed' },
+  guide_next:             { ar: 'التالي',                      en: 'Next' },
+  guide_back:             { ar: 'السابق',                      en: 'Back' },
+  guide_skip:             { ar: 'تخطّي الجولة',                en: 'Skip tour' },
+  guide_finish:           { ar: 'إنهاء',                       en: 'Finish' },
+  guide_close:            { ar: 'إغلاق الدليل',                en: 'Close the guide' },
+  guide_step_position:    { ar: 'الخطوة {current} من {total}', en: 'Step {current} of {total}' },
+  guide_view_only:        { ar: 'شرح ومشاهدة فقط — لا يُنفَّذ أي إجراء من الدليل.', en: 'Explanation only — the guide performs no action.' },
+  guide_target_offscreen: { ar: 'هذا الجزء غير ظاهر على الشاشة الحالية، والشرح معروض هنا.', en: 'This part is not visible on the current screen, so the explanation is shown here.' },
+  guide_region_label:     { ar: 'الدليل التفاعلي',             en: 'Interactive guide' },
+  /* The guide's own entry to the APPLICATION language switch. It is not a
+     guide-language selector: it calls AppContext's canonical `toggleLang`,
+     the same setter the topbar control calls, and persists through the same
+     bridge and the same storage key. It exists because the guide is strictly
+     modal while a tour runs, which puts the topbar control out of reach — the
+     safe answer is to offer the same action inside the guide's own surface,
+     not to open a hole in the blocking layer. */
+  guide_change_app_language: { ar: 'تغيير لغة البرنامج',          en: 'Change application language' },
 };
 
 export function t(key: string, lang: Lang): string {

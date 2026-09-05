@@ -2,6 +2,7 @@ import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { roleLabelKey } from '@/shared/lib/roles';
 import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
+import { GUIDE_ANCHORS, guideAnchor } from '@/features/guide/guide.anchors';
 import type { CommandCenterScopeKind } from '@/shared/supabase/services/command-center.service';
 
 interface Props {
@@ -33,7 +34,7 @@ export function CommandCenterHeader({ scopeKind, refreshing, onRefresh }: Props)
   const displayName = profile?.full_name?.trim() ?? '';
 
   return (
-    <header className="rac3-header">
+    <header {...guideAnchor(GUIDE_ANCHORS.dashboardContextHeader)} className="rac3-header">
       <div className="rac3-header__identity">
         <p className="rac3-header__kicker">
           {scopeKind ? t(`rac3_scope_${scopeKind}`, lang) : t('rac3_scope_pending', lang)}

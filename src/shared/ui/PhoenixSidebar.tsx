@@ -4,6 +4,7 @@ import { t } from '@/shared/i18n/strings';
 import { roleLabelKey } from '@/shared/lib/roles';
 import { PhoenixIcon, type PhoenixIconName } from './PhoenixIcon';
 import { PhoenixMark } from './PhoenixMark';
+import { GUIDE_ANCHORS, guideAnchor } from '@/features/guide/guide.anchors';
 
 interface NavItem {
   screen: number;
@@ -125,7 +126,7 @@ export function PhoenixSidebar({ currentScreen, onNavigate, onLogout }: Props) {
       </div>
 
       {/* Nav */}
-      <nav style={{ flex: 1, padding: '12px 10px', display: 'flex', flexDirection: 'column', gap: '2px' }} aria-label={t('shell_primary_nav', lang)}>
+      <nav {...guideAnchor(GUIDE_ANCHORS.shellNavigationRail)} style={{ flex: 1, padding: '12px 10px', display: 'flex', flexDirection: 'column', gap: '2px' }} aria-label={t('shell_primary_nav', lang)}>
         {primaryItems.map(item => {
           const s = ns(item.screen);
           return (

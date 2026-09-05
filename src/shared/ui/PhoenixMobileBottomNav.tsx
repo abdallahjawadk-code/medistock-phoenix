@@ -2,6 +2,7 @@ import { useApp } from '@/app/AppContext';
 import { projectNavigation } from '@/shared/authz/nav-projection';
 import { t } from '@/shared/i18n/strings';
 import { PhoenixIcon, type PhoenixIconName } from './PhoenixIcon';
+import { GUIDE_ANCHORS, guideAnchor } from '@/features/guide/guide.anchors';
 
 // RESTORE-AVAILABILITY-EDITOR-HIDE-INTAKE-A: nav_editor is intentionally
 // visible while the frozen intake screen remains hidden from navigation.
@@ -47,7 +48,7 @@ export function PhoenixMobileBottomNav({ currentScreen, onNavigate }: Props) {
   });
 
   return (
-    <nav className="premium-bottom-nav" style={{
+    <nav {...guideAnchor(GUIDE_ANCHORS.shellNavigationBottom)} className="premium-bottom-nav" style={{
       position: 'fixed',
       bottom: 0,
       insetInlineStart: 0,
