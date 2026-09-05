@@ -95,6 +95,62 @@ describe('Guide & Help entry placement', () => {
     expect(screen.getByRole('button', { name: 'Open Guide & Help' })).toBeInTheDocument();
   });
 
+  /**
+   * The regression for the owner acceptance failure, at the cheapest layer.
+   *
+   * The entry first shipped as a bare glyph. It was present, visible and
+   * clickable on desktop — and unfindable, because nothing on it said what it
+   * was. Presence is therefore not what these assert: the control must carry
+   * its own translated NAME as rendered text. The browser suite proves the
+   * same thing against real layout at 1280, 1440 and 1920.
+   */
+  it('carries its translated name as visible text on desktop', () => {
+    render(<TopbarHarness isMobile={false} />);
+    const entry = screen.getByRole('button', { name: 'Open Guide & Help' });
+    const label = entry.querySelector('.nexus-control__label');
+    expect(label).not.toBeNull();
+    expect(label).toHaveTextContent('Guide & Help');
+    // WCAG 2.5.3: the accessible name contains the visible label.
+    expect(entry.getAttribute('aria-label')).toContain('Guide & Help');
+  });
+
+  it('names itself in Arabic when the application is Arabic', () => {
+    appState = { ...appState, lang: 'ar', dir: 'rtl' };
+    render(<TopbarHarness isMobile={false} />);
+    const entry = screen.getByRole('button', { name: 'فتح الدليل والمساعدة' });
+    expect(entry.querySelector('.nexus-control__label')).toHaveTextContent('الدليل والمساعدة');
+    expect(entry.getAttribute('aria-label')).toContain('الدليل والمساعدة');
+  });
+
+  it('keeps a tooltip so the constrained icon-only fallback still identifies itself', () => {
+    // Below 1024px the stylesheet drops the label; `title` and `aria-label`
+    // are rendered unconditionally so that fallback is never anonymous.
+    render(<TopbarHarness isMobile={false} />);
+    const entry = screen.getByRole('button', { name: 'Open Guide & Help' });
+    expect(entry.getAttribute('title')).toContain('Guide & Help');
+  });
+
+  it('offers exactly one entry on desktop and one on a phone, never two', () => {
+    const desktop = render(<TopbarHarness isMobile={false} />);
+    expect(document.querySelectorAll('[data-guide-id="guide.shell.topbar.help"]')).toHaveLength(1);
+    expect(document.querySelectorAll('[data-guide-id="guide.shell.drawer.help"]')).toHaveLength(0);
+    desktop.unmount();
+
+    render(<DrawerHarness />);
+    expect(document.querySelectorAll('[data-guide-id="guide.shell.topbar.help"]')).toHaveLength(0);
+    expect(document.querySelectorAll('[data-guide-id="guide.shell.drawer.help"]')).toHaveLength(1);
+  });
+
+  it('is offered to an operator holding no permissions at all', () => {
+    /**
+     * Discoverability is not permission-gated. Permissions filter the guide's
+     * CONTENT — see guide.permissions.ts — never the way in.
+     */
+    appState = { ...appState, myPermissions: new Set<string>(), role: 'outlet_officer' };
+    render(<TopbarHarness isMobile={false} />);
+    expect(screen.getByRole('button', { name: 'Open Guide & Help' })).toBeInTheDocument();
+  });
+
   it('is ABSENT from the mobile topbar, which has no room for it', () => {
     render(<TopbarHarness isMobile />);
     expect(screen.queryByRole('button', { name: 'Open Guide & Help' })).toBeNull();

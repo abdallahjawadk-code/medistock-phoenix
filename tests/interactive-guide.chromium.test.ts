@@ -59,6 +59,10 @@ interface OpenOptions {
   viewport: { width: number; height: number };
   hasTouch?: boolean;
   reducedMotion?: 'reduce' | 'no-preference';
+  /** Both themes are part of desktop acceptance; defaults to light. */
+  theme?: 'light' | 'dark';
+  /** A restricted persona proves the entry is not permission-gated. */
+  persona?: string;
 }
 
 async function openShell(options: OpenOptions) {
@@ -79,7 +83,8 @@ async function openShell(options: OpenOptions) {
   });
 
   await page.goto(
-    `${baseUrl}?qa=1&persona=super_admin&lang=${options.lang}&theme=light&scene=shell`,
+    `${baseUrl}?qa=1&persona=${options.persona ?? 'super_admin'}`
+      + `&lang=${options.lang}&theme=${options.theme ?? 'light'}&scene=shell`,
     { waitUntil: 'load' },
   );
   await page.locator('.premium-topbar').waitFor({ state: 'visible' });
@@ -170,6 +175,12 @@ afterAll(async () => {
 const DESKTOP = { width: 1440, height: 900 };
 const TABLET = { width: 834, height: 1112 };
 const PHONE = { width: 375, height: 812 };
+/** The three desktop widths owner acceptance is measured at. */
+const DESKTOP_WIDTHS = [
+  { width: 1280, height: 720 },
+  { width: 1440, height: 900 },
+  { width: 1920, height: 1080 },
+] as const;
 
 describe('Guide & Help — entry placement across viewports', () => {
   it('offers the entry in the desktop topbar', async () => {
@@ -206,6 +217,251 @@ describe('Guide & Help — entry placement across viewports', () => {
       await closeContext(context);
     }
   }, 60_000);
+});
+
+/**
+ * INTERACTIVE-GUIDE-IG1 — the desktop discoverability regression.
+ *
+ * Owner acceptance found Guide & Help on mobile and not on desktop. The
+ * control was in the DOM the whole time — present, visible, unclipped,
+ * hit-testable and gated by nothing — so every assertion this suite made about
+ * it passed while the feature was, in the only sense that matters, missing.
+ *
+ * These cases therefore assert what a person can FIND, not what a selector can
+ * reach: that the control renders its own translated name, that the name is on
+ * screen and inside the topbar, and that it stays that way across the widths,
+ * languages, themes and zoom levels acceptance is measured at.
+ */
+describe('Guide & Help — desktop entry is discoverable', () => {
+  const AR_LABEL = 'الدليل والمساعدة';
+  const EN_LABEL = 'Guide & Help';
+
+  /** What the operator can actually read on the control, and where it sits. */
+  async function inspectEntry(page: Page) {
+    return page.evaluate(selector => {
+      const el = document.querySelector(selector) as HTMLElement | null;
+      if (!el) return null;
+      const box = el.getBoundingClientRect();
+      const bar = document.querySelector('.premium-topbar') as HTMLElement;
+      const barBox = bar.getBoundingClientRect();
+      const style = getComputedStyle(el);
+      const labelNode = el.querySelector('.nexus-control__label') as HTMLElement | null;
+      const labelStyle = labelNode ? getComputedStyle(labelNode) : null;
+      const centre = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+      const hit = document.elementFromPoint(centre.x, centre.y);
+      return {
+        visibleText: (labelNode && labelStyle?.display !== 'none' ? labelNode.textContent : '')?.trim() ?? '',
+        accessibleName: el.getAttribute('aria-label') ?? '',
+        tooltip: el.getAttribute('title') ?? '',
+        width: Math.round(box.width),
+        height: Math.round(box.height),
+        insideTopbar: bar.contains(el),
+        insideViewport: box.left >= -0.5 && box.top >= -0.5
+          && box.right <= window.innerWidth + 0.5
+          && box.bottom <= window.innerHeight + 0.5,
+        withinBar: box.left >= barBox.left - 0.5 && box.right <= barBox.right + 0.5,
+        painted: style.visibility === 'visible' && style.display !== 'none' && Number(style.opacity) > 0.99,
+        topmostAtCentre: !!hit && el.contains(hit),
+        barScrolls: bar.scrollWidth > bar.clientWidth + 1,
+      };
+    }, HELP_ENTRY);
+  }
+
+  for (const viewport of DESKTOP_WIDTHS) {
+    for (const [lang, label] of [['ar', AR_LABEL], ['en', EN_LABEL]] as const) {
+      it(`names itself at ${viewport.width}x${viewport.height} in ${lang}`, async () => {
+        const { context, page } = await openShell({ lang, viewport });
+        try {
+          const entry = await inspectEntry(page);
+          expect(entry).not.toBeNull();
+          const found = entry as NonNullable<typeof entry>;
+          // The defect, stated as an assertion: the control must say what it is.
+          expect(found.visibleText).toBe(label);
+          expect(found.accessibleName).toContain(label);
+          expect(found.tooltip).toContain(label);
+          // ...in the global topbar action area, fully on screen and on top.
+          expect(found.insideTopbar).toBe(true);
+          expect(found.insideViewport).toBe(true);
+          expect(found.withinBar).toBe(true);
+          expect(found.painted).toBe(true);
+          expect(found.topmostAtCentre).toBe(true);
+          // A labelled control is materially wider than the bare 44px glyph
+          // it replaced, and it must not push the topbar into overflow.
+          expect(found.width).toBeGreaterThan(60);
+          expect(found.height).toBeGreaterThanOrEqual(44);
+          expect(found.barScrolls).toBe(false);
+        } finally {
+          await closeContext(context);
+        }
+      }, 90_000);
+    }
+  }
+
+  it('renders in dark theme too', async () => {
+    for (const lang of ['ar', 'en'] as const) {
+      const { context, page } = await openShell({ lang, viewport: DESKTOP, theme: 'dark' });
+      try {
+        const entry = await inspectEntry(page);
+        expect(entry?.visibleText).toBe(lang === 'ar' ? AR_LABEL : EN_LABEL);
+        expect(entry?.painted).toBe(true);
+        expect(entry?.topmostAtCentre).toBe(true);
+      } finally {
+        await closeContext(context);
+      }
+    }
+  }, 90_000);
+
+  it('opens the Help Center when clicked, at every desktop width', async () => {
+    for (const viewport of DESKTOP_WIDTHS) {
+      const { context, page } = await openShell({ lang: 'en', viewport });
+      try {
+        await page.locator(HELP_ENTRY).click();
+        await page.locator('[data-guide-surface="center"]').waitFor({ state: 'visible' });
+        expect(await page.locator('#guide-center-title').innerText()).toBe('Guide & Help');
+      } finally {
+        await closeContext(context);
+      }
+    }
+  }, 120_000);
+
+  it('renders EXACTLY ONE entry at every breakpoint, desktop and phone', async () => {
+    const viewports = [...DESKTOP_WIDTHS, TABLET, PHONE];
+    for (const viewport of viewports) {
+      const { context, page } = await openShell({
+        lang: 'ar', viewport, hasTouch: viewport.width < 768,
+      });
+      try {
+        const topbarEntries = await page.locator(HELP_ENTRY).count();
+        // The drawer entry only exists while the drawer is open, so open it
+        // wherever the shell offers one and count both surfaces together.
+        const hasDrawer = await page.locator('.premium-drawer-trigger').count() > 0;
+        if (hasDrawer) {
+          await page.locator('.premium-drawer-trigger').click();
+          await page.locator('#phoenix-mobile-drawer').waitFor({ state: 'visible' });
+        }
+        const drawerEntries = await page.locator('[data-guide-id="guide.shell.drawer.help"]').count();
+        expect(
+          topbarEntries + drawerEntries,
+          `${viewport.width}px offered ${topbarEntries} topbar + ${drawerEntries} drawer entries`,
+        ).toBe(1);
+      } finally {
+        await closeContext(context);
+      }
+    }
+  }, 150_000);
+
+  it('leaves the phone entry exactly where it was — in the drawer, named', async () => {
+    const { context, page } = await openShell({ lang: 'ar', viewport: PHONE, hasTouch: true });
+    try {
+      // Still absent from the crowded phone topbar.
+      expect(await page.locator(HELP_ENTRY).count()).toBe(0);
+      await page.locator('.premium-drawer-trigger').click();
+      const drawerEntry = page.locator('[data-guide-id="guide.shell.drawer.help"]');
+      await drawerEntry.waitFor({ state: 'visible' });
+      expect(await drawerEntry.innerText()).toContain(AR_LABEL);
+      await drawerEntry.tap();
+      await page.locator('[data-guide-surface="center"]').waitFor({ state: 'visible' });
+    } finally {
+      await closeContext(context);
+    }
+  }, 90_000);
+
+  it('is reachable by Tab from the page itself, and opens on Enter', async () => {
+    const { context, page } = await openShell({ lang: 'en', viewport: DESKTOP });
+    try {
+      // Walked to with real Tab presses rather than `.focus()`, because that
+      // is what decides whether `:focus-visible` applies — a control an
+      // operator can reach but cannot SEE they have reached is the same class
+      // of defect this suite exists for.
+      await page.locator('body').click({ position: { x: 5, y: 5 } });
+      let reached = false;
+      for (let i = 0; i < 40 && !reached; i += 1) {
+        await page.keyboard.press('Tab');
+        reached = await page.evaluate(
+          selector => document.activeElement === document.querySelector(selector),
+          HELP_ENTRY,
+        );
+      }
+      expect(reached, 'Tab never reached the Guide & Help entry').toBe(true);
+      expect(await page.locator(HELP_ENTRY).evaluate(node => node.matches(':focus-visible'))).toBe(true);
+
+      await page.keyboard.press('Enter');
+      await page.locator('[data-guide-surface="center"]').waitFor({ state: 'visible' });
+    } finally {
+      await closeContext(context);
+    }
+  }, 90_000);
+
+  it('stays visible and unclipped at 200% zoom', async () => {
+    /**
+     * 200% zoom halves the CSS viewport. At 640px the shell is in its phone
+     * layout, where the entry legitimately moves to the drawer; at 960px it is
+     * still desktop, and the entry must survive there — which is exactly the
+     * band where the label is dropped and the glyph fallback takes over.
+     */
+    for (const viewport of [{ width: 960, height: 540 }, { width: 720, height: 450 }]) {
+      const { context, page } = await openShell({ lang: 'ar', viewport });
+      try {
+        const isDesktopLayout = viewport.width >= 768;
+        if (isDesktopLayout) {
+          const entry = await inspectEntry(page);
+          expect(entry, `no entry at ${viewport.width}px`).not.toBeNull();
+          const found = entry as NonNullable<typeof entry>;
+          expect(found.insideViewport).toBe(true);
+          expect(found.withinBar).toBe(true);
+          expect(found.painted).toBe(true);
+          expect(found.barScrolls).toBe(false);
+          // The label may be dropped here, but the name and tooltip may not be.
+          expect(found.accessibleName).toContain(AR_LABEL);
+          expect(found.tooltip).toContain(AR_LABEL);
+          expect(found.height).toBeGreaterThanOrEqual(44);
+        } else {
+          expect(await page.locator(HELP_ENTRY).count()).toBe(0);
+          await page.locator('.premium-drawer-trigger').click();
+          await page.locator('[data-guide-id="guide.shell.drawer.help"]').waitFor({ state: 'visible' });
+        }
+      } finally {
+        await closeContext(context);
+      }
+    }
+  }, 120_000);
+
+  it('is open to an operator whose permissions hide most of the content', async () => {
+    /**
+     * Requirement, stated directly: permissions filter the guide's CONTENT,
+     * never the way in. `outlet_officer` holds no `dashboard.view`, so the
+     * Command Center steps are absent from its tour — and the entry is exactly
+     * as present, as named and as clickable as it is for a super admin.
+     */
+    const { context, page } = await openShell({
+      lang: 'en', viewport: DESKTOP, persona: 'outlet_officer',
+    });
+    try {
+      const entry = await inspectEntry(page);
+      expect(entry?.visibleText).toBe(EN_LABEL);
+      expect(entry?.painted).toBe(true);
+
+      await page.locator(HELP_ENTRY).click();
+      await page.locator('[data-guide-surface="center"]').waitFor({ state: 'visible' });
+      await startTour(page);
+
+      const seen: string[] = [];
+      for (;;) {
+        const state = await currentStep(page);
+        seen.push(state.step as string);
+        if (state.step === 'closing') break;
+        await advance(page);
+      }
+      // Content narrowed...
+      expect(seen.some(id => id.startsWith('dashboard.'))).toBe(false);
+      expect(seen.length).toBeLessThan(9);
+      // ...but the shell steps this operator IS entitled to are all there.
+      expect(seen).toContain('shell.navigation');
+      expect(seen).toContain('help.entry');
+    } finally {
+      await closeContext(context);
+    }
+  }, 120_000);
 });
 
 describe.each([

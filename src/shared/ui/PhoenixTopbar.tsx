@@ -69,8 +69,9 @@ export function PhoenixTopbar({ title, isMobile, menuOpen, onMenuClick, onOpenGu
             its width with the menu trigger, the screen title and these three
             controls, so a fourth here would take width from the title. On a
             phone the entry lives in the drawer, the shell's existing overflow
-            surface, beside My Account. */}
-        {!isMobile && onOpenGuide && <GuideEntryButton onOpen={onOpenGuide} variant="compact" />}
+            surface, beside My Account — so there is exactly one entry at every
+            breakpoint, never two. */}
+        {!isMobile && onOpenGuide && <GuideEntryButton onOpen={onOpenGuide} variant="topbar" />}
 
         <button
           onClick={toggleLang}
