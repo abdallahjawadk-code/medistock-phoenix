@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
@@ -17,6 +17,7 @@ import {
 import { guideText, type GuideStep, type GuideTour } from './guide.types';
 import { GuideTourOverlay } from './GuideTourOverlay';
 import { useGuideViewport } from './guide.viewport';
+import { useGuideSurfaceContext } from './guide.surface';
 import type { GuideDrawerController } from './useGuideDrawerStep';
 import { GuideLanguageControl } from './GuideLanguageControl';
 import { useGuideBackgroundInert } from './useGuideBackgroundInert';
@@ -56,14 +57,15 @@ type Mode =
 export function GuideEngine({ currentScreen, onNavigate, drawer, onClose }: Props) {
   const { lang, dir, role, myPermissions, authStatus, session } = useApp();
   const viewport = useGuideViewport();
+  const { surface, capabilities, capabilityState, contextKey } = useGuideSurfaceContext();
   const [progress, setProgress] = useState<GuideProgress>(readGuideProgress);
   const [mode, setMode] = useState<Mode>({ kind: 'center' });
   const [resetNotice, setResetNotice] = useState(false);
   const [panel, setPanel] = useState<HTMLDivElement | null>(null);
 
   const audience = useMemo<GuideAudience>(
-    () => ({ role, permissions: myPermissions }),
-    [role, myPermissions],
+    () => ({ role, permissions: myPermissions, capabilities, capabilityState, surface }),
+    [role, myPermissions, capabilities, capabilityState, surface],
   );
 
   /**
@@ -80,6 +82,23 @@ export function GuideEngine({ currentScreen, onNavigate, drawer, onClose }: Prop
     () => permittedTours(GUIDE_REGISTRY.tours, audience, viewport),
     [audience, viewport],
   );
+
+  /**
+   * IG-2 — a context change invalidates eligibility, never silently reuses it.
+   *
+   * A different organization, warehouse, outlet or tab, a permission read that
+   * is still in flight, or one that failed, all change `contextKey`. When that
+   * happens while a tour is open, the tour is closed back to the Help Center
+   * and the step list is recomputed from scratch. Nothing from the previous
+   * context is carried across or shown: `setMode` drops the step index, and
+   * the Help Center re-renders from the freshly filtered set.
+   */
+  const contextKeyRef = useRef(contextKey);
+  useEffect(() => {
+    if (contextKeyRef.current === contextKey) return;
+    contextKeyRef.current = contextKey;
+    setMode(current => (current.kind === 'tour' ? { kind: 'center' } : current));
+  }, [contextKey]);
 
   /**
    * Losing the session closes the guide.

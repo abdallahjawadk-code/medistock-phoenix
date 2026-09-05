@@ -222,10 +222,23 @@ describe('guide performance boundary (AD-07)', () => {
       }
     }
     expect(offenders).toEqual([]);
-  });
+    // Reads every source file under src/, so its cost grows with the
+    // repository. The default 5s budget is about assertions, not filesystem
+    // IO under a loaded parallel run.
+  }, 60_000);
 
   it('lets the shell import only the tiny, copy-free host and anchor modules', () => {
-    const allowed = new Set(['GuideHost', 'guide.anchors', 'GuideEntryButton']);
+    /**
+     * IG-2 adds `guide.surface`: the shell mounts the provider, and the two
+     * panels publish their scoped answers into it. It is admissible on the
+     * same terms as the others — a context plus two hooks, importing only
+     * React, carrying no tour, no copy and no registry. The lazy-boundary
+     * assertion above still fails if the engine, the registry, the overlay or
+     * the stylesheet is ever reached from outside the guide's own graph.
+     */
+    const allowed = new Set([
+      'GuideHost', 'guide.anchors', 'GuideEntryButton', 'guide.surface',
+    ]);
     const seen = new Set<string>();
     for (const file of collectAllSources(SRC)) {
       const rel = relative(SRC, file).split(sep).join('/');
@@ -239,5 +252,5 @@ describe('guide performance boundary (AD-07)', () => {
     for (const module of seen) {
       expect(allowed.has(module), `the shell imports features/guide/${module}`).toBe(true);
     }
-  });
+  }, 60_000);
 });

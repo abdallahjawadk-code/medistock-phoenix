@@ -37,6 +37,23 @@ export const GUIDE_ANCHORS = {
   shellTopbarHelp:          'guide.shell.topbar.help',
   shellDrawerHelp:          'guide.shell.drawer.help',
 
+  /* ── Inventory Center — Quarantine (IG-2) ── */
+  inventoryTabQuarantine:   'guide.inventory.quarantine.tab',
+  quarantineList:           'guide.quarantine.list.region',
+  quarantineRowIdentity:    'guide.quarantine.row.identity',
+  quarantineRowQuantity:    'guide.quarantine.row.quantity',
+  quarantineReleaseAction:  'guide.quarantine.release.action',
+  quarantineDestroyAction:  'guide.quarantine.destroy.action',
+
+  /* ── Inventory Center — Suspended from Dispensing (IG-2) ── */
+  inventoryTabSuspensions:  'guide.inventory.suspension.tab',
+  suspensionList:           'guide.suspension.list.region',
+  suspensionSuspendAction:  'guide.suspension.create.action',
+  suspensionRowBadge:       'guide.suspension.row.badge',
+  suspensionRowScope:       'guide.suspension.row.scope',
+  suspensionLiftAction:     'guide.suspension.lift.action',
+  suspensionHistory:        'guide.suspension.history.region',
+
   /* ── Command Center (Dashboard pilot) ── */
   dashboardContextHeader:   'guide.dashboard.context.header',
   dashboardOverviewKpis:    'guide.dashboard.overview.kpis',

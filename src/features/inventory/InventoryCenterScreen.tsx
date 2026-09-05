@@ -28,6 +28,8 @@ import { useInventoryReadAffordance } from './useInventoryReadAffordance';
 import { QuarantinePanel } from './QuarantinePanel';
 import { useMaterialDispensingSuspensionPermission } from './useMaterialDispensingSuspensionPermission';
 import { MaterialDispensingSuspensionPanel } from './MaterialDispensingSuspensionPanel';
+import { GUIDE_ANCHORS, guideAnchor } from '@/features/guide/guide.anchors';
+import { useGuideSurface } from '@/features/guide/guide.surface';
 import { useApproveCorrectionPermission } from './useApproveCorrectionPermission';
 import { PendingCorrectionsPanel } from './PendingCorrectionsPanel';
 import { SUPPLY_TYPES, supplyTypeLabelKey } from '@/shared/lib/supply-types';
@@ -159,6 +161,17 @@ export function InventoryCenterScreen({
   const canViewCorrections = canApproveAnyCorrection || hasInventoryReadAffordance;
 
   const [tab, setTab] = useState<Tab>(opensDispatch ? 'dispatch' : 'intake');
+
+  /**
+   * INTERACTIVE-GUIDE-IG2 — tell the guide which screen and tab are open.
+   *
+   * READ-ONLY in this direction: the guide learns where the operator is, and
+   * is given no way to move them. Switching tabs here unmounts the active
+   * panel, which would silently discard a half-filled release or suspension
+   * form, so IG-2's tours are offered only while their own tab is already
+   * open rather than navigating to it.
+   */
+  useGuideSurface(3, tab);
   const [toast, setToast] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
 
@@ -335,6 +348,8 @@ export function InventoryCenterScreen({
             role="tab"
             aria-selected={tab === x.id}
             onClick={() => setTab(x.id)}
+            {...(x.id === 'quarantine' ? guideAnchor(GUIDE_ANCHORS.inventoryTabQuarantine) : {})}
+            {...(x.id === 'suspensions' ? guideAnchor(GUIDE_ANCHORS.inventoryTabSuspensions) : {})}
             className="nexus-it-tab"
             style={{
               padding: '8px 14px', minHeight: '44px', borderRadius: 'var(--r3)',

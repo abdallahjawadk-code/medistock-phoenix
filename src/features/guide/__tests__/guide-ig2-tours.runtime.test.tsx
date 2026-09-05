@@ -1,0 +1,399 @@
+/** @vitest-environment jsdom */
+import '@testing-library/jest-dom/vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { useMemo, useState } from 'react';
+import { GUIDE_ANCHORS } from '../guide.anchors';
+import { GUIDE_REGISTRY, GUIDE_CAPABILITIES } from '../guide.registry';
+import { permittedTours } from '../guide.permissions';
+import { GUIDE_PROGRESS_STORAGE_KEY } from '../guide.progress';
+import {
+  GuideSurfaceProvider,
+  useGuideCapabilities,
+  useGuideSurface,
+  type GuideCapabilityState,
+} from '../guide.surface';
+
+/**
+ * INTERACTIVE-GUIDE-IG2 — the two contextual tours, proven against the rules
+ * that actually govern them.
+ *
+ * The subject here is NOT "does a tour render". It is that eligibility comes
+ * from the scoped answers the panels computed, that a tour is absent — not
+ * disabled, not titled — when it does not apply, and that nothing the guide
+ * does can reach a write path or a business form.
+ */
+
+const rpc = vi.fn(() => Promise.resolve({ data: null, error: null }));
+const from = vi.fn(() => ({ select: vi.fn(() => Promise.resolve({ data: [], error: null })) }));
+vi.mock('@/shared/supabase/client', () => ({
+  supabase: { rpc, from, auth: { signOut: vi.fn() } },
+  supabaseConfigured: true,
+  __installQaSupabaseClient: () => undefined,
+}));
+
+let appState = {
+  lang: 'ar' as 'ar' | 'en',
+  dir: 'rtl' as 'rtl' | 'ltr',
+  theme: 'light' as const,
+  role: 'central_warehouse_manager',
+  myPermissions: new Set<string>(),
+  profile: { id: 'p1', full_name: 'T', role: 'central_warehouse_manager' } as { id: string; full_name: string; role: string } | null,
+  session: { user: { id: 'u1' } } as { user: { id: string } } | null,
+  authStatus: 'authenticated',
+  toggleLang: () => undefined,
+  toggleTheme: () => undefined,
+};
+let notify: (() => void) | null = null;
+
+vi.mock('@/app/AppContext', () => ({ useApp: () => appState }));
+vi.mock('@/shared/ui/PhoenixIcon', () => ({
+  PhoenixIcon: ({ name }: { name: string }) => <span aria-hidden="true" data-icon={name} />,
+}));
+
+import { GuideEngine } from '../GuideEngine';
+
+const INERT_DRAWER = { isAvailable: false, isOpen: false, open: () => undefined, close: () => undefined };
+
+/** The two IG-2 surfaces, with the anchors the registry actually targets. */
+function Surface({ tab, caps, state, scopeKey }: {
+  tab: string;
+  caps: Record<string, boolean>;
+  state: GuideCapabilityState;
+  scopeKey: string;
+}) {
+  useGuideSurface(3, tab);
+  useGuideCapabilities('panel', caps, state, scopeKey);
+  return (
+    <div id="surface">
+      <button data-guide-id={GUIDE_ANCHORS.inventoryTabQuarantine} type="button">q-tab</button>
+      <button data-guide-id={GUIDE_ANCHORS.inventoryTabSuspensions} type="button">s-tab</button>
+      {tab === 'quarantine' && (
+        <div data-guide-id={GUIDE_ANCHORS.quarantineList}>
+          <div data-guide-id={GUIDE_ANCHORS.quarantineRowIdentity}>identity</div>
+          <div data-guide-id={GUIDE_ANCHORS.quarantineRowQuantity}>12</div>
+          <span data-guide-id={GUIDE_ANCHORS.quarantineReleaseAction}>
+            <button type="button" onClick={() => { openedForms.push('release'); }}>release</button>
+          </span>
+          <span data-guide-id={GUIDE_ANCHORS.quarantineDestroyAction}>
+            <button type="button" onClick={() => { openedForms.push('destroy'); }}>destroy</button>
+          </span>
+        </div>
+      )}
+      {tab === 'suspensions' && (
+        <div data-guide-id={GUIDE_ANCHORS.suspensionList}>
+          <div data-guide-id={GUIDE_ANCHORS.suspensionSuspendAction}>
+            <button type="button" onClick={() => { openedForms.push('suspend'); }}>suspend</button>
+          </div>
+          <span data-guide-id={GUIDE_ANCHORS.suspensionRowBadge}>badge</span>
+          <div data-guide-id={GUIDE_ANCHORS.suspensionRowScope}>scope</div>
+          <div data-guide-id={GUIDE_ANCHORS.suspensionLiftAction}>
+            <button type="button" onClick={() => { openedForms.push('lift'); }}>lift</button>
+          </div>
+          <details data-guide-id={GUIDE_ANCHORS.suspensionHistory}><summary>history</summary></details>
+        </div>
+      )}
+    </div>
+  );
+}
+
+let openedForms: string[] = [];
+
+function Harness({
+  tab = 'quarantine',
+  caps = {},
+  state = 'ready' as GuideCapabilityState,
+  scopeKey = 'wh:A',
+  onClose = () => undefined,
+}) {
+  const [, force] = useState(0);
+  notify = () => force(n => n + 1);
+  const drawer = useMemo(() => INERT_DRAWER, []);
+  return (
+    <GuideSurfaceProvider>
+      <Surface tab={tab} caps={caps} state={state} scopeKey={scopeKey} />
+      <GuideEngine currentScreen={3} onNavigate={() => undefined} drawer={drawer} onClose={onClose} />
+    </GuideSurfaceProvider>
+  );
+}
+
+const originalRect = Element.prototype.getBoundingClientRect;
+
+beforeEach(() => {
+  appState = { ...appState, lang: 'ar', dir: 'rtl', myPermissions: new Set<string>() };
+  window.localStorage.clear();
+  openedForms = [];
+  rpc.mockClear();
+  from.mockClear();
+  Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1440 });
+  Object.defineProperty(window, 'innerHeight', { configurable: true, value: 900 });
+  Object.defineProperty(window, 'matchMedia', {
+    configurable: true,
+    value: (q: string) => ({
+      matches: false, media: q, onchange: null,
+      addEventListener: () => undefined, removeEventListener: () => undefined,
+      addListener: () => undefined, removeListener: () => undefined, dispatchEvent: () => false,
+    }),
+  });
+  Element.prototype.getBoundingClientRect = function fake(this: Element) {
+    const guided = this.hasAttribute?.('data-guide-id');
+    const box = guided ? { top: 90, left: 60, width: 140, height: 40 } : { top: 0, left: 0, width: 320, height: 200 };
+    return { ...box, right: box.left + box.width, bottom: box.top + box.height, x: box.left, y: box.top, toJSON: () => box } as DOMRect;
+  };
+  Element.prototype.scrollIntoView = () => undefined;
+});
+
+afterEach(() => {
+  cleanup();
+  notify = null;
+  Element.prototype.getBoundingClientRect = originalRect;
+  window.localStorage.clear();
+  vi.restoreAllMocks();
+});
+
+const ALL_CAPS = {
+  [GUIDE_CAPABILITIES.quarantineView]: true,
+  [GUIDE_CAPABILITIES.quarantineDispose]: true,
+  [GUIDE_CAPABILITIES.suspensionView]: true,
+  [GUIDE_CAPABILITIES.suspensionCreate]: true,
+  [GUIDE_CAPABILITIES.suspensionLift]: true,
+};
+
+async function openCenter() {
+  await waitFor(() => expect(screen.getByRole('dialog', { name: 'الدليل والمساعدة' })).toBeInTheDocument());
+}
+
+function tourTitles(): string[] {
+  return Array.from(document.querySelectorAll('.guide-tour-card__title')).map(n => n.textContent?.trim() ?? '');
+}
+
+async function startTour(title: string) {
+  const card = Array.from(document.querySelectorAll('.guide-tour-card'))
+    .find(n => n.querySelector('.guide-tour-card__title')?.textContent?.includes(title));
+  if (!card) throw new Error(`tour "${title}" is not offered`);
+  const buttons = Array.from(card.querySelectorAll('.guide-tour-card__actions button')) as HTMLElement[];
+  fireEvent.click(buttons[buttons.length - 1]);
+  await waitFor(() => expect(document.querySelector('[data-guide-tour]')).not.toBeNull());
+}
+
+function layer(): HTMLElement {
+  const n = document.querySelector('[data-guide-tour]');
+  if (!n) throw new Error('no overlay');
+  return n as HTMLElement;
+}
+
+function stepIds(caps: Record<string, boolean>, tab: string, tourId: string): string[] {
+  const entry = permittedTours(GUIDE_REGISTRY.tours, {
+    role: appState.role,
+    permissions: appState.myPermissions,
+    capabilities: caps,
+    capabilityState: 'ready',
+    surface: { screen: 3, tab },
+  }, 'desktop').find(e => e.tour.id === tourId);
+  return entry?.steps.map(s => s.id) ?? [];
+}
+
+/* ════════════════════════════════════════════════════════════════════════ */
+
+describe('IG-2 — a tour is offered only on its own surface', () => {
+  it('offers the quarantine tour on the quarantine tab', async () => {
+    render(<Harness tab="quarantine" caps={ALL_CAPS} />);
+    await openCenter();
+    expect(tourTitles()).toContain('الحجر الصحي');
+    expect(tourTitles()).not.toContain('موقوفة الصرف');
+  });
+
+  it('offers the suspension tour on the suspensions tab', async () => {
+    render(<Harness tab="suspensions" caps={ALL_CAPS} />);
+    await openCenter();
+    expect(tourTitles()).toContain('موقوفة الصرف');
+    expect(tourTitles()).not.toContain('الحجر الصحي');
+  });
+
+  it('offers NEITHER on an unrelated tab, and still offers orientation', async () => {
+    render(<Harness tab="stock" caps={ALL_CAPS} />);
+    await openCenter();
+    const titles = tourTitles();
+    expect(titles).not.toContain('الحجر الصحي');
+    expect(titles).not.toContain('موقوفة الصرف');
+    expect(titles.some(t => t.includes('جولة تعريفية'))).toBe(true);
+  });
+});
+
+describe('IG-2 — eligibility comes from the scoped answers, and hides the TOUR', () => {
+  it('does not name the quarantine tour to an operator without the view capability', async () => {
+    render(<Harness tab="quarantine" caps={{}} />);
+    await openCenter();
+    const panel = document.querySelector('.guide-center__panel') as HTMLElement;
+    // Absent entirely — not disabled, not titled, not described.
+    expect(panel.innerHTML).not.toMatch(/الحجر الصحي/);
+    expect(panel.innerHTML).not.toMatch(/quarantine/i);
+  });
+
+  it('does not name the suspension tour without its view capability', async () => {
+    render(<Harness tab="suspensions" caps={{}} />);
+    await openCenter();
+    const panel = document.querySelector('.guide-center__panel') as HTMLElement;
+    expect(panel.innerHTML).not.toMatch(/موقوفة الصرف/);
+    expect(panel.innerHTML).not.toMatch(/suspend/i);
+  });
+
+  it('shows a view-only operator the reading steps and NOT the action steps', async () => {
+    const viewOnly = { [GUIDE_CAPABILITIES.quarantineView]: true };
+    render(<Harness tab="quarantine" caps={viewOnly} />);
+    await openCenter();
+    await startTour('الحجر الصحي');
+
+    const seen: string[] = [];
+    for (let i = 0; i < 20; i += 1) {
+      seen.push(layer().dataset.guideStep as string);
+      if (layer().dataset.guideStep === 'quarantine.closing') break;
+      fireEvent.click(screen.getByRole('button', { name: 'التالي' }));
+      await waitFor(() => expect(layer()).toBeInTheDocument());
+    }
+    expect(seen).toContain('quarantine.list');
+    expect(seen).not.toContain('quarantine.release');
+    expect(seen).not.toContain('quarantine.destroy');
+    expect(seen).toEqual(stepIds(viewOnly, 'quarantine', 'guide.tour.quarantine'));
+  });
+
+  it('separates suspension view / create / lift independently', () => {
+    const view = { [GUIDE_CAPABILITIES.suspensionView]: true };
+    const viewCreate = { ...view, [GUIDE_CAPABILITIES.suspensionCreate]: true };
+    const viewLift = { ...view, [GUIDE_CAPABILITIES.suspensionLift]: true };
+    const id = 'guide.tour.dispensing-suspension';
+
+    expect(stepIds(view, 'suspensions', id)).not.toContain('suspension.create');
+    expect(stepIds(view, 'suspensions', id)).not.toContain('suspension.lift');
+    expect(stepIds(viewCreate, 'suspensions', id)).toContain('suspension.create');
+    expect(stepIds(viewCreate, 'suspensions', id)).not.toContain('suspension.lift');
+    expect(stepIds(viewLift, 'suspensions', id)).toContain('suspension.lift');
+    expect(stepIds(viewLift, 'suspensions', id)).not.toContain('suspension.create');
+  });
+
+  it('admits NOTHING while the scoped answers are still loading', async () => {
+    render(<Harness tab="quarantine" caps={ALL_CAPS} state="loading" />);
+    await openCenter();
+    const panel = document.querySelector('.guide-center__panel') as HTMLElement;
+    expect(panel.innerHTML).not.toMatch(/الحجر الصحي/);
+  });
+
+  it('admits NOTHING when a scoped answer failed', async () => {
+    render(<Harness tab="quarantine" caps={ALL_CAPS} state="error" />);
+    await openCenter();
+    const panel = document.querySelector('.guide-center__panel') as HTMLElement;
+    expect(panel.innerHTML).not.toMatch(/الحجر الصحي/);
+  });
+});
+
+describe('IG-2 — a context change never reuses stale eligibility', () => {
+  it('closes an open tour when the scope changes, showing nothing from before', async () => {
+    const { rerender } = render(<Harness tab="quarantine" caps={ALL_CAPS} scopeKey="wh:A" />);
+    await openCenter();
+    await startTour('الحجر الصحي');
+    expect(layer().dataset.guideTour).toBe('guide.tour.quarantine');
+
+    // A different warehouse: the answers were computed for the previous one.
+    rerender(<Harness tab="quarantine" caps={{}} scopeKey="wh:B" />);
+    await waitFor(() => expect(document.querySelector('[data-guide-tour]')).toBeNull());
+    const panel = document.querySelector('.guide-center__panel') as HTMLElement;
+    expect(panel.innerHTML).not.toMatch(/الحجر الصحي/);
+  });
+
+  it('closes an open tour when the tab changes underneath it', async () => {
+    const { rerender } = render(<Harness tab="quarantine" caps={ALL_CAPS} />);
+    await openCenter();
+    await startTour('الحجر الصحي');
+    rerender(<Harness tab="suspensions" caps={ALL_CAPS} />);
+    await waitFor(() => expect(document.querySelector('[data-guide-tour]')).toBeNull());
+    // ...and what is offered now belongs to the new tab only.
+    expect(tourTitles()).toContain('موقوفة الصرف');
+    expect(tourTitles()).not.toContain('الحجر الصحي');
+  });
+
+  it('closes when the session goes away', async () => {
+    const onClose = vi.fn();
+    render(<Harness tab="quarantine" caps={ALL_CAPS} onClose={onClose} />);
+    await openCenter();
+    act(() => {
+      appState = { ...appState, session: null, authStatus: 'unauthenticated' };
+      notify?.();
+    });
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+  });
+});
+
+describe('IG-2 — the guide never touches an operational path', () => {
+  async function walkBothTours() {
+    render(<Harness tab="quarantine" caps={ALL_CAPS} />);
+    await openCenter();
+    await startTour('الحجر الصحي');
+    for (let i = 0; i < 20; i += 1) {
+      if (layer().dataset.guideStep === 'quarantine.closing') break;
+      fireEvent.click(screen.getByRole('button', { name: 'التالي' }));
+      await waitFor(() => expect(layer()).toBeInTheDocument());
+    }
+    fireEvent.click(screen.getByRole('button', { name: 'إنهاء' }));
+    await waitFor(() => expect(document.querySelector('[data-guide-tour]')).toBeNull());
+  }
+
+  it('opens no business form and calls no RPC', async () => {
+    await walkBothTours();
+    // The release form auto-selects a destination lot the moment it opens —
+    // real business-form state. The guide must never cause that.
+    expect(openedForms).toEqual([]);
+    expect(rpc).not.toHaveBeenCalled();
+    expect(from).not.toHaveBeenCalled();
+  });
+
+  it('anchors on wrappers, never acquiring the operational buttons themselves', async () => {
+    render(<Harness tab="quarantine" caps={ALL_CAPS} />);
+    await openCenter();
+    await startTour('الحجر الصحي');
+    for (const anchor of [GUIDE_ANCHORS.quarantineReleaseAction, GUIDE_ANCHORS.quarantineDestroyAction]) {
+      const el = document.querySelector(`[data-guide-id="${anchor}"]`) as HTMLElement;
+      expect(el).not.toBeNull();
+      expect(el.tagName).not.toBe('BUTTON');
+    }
+  });
+
+  it('stores only tour and step identity, never business content', async () => {
+    render(<Harness tab="quarantine" caps={ALL_CAPS} />);
+    await openCenter();
+    await startTour('الحجر الصحي');
+    const raw = window.localStorage.getItem(GUIDE_PROGRESS_STORAGE_KEY) as string;
+    expect(Object.keys(JSON.parse(raw)).sort())
+      .toEqual(['completedTourIds', 'stepId', 'tourId', 'updatedAt', 'v']);
+    for (const forbidden of [/warehouse/i, /organization/i, /material/i, /quantity/i, /reason/i, /outlet/i]) {
+      expect(forbidden.test(raw), `progress leaked ${forbidden}`).toBe(false);
+    }
+    expect(Object.keys(window.localStorage)).toEqual([GUIDE_PROGRESS_STORAGE_KEY]);
+  });
+});
+
+describe('IG-2 — bilingual copy follows the application language', () => {
+  it('renders the quarantine tour in English when the app is English', async () => {
+    appState = { ...appState, lang: 'en', dir: 'ltr' };
+    render(<Harness tab="quarantine" caps={ALL_CAPS} />);
+    await waitFor(() => expect(screen.getByRole('dialog', { name: 'Guide & Help' })).toBeInTheDocument());
+    expect(tourTitles()).toContain('Quarantine');
+    expect(tourTitles()).not.toContain('الحجر الصحي');
+  });
+
+  it('renders the suspension tour in English too', async () => {
+    appState = { ...appState, lang: 'en', dir: 'ltr' };
+    render(<Harness tab="suspensions" caps={ALL_CAPS} />);
+    await waitFor(() => expect(screen.getByRole('dialog', { name: 'Guide & Help' })).toBeInTheDocument());
+    expect(tourTitles()).toContain('Suspended from Dispensing');
+  });
+
+  it('numbers steps from the filtered tour, not the registry', async () => {
+    const viewOnly = { [GUIDE_CAPABILITIES.quarantineView]: true };
+    render(<Harness tab="quarantine" caps={viewOnly} />);
+    await openCenter();
+    await startTour('الحجر الصحي');
+    const total = stepIds(viewOnly, 'quarantine', 'guide.tour.quarantine').length;
+    expect(screen.getByText(`الخطوة 1 من ${total}`)).toBeInTheDocument();
+    expect(total).toBeLessThan(GUIDE_REGISTRY.tours.find(t => t.id === 'guide.tour.quarantine')!.steps.length);
+  });
+});

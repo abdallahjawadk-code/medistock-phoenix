@@ -14,6 +14,8 @@ import {
   type QuarantineStockRow,
 } from './quarantine.service';
 import { isExactReleaseCandidate } from './stock-identity';
+import { GUIDE_ANCHORS, guideAnchor } from '@/features/guide/guide.anchors';
+import { useGuideCapabilities } from '@/features/guide/guide.surface';
 
 const newRequestId = () =>
   (typeof crypto !== 'undefined' && 'randomUUID' in crypto)
@@ -34,6 +36,23 @@ interface Props {
  */
 export function QuarantinePanel({ warehouseId, canDispose }: Props) {
   const { lang, dir } = useApp();
+
+  /**
+   * INTERACTIVE-GUIDE-IG2 — publish the answers this panel was GIVEN, so the
+   * guide reads a decision instead of re-deriving one.
+   *
+   * Being mounted at all already means the viewer may read these rows (the tab
+   * is gated on that), and `canDispose` is the scoped per-warehouse answer the
+   * release/destroy RPCs check. The warehouse is the scope, so a different
+   * warehouse invalidates both answers.
+   */
+  useGuideCapabilities(
+    'inventory.quarantine',
+    { 'inventory.quarantine.view': true, 'inventory.quarantine.dispose': canDispose },
+    'ready',
+    `wh:${warehouseId}`,
+  );
+
   const [rows, setRows] = useState<QuarantineStockRow[] | null>(null);
   const [stock, setStock] = useState<WarehouseStockBatch[]>([]);
   const [loading, setLoading] = useState(false);
@@ -74,12 +93,16 @@ export function QuarantinePanel({ warehouseId, canDispose }: Props) {
   }
 
   return (
-    <div dir={dir} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+    <div {...guideAnchor(GUIDE_ANCHORS.quarantineList)} dir={dir} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
       {toast && <div style={{ fontSize: '12px', color: 'var(--ok)' }}>{toast}</div>}
-      {rows.map(row => (
+      {rows.map((row, index) => (
         <QuarantineRow
           key={row.id}
           row={row}
+          /* IG-2: only the FIRST card carries the row-level anchors. A repeated
+             id across a list would give the guide several equal candidates and
+             let it highlight an arbitrary record. */
+          guideAnchored={index === 0}
           stock={stock}
           canDispose={canDispose}
           busy={busyId === row.id}
@@ -101,6 +124,8 @@ const quarantineReasonLabel = (reason: string, lang: 'ar' | 'en') => {
 
 interface RowProps {
   row: QuarantineStockRow;
+  /** IG-2 — carry the guide's row-level anchors; true for the first row only. */
+  guideAnchored: boolean;
   stock: WarehouseStockBatch[];
   canDispose: boolean;
   busy: boolean;
@@ -110,7 +135,7 @@ interface RowProps {
   lang: 'ar' | 'en';
 }
 
-function QuarantineRow({ row, stock, canDispose, busy, onBusy, onDone, onError, lang }: RowProps) {
+function QuarantineRow({ row, guideAnchored, stock, canDispose, busy, onBusy, onDone, onError, lang }: RowProps) {
   const [mode, setMode] = useState<'none' | 'release' | 'destroy'>('none');
   const [quantity, setQuantity] = useState(String(row.quantity));
   const [reason, setReason] = useState('');
@@ -175,7 +200,7 @@ function QuarantineRow({ row, stock, canDispose, busy, onBusy, onDone, onError, 
   return (
     <PhoenixCard>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
-        <div style={{ minWidth: 0, flex: 1 }}>
+        <div {...(guideAnchored ? guideAnchor(GUIDE_ANCHORS.quarantineRowIdentity) : {})} style={{ minWidth: 0, flex: 1 }}>
           <div style={{ fontSize: '13.5px', fontWeight: 700 }}>{row.scientificName}</div>
           <div style={{ fontSize: '11.5px', color: 'var(--t2)', marginTop: '2px' }}>
             {[row.batchNumber, row.nationalCode, row.expiryDate].filter(Boolean).join(' · ') || '—'}
@@ -184,19 +209,28 @@ function QuarantineRow({ row, stock, canDispose, busy, onBusy, onDone, onError, 
             {quarantineReasonLabel(row.quarantineReason, lang)}
           </div>
         </div>
-        <div style={{ fontSize: '13px', fontWeight: 700 }}>
+        <div {...(guideAnchored ? guideAnchor(GUIDE_ANCHORS.quarantineRowQuantity) : {})} style={{ fontSize: '13px', fontWeight: 700 }}>
           {t('qz_quantity', lang)}: {row.quantity}
         </div>
       </div>
 
       {canDispose && mode === 'none' && (
         <div style={{ display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}>
-          <PhoenixButton variant="secondary" onClick={() => { setMode('release'); setQuantity(String(row.quantity)); setReason(''); }}>
-            {t('qz_release', lang)}
-          </PhoenixButton>
-          <PhoenixButton variant="ghost" onClick={() => { setMode('destroy'); setQuantity(String(row.quantity)); setReason(''); }}>
-            {t('qz_destroy', lang)}
-          </PhoenixButton>
+          {/* IG-2 anchors sit on WRAPPERS, not on the buttons, so the guide
+              cannot acquire a handle on an operational control. Opening these
+              forms is the operator's action alone: the release form selects a
+              default destination lot the moment it opens, which is real
+              business-form state the guide must never set. */}
+          <span {...(guideAnchored ? guideAnchor(GUIDE_ANCHORS.quarantineReleaseAction) : {})} style={{ display: 'inline-flex' }}>
+            <PhoenixButton variant="secondary" onClick={() => { setMode('release'); setQuantity(String(row.quantity)); setReason(''); }}>
+              {t('qz_release', lang)}
+            </PhoenixButton>
+          </span>
+          <span {...(guideAnchored ? guideAnchor(GUIDE_ANCHORS.quarantineDestroyAction) : {})} style={{ display: 'inline-flex' }}>
+            <PhoenixButton variant="ghost" onClick={() => { setMode('destroy'); setQuantity(String(row.quantity)); setReason(''); }}>
+              {t('qz_destroy', lang)}
+            </PhoenixButton>
+          </span>
         </div>
       )}
 

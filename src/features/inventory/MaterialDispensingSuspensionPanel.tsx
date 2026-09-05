@@ -18,6 +18,8 @@ import {
 } from './material-dispensing-suspension.service';
 import { useMaterialDispensingSuspensionPermission } from './useMaterialDispensingSuspensionPermission';
 import { useInventoryScopes, type InventoryScopeOption } from './useInventoryScopes';
+import { GUIDE_ANCHORS, guideAnchor } from '@/features/guide/guide.anchors';
+import { useGuideCapabilities } from '@/features/guide/guide.surface';
 
 const newRequestId = () =>
   (typeof crypto !== 'undefined' && 'randomUUID' in crypto)
@@ -108,6 +110,31 @@ export function MaterialDispensingSuspensionPanel({ organizationId }: Props) {
   const canSuspendAnywhere = canSuspendOrgWide || manageableOutlets.length > 0;
   const canLift = perm.data?.canLift ?? false;
 
+  /**
+   * INTERACTIVE-GUIDE-IG2 — publish the DECISIONS this panel computed.
+   *
+   * `canSuspendAnywhere` is the panel's own reachability answer, not a
+   * candidate list: an outlet appearing in `manageableOutlets` does not by
+   * itself authorize a suspension there, and `SuspendForm` re-asks the scoped
+   * hook once a scope is chosen before the RPC re-checks it server-side. The
+   * guide consumes "can this operator reach the create surface at all", which
+   * is exactly what governs whether the button is rendered.
+   *
+   * While the permission read is in flight the state is `loading`, so the
+   * guide offers nothing rather than guessing; a failed read publishes
+   * `error`, which is likewise never treated as a grant.
+   */
+  useGuideCapabilities(
+    'inventory.suspension',
+    {
+      'inventory.suspension.view': canViewDetail,
+      'inventory.suspension.create': canSuspendAnywhere,
+      'inventory.suspension.lift': canLift,
+    },
+    perm.loading ? 'loading' : (perm.error ? 'error' : 'ready'),
+    `org:${organizationId}`,
+  );
+
   if (!canViewDetail && !perm.loading) {
     return <PhoenixEmptyState icon="🚫" title={t('e_forbidden_material_dispensing_suspension_view_badge', lang)} description="" />;
   }
@@ -122,7 +149,9 @@ export function MaterialDispensingSuspensionPanel({ organizationId }: Props) {
       {toast && <div style={{ fontSize: '12px', color: 'var(--ok)' }}>{toast}</div>}
 
       {canSuspendAnywhere && !composing && (
-        <div>
+        <div {...guideAnchor(GUIDE_ANCHORS.suspensionSuspendAction)}>
+          {/* The anchor is the wrapper, never the button: the guide explains
+              this control, it never opens the composer. */}
           <PhoenixButton onClick={() => setComposing(true)}>{t('mds_suspend_action', lang)}</PhoenixButton>
         </div>
       )}
@@ -142,10 +171,13 @@ export function MaterialDispensingSuspensionPanel({ organizationId }: Props) {
       {active.length === 0 && history.length === 0 ? (
         <PhoenixEmptyState icon="⛔" title={t('mds_history_empty', lang)} description="" />
       ) : (
-        <>
-          {active.map(row => (
+        <div {...guideAnchor(GUIDE_ANCHORS.suspensionList)} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          {active.map((row, index) => (
             <SuspensionRow
               key={row.id} row={row} lang={lang} canLift={canLift}
+              /* IG-2: row-level anchors on the FIRST active row only, so the
+                 guide never has to choose between equal candidates. */
+              guideAnchored={index === 0}
               resolveOutletName={resolveOutletName}
               busy={busyId === row.id}
               onBusy={busy => setBusyId(busy ? row.id : null)}
@@ -154,18 +186,19 @@ export function MaterialDispensingSuspensionPanel({ organizationId }: Props) {
             />
           ))}
           {history.length > 0 && (
-            <details>
+            <details {...guideAnchor(GUIDE_ANCHORS.suspensionHistory)}>
               <summary style={{ fontSize: '12px', color: 'var(--t2)', cursor: 'pointer' }}>{t('mds_history_title', lang)}</summary>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
                 {history.map(row => (
                   <SuspensionRow key={row.id} row={row} lang={lang} canLift={false}
+                    guideAnchored={false}
                     resolveOutletName={resolveOutletName}
                     busy={false} onBusy={() => {}} onDone={() => {}} onError={() => {}} />
                 ))}
               </div>
             </details>
           )}
-        </>
+        </div>
       )}
     </div>
   );
@@ -323,6 +356,8 @@ interface RowProps {
   row: MaterialDispensingSuspensionRow;
   lang: 'ar' | 'en';
   canLift: boolean;
+  /** IG-2 — carry the guide's row-level anchors; the first active row only. */
+  guideAnchored: boolean;
   /** Best-effort outlet-name lookup for a point-scoped row — null when the
    *  outlet catalog has not resolved yet or the point is outside this
    *  viewer's own readable catalog; the generic mds_scope_point label is
@@ -334,7 +369,7 @@ interface RowProps {
   onError: (message: string) => void;
 }
 
-function SuspensionRow({ row, lang, canLift, resolveOutletName, busy, onBusy, onDone, onError }: RowProps) {
+function SuspensionRow({ row, lang, canLift, guideAnchored, resolveOutletName, busy, onBusy, onDone, onError }: RowProps) {
   const [lifting, setLifting] = useState(false);
   const [liftReason, setLiftReason] = useState('');
   const isActive = !row.liftedAt;
@@ -357,12 +392,14 @@ function SuspensionRow({ row, lang, canLift, resolveOutletName, busy, onBusy, on
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span style={{ fontSize: '13.5px', fontWeight: 700 }}>{materialName || '—'}</span>
-            <PhoenixStatusBadge variant={isActive ? 'err' : 'neutral'} label={isActive ? t('mds_badge', lang) : t('mds_status_lifted', lang)} />
+            <span {...(guideAnchored ? guideAnchor(GUIDE_ANCHORS.suspensionRowBadge) : {})} style={{ display: 'inline-flex' }}>
+              <PhoenixStatusBadge variant={isActive ? 'err' : 'neutral'} label={isActive ? t('mds_badge', lang) : t('mds_status_lifted', lang)} />
+            </span>
           </div>
           <div style={{ fontSize: '11.5px', color: 'var(--warn)', fontWeight: 700, marginTop: '3px' }}>
             {reasonLabel(row.reasonCode, lang)}
           </div>
-          <div style={{ fontSize: '11.5px', color: 'var(--t2)', marginTop: '2px' }}>
+          <div {...(guideAnchored ? guideAnchor(GUIDE_ANCHORS.suspensionRowScope) : {})} style={{ fontSize: '11.5px', color: 'var(--t2)', marginTop: '2px' }}>
             {row.distributionPointId
               ? `${t('mds_scope_point', lang)}${resolveOutletName(row.distributionPointId) ? ` — ${resolveOutletName(row.distributionPointId)}` : ''}`
               : t('mds_scope_org_wide', lang)}
@@ -375,7 +412,7 @@ function SuspensionRow({ row, lang, canLift, resolveOutletName, busy, onBusy, on
       </div>
 
       {isActive && canLift && !lifting && (
-        <div style={{ marginTop: '10px' }}>
+        <div {...(guideAnchored ? guideAnchor(GUIDE_ANCHORS.suspensionLiftAction) : {})} style={{ marginTop: '10px' }}>
           <PhoenixButton variant="secondary" onClick={() => setLifting(true)}>{t('mds_lift_action', lang)}</PhoenixButton>
         </div>
       )}
