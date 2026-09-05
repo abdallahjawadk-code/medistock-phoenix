@@ -16,6 +16,8 @@ import {
 } from './guide.progress';
 import { guideText, type GuideStep, type GuideTour } from './guide.types';
 import { GuideTourOverlay } from './GuideTourOverlay';
+import { useGuideViewport } from './guide.viewport';
+import type { GuideDrawerController } from './useGuideDrawerStep';
 import { GuideLanguageControl } from './GuideLanguageControl';
 import { useGuideBackgroundInert } from './useGuideBackgroundInert';
 import { useGuideFocusTrap } from './useGuideFocusTrap';
@@ -27,6 +29,8 @@ import './guide.css';
 interface Props {
   currentScreen: number;
   onNavigate: (screen: number) => void;
+  /** IG-1.1 — the shell's own mobile-drawer state; see useGuideDrawerStep. */
+  drawer: GuideDrawerController;
   onClose: () => void;
 }
 
@@ -49,8 +53,9 @@ type Mode =
  * screen their own authorization already admits.
  * ────────────────────────────────────────────────────────────────────────────
  */
-export function GuideEngine({ currentScreen, onNavigate, onClose }: Props) {
+export function GuideEngine({ currentScreen, onNavigate, drawer, onClose }: Props) {
   const { lang, dir, role, myPermissions, authStatus, session } = useApp();
+  const viewport = useGuideViewport();
   const [progress, setProgress] = useState<GuideProgress>(readGuideProgress);
   const [mode, setMode] = useState<Mode>({ kind: 'center' });
   const [resetNotice, setResetNotice] = useState(false);
@@ -62,15 +67,18 @@ export function GuideEngine({ currentScreen, onNavigate, onClose }: Props) {
   );
 
   /**
-   * Tours this operator may see, each already narrowed to its permitted steps.
+   * Tours this operator may see, each already narrowed to its permitted steps
+   * AND to the navigation surfaces this viewport actually renders.
    *
    * Recomputed whenever effective permissions change, so a permission revoked
    * while the guide is open removes its steps rather than leaving a stale tour
-   * pointing at a surface the operator no longer holds.
+   * pointing at a surface the operator no longer holds — and whenever the
+   * viewport changes, so rotating a phone or resizing a window can never leave
+   * a step describing a bar or a sidebar that is no longer on screen.
    */
   const available = useMemo(
-    () => permittedTours(GUIDE_REGISTRY.tours, audience),
-    [audience],
+    () => permittedTours(GUIDE_REGISTRY.tours, audience, viewport),
+    [audience, viewport],
   );
 
   /**
@@ -165,6 +173,7 @@ export function GuideEngine({ currentScreen, onNavigate, onClose }: Props) {
         tour={activeEntry.tour}
         steps={activeEntry.steps}
         stepIndex={Math.min(mode.stepIndex, activeEntry.steps.length - 1)}
+        drawer={drawer}
         onStepIndexChange={onStepIndexChange}
         onFinish={onFinish}
         onExit={onExitTour}

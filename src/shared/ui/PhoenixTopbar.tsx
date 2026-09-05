@@ -38,6 +38,7 @@ export function PhoenixTopbar({ title, isMobile, menuOpen, onMenuClick, onOpenGu
           onClick={onMenuClick}
           className="premium-drawer-trigger premium-focus-ring nexus-control"
           style={{ flexShrink: 0 }}
+          {...guideAnchor(GUIDE_ANCHORS.shellTopbarMenu)}
           aria-label={t('menu', lang)}
           aria-expanded={menuOpen}
           aria-controls="phoenix-mobile-drawer"

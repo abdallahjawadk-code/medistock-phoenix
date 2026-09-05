@@ -29,6 +29,11 @@ const HELP_ENTRY = '[data-guide-id="guide.shell.topbar.help"]';
 const LANGUAGE_CONTROL = '[data-guide-id="guide.shell.topbar.language"]';
 /** The guide's OWN application-language control, inside its modal surface. */
 const GUIDE_LANGUAGE_CONTROL = '[data-guide-language-control]';
+const DRAWER_HELP = '[data-guide-id="guide.shell.drawer.help"]';
+const DRAWER_NAV = '[data-guide-id="guide.shell.navigation.drawer"]';
+const BOTTOM_NAV = '[data-guide-id="guide.shell.navigation.bottom"]';
+const MENU_TRIGGER = '[data-guide-id="guide.shell.topbar.menu"]';
+const SIDEBAR_NAV = '[data-guide-id="guide.shell.navigation.rail"]';
 
 let browser: Browser;
 let server: ViteDevServer;
@@ -134,6 +139,59 @@ async function advance(page: Page) {
   );
 }
 
+/**
+ * Walk the tour to a step by its stable id, whatever the filtered length.
+ *
+ * IG-1.1 made this necessary rather than convenient: the tour's length and
+ * order now depend on the viewport, so counting `advance()` calls describes one
+ * layout and silently mis-describes the other.
+ */
+async function goToStep(page: Page, stepId: string) {
+  for (let guard = 0; guard < 25; guard += 1) {
+    const state = await currentStep(page);
+    if (state.step === stepId) return state;
+    if (state.step === 'closing') break;
+    await advance(page);
+  }
+  throw new Error(`the tour never reached "${stepId}"`);
+}
+
+/** Every step id the filtered tour actually renders, in order. */
+async function stepIdsOf(page: Page): Promise<string[]> {
+  const seen: string[] = [];
+  for (;;) {
+    const state = await currentStep(page);
+    seen.push(state.step as string);
+    if (state.step === 'closing') return seen;
+    await advance(page);
+  }
+}
+
+/**
+ * Wait for the step to be ANCHORED to a real target.
+ *
+ * The test is the highlight ring, not the card's placement. Those are
+ * different facts: the ring exists exactly when a target was resolved, while
+ * the card centres whenever no side of that target has room for it — which is
+ * routine on a 375px phone against a target like the drawer's navigation list
+ * (217x535 in an 812px-tall viewport). Asserting on placement would call a
+ * correctly highlighted step a failure.
+ *
+ * Polling because `advance()` returns as soon as the step id changes, one
+ * render before the overlay has measured anything.
+ */
+async function expectAnchored(page: Page, stepId: string) {
+  await expect
+    .poll(() => page.locator('.guide-ring').count(), { timeout: 10_000 })
+    .toBe(1);
+  const state = await currentStep(page);
+  expect(state.step).toBe(stepId);
+  // ...and the missing-target explanation is absent, because nothing is missing.
+  const card = await page.locator('.guide-card').innerText();
+  expect(card).not.toContain('هذا الجزء غير ظاهر على الشاشة الحالية');
+  expect(card).not.toContain('This part is not visible on the current screen');
+}
+
 /** Every rectangle the guide paints must sit inside the viewport. */
 async function cardFitsViewport(page: Page) {
   return page.evaluate(() => {
@@ -175,6 +233,7 @@ afterAll(async () => {
 const DESKTOP = { width: 1440, height: 900 };
 const TABLET = { width: 834, height: 1112 };
 const PHONE = { width: 375, height: 812 };
+const PHONE_WIDE = { width: 412, height: 915 };
 /** The three desktop widths owner acceptance is measured at. */
 const DESKTOP_WIDTHS = [
   { width: 1280, height: 720 },
@@ -232,6 +291,371 @@ describe('Guide & Help — entry placement across viewports', () => {
  * screen and inside the topbar, and that it stays that way across the widths,
  * languages, themes and zoom levels acceptance is measured at.
  */
+/**
+ * INTERACTIVE-GUIDE-IG1.1 — the three defects owner acceptance found on a real
+ * phone, proven against a real engine.
+ *
+ * jsdom cannot answer any of these: the drawer's arrival is a layout event, the
+ * highlight is a measured rectangle, and "no missing-target fallback" is only
+ * meaningful once the target has a real box.
+ */
+describe('IG-1.1 — responsive guide acceptance', () => {
+  async function openTour(page: Page) {
+    await openGuide(page);
+    await startTour(page);
+  }
+
+  /* ── A. terminology ──────────────────────────────────────────────────── */
+
+  it.each([['ar', 'الإحصائيات', 'مركز القيادة'], ['en', 'Statistics', 'Command Center']] as const)(
+    'names the screen «%s» correctly and never by its internal name',
+    async (lang, expected, forbidden) => {
+      const { context, page } = await openShell({ lang, viewport: DESKTOP });
+      try {
+        await openTour(page);
+        await goToStep(page, 'dashboard.context');
+        expect(await page.locator('.guide-card__title').innerText()).toBe(expected);
+        const body = await page.locator('.guide-card__body').innerText();
+        expect(body).toContain(expected);
+        expect(body).not.toContain(forbidden);
+      } finally {
+        await closeContext(context);
+      }
+    }, 120_000);
+
+  /* ── B. the navigation model ─────────────────────────────────────────── */
+
+  for (const viewport of [PHONE, PHONE_WIDE]) {
+    it(`teaches both phone navigation surfaces at ${viewport.width}px`, async () => {
+      const { context, page } = await openShell({ lang: 'ar', viewport, hasTouch: true });
+      try {
+        await openTour(page);
+
+        // Quick navigation anchors to the REAL bottom bar.
+        await goToStep(page, 'shell.navigation.quick');
+        await expectAnchored(page, 'shell.navigation.quick');
+        expect(await page.locator(BOTTOM_NAV).count()).toBe(1);
+        expect(await page.locator('.guide-card__title').innerText()).toBe('التنقّل السريع');
+
+        // The side-menu step anchors to the REAL menu button, drawer still shut.
+        await goToStep(page, 'shell.navigation.menu');
+        await expectAnchored(page, 'shell.navigation.menu');
+        expect(await page.locator(MENU_TRIGGER).count()).toBe(1);
+        expect(await page.locator('#phoenix-mobile-drawer').count()).toBe(0);
+        expect(await page.locator('.guide-card__title').innerText()).toBe('القائمة الجانبية');
+
+        // Advancing opens the real drawer and highlights the real list.
+        await goToStep(page, 'shell.navigation.all');
+        await page.locator('#phoenix-mobile-drawer').waitFor({ state: 'visible' });
+        await page.locator(DRAWER_NAV).waitFor({ state: 'visible' });
+        await expectAnchored(page, 'shell.navigation.all');
+        expect(await page.locator('.guide-ring').count()).toBe(1);
+        expect(await page.locator('.guide-card__title').innerText()).toBe('جميع الشاشات');
+
+        // The desktop step never appears here.
+        expect(await page.locator(SIDEBAR_NAV).count()).toBe(0);
+      } finally {
+        await closeContext(context);
+      }
+    }, 150_000);
+  }
+
+  for (const viewport of [{ width: 1280, height: 720 }, DESKTOP]) {
+    it(`teaches the sidebar and no phone surfaces at ${viewport.width}px`, async () => {
+      const { context, page } = await openShell({ lang: 'ar', viewport });
+      try {
+        await openTour(page);
+        await goToStep(page, 'shell.navigation.desktop');
+        await expectAnchored(page, 'shell.navigation.desktop');
+        expect(await page.locator(SIDEBAR_NAV).count()).toBe(1);
+        expect(await page.locator('.guide-card__title').innerText()).toBe('التنقّل بين الشاشات');
+        // The bottom bar is not rendered at this width, so it is never described.
+        expect(await page.locator(BOTTOM_NAV).count()).toBe(0);
+
+        const ids = await stepIdsOf(page);
+        expect(ids).not.toContain('shell.navigation.quick');
+        expect(ids).not.toContain('shell.navigation.menu');
+        expect(ids).not.toContain('shell.navigation.all');
+      } finally {
+        await closeContext(context);
+      }
+    }, 150_000);
+  }
+
+  it('derives the step count from the viewport rather than a fixed number', async () => {
+    const counts: Record<string, number> = {};
+    for (const [name, viewport, touch] of [
+      ['phone', PHONE, true],
+      ['desktop', DESKTOP, false],
+    ] as const) {
+      const { context, page } = await openShell({ lang: 'en', viewport, hasTouch: touch });
+      try {
+        await openTour(page);
+        const label = await page.locator('.guide-card__position').innerText();
+        counts[name] = Number(/of (\d+)/.exec(label)?.[1] ?? '0');
+        expect(counts[name]).toBeGreaterThan(0);
+      } finally {
+        await closeContext(context);
+      }
+    }
+    expect(counts.phone).not.toBe(counts.desktop);
+    expect(counts.phone).toBeGreaterThan(counts.desktop);
+  }, 150_000);
+
+  /* ── C. Guide & Help has a real target on a phone ────────────────────── */
+
+  it.each([['ar', 'الدليل والمساعدة'], ['en', 'Guide & Help']] as const)(
+    'highlights the REAL phone Guide & Help entry in %s, with no fallback',
+    async (lang, label) => {
+      const { context, page } = await openShell({ lang, viewport: PHONE, hasTouch: true });
+      try {
+        await openTour(page);
+        await goToStep(page, 'help.entry');
+
+        // The drawer is genuinely open and the real entry is visible in it.
+        await page.locator('#phoenix-mobile-drawer').waitFor({ state: 'visible' });
+        const entry = page.locator(DRAWER_HELP);
+        await entry.waitFor({ state: 'visible' });
+        expect(await entry.innerText()).toContain(label);
+
+        // Anchored, not centred, and no "not on this screen" explanation.
+        await expectAnchored(page, 'help.entry');
+        expect(await page.locator('.guide-ring').count()).toBe(1);
+        const cardText = await page.locator('.guide-card').innerText();
+        expect(cardText).not.toContain('هذا الجزء غير ظاهر على الشاشة الحالية');
+        expect(cardText).not.toContain('This part is not visible on the current screen');
+        expect(await page.locator('.guide-card__title').innerText()).toBe(label);
+
+        // The ring really is over the entry.
+        const ring = await page.locator('.guide-ring').boundingBox();
+        const box = await entry.boundingBox();
+        expect(ring).not.toBeNull();
+        expect(box).not.toBeNull();
+        const r = ring as { x: number; y: number; width: number; height: number };
+        const b = box as { x: number; y: number; width: number; height: number };
+        expect(Math.abs((r.x + r.width / 2) - (b.x + b.width / 2))).toBeLessThan(12);
+        expect(Math.abs((r.y + r.height / 2) - (b.y + b.height / 2))).toBeLessThan(12);
+
+        // Exactly one entry and one overlay.
+        expect(await page.locator(DRAWER_HELP).count()).toBe(1);
+        expect(await page.locator(HELP_ENTRY).count()).toBe(0);
+        expect(await page.locator('[data-guide-tour]').count()).toBe(1);
+      } finally {
+        await closeContext(context);
+      }
+    }, 150_000);
+
+  it('keeps the highlighted phone entry non-activatable behind the blocker', async () => {
+    const { context, page } = await openShell({ lang: 'ar', viewport: PHONE, hasTouch: true });
+    try {
+      await openTour(page);
+      await goToStep(page, 'help.entry');
+      await page.locator(DRAWER_HELP).waitFor({ state: 'visible' });
+
+      const box = await page.locator(DRAWER_HELP).boundingBox();
+      const b = box as { x: number; y: number; width: number; height: number };
+      const centre = { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+      const hit = await page.evaluate(
+        point => (document.elementFromPoint(point.x, point.y) as HTMLElement)?.className ?? '',
+        centre,
+      );
+      expect(hit).toContain('guide-blocker');
+
+      const focusReached = await page.evaluate(selector => {
+        const element = document.querySelector(selector) as HTMLElement;
+        element.focus();
+        return document.activeElement === element;
+      }, DRAWER_HELP);
+      expect(focusReached).toBe(false);
+      expect(await page.evaluate(() => document.getElementById('root')?.hasAttribute('inert'))).toBe(true);
+      // Still one overlay, still the same step.
+      expect(await page.locator('[data-guide-tour]').count()).toBe(1);
+    } finally {
+      await closeContext(context);
+    }
+  }, 150_000);
+
+  /* ── Drawer lifecycle ────────────────────────────────────────────────── */
+
+  it('gives the drawer back on every exit path', async () => {
+    for (const exit of ['back', 'skip', 'escape', 'forward'] as const) {
+      const { context, page } = await openShell({ lang: 'ar', viewport: PHONE, hasTouch: true });
+      try {
+        await openTour(page);
+        await goToStep(page, 'shell.navigation.all');
+        await page.locator('#phoenix-mobile-drawer').waitFor({ state: 'visible' });
+
+        if (exit === 'back') {
+          await page.locator('.guide-card__actions .guide-btn').first().click();
+        } else if (exit === 'skip') {
+          await page.locator('.guide-btn--quiet').last().click();
+        } else if (exit === 'escape') {
+          await page.keyboard.press('Escape');
+        } else {
+          await goToStep(page, 'shell.language');
+        }
+
+        await page.locator('#phoenix-mobile-drawer').waitFor({ state: 'detached' });
+        expect(await page.locator('#phoenix-mobile-drawer').count(), `exit=${exit}`).toBe(0);
+      } finally {
+        await closeContext(context);
+      }
+    }
+  }, 240_000);
+
+  it('holds the drawer across CONSECUTIVE drawer steps rather than cycling it', async () => {
+    /**
+     * The phone's only Guide & Help entry lives in the drawer and closes it on
+     * the way in — deliberately, so the drawer's focus trap and the guide's do
+     * not fight. A drawer the OPERATOR left open therefore cannot exist by the
+     * time a tour starts on a phone, which is why that branch is proven in
+     * `guide-responsive-navigation.runtime.test.tsx` instead of here.
+     *
+     * What IS reachable, and what this asserts, is the adjacent guarantee: two
+     * consecutive drawer-backed steps borrow the drawer once. It opens for the
+     * screen list, stays open through Guide & Help, and is given back only when
+     * the tour moves on.
+     */
+    const { context, page } = await openShell({ lang: 'ar', viewport: PHONE, hasTouch: true });
+    try {
+      await openTour(page);
+      await goToStep(page, 'shell.navigation.all');
+      await page.locator('#phoenix-mobile-drawer').waitFor({ state: 'visible' });
+
+      await goToStep(page, 'help.entry');
+      // No close/reopen flicker between the two: still the same open drawer.
+      expect(await page.locator('#phoenix-mobile-drawer').count()).toBe(1);
+      await page.locator(DRAWER_HELP).waitFor({ state: 'visible' });
+
+      await goToStep(page, 'shell.language');
+      await page.locator('#phoenix-mobile-drawer').waitFor({ state: 'detached' });
+    } finally {
+      await closeContext(context);
+    }
+  }, 150_000);
+
+  it('switches language on a drawer step without losing the step or the drawer', async () => {
+    const { context, page, foreignRequests } = await openShell({
+      lang: 'ar', viewport: PHONE, hasTouch: true,
+    });
+    try {
+      await openTour(page);
+      await goToStep(page, 'help.entry');
+      await page.locator(DRAWER_HELP).waitFor({ state: 'visible' });
+      await expectAnchored(page, 'help.entry');
+      const before = await currentStep(page);
+
+      await page.locator(GUIDE_LANGUAGE_CONTROL).click();
+      await page.waitForFunction(() => document.documentElement.getAttribute('dir') === 'ltr');
+
+      const after = await currentStep(page);
+      expect(after.tour).toBe(before.tour);
+      expect(after.step).toBe(before.step);
+      expect(after.dir).toBe('ltr');
+      await expectAnchored(page, 'help.entry');
+      // The drawer stayed open, the canonical target is still highlighted.
+      expect(await page.locator('#phoenix-mobile-drawer').count()).toBe(1);
+      await page.locator(DRAWER_HELP).waitFor({ state: 'visible' });
+      expect(await page.locator('[data-guide-tour]').count()).toBe(1);
+      expect(await page.locator('.guide-card__title').innerText()).toBe('Guide & Help');
+      expect((await cardFitsViewport(page)).inside).toBe(true);
+      const focusInside = await page.evaluate(
+        () => !!document.activeElement?.closest('.guide-card'),
+      );
+      expect(focusInside).toBe(true);
+      expect(foreignRequests).toEqual([]);
+    } finally {
+      await closeContext(context);
+    }
+  }, 150_000);
+
+  it('keeps the card on screen through every phone step, in both languages', async () => {
+    for (const lang of ['ar', 'en'] as const) {
+      const { context, page } = await openShell({ lang, viewport: PHONE, hasTouch: true });
+      try {
+        await openTour(page);
+        for (;;) {
+          const state = await currentStep(page);
+          const fit = await cardFitsViewport(page);
+          expect(fit.inside, `card left the viewport at ${state.step} (${lang})`).toBe(true);
+          const overflows = await page.evaluate(
+            () => document.documentElement.scrollWidth > window.innerWidth + 1,
+          );
+          expect(overflows, `horizontal overflow at ${state.step}`).toBe(false);
+          if (state.step === 'closing') break;
+          await advance(page);
+        }
+      } finally {
+        await closeContext(context);
+      }
+    }
+  }, 240_000);
+
+  it('runs the phone tour with no service, RPC or network call of its own', async () => {
+    const { context, page, foreignRequests } = await openShell({
+      lang: 'ar', viewport: PHONE, hasTouch: true,
+    });
+    try {
+      const calls = await page.evaluate(() => {
+        const record: string[] = [];
+        (window as unknown as { __guideCalls: string[] }).__guideCalls = record;
+        const originalFetch = window.fetch;
+        window.fetch = ((...args: unknown[]) => {
+          record.push('fetch');
+          return (originalFetch as unknown as (...a: unknown[]) => Promise<Response>)(...args);
+        }) as typeof window.fetch;
+        const originalOpen = XMLHttpRequest.prototype.open;
+        XMLHttpRequest.prototype.open = function patched(this: XMLHttpRequest, ...args: unknown[]) {
+          record.push('xhr');
+          return (originalOpen as unknown as (...a: unknown[]) => void).apply(this, args);
+        } as typeof XMLHttpRequest.prototype.open;
+        navigator.sendBeacon = (() => { record.push('beacon'); return true; }) as typeof navigator.sendBeacon;
+        return record.length;
+      });
+      expect(calls).toBe(0);
+
+      await openTour(page);
+      for (;;) {
+        const state = await currentStep(page);
+        if (state.step === 'closing') break;
+        await advance(page);
+      }
+      await page.locator('.guide-card .guide-btn--primary').click();
+      await page.locator('[data-guide-surface="center"]').waitFor({ state: 'visible' });
+
+      const recorded = await page.evaluate(
+        () => (window as unknown as { __guideCalls: string[] }).__guideCalls,
+      );
+      expect(recorded).toEqual([]);
+      expect(foreignRequests).toEqual([]);
+    } finally {
+      await closeContext(context);
+    }
+  }, 180_000);
+
+  it('keeps the entry discoverable for a restricted operator while narrowing content', async () => {
+    const { context, page } = await openShell({
+      lang: 'ar', viewport: PHONE, hasTouch: true, persona: 'outlet_officer',
+    });
+    try {
+      await page.locator('.premium-drawer-trigger').click();
+      await page.locator(DRAWER_HELP).waitFor({ state: 'visible' });
+      await page.locator(DRAWER_HELP).click();
+      await page.locator('[data-guide-surface="center"]').waitFor({ state: 'visible' });
+      await startTour(page);
+
+      const ids = await stepIdsOf(page);
+      // Both phone navigation surfaces are still taught...
+      expect(ids).toContain('shell.navigation.quick');
+      expect(ids).toContain('shell.navigation.all');
+      // ...and the Statistics steps are absent, by name as well as by id.
+      expect(ids.some(id => id.startsWith('dashboard.'))).toBe(false);
+    } finally {
+      await closeContext(context);
+    }
+  }, 180_000);
+});
+
 describe('Guide & Help — desktop entry is discoverable', () => {
   const AR_LABEL = 'الدليل والمساعدة';
   const EN_LABEL = 'Guide & Help';
@@ -445,18 +869,11 @@ describe('Guide & Help — desktop entry is discoverable', () => {
       await page.locator('[data-guide-surface="center"]').waitFor({ state: 'visible' });
       await startTour(page);
 
-      const seen: string[] = [];
-      for (;;) {
-        const state = await currentStep(page);
-        seen.push(state.step as string);
-        if (state.step === 'closing') break;
-        await advance(page);
-      }
+      const seen = await stepIdsOf(page);
       // Content narrowed...
       expect(seen.some(id => id.startsWith('dashboard.'))).toBe(false);
-      expect(seen.length).toBeLessThan(9);
       // ...but the shell steps this operator IS entitled to are all there.
-      expect(seen).toContain('shell.navigation');
+      expect(seen).toContain('shell.navigation.desktop');
       expect(seen).toContain('help.entry');
     } finally {
       await closeContext(context);
@@ -487,7 +904,9 @@ describe.each([
       }
 
       expect(seen[0]).toBe('welcome');
-      expect(seen).toContain('shell.navigation');
+      // Desktop teaches the sidebar; the phone-only surfaces are absent here.
+      expect(seen).toContain('shell.navigation.desktop');
+      expect(seen).not.toContain('shell.navigation.quick');
       expect(new Set(seen).size).toBe(seen.length);
 
       await page.locator('.guide-card .guide-btn--primary').click();
@@ -508,7 +927,8 @@ describe.each([
       await advance(page);
 
       const state = await currentStep(page);
-      expect(state.step).toBe('shell.navigation');
+      // On a phone the first navigation step is the bottom bar, not a sidebar.
+      expect(state.step).toBe('shell.navigation.quick');
       expect(state.dir).toBe(expectedDir);
       const fit = await cardFitsViewport(page);
       expect(fit.inside).toBe(true);
@@ -524,9 +944,7 @@ describe('Guide & Help — safety in a real engine', () => {
     try {
       await openGuide(page);
       await startTour(page);
-      await advance(page);
-      await advance(page);
-      expect((await currentStep(page)).step).toBe('shell.language');
+      await goToStep(page, 'shell.language');
 
       const before = await page.locator(LANGUAGE_CONTROL).innerText();
       const box = await page.locator(LANGUAGE_CONTROL).boundingBox();
@@ -587,9 +1005,7 @@ describe('Guide & Help — safety in a real engine', () => {
     try {
       await openGuide(page);
       await startTour(page);
-      await advance(page);
-      await advance(page);
-      expect((await currentStep(page)).step).toBe('shell.language');
+      await goToStep(page, 'shell.language');
 
       const stored = await page.evaluate(() => ({
         keys: Object.keys(window.localStorage),
@@ -654,10 +1070,8 @@ describe('Guide & Help — language, motion and zoom', () => {
     try {
       await openGuide(page);
       await startTour(page);
-      await advance(page);
-      await advance(page);
+      await goToStep(page, 'shell.language');
       const before = await currentStep(page);
-      expect(before.step).toBe('shell.language');
       expect(before.dir).toBe('rtl');
       const beforeLeft = await page.locator('.guide-card').evaluate(n => n.getBoundingClientRect().left);
 

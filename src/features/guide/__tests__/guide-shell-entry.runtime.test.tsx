@@ -39,6 +39,15 @@ import { PhoenixTopbar } from '@/shared/ui/PhoenixTopbar';
 import { PhoenixMobileDrawer } from '@/shared/ui/PhoenixMobileDrawer';
 import { useGuideHost } from '../GuideHost';
 
+/** These cases are about the ENTRY, not the drawer; a closed, unavailable
+ *  drawer is the honest stand-in and keeps the guide from touching it. */
+const INERT_DRAWER = {
+  isAvailable: false,
+  isOpen: false,
+  open: () => undefined,
+  close: () => undefined,
+};
+
 function resetState() {
   appState = {
     lang: 'en', dir: 'ltr', theme: 'light',
@@ -54,7 +63,11 @@ beforeEach(resetState);
 afterEach(() => { cleanup(); resetState(); });
 
 function TopbarHarness({ isMobile }: { isMobile: boolean }) {
-  const { controller, host } = useGuideHost({ currentScreen: 22, onNavigate: () => undefined });
+  const { controller, host } = useGuideHost({
+    currentScreen: 22,
+    onNavigate: () => undefined,
+    drawer: INERT_DRAWER,
+  });
   return (
     <div>
       <PhoenixTopbar
@@ -71,7 +84,11 @@ function TopbarHarness({ isMobile }: { isMobile: boolean }) {
 
 function DrawerHarness() {
   const [open, setOpen] = useState(true);
-  const { controller, host } = useGuideHost({ currentScreen: 22, onNavigate: () => undefined });
+  const { controller, host } = useGuideHost({
+    currentScreen: 22,
+    onNavigate: () => undefined,
+    drawer: INERT_DRAWER,
+  });
   return (
     <div>
       <main><a href="#bg">background</a></main>

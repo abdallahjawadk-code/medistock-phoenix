@@ -57,10 +57,21 @@ const SOURCES = collectSources(GUIDE_DIR).map(path => {
 });
 
 const IMPORT_LINE = /^\s*import[\s\S]*?from\s+'([^']+)'/gm;
+/**
+ * `import type` is erased by the compiler and reaches no bundle, so it cannot
+ * pull guide content into the shell's chunk and cannot give the guide a path
+ * to a service. The bundling and call-path rules below therefore look at VALUE
+ * imports; a type-only reference to a guide type from the shell is exactly as
+ * harmless as a comment.
+ */
+const TYPE_ONLY_IMPORT = /^\s*import\s+type\s/;
 
 function importsOf(text: string): string[] {
   const found: string[] = [];
-  for (const match of text.matchAll(IMPORT_LINE)) found.push(match[1]);
+  for (const match of text.matchAll(IMPORT_LINE)) {
+    if (TYPE_ONLY_IMPORT.test(match[0])) continue;
+    found.push(match[1]);
+  }
   return found;
 }
 

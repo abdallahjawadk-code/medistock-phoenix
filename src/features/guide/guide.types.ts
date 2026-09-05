@@ -1,5 +1,6 @@
 import type { Lang } from '@/shared/lib/types';
 import type { GuideAnchorId } from './guide.anchors';
+import type { GuideViewport } from './guide.viewport';
 
 /**
  * INTERACTIVE-GUIDE-IG1 — the typed tour contract (AD-03).
@@ -58,6 +59,27 @@ export interface GuideStep {
    * role name (AD-05).
    */
   requiresPermissions?: readonly string[];
+  /**
+   * INTERACTIVE-GUIDE-IG1.1 — the viewports whose layout actually contains
+   * this step's subject. Omitted means viewport-neutral.
+   *
+   * The phone and the desktop do not offer the same navigation surfaces, so a
+   * single "how you move around" step could only ever be right on one of them.
+   * Declaring the surface here lets the filtered tour describe what the
+   * operator can actually see — and lets the step COUNT differ per viewport,
+   * which is why nothing may assume a fixed number of steps.
+   */
+  viewports?: readonly GuideViewport[];
+  /**
+   * INTERACTIVE-GUIDE-IG1.1 — this step points at something inside the shell's
+   * mobile drawer, so the drawer must be open for it to have a target.
+   *
+   * The guide opens it through the shell's own state and closes it again on
+   * the way out, unless the operator had already opened it themselves. A no-op
+   * wherever the shell renders no drawer, which is why a step shared by both
+   * viewports can declare it safely.
+   */
+  requiresDrawer?: boolean;
   /**
    * A screen this step describes. Used for two things only:
    *   • the guide offers a SAFE programmatic jump to it, and
