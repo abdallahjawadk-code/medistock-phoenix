@@ -255,7 +255,34 @@ beforeAll(async () => {
     root: ROOT,
     logLevel: 'error',
     server: { host: '127.0.0.1', port: 0, strictPort: false },
-    define: { 'import.meta.env.VITE_ENABLE_VISUAL_QA': JSON.stringify('true') },
+    define: {
+      'import.meta.env.VITE_ENABLE_VISUAL_QA': JSON.stringify('true'),
+      /**
+       * The suite supplies its OWN configuration rather than inheriting a
+       * developer's `.env.local`.
+       *
+       * `supabaseConfigured` is `Boolean(url && key)` (src/shared/supabase/
+       * client.ts), and every service short-circuits to `null` when it is
+       * false — BEFORE reaching the client at all. Without these two values
+       * the Statistics screen rendered its "not configured" empty state and
+       * the QA fixture client recorded zero RPC calls, so the step under test
+       * had no target. It passed on a machine with a `.env.local` and failed
+       * in CI, which had none: the suite was reading configuration it never
+       * declared.
+       *
+       * These are deliberately unusable. `.invalid` is reserved by RFC 2606
+       * and can never resolve, so even a mistaken call cannot leave the
+       * machine — and in a DEV build the exported client is a proxy that the
+       * QA harness has already pointed at its network-free fixture client, so
+       * nothing dials out in the first place. Every case here additionally
+       * asserts that no request left the test server's origin.
+       *
+       * The service-configuration guard and production behaviour are
+       * untouched: this defines values for THIS server only.
+       */
+      'import.meta.env.VITE_PHOENIX_SUPABASE_URL': JSON.stringify('https://guide-acceptance.invalid'),
+      'import.meta.env.VITE_PHOENIX_SUPABASE_ANON_KEY': JSON.stringify('guide-acceptance-fixture-key'),
+    },
   });
   await server.listen();
   baseUrl = server.resolvedUrls?.local[0] ?? '';
@@ -376,11 +403,26 @@ describe('IG-1.1 — responsive guide acceptance', () => {
      * It also closes the loop on the rename: the screen titles itself with the
      * same word the guide now uses.
      */
-    const { context, page } = await openShell({ lang, viewport: DESKTOP, scene: 'statistics' });
+    const { context, page, foreignRequests } = await openShell({
+      lang, viewport: DESKTOP, scene: 'statistics',
+    });
     try {
       await page.locator('.rac3[data-rac3-state="ready"]').waitFor({ state: 'visible' });
       // The screen calls itself what the guide calls it.
       expect(await page.locator('.rac3-header__title').innerText()).toBe(label);
+
+      /**
+       * The payload came from the QA fixture client, not from anywhere else.
+       * `rac3-state="ready"` alone could in principle be reached by a real
+       * call; this pins WHICH client answered, and that nothing left the test
+       * server's origin to do it.
+       */
+      const rpcCalls = await page.evaluate(
+        () => ((window as unknown as { __phoenixQaRpcCalls?: { name: string }[] })
+          .__phoenixQaRpcCalls ?? []).map(call => call.name),
+      );
+      expect(rpcCalls).toContain('phoenix_command_center_read_contract');
+      expect(foreignRequests).toEqual([]);
 
       await openTour(page);
       await goToStep(page, 'dashboard.context');
@@ -396,6 +438,9 @@ describe('IG-1.1 — responsive guide acceptance', () => {
       await goToStep(page, 'dashboard.signals');
       await expectAnchored(page, 'dashboard.signals');
       await expectRingOverTarget(page, '[data-guide-id="guide.dashboard.signals.panel"]');
+
+      // Still nothing off-origin after the whole Statistics block.
+      expect(foreignRequests).toEqual([]);
     } finally {
       await closeContext(context);
     }
