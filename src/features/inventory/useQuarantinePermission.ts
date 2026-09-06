@@ -1,5 +1,6 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useApp } from '@/app/AppContext';
-import { useAsync, type AsyncState } from '@/shared/lib/useAsync';
+import type { AsyncState } from '@/shared/lib/useAsync';
 import { supabaseRbacTransport } from '@/shared/authz/rbac.service';
 
 /**
@@ -18,46 +19,66 @@ import { supabaseRbacTransport } from '@/shared/authz/rbac.service';
  *
  * UI preflight ONLY: both RPCs repeat this authorization server-side before
  * any custody moves.
+ *
+ * TWO SEPARATE PROPERTIES, NOT ONE COMPARISON. An earlier version of this
+ * hook derived `confirmed` as a single per-render comparison,
+ * `dataScopeKey === scopeKey`, reasoning that two freshly-recomputed values
+ * compared every render could never go stale relative to each other. That
+ * reasoning is correct for a single, one-way scope change — but it silently
+ * assumes scope identity strings are never revisited. They are: A → B → A
+ * produces the identical `(org, warehouse, profile)` key on the second visit
+ * to A as it did on the first, and `dataScopeKey` — which the guide's own
+ * contract requires to HONESTLY RETAIN a settled tag while the next request
+ * is pending, rather than resetting to null — still reads A's ORIGINAL,
+ * already-settled tag while a genuinely NEW check for the second visit to A
+ * is in flight (B's own check was left deliberately unresolved). The two
+ * strings compare equal, `confirmed` reads true, and a disposal button lights
+ * up on an answer that was never checked against the request actually in
+ * flight. Source ATTRIBUTION (which scope produced this settled value) and
+ * request FRESHNESS (is a decision for the CURRENT check on file) are
+ * different questions with different answers in that exact window, and one
+ * cannot be reconstructed from the other after the fact.
+ *
+ * This version keeps them as two independently-tracked properties:
+ *
+ * - `dataScopeKey` is tagged onto `data` at the moment a request actually
+ *   settles, with the key that SPECIFIC request was launched for (captured
+ *   in the closure, not re-read from current props later). It is never
+ *   touched by a context change alone, so it goes on meaning exactly what it
+ *   says — which scope the CURRENT `data` value came from — through however
+ *   many later scope changes leave it unrefreshed.
+ *
+ * - `confirmed` is ordinary request-ownership bookkeeping: a monotonic
+ *   `requestIdRef` names every request as it is launched, a response is
+ *   applied only if it is still the most recent request, and — critically —
+ *   context invalidation happens DURING RENDER (React's own "adjusting state
+ *   when a prop changes" pattern), not from an effect. `useEffect` runs after
+ *   a render has already committed and a real browser has already painted
+ *   it, so invalidating only from an effect leaves exactly one commit where
+ *   the previous context's `confirmed=true` is still on screen while every
+ *   prop already names the new context. Resetting synchronously during
+ *   render — calling `setState` before this render is allowed to commit —
+ *   means React re-renders again before committing anything, so the
+ *   corrected value is what actually paints. Because this reset fires on
+ *   ANY change from the immediately preceding render, it does not matter
+ *   that A's key repeats on a second visit: B's key was on file a moment
+ *   ago, so returning to A is still observed as a change.
  */
 export interface ScopedQuarantinePermission extends AsyncState<boolean> {
   /**
-   * The scope `data` was actually computed for, or null when there is no
-   * settled answer.
-   *
-   * WHY THE ANSWER HAS TO CARRY ITS OWN SUBJECT. `useAsync` deliberately keeps
-   * the PREVIOUS result while the next one loads, so on the first render after
-   * the warehouse changes, `data` still holds the FORMER warehouse's answer
-   * while every prop already reads the new one. A caller comparing this field
-   * against the warehouse it is asking about can tell those two situations
-   * apart; a caller looking only at `loading` cannot, because whether a render
-   * with `loading === true` is ever observed depends on how React happens to
-   * batch the effect against the promise's own microtask.
-   *
-   * `useInventoryScopes` has always done exactly this — it rejects a catalog
-   * whose `organizationId` is not the one being asked about. This is the same
-   * rule, for the same reason, spelled for a scalar answer.
-   *
-   * Nothing about the permission itself changes: `data` is the same boolean it
-   * always was, so every existing consumer behaves identically.
+   * The scope the CURRENT `data` value was actually computed for, or null
+   * when nothing has ever settled. May legitimately name an older scope than
+   * the one on screen right now, for as long as the current scope's own
+   * check has not yet settled — see the module doc comment.
    */
   dataScopeKey: string | null;
   /**
-   * True only when `dataScopeKey` matches the CURRENT (org, warehouse,
-   * profile) scope — i.e. `data` is not merely present, it is KNOWN to be the
-   * answer for the situation on screen right now, not one carried over from
-   * a previous warehouse or profile.
-   *
-   * This is a pure per-render comparison, never state of its own that itself
-   * needs invalidating — `dataScopeKey` is an honest tag on whatever `data`
-   * currently holds (it only changes when a loader run for a NEW scope
-   * actually completes), and the scope key here is recomputed fresh, this
-   * render, from the current props. Two values compared fresh every render
-   * cannot go stale relative to each other: there is no commit — not even
-   * the very first one after org/warehouse/profile changes — where a
-   * mismatch could be missed. Gating a disposal action on `data` alone (the
-   * bug this field closes) lets a confirm button light up using
-   * authorization that was never actually checked against the warehouse or
-   * profile now in view.
+   * True only when `data` is a fresh, error-free resolution for the CURRENT
+   * (organization, warehouse, profile id, profile role) context — never a
+   * value merely carried over from a previous context, and never true on the
+   * same render the context changed. False while the current context's own
+   * check is pending, false after that check throws, and false again on a
+   * revisit to an identity seen before until ITS OWN new check settles.
    */
   confirmed: boolean;
 }
@@ -65,22 +86,13 @@ export interface ScopedQuarantinePermission extends AsyncState<boolean> {
 /**
  * Opaque, comparison-only identity of a quarantine permission scope.
  *
- * IDENTITY IS PART OF THE SCOPE, NOT AN ADDENDUM TO IT.
- *
- * The resource half (org + warehouse) was the whole key until a reproduction
- * showed the gap: two different profiles asked about the SAME organization and
- * the SAME warehouse produce the SAME key, so switching who is asking — while
- * the resource stays put — was invisible to every consumer that compares this
- * key for attribution. Concretely: profile 1 is granted, profile 2 is denied;
- * switch from 1 to 2 while 2's own check is still in flight, and `useAsync`
- * hands back profile 1's `true` tagged with a key that still matches, because
- * nothing in it said WHO the answer was for. `useScopedGuideCapabilities`
- * would have attributed a stranger's grant to the operator now on screen.
- *
- * `profileId` closes that: two profiles asking the identical question now
- * produce different keys, so a caller comparing keys can never mistake one
- * profile's settled answer for another's — for the identical reason the
- * warehouse half already existed.
+ * Deliberately narrower than the request-freshness context this hook tracks
+ * internally (which also folds in profile ROLE — a role change must
+ * invalidate `confirmed` even when the resource and profile id do not
+ * change, e.g. a demotion mid-session). This key stays resource+profile only
+ * because it is the guide's own public source-attribution contract
+ * (`useScopedGuideCapabilities`'s `answerScopeKey`); widening it would be an
+ * unrelated, unrequested change to that contract.
  */
 export function quarantinePermissionScopeKey(
   orgId: string | null,
@@ -95,31 +107,89 @@ export function useQuarantinePermission(
   warehouseId: string | null,
 ): ScopedQuarantinePermission {
   const { profile } = useApp();
-  const scopeKey = quarantinePermissionScopeKey(orgId, warehouseId, profile?.id ?? null);
+  const profileId = profile?.id ?? null;
+  const profileRole = profile?.role ?? null;
 
-  // The loader closes over the scope of the render whose effect runs it, so
-  // the tag travels with the answer rather than being read back afterwards
-  // from props that may already have moved on.
-  const inner = useAsync<{ scopeKey: string; allowed: boolean }>(async () => {
-    if (!orgId || !warehouseId || !profile?.id) return { scopeKey, allowed: false };
-    if (profile.role === 'super_admin') return { scopeKey, allowed: true };
+  // Request-freshness context: resource + identity + ROLE. See the module
+  // doc comment for why this is wider than the public scope key below.
+  const currentKey = `${orgId ?? ''}:${warehouseId ?? ''}:${profileId ?? ''}:${profileRole ?? ''}`;
+  // Public, guide-facing source-attribution key — unchanged contract.
+  const scopeKey = quarantinePermissionScopeKey(orgId, warehouseId, profileId);
 
-    const result = await supabaseRbacTransport.hasScopedPermission({
-      profileId: profile.id,
-      permissionKey: 'warehouse_transfer.return_request',
-      organizationId: orgId,
-      warehouseId,
-      distributionPointId: null,
-    });
-    return { scopeKey, allowed: result.ok && result.allowed };
-  }, [orgId, warehouseId, profile?.id, profile?.role]);
+  const [data, setData] = useState<boolean | null>(null);
+  const [dataScopeKey, setDataScopeKey] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [confirmed, setConfirmed] = useState(false);
+  const [nonce, setNonce] = useState(0);
 
-  const dataScopeKey = inner.data?.scopeKey ?? null;
+  // DURING-RENDER reset (not an effect): `renderedForKey` is the freshness
+  // context as of the last committed render. A mismatch here is caught and
+  // corrected before this render is allowed to commit, so no frame — not
+  // even the first one — attributes an old context's confirmation to a new
+  // one. `data`/`dataScopeKey` are deliberately NOT reset here: they may
+  // honestly keep naming the previous scope while the new one's own check is
+  // still in flight.
+  const [renderedForKey, setRenderedForKey] = useState(currentKey);
+  if (renderedForKey !== currentKey) {
+    setRenderedForKey(currentKey);
+    setLoading(true);
+    setError(null);
+    setConfirmed(false);
+  }
 
-  return {
-    ...inner,
-    data: inner.data === null ? null : inner.data.allowed,
-    dataScopeKey,
-    confirmed: dataScopeKey === scopeKey,
-  };
+  const requestIdRef = useRef(0);
+  useEffect(() => {
+    const requestId = ++requestIdRef.current;
+    // Captured now, not re-read later: this is the scope THIS request was
+    // launched for, regardless of how many further context changes happen
+    // before it settles (a stale response is discarded below regardless).
+    const requestScopeKey = scopeKey;
+    void (async () => {
+      try {
+        if (!orgId || !warehouseId || !profileId) {
+          if (requestIdRef.current !== requestId) return;
+          setData(false);
+          setDataScopeKey(requestScopeKey);
+          setLoading(false);
+          setConfirmed(true);
+          return;
+        }
+        if (profileRole === 'super_admin') {
+          if (requestIdRef.current !== requestId) return;
+          setData(true);
+          setDataScopeKey(requestScopeKey);
+          setLoading(false);
+          setConfirmed(true);
+          return;
+        }
+
+        const result = await supabaseRbacTransport.hasScopedPermission({
+          profileId,
+          permissionKey: 'warehouse_transfer.return_request',
+          organizationId: orgId,
+          warehouseId,
+          distributionPointId: null,
+        });
+        // A later dep change (or an explicit reload()) may have started a
+        // newer request before this one resolved. Discard — committing now
+        // would overwrite the current context's own, more current answer.
+        if (requestIdRef.current !== requestId) return;
+        setData(result.ok && result.allowed);
+        setDataScopeKey(requestScopeKey);
+        setLoading(false);
+        setConfirmed(true);
+      } catch (err) {
+        if (requestIdRef.current !== requestId) return;
+        setError(err instanceof Error ? err.message : 'Unexpected error');
+        setLoading(false);
+        // confirmed, data and dataScopeKey are untouched: an exception never
+        // confirms anything, and never retags stale data as fresh.
+      }
+    })();
+  }, [orgId, warehouseId, profileId, profileRole, scopeKey, nonce]);
+
+  const reload = useCallback(() => setNonce(n => n + 1), []);
+
+  return { data, dataScopeKey, loading, error, reload, confirmed };
 }

@@ -217,9 +217,11 @@ export function InventoryCenterScreen({
    * for the entire window the CURRENT warehouse's own check was pending,
    * errored, or had thrown, which would have let a confirm button light up
    * using authorization never actually checked against the warehouse on
-   * screen. `confirmed` (== `dataScopeKey` matching the current scope, the
-   * same comparison `useScopedGuideCapabilities` performs above) closes that
-   * without touching read/view access at all. Both RPCs re-check
+   * screen. `confirmed` closes that — it is request-ownership bookkeeping
+   * inside the hook (see its own module doc comment for why a plain
+   * `dataScopeKey`-equality comparison alone is not enough on a revisit to a
+   * previously-seen warehouse), not the same comparison
+   * `useScopedGuideCapabilities` performs above. Both RPCs re-check
    * server-side regardless.
    */
   const quarantineScopeKey = quarantinePermissionScopeKey(activeOrgId, activeWarehouseId || null, profile?.id ?? null);
