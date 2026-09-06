@@ -118,6 +118,13 @@ export function InventoryCenterScreen({
   // row's own warehouse), matching 105's widened read policy.
   const quarantinePerm = useQuarantinePermission(activeOrgId, activeWarehouseId || null);
   const canDisposeQuarantine = quarantinePerm.data ?? false;
+  // Tab affordance above stays permissive (unchanged, documented behavior —
+  // canDisposeQuarantine can briefly read stale-true right after a warehouse
+  // switch). The disposal ACTIONS below use the stricter `confirmed` signal
+  // instead, so QuarantinePanel never enables a confirm button using a
+  // permission value that was never actually checked against the currently
+  // selected warehouse.
+  const canDisposeQuarantineConfirmed = quarantinePerm.confirmed && quarantinePerm.data === true;
 
   // MATERIAL-DISPENSING-SUSPENSION (203) — deliberately org-scoped, not
   // warehouse-scoped like quarantine above: موقوف الصرف applies to a
@@ -201,8 +208,19 @@ export function InventoryCenterScreen({
    * a read affordance grants no disposition, and the action source is the only
    * thing that can ever contribute `dispose`.
    *
-   * Nothing operational changes: `canDisposeQuarantine` still flows to the
-   * panel exactly as before, and both RPCs re-check server-side regardless.
+   * `canDisposeQuarantine` (raw, permissive) still gates only tab VISIBILITY,
+   * exactly as before. The panel's disposal ACTIONS, below, are gated on the
+   * stricter `canDisposeQuarantineConfirmed` instead — a defect proven and
+   * fixed independently of this guide work (`quarantine-panel-stale-
+   * warehouse-race.test.tsx`, `use-quarantine-permission-first-commit.test.tsx`):
+   * `canDisposeQuarantine` could hold a stale `true` from a PREVIOUS warehouse
+   * for the entire window the CURRENT warehouse's own check was pending,
+   * errored, or had thrown, which would have let a confirm button light up
+   * using authorization never actually checked against the warehouse on
+   * screen. `confirmed` (== `dataScopeKey` matching the current scope, the
+   * same comparison `useScopedGuideCapabilities` performs above) closes that
+   * without touching read/view access at all. Both RPCs re-check
+   * server-side regardless.
    */
   const quarantineScopeKey = quarantinePermissionScopeKey(activeOrgId, activeWarehouseId || null, profile?.id ?? null);
   useGuideCapabilities(
@@ -489,7 +507,7 @@ export function InventoryCenterScreen({
       ) : tab === 'quarantine' && canViewQuarantine ? (
         /* Mutation stays on the scoped key — a viewer sees the held lots with
            no release/destroy controls. */
-        <QuarantinePanel warehouseId={activeWarehouseId} canDispose={canDisposeQuarantine} />
+        <QuarantinePanel warehouseId={activeWarehouseId} canDispose={canDisposeQuarantineConfirmed} />
       ) : tab === 'suspensions' && canViewSuspensions ? (
         <MaterialDispensingSuspensionPanel organizationId={activeOrgId ?? ''} />
       ) : tab === 'corrections' && canViewCorrections ? (

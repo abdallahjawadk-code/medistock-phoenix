@@ -41,6 +41,25 @@ export interface ScopedQuarantinePermission extends AsyncState<boolean> {
    * always was, so every existing consumer behaves identically.
    */
   dataScopeKey: string | null;
+  /**
+   * True only when `dataScopeKey` matches the CURRENT (org, warehouse,
+   * profile) scope — i.e. `data` is not merely present, it is KNOWN to be the
+   * answer for the situation on screen right now, not one carried over from
+   * a previous warehouse or profile.
+   *
+   * This is a pure per-render comparison, never state of its own that itself
+   * needs invalidating — `dataScopeKey` is an honest tag on whatever `data`
+   * currently holds (it only changes when a loader run for a NEW scope
+   * actually completes), and the scope key here is recomputed fresh, this
+   * render, from the current props. Two values compared fresh every render
+   * cannot go stale relative to each other: there is no commit — not even
+   * the very first one after org/warehouse/profile changes — where a
+   * mismatch could be missed. Gating a disposal action on `data` alone (the
+   * bug this field closes) lets a confirm button light up using
+   * authorization that was never actually checked against the warehouse or
+   * profile now in view.
+   */
+  confirmed: boolean;
 }
 
 /**
@@ -95,9 +114,12 @@ export function useQuarantinePermission(
     return { scopeKey, allowed: result.ok && result.allowed };
   }, [orgId, warehouseId, profile?.id, profile?.role]);
 
+  const dataScopeKey = inner.data?.scopeKey ?? null;
+
   return {
     ...inner,
     data: inner.data === null ? null : inner.data.allowed,
-    dataScopeKey: inner.data?.scopeKey ?? null,
+    dataScopeKey,
+    confirmed: dataScopeKey === scopeKey,
   };
 }
