@@ -882,11 +882,179 @@ describe('reproduction — the busy slot must be OWNED by the action that claime
     expect(screen.getByLabelText('الكمية'), 'A1 failing must not clear A2’s busy slot either').toBeDisabled();
     expect(screen.getByLabelText('سبب القرار')).toBeDisabled();
     expect(destroyQuarantineStock).toHaveBeenCalledTimes(2);
-    // A1's own failure toast must not appear at all — it was superseded,
-    // not merely off-warehouse.
-    expect(screen.queryByText(/فشل الإجراء/)).toBeNull();
+    // A1's own failure toast is expected to surface — A1's action was NOT
+    // superseded by A2 starting (they occupy separate registry entries,
+    // keyed by row, not a single shared slot); it is a real, independent
+    // completion of A1's own request, on the warehouse currently on
+    // screen. What must hold is that it says nothing about A2, and A2's
+    // own state above is untouched by it.
+    expect(screen.getByText(/فشل الإجراء/)).toBeInTheDocument();
 
     destroyCallA2.resolve({ ok: true, data: { movement_id: 'm-a2' } });
     await new Promise(resolve => setTimeout(resolve, 20));
+  });
+});
+
+describe('reproduction — a single shared slot cannot track two genuinely concurrent pending operations', () => {
+  it('release: A1 pending → B → A → A2 pending → a reconfirm attempt on A1 sends no third request; completing A1 first (success) then A2 (failure) frees both rows without opening either early', async () => {
+    const rowA1 = quarantineRow('row-a1', WH_A, 'Alpha');
+    const rowA2 = quarantineRow('row-a2', WH_A, 'Gamma');
+    settleRowsImmediately(WH_A, [rowA1, rowA2]);
+    settlePermissionImmediately(WH_A, true);
+    setWarehouseStock(WH_A, [matchingStockBatch('lot-a1', rowA1), matchingStockBatch('lot-a2', rowA2)]);
+    render(<InventoryCenterScreen />);
+    await selectWarehouse(WH_A);
+    await openQuarantineTab();
+    await waitFor(() => expect(screen.getByText('Alpha')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Gamma')).toBeInTheDocument());
+
+    // Start (but do not finish) a release on A1.
+    fireEvent.click(screen.getAllByText('إفراج')[0]);
+    await waitFor(() => expect(screen.getAllByLabelText('سبب القرار')).toHaveLength(1));
+    fireEvent.change(screen.getByLabelText('سبب القرار'), { target: { value: 'سبب أول' } });
+    fireEvent.change(screen.getByLabelText('الكمية'), { target: { value: '1' } });
+    const confirmA1 = await waitFor(() => {
+      const btn = screen.getByText('تأكيد الإفراج') as HTMLButtonElement;
+      expect(btn.disabled).toBe(false);
+      return btn;
+    });
+    const releaseCallA1 = holdRelease();
+    fireEvent.click(confirmA1);
+    await waitFor(() => expect(releaseQuarantineStock).toHaveBeenCalledTimes(1));
+
+    // Leave to B and back to A — A1's release is STILL pending throughout;
+    // this remounts a brand new QuarantineRow for row-a1, with mode back
+    // at 'none' and no memory of the click above.
+    const rowB = quarantineRow('row-b1', WH_B, 'Beta');
+    settleRowsImmediately(WH_B, [rowB]);
+    settlePermissionImmediately(WH_B, true);
+    await selectWarehouse(WH_B);
+    await waitFor(() => expect(screen.getByText('Beta')).toBeInTheDocument());
+
+    settleRowsImmediately(WH_A, [rowA1, rowA2]); // fresh fetch — nothing changed server-side yet
+    await selectWarehouse(WH_A);
+    await waitFor(() => expect(screen.getByText('Alpha')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Gamma')).toBeInTheDocument());
+
+    // Start a NEW action on A2, on this fresh visit — A1's original
+    // request is still outstanding the whole time.
+    fireEvent.click(screen.getAllByText('إفراج')[1]);
+    await waitFor(() => expect(screen.getAllByLabelText('سبب القرار')).toHaveLength(1));
+    fireEvent.change(screen.getByLabelText('سبب القرار'), { target: { value: 'سبب ثانٍ' } });
+    fireEvent.change(screen.getByLabelText('الكمية'), { target: { value: '1' } });
+    const confirmA2 = await waitFor(() => {
+      const btn = screen.getByText('تأكيد الإفراج') as HTMLButtonElement;
+      expect(btn.disabled).toBe(false);
+      return btn;
+    });
+    const releaseCallA2 = holdRelease();
+    fireEvent.click(confirmA2);
+    await waitFor(() => expect(releaseQuarantineStock).toHaveBeenCalledTimes(2));
+
+    // Attempt to reconfirm A1 again on this fresh mount. Its own earlier
+    // request is still in flight, so it must already read busy — before
+    // even trying to click confirm.
+    fireEvent.click(screen.getAllByText('إفراج')[0]);
+    await waitFor(() => expect(screen.getAllByLabelText('سبب القرار')).toHaveLength(2));
+    const quantityA1Retry = screen.getAllByLabelText('الكمية')[0] as HTMLInputElement;
+    const confirmA1Retry = screen.getAllByText('تأكيد الإفراج')[0] as HTMLButtonElement;
+    expect(quantityA1Retry, 'A1 must already read busy — its own earlier request is still outstanding').toBeDisabled();
+    expect(confirmA1Retry, 'confirm must already be disabled too').toBeDisabled();
+    fireEvent.click(confirmA1Retry); // disabled — must be a no-op
+    expect(releaseQuarantineStock, 'the reconfirm attempt on A1 must not have sent a third request').toHaveBeenCalledTimes(2);
+
+    // Complete A1 first — successfully.
+    releaseCallA1.resolve({ ok: true, data: { movement_id: 'm-a1' } });
+    await new Promise(resolve => setTimeout(resolve, 30));
+
+    // A2 must be completely unaffected: A1 finishing must not open A2.
+    expect(screen.getAllByLabelText('الكمية')[1], 'A2 must remain busy — A1 finishing must not free A2 early').toBeDisabled();
+    expect(releaseQuarantineStock).toHaveBeenCalledTimes(2);
+    // A1's own row, meanwhile, must be free again — its earlier request
+    // (the one actually sent) has genuinely finished.
+    await waitFor(() => expect(screen.getAllByLabelText('الكمية')[0]).not.toBeDisabled());
+
+    // Now complete A2 — this time with a failure.
+    releaseCallA2.resolve({ ok: false, error: 'CONFLICT' });
+    await new Promise(resolve => setTimeout(resolve, 30));
+
+    expect(releaseQuarantineStock).toHaveBeenCalledTimes(2);
+    // A2 must be free again too — not left stuck busy by its own failure.
+    await waitFor(() => expect(screen.getAllByLabelText('الكمية')[1]).not.toBeDisabled());
+  });
+
+  it('destroy: A1 pending → B → A → A2 pending → a reconfirm attempt on A1 sends no third request; completing A2 first (failure) then A1 (success) frees both rows without opening either early', async () => {
+    const rowA1 = quarantineRow('row-a1', WH_A, 'Alpha');
+    const rowA2 = quarantineRow('row-a2', WH_A, 'Gamma');
+    settleRowsImmediately(WH_A, [rowA1, rowA2]);
+    settlePermissionImmediately(WH_A, true);
+    render(<InventoryCenterScreen />);
+    await selectWarehouse(WH_A);
+    await openQuarantineTab();
+    await waitFor(() => expect(screen.getByText('Alpha')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Gamma')).toBeInTheDocument());
+
+    fireEvent.click(screen.getAllByText('إتلاف')[0]);
+    await waitFor(() => expect(screen.getAllByLabelText('سبب القرار')).toHaveLength(1));
+    fireEvent.change(screen.getByLabelText('سبب القرار'), { target: { value: 'سبب أول' } });
+    fireEvent.change(screen.getByLabelText('الكمية'), { target: { value: '1' } });
+    const confirmA1 = await waitFor(() => {
+      const btn = screen.getByText('تأكيد الإتلاف') as HTMLButtonElement;
+      expect(btn.disabled).toBe(false);
+      return btn;
+    });
+    const destroyCallA1 = holdDestroy();
+    fireEvent.click(confirmA1);
+    await waitFor(() => expect(destroyQuarantineStock).toHaveBeenCalledTimes(1));
+
+    const rowB = quarantineRow('row-b1', WH_B, 'Beta');
+    settleRowsImmediately(WH_B, [rowB]);
+    settlePermissionImmediately(WH_B, true);
+    await selectWarehouse(WH_B);
+    await waitFor(() => expect(screen.getByText('Beta')).toBeInTheDocument());
+
+    settleRowsImmediately(WH_A, [rowA1, rowA2]);
+    await selectWarehouse(WH_A);
+    await waitFor(() => expect(screen.getByText('Alpha')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Gamma')).toBeInTheDocument());
+
+    fireEvent.click(screen.getAllByText('إتلاف')[1]);
+    await waitFor(() => expect(screen.getAllByLabelText('سبب القرار')).toHaveLength(1));
+    fireEvent.change(screen.getByLabelText('سبب القرار'), { target: { value: 'سبب ثانٍ' } });
+    fireEvent.change(screen.getByLabelText('الكمية'), { target: { value: '1' } });
+    const confirmA2 = await waitFor(() => {
+      const btn = screen.getByText('تأكيد الإتلاف') as HTMLButtonElement;
+      expect(btn.disabled).toBe(false);
+      return btn;
+    });
+    const destroyCallA2 = holdDestroy();
+    fireEvent.click(confirmA2);
+    await waitFor(() => expect(destroyQuarantineStock).toHaveBeenCalledTimes(2));
+
+    fireEvent.click(screen.getAllByText('إتلاف')[0]);
+    await waitFor(() => expect(screen.getAllByLabelText('سبب القرار')).toHaveLength(2));
+    const quantityA1Retry = screen.getAllByLabelText('الكمية')[0] as HTMLInputElement;
+    const confirmA1Retry = screen.getAllByText('تأكيد الإتلاف')[0] as HTMLButtonElement;
+    expect(quantityA1Retry, 'A1 must already read busy — its own earlier request is still outstanding').toBeDisabled();
+    expect(confirmA1Retry).toBeDisabled();
+    fireEvent.click(confirmA1Retry);
+    expect(destroyQuarantineStock, 'the reconfirm attempt on A1 must not have sent a third request').toHaveBeenCalledTimes(2);
+
+    // Complete A2 FIRST this time — with a failure — the opposite order
+    // from the release test above.
+    destroyCallA2.resolve({ ok: false, error: 'CONFLICT' });
+    await new Promise(resolve => setTimeout(resolve, 30));
+
+    // A1 must be completely unaffected: A2 finishing must not free A1.
+    expect(screen.getAllByLabelText('الكمية')[0], 'A1 must remain busy — A2 finishing must not free A1 early').toBeDisabled();
+    expect(destroyQuarantineStock).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(screen.getAllByLabelText('الكمية')[1]).not.toBeDisabled());
+
+    // Now complete A1 — successfully.
+    destroyCallA1.resolve({ ok: true, data: { movement_id: 'm-a1' } });
+    await new Promise(resolve => setTimeout(resolve, 30));
+
+    expect(destroyQuarantineStock).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(screen.getAllByLabelText('الكمية')[0]).not.toBeDisabled());
   });
 });
