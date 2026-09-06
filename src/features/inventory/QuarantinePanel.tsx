@@ -15,7 +15,7 @@ import {
 } from './quarantine.service';
 import { isExactReleaseCandidate } from './stock-identity';
 import { GUIDE_ANCHORS, guideAnchor } from '@/features/guide/guide.anchors';
-import { useGuideCapabilities } from '@/features/guide/guide.surface';
+import { useGuideExampleRow, useGuidePresence } from '@/features/guide/guide.surface';
 
 const newRequestId = () =>
   (typeof crypto !== 'undefined' && 'randomUUID' in crypto)
@@ -36,22 +36,6 @@ interface Props {
  */
 export function QuarantinePanel({ warehouseId, canDispose }: Props) {
   const { lang, dir } = useApp();
-
-  /**
-   * INTERACTIVE-GUIDE-IG2 — publish the answers this panel was GIVEN, so the
-   * guide reads a decision instead of re-deriving one.
-   *
-   * Being mounted at all already means the viewer may read these rows (the tab
-   * is gated on that), and `canDispose` is the scoped per-warehouse answer the
-   * release/destroy RPCs check. The warehouse is the scope, so a different
-   * warehouse invalidates both answers.
-   */
-  useGuideCapabilities(
-    'inventory.quarantine',
-    { 'inventory.quarantine.view': true, 'inventory.quarantine.dispose': canDispose },
-    'ready',
-    `wh:${warehouseId}`,
-  );
 
   const [rows, setRows] = useState<QuarantineStockRow[] | null>(null);
   const [stock, setStock] = useState<WarehouseStockBatch[]>([]);
@@ -86,23 +70,64 @@ export function QuarantinePanel({ warehouseId, canDispose }: Props) {
     setTimeout(() => setToast(null), 4000);
   };
 
-  if (loading && rows === null) return <PhoenixLoadingState />;
-  if (error) return <PhoenixErrorState title={t('err_generic', lang)} message={error} onRetry={reload} />;
+  /**
+   * IG-2 — ONE declared example row, chosen by identity and kept.
+   *
+   * `index === 0` was not enough. This list is ordered by expiry date and is
+   * reloaded after every disposition, so "the first row" can become a
+   * DIFFERENT lot while a step is explaining it — the operator would read about
+   * one record while the highlight moved to another. Freezing the id means the
+   * example either stays the record it was, or is released; it is never
+   * silently swapped.
+   */
+  const rowIds = useMemo(() => (rows ?? []).map(r => r.id), [rows]);
+  const exampleRowId = useGuideExampleRow(rowIds);
+
+  // Which branch will render, decided ONCE so the presence declaration below
+  // and the JSX beneath it cannot drift apart.
+  const showLoading = loading && rows === null;
+  const showError = !showLoading && error !== null;
+  const showRegion = !showLoading && !showError;
+
+  /**
+   * IG-2 — what is on screen, which is neither a permission nor a data state.
+   *
+   * The region key covers the populated list AND the empty state, because both
+   * are the same region of the screen and the step naming it ("this is where
+   * quarantined lots appear") is true of both. The row keys are false whenever
+   * there is no example row to point at, so the steps about a row are REMOVED
+   * rather than falling back to a centred card that would describe a record the
+   * operator cannot see.
+   */
+  useGuidePresence('inventory.quarantine', {
+    'inventory.quarantine.region': showRegion,
+    'inventory.quarantine.row': showRegion && exampleRowId !== null,
+    'inventory.quarantine.rowActions': showRegion && exampleRowId !== null && canDispose,
+  });
+
+  if (showLoading) return <PhoenixLoadingState />;
+  if (showError) return <PhoenixErrorState title={t('err_generic', lang)} message={error ?? ''} onRetry={reload} />;
   if (!rows || rows.length === 0) {
-    return <PhoenixEmptyState icon="🔒" title={t('qz_empty_title', lang)} description={t('qz_empty_description', lang)} />;
+    /* The empty state IS the list region: same anchor, so the step explaining
+       what this tab lists keeps a real, correctly-placed target instead of
+       falling back to a centred card. */
+    return (
+      <div {...guideAnchor(GUIDE_ANCHORS.quarantineList)} dir={dir}>
+        <PhoenixEmptyState icon="🔒" title={t('qz_empty_title', lang)} description={t('qz_empty_description', lang)} />
+      </div>
+    );
   }
 
   return (
     <div {...guideAnchor(GUIDE_ANCHORS.quarantineList)} dir={dir} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
       {toast && <div style={{ fontSize: '12px', color: 'var(--ok)' }}>{toast}</div>}
-      {rows.map((row, index) => (
+      {rows.map(row => (
         <QuarantineRow
           key={row.id}
           row={row}
-          /* IG-2: only the FIRST card carries the row-level anchors. A repeated
-             id across a list would give the guide several equal candidates and
-             let it highlight an arbitrary record. */
-          guideAnchored={index === 0}
+          /* IG-2: exactly one card carries the row-level anchors, and it is the
+             frozen example above — never "whichever happens to be first now". */
+          guideAnchored={row.id === exampleRowId}
           stock={stock}
           canDispose={canDispose}
           busy={busyId === row.id}
@@ -214,63 +239,80 @@ function QuarantineRow({ row, guideAnchored, stock, canDispose, busy, onBusy, on
         </div>
       </div>
 
-      {canDispose && mode === 'none' && (
-        <div style={{ display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}>
-          {/* IG-2 anchors sit on WRAPPERS, not on the buttons, so the guide
-              cannot acquire a handle on an operational control. Opening these
-              forms is the operator's action alone: the release form selects a
-              default destination lot the moment it opens, which is real
-              business-form state the guide must never set. */}
-          <span {...(guideAnchored ? guideAnchor(GUIDE_ANCHORS.quarantineReleaseAction) : {})} style={{ display: 'inline-flex' }}>
-            <PhoenixButton variant="secondary" onClick={() => { setMode('release'); setQuantity(String(row.quantity)); setReason(''); }}>
-              {t('qz_release', lang)}
-            </PhoenixButton>
-          </span>
-          <span {...(guideAnchored ? guideAnchor(GUIDE_ANCHORS.quarantineDestroyAction) : {})} style={{ display: 'inline-flex' }}>
-            <PhoenixButton variant="ghost" onClick={() => { setMode('destroy'); setQuantity(String(row.quantity)); setReason(''); }}>
-              {t('qz_destroy', lang)}
-            </PhoenixButton>
-          </span>
-        </div>
-      )}
+      {(canDispose || mode !== 'none') && (
+        /* IG-2 — the disposition AREA, present in every mode of this card.
+           The precise button-wrapper anchors inside it vanish the moment the
+           operator opens a form, and a step must not then fall back to a
+           centred card and have that counted as success: the concept is still
+           on screen, only in a different shape. So the release/destroy steps
+           keep their precise anchor first and declare this region as the
+           fallback.
 
-      {mode === 'release' && (
-        <div style={{ display: 'grid', gap: '8px', marginTop: '10px' }}>
-          {matchingLots.length === 0 ? (
-            <div style={{ fontSize: '12px', color: 'var(--err)' }}>{t('qz_no_matching_lot', lang)}</div>
-          ) : (
-            <PhoenixSelect
-              label={t('qz_destination_lot', lang)}
-              value={destinationId}
-              onChange={e => setDestinationId(e.target.value)}
-              options={matchingLots.map(l => ({ value: l.id, label: `${l.batchNumber ?? '—'} (${l.onHandQuantity})` }))}
-            />
+           The condition is `canDispose || mode !== 'none'` and not plain
+           `canDispose` so that this wrapper is present in exactly the states
+           where the buttons or a form were already rendered — it adds a
+           container, and changes no operational behaviour. */
+        <div {...(guideAnchored ? guideAnchor(GUIDE_ANCHORS.quarantineRowActions) : {})}>
+          {canDispose && mode === 'none' && (
+            <div style={{ display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}>
+              {/* IG-2 anchors sit on WRAPPERS, never on the buttons, so the
+                  guide cannot acquire a handle on an operational control.
+                  Opening these forms is the operator's action alone: the
+                  release form selects a default destination lot the moment it
+                  opens, which is real business-form state the guide must never
+                  set. */}
+              <span {...(guideAnchored ? guideAnchor(GUIDE_ANCHORS.quarantineReleaseAction) : {})} style={{ display: 'inline-flex' }}>
+                <PhoenixButton variant="secondary" onClick={() => { setMode('release'); setQuantity(String(row.quantity)); setReason(''); }}>
+                  {t('qz_release', lang)}
+                </PhoenixButton>
+              </span>
+              <span {...(guideAnchored ? guideAnchor(GUIDE_ANCHORS.quarantineDestroyAction) : {})} style={{ display: 'inline-flex' }}>
+                <PhoenixButton variant="ghost" onClick={() => { setMode('destroy'); setQuantity(String(row.quantity)); setReason(''); }}>
+                  {t('qz_destroy', lang)}
+                </PhoenixButton>
+              </span>
+            </div>
           )}
-          <PhoenixInput label={t('qz_quantity', lang)} value={quantity} inputMode="numeric" disabled={busy}
-            onChange={e => setQuantity(e.target.value)} />
-          <PhoenixInput label={t('qz_reason', lang)} value={reason} disabled={busy}
-            onChange={e => setReason(e.target.value)} />
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <PhoenixButton disabled={busy || !quantityValid || !reasonValid || !destinationId} onClick={() => void submitRelease()}>
-              {t('qz_confirm_release', lang)}
-            </PhoenixButton>
-            <PhoenixButton variant="ghost" disabled={busy} onClick={() => setMode('none')}>{t('mv_cancel', lang)}</PhoenixButton>
-          </div>
-        </div>
-      )}
 
-      {mode === 'destroy' && (
-        <div style={{ display: 'grid', gap: '8px', marginTop: '10px' }}>
-          <PhoenixInput label={t('qz_quantity', lang)} value={quantity} inputMode="numeric" disabled={busy}
-            onChange={e => setQuantity(e.target.value)} />
-          <PhoenixInput label={t('qz_reason', lang)} value={reason} disabled={busy}
-            onChange={e => setReason(e.target.value)} />
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <PhoenixButton disabled={busy || !quantityValid || !reasonValid} onClick={() => void submitDestroy()}>
-              {t('qz_confirm_destroy', lang)}
-            </PhoenixButton>
-            <PhoenixButton variant="ghost" disabled={busy} onClick={() => setMode('none')}>{t('mv_cancel', lang)}</PhoenixButton>
-          </div>
+          {mode === 'release' && (
+            <div style={{ display: 'grid', gap: '8px', marginTop: '10px' }}>
+              {matchingLots.length === 0 ? (
+                <div style={{ fontSize: '12px', color: 'var(--err)' }}>{t('qz_no_matching_lot', lang)}</div>
+              ) : (
+                <PhoenixSelect
+                  label={t('qz_destination_lot', lang)}
+                  value={destinationId}
+                  onChange={e => setDestinationId(e.target.value)}
+                  options={matchingLots.map(l => ({ value: l.id, label: `${l.batchNumber ?? '—'} (${l.onHandQuantity})` }))}
+                />
+              )}
+              <PhoenixInput label={t('qz_quantity', lang)} value={quantity} inputMode="numeric" disabled={busy}
+                onChange={e => setQuantity(e.target.value)} />
+              <PhoenixInput label={t('qz_reason', lang)} value={reason} disabled={busy}
+                onChange={e => setReason(e.target.value)} />
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <PhoenixButton disabled={busy || !quantityValid || !reasonValid || !destinationId} onClick={() => void submitRelease()}>
+                  {t('qz_confirm_release', lang)}
+                </PhoenixButton>
+                <PhoenixButton variant="ghost" disabled={busy} onClick={() => setMode('none')}>{t('mv_cancel', lang)}</PhoenixButton>
+              </div>
+            </div>
+          )}
+
+          {mode === 'destroy' && (
+            <div style={{ display: 'grid', gap: '8px', marginTop: '10px' }}>
+              <PhoenixInput label={t('qz_quantity', lang)} value={quantity} inputMode="numeric" disabled={busy}
+                onChange={e => setQuantity(e.target.value)} />
+              <PhoenixInput label={t('qz_reason', lang)} value={reason} disabled={busy}
+                onChange={e => setReason(e.target.value)} />
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <PhoenixButton disabled={busy || !quantityValid || !reasonValid} onClick={() => void submitDestroy()}>
+                  {t('qz_confirm_destroy', lang)}
+                </PhoenixButton>
+                <PhoenixButton variant="ghost" disabled={busy} onClick={() => setMode('none')}>{t('mv_cancel', lang)}</PhoenixButton>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </PhoenixCard>

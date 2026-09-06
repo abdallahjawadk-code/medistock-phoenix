@@ -223,8 +223,40 @@ export const GUIDE_CAPABILITIES = {
   quarantineView:    'inventory.quarantine.view',
   quarantineDispose: 'inventory.quarantine.dispose',
   suspensionView:    'inventory.suspension.view',
+  /**
+   * REACHABILITY of the create surface — what governs whether the button is
+   * rendered. Deliberately NOT a scope authorization: it is true in part
+   * because the profile has candidate outlets, and a candidate outlet is a
+   * candidate, never a grant. The exact scope is re-decided when one is chosen
+   * and re-checked server-side by the RPC.
+   */
   suspensionCreate:  'inventory.suspension.create',
+  /**
+   * The one PROVEN scoped answer at this level — the org-wide (NULL,NULL)
+   * claim. Nothing derived from a candidate list can set it.
+   */
+  suspensionCreateOrgWide: 'inventory.suspension.create.orgwide',
   suspensionLift:    'inventory.suspension.lift',
+} as const;
+
+/**
+ * IG-2 — ELEMENT PRESENCE, a third axis that is neither permission nor data
+ * state (see guide.types.ts `requiresPresence` and guide.surface.tsx).
+ *
+ * These say what the panels actually rendered. A step about "this row" is
+ * removed when there is no row, instead of being shown as a centred card that
+ * would describe a record the operator cannot see — and instead of letting a
+ * genuine anchoring defect hide behind that same fallback.
+ */
+export const GUIDE_PRESENCE = {
+  quarantineRegion:     'inventory.quarantine.region',
+  quarantineRow:        'inventory.quarantine.row',
+  quarantineRowActions: 'inventory.quarantine.rowActions',
+  suspensionRegion:     'inventory.suspension.region',
+  suspensionRow:        'inventory.suspension.row',
+  suspensionRowActions: 'inventory.suspension.rowActions',
+  suspensionHistory:    'inventory.suspension.history',
+  suspensionCreateArea: 'inventory.suspension.createArea',
 } as const;
 
 /** The Inventory Center screen and the two tabs these tours belong to. */
@@ -284,16 +316,35 @@ const QUARANTINE_TOUR: GuideTour = {
         en: 'Each card is a quarantined quantity from one lot, with its quarantine reason beneath it. Stock here is out of dispensing until a decision is made about it.',
       },
       anchors: [GUIDE_ANCHORS.quarantineList],
+      requiresPresence: [GUIDE_PRESENCE.quarantineRegion],
       tab: QUARANTINE_TAB,
     },
     {
       id: 'quarantine.identity',
       title: { ar: 'هوية التشغيلة', en: 'Lot identity' },
+      /**
+       * COPY ACCURACY — what this step may NOT say.
+       *
+       * The visible line shows the batch number, the national code and the
+       * expiry date, and an earlier draft went on to call that triple the
+       * identity that decides the release destination. It is not. The program
+       * matches on the database's own canonical identity key together with the
+       * remaining lot dimensions (`isExactReleaseCandidate` over migration
+       * 088's identity constraint), which is strictly broader than the three
+       * values printed on the card — two lots can agree on all three and still
+       * be different stock of different provenance.
+       *
+       * Telling an operator otherwise would teach them to expect a match that
+       * the program will refuse, and to distrust a correct refusal. So the step
+       * describes what is shown, and says the program verifies the FULL
+       * identity, without reciting internal detail it has no business exposing.
+       */
       body: {
-        ar: 'يُعرّف السطر التشغيلة برقمها والرمز الوطني وتاريخ الانتهاء. هذه الهوية هي ما يحدد لاحقًا الوجهة المطابقة عند رفع الحجر.',
-        en: 'The line identifies the lot by its batch number, national code and expiry date. That identity is what later decides which destination matches when quarantine is released.',
+        ar: 'يعرض السطر ما يميّز التشغيلة أمامك: رقم التشغيلة والرمز الوطني وتاريخ الانتهاء. وعند رفع الحجر يتحقق البرنامج من تطابق هوية التشغيلة كاملةً مع الوجهة، وهي أوسع مما يظهر هنا، فلا يقبل وجهة غير مطابقة حتى لو تشابهت هذه القيم.',
+        en: 'The line shows what distinguishes the lot for you: its batch number, national code and expiry date. When quarantine is released the program checks the lot’s full identity against the destination — broader than what is shown here — so it refuses a destination that is not an exact match even when these values look alike.',
       },
-      anchors: [GUIDE_ANCHORS.quarantineRowIdentity],
+      anchors: [GUIDE_ANCHORS.quarantineRowIdentity, GUIDE_ANCHORS.quarantineList],
+      requiresPresence: [GUIDE_PRESENCE.quarantineRow],
       tab: QUARANTINE_TAB,
     },
     {
@@ -303,7 +354,8 @@ const QUARANTINE_TOUR: GuideTour = {
         ar: 'الرقم المعروض هو الكمية المحجوزة من هذه التشغيلة، وهو الحد الأعلى لأي رفع حجر أو إتلاف.',
         en: 'The number shown is the quantity held from this lot, and it is the upper limit for any release or destruction.',
       },
-      anchors: [GUIDE_ANCHORS.quarantineRowQuantity],
+      anchors: [GUIDE_ANCHORS.quarantineRowQuantity, GUIDE_ANCHORS.quarantineList],
+      requiresPresence: [GUIDE_PRESENCE.quarantineRow],
       tab: QUARANTINE_TAB,
     },
     {
@@ -313,8 +365,9 @@ const QUARANTINE_TOUR: GuideTour = {
         ar: 'يعيد رفع الحجر كمية إلى تشغيلة مخزون قائمة ومطابقة تمامًا في الهوية. تُطلب الكمية والسبب، وإن لم توجد تشغيلة مطابقة يوضّح البرنامج ذلك ولا يُنشئ واحدة. أغلق الدليل ثم نفّذ الإجراء من زره إذا كنت مخوّلًا.',
         en: 'Releasing returns a quantity to an existing stock lot that matches it exactly in identity. A quantity and a reason are required, and if no matching lot exists the program says so rather than creating one. Close the guide, then use the button itself if you are authorized.',
       },
-      anchors: [GUIDE_ANCHORS.quarantineReleaseAction],
+      anchors: [GUIDE_ANCHORS.quarantineReleaseAction, GUIDE_ANCHORS.quarantineRowActions],
       requiresCapabilities: [GUIDE_CAPABILITIES.quarantineDispose],
+      requiresPresence: [GUIDE_PRESENCE.quarantineRowActions],
       tab: QUARANTINE_TAB,
     },
     {
@@ -324,8 +377,9 @@ const QUARANTINE_TOUR: GuideTour = {
         ar: 'الإتلاف يخرج الكمية نهائيًا ولا يضيفها إلى أي رصيد. يتطلب كمية وسببًا مكتوبًا، ولا يمكن التراجع عنه من الواجهة.',
         en: 'Destroying removes the quantity permanently and credits it to no balance anywhere. It requires a quantity and a written reason, and cannot be undone from the interface.',
       },
-      anchors: [GUIDE_ANCHORS.quarantineDestroyAction],
+      anchors: [GUIDE_ANCHORS.quarantineDestroyAction, GUIDE_ANCHORS.quarantineRowActions],
       requiresCapabilities: [GUIDE_CAPABILITIES.quarantineDispose],
+      requiresPresence: [GUIDE_PRESENCE.quarantineRowActions],
       tab: QUARANTINE_TAB,
     },
     {
@@ -390,6 +444,7 @@ const SUSPENSION_TOUR: GuideTour = {
         en: 'The list shows suspensions currently in force within the scope you are allowed to see. Lifted ones appear in a separate history below the list.',
       },
       anchors: [GUIDE_ANCHORS.suspensionList],
+      requiresPresence: [GUIDE_PRESENCE.suspensionRegion],
       tab: SUSPENSIONS_TAB,
     },
     {
@@ -399,7 +454,8 @@ const SUSPENSION_TOUR: GuideTour = {
         ar: 'يوضّح السطر ما إذا كان الإيقاف على مستوى المؤسسة كلها أو على منفذ صرف واحد باسمه. النطاق يحدد أين يتوقف الصرف فعلًا.',
         en: 'The line states whether the suspension covers the whole organization or one named dispensing outlet. The scope is what decides where dispensing actually stops.',
       },
-      anchors: [GUIDE_ANCHORS.suspensionRowScope],
+      anchors: [GUIDE_ANCHORS.suspensionRowScope, GUIDE_ANCHORS.suspensionList],
+      requiresPresence: [GUIDE_PRESENCE.suspensionRow],
       tab: SUSPENSIONS_TAB,
     },
     {
@@ -409,18 +465,20 @@ const SUSPENSION_TOUR: GuideTour = {
         ar: 'تشير الشارة إلى أن المادة موقوفة الصرف في هذا النطاق. تظهر لمن يرى المادة، دون كشف تفاصيل القرار الإداري خلفها.',
         en: 'The badge marks the material as suspended from dispensing in this scope. It is shown to anyone who sees the material, without exposing the administrative detail behind the decision.',
       },
-      anchors: [GUIDE_ANCHORS.suspensionRowBadge],
+      anchors: [GUIDE_ANCHORS.suspensionRowBadge, GUIDE_ANCHORS.suspensionList],
+      requiresPresence: [GUIDE_PRESENCE.suspensionRow],
       tab: SUSPENSIONS_TAB,
     },
     {
       id: 'suspension.create',
       title: { ar: 'إنشاء إيقاف', en: 'Creating a suspension' },
       body: {
-        ar: 'يبدأ الإنشاء باختيار المادة، ثم النطاق حين يكون أمامك أكثر من خيار مسموح. يُختار سبب من قائمة محددة، ويصبح حقل التفاصيل إلزاميًا عند اختيار «سبب آخر»، أما المستند المرجعي فاختياري. أغلق الدليل ثم نفّذ الإجراء من زره إذا كنت مخوّلًا.',
-        en: 'Creating starts by choosing the material, then the scope when more than one is available to you. A reason is picked from a fixed list, the detail field becomes required when the reason is "other", and the reference document is optional. Close the guide, then use the button itself if you are authorized.',
+        ar: 'يبدأ الإنشاء باختيار المادة، ثم النطاق حين يكون أمامك أكثر من خيار. يُختار السبب من قائمة محددة، ويصبح حقل التفاصيل إلزاميًا مع «سبب آخر». وفتح النموذج ليس قبولًا: يتحقق البرنامج من صلاحيتك على النطاق الذي تختاره. أغلق الدليل ثم نفّذ الإجراء من زره إذا كنت مخوّلًا.',
+        en: 'Creating starts with the material, then the scope when more than one is offered. The reason comes from a fixed list, and the detail field is required for "other". Opening the form is not acceptance: the program checks your authorization for the scope you choose. Close the guide, then use the button itself if you are authorized.',
       },
-      anchors: [GUIDE_ANCHORS.suspensionSuspendAction],
+      anchors: [GUIDE_ANCHORS.suspensionSuspendAction, GUIDE_ANCHORS.suspensionCreateArea],
       requiresCapabilities: [GUIDE_CAPABILITIES.suspensionCreate],
+      requiresPresence: [GUIDE_PRESENCE.suspensionCreateArea],
       tab: SUSPENSIONS_TAB,
     },
     {
@@ -430,8 +488,9 @@ const SUSPENSION_TOUR: GuideTour = {
         ar: 'رفع الإيقاف يعيد السماح بالصرف ضمن النطاق نفسه، ويتطلب سببًا مكتوبًا. ولا يُخرج أي كمية من الحجر الصحي ولا يغيّر بقية شروط صلاحية المخزون.',
         en: 'Lifting allows dispensing again within the same scope and requires a written reason. It releases nothing from quarantine and changes none of the other conditions on the stock.',
       },
-      anchors: [GUIDE_ANCHORS.suspensionLiftAction],
+      anchors: [GUIDE_ANCHORS.suspensionLiftAction, GUIDE_ANCHORS.suspensionRowActions],
       requiresCapabilities: [GUIDE_CAPABILITIES.suspensionLift],
+      requiresPresence: [GUIDE_PRESENCE.suspensionRowActions],
       tab: SUSPENSIONS_TAB,
     },
     {
@@ -442,6 +501,7 @@ const SUSPENSION_TOUR: GuideTour = {
         en: 'The history keeps suspensions that have been lifted, together with the reason for lifting. It is for reference only and cannot be edited.',
       },
       anchors: [GUIDE_ANCHORS.suspensionHistory],
+      requiresPresence: [GUIDE_PRESENCE.suspensionHistory],
       tab: SUSPENSIONS_TAB,
     },
   ],

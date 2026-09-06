@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
@@ -16,10 +16,14 @@ import {
   materialDispensingSuspensionReasonLabel,
   type MaterialDispensingSuspensionRow, type SuspensionReasonCode,
 } from './material-dispensing-suspension.service';
-import { useMaterialDispensingSuspensionPermission } from './useMaterialDispensingSuspensionPermission';
+import {
+  useMaterialDispensingSuspensionPermission, suspensionPermissionScopeKey,
+} from './useMaterialDispensingSuspensionPermission';
 import { useInventoryScopes, type InventoryScopeOption } from './useInventoryScopes';
 import { GUIDE_ANCHORS, guideAnchor } from '@/features/guide/guide.anchors';
-import { useGuideCapabilities } from '@/features/guide/guide.surface';
+import {
+  useGuideExampleRow, useGuidePresence, useScopedGuideCapabilities,
+} from '@/features/guide/guide.surface';
 
 const newRequestId = () =>
   (typeof crypto !== 'undefined' && 'randomUUID' in crypto)
@@ -113,71 +117,140 @@ export function MaterialDispensingSuspensionPanel({ organizationId }: Props) {
   /**
    * INTERACTIVE-GUIDE-IG2 — publish the DECISIONS this panel computed.
    *
-   * `canSuspendAnywhere` is the panel's own reachability answer, not a
-   * candidate list: an outlet appearing in `manageableOutlets` does not by
-   * itself authorize a suspension there, and `SuspendForm` re-asks the scoped
-   * hook once a scope is chosen before the RPC re-checks it server-side. The
-   * guide consumes "can this operator reach the create surface at all", which
-   * is exactly what governs whether the button is rendered.
+   * TWO DIFFERENT QUESTIONS, PUBLISHED SEPARATELY. Conflating them is exactly
+   * the mistake this module's own doc comment warns about, and the earlier
+   * version made it:
    *
-   * While the permission read is in flight the state is `loading`, so the
-   * guide offers nothing rather than guessing; a failed read publishes
-   * `error`, which is likewise never treated as a grant.
+   *   • `…suspension.create` — may this operator REACH the create surface at
+   *     all? That is `canSuspendAnywhere`, and it is what governs whether the
+   *     button renders. It is deliberately NOT a scope authorization: it is
+   *     true partly because `manageableOutlets` is non-empty, and a candidate
+   *     outlet is a candidate, not a grant.
+   *   • `…suspension.create.orgwide` — the one PROVEN scoped answer at this
+   *     level, the org-wide (NULL,NULL) claim migration 187 decides. Nothing
+   *     derived from the candidate list can ever set it.
+   *
+   * So the guide may say "this is where a suspension is created" without ever
+   * implying the operator may create one at a particular outlet. `SuspendForm`
+   * re-asks the scoped hook once a scope is chosen, and the RPC re-checks it
+   * server-side; reaching the form authorizes nothing.
+   *
+   * THE STATE COVERS BOTH READS. `canSuspendAnywhere` depends on the outlet
+   * catalog as well as on the permission, so publishing only `perm`'s state
+   * would have declared a confident `ready` while `manageableOutlets` was
+   * still empty because the catalog had not arrived — or, worse, had FAILED.
+   * An empty candidate list from a failed read is not a decision, and is not
+   * published as one.
    */
-  useGuideCapabilities(
+  const scopedState: 'loading' | 'error' | 'ready' =
+    (perm.loading || scopes.loading) ? 'loading'
+      : (perm.error || scopes.error) ? 'error'
+        : 'ready';
+  useScopedGuideCapabilities(
     'inventory.suspension',
     {
       'inventory.suspension.view': canViewDetail,
       'inventory.suspension.create': canSuspendAnywhere,
+      'inventory.suspension.create.orgwide': canSuspendOrgWide,
       'inventory.suspension.lift': canLift,
     },
-    perm.loading ? 'loading' : (perm.error ? 'error' : 'ready'),
-    `org:${organizationId}`,
+    scopedState,
+    suspensionPermissionScopeKey(organizationId, null),
+    // The catalog half of `canSuspendAnywhere` needs no separate tag:
+    // useInventoryScopes already refuses a catalog belonging to another
+    // organization and reports `loading` until its own has arrived.
+    perm.dataScopeKey,
   );
 
-  if (!canViewDetail && !perm.loading) {
+  const active = useMemo(() => (rows ?? []).filter(r => !r.liftedAt), [rows]);
+  const history = useMemo(() => (rows ?? []).filter(r => r.liftedAt), [rows]);
+
+  /**
+   * IG-2 — ONE declared example row, frozen by identity for as long as it is
+   * still in the list. See useGuideExampleRow: "whichever is first right now"
+   * would let the highlight move to a different suspension mid-explanation
+   * after a lift reorders the list.
+   */
+  const activeIds = useMemo(() => active.map(r => r.id), [active]);
+  const exampleRowId = useGuideExampleRow(activeIds);
+
+  // Which branch will render, decided ONCE so the presence declaration and the
+  // JSX beneath it cannot drift apart.
+  const showForbidden = !canViewDetail && !perm.loading;
+  const showLoading = !showForbidden && loading && rows === null;
+  const showError = !showForbidden && !showLoading && error !== null;
+  const showBody = !showForbidden && !showLoading && !showError;
+
+  /**
+   * IG-2 — element presence: neither a permission nor a data state.
+   *
+   * "Only lifted records and no active suspension" is a real, reachable state
+   * of this panel: the region and the history exist, but there is no active
+   * row, so the steps about a row's scope and badge are REMOVED rather than
+   * falling back to a centred card describing something not on screen.
+   */
+  useGuidePresence('inventory.suspension', {
+    'inventory.suspension.region': showBody,
+    'inventory.suspension.row': showBody && exampleRowId !== null,
+    'inventory.suspension.rowActions': showBody && exampleRowId !== null && canLift,
+    'inventory.suspension.history': showBody && history.length > 0,
+    'inventory.suspension.createArea': showBody && canSuspendAnywhere,
+  });
+
+  if (showForbidden) {
     return <PhoenixEmptyState icon="🚫" title={t('e_forbidden_material_dispensing_suspension_view_badge', lang)} description="" />;
   }
-  if (loading && rows === null) return <PhoenixLoadingState />;
-  if (error) return <PhoenixErrorState title={t('err_generic', lang)} message={error} onRetry={reload} />;
-
-  const active = (rows ?? []).filter(r => !r.liftedAt);
-  const history = (rows ?? []).filter(r => r.liftedAt);
+  if (showLoading) return <PhoenixLoadingState />;
+  if (showError) return <PhoenixErrorState title={t('err_generic', lang)} message={error ?? ''} onRetry={reload} />;
 
   return (
     <div dir={dir} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
       {toast && <div style={{ fontSize: '12px', color: 'var(--ok)' }}>{toast}</div>}
 
-      {canSuspendAnywhere && !composing && (
-        <div {...guideAnchor(GUIDE_ANCHORS.suspensionSuspendAction)}>
-          {/* The anchor is the wrapper, never the button: the guide explains
-              this control, it never opens the composer. */}
-          <PhoenixButton onClick={() => setComposing(true)}>{t('mds_suspend_action', lang)}</PhoenixButton>
+      {(canSuspendAnywhere || composing) && (
+        /* IG-2 — the create AREA, present whether the button or the composer
+           the operator opened from it is showing. The precise button-wrapper
+           anchor inside disappears once the composer is open, and the create
+           step must not silently degrade to a centred card then: it keeps the
+           button wrapper as its first anchor and this region as its declared
+           fallback. */
+        <div {...guideAnchor(GUIDE_ANCHORS.suspensionCreateArea)}>
+          {canSuspendAnywhere && !composing && (
+            <div {...guideAnchor(GUIDE_ANCHORS.suspensionSuspendAction)}>
+              {/* The anchor is the wrapper, never the button: the guide explains
+                  this control, it never opens the composer. */}
+              <PhoenixButton onClick={() => setComposing(true)}>{t('mds_suspend_action', lang)}</PhoenixButton>
+            </div>
+          )}
+
+          {composing && (
+            <SuspendForm
+              lang={lang}
+              organizationId={organizationId}
+              canSuspendOrgWide={canSuspendOrgWide}
+              manageableOutlets={manageableOutlets}
+              onCancel={() => setComposing(false)}
+              onDone={(msg) => { setComposing(false); showToast(msg); void reload(); }}
+              onError={showToast}
+            />
+          )}
         </div>
       )}
 
-      {composing && (
-        <SuspendForm
-          lang={lang}
-          organizationId={organizationId}
-          canSuspendOrgWide={canSuspendOrgWide}
-          manageableOutlets={manageableOutlets}
-          onCancel={() => setComposing(false)}
-          onDone={(msg) => { setComposing(false); showToast(msg); void reload(); }}
-          onError={showToast}
-        />
-      )}
-
       {active.length === 0 && history.length === 0 ? (
-        <PhoenixEmptyState icon="⛔" title={t('mds_history_empty', lang)} description="" />
+        /* The empty state IS the list region: same anchor, so the step naming
+           it keeps a real, correctly-placed target. */
+        <div {...guideAnchor(GUIDE_ANCHORS.suspensionList)}>
+          <PhoenixEmptyState icon="⛔" title={t('mds_history_empty', lang)} description="" />
+        </div>
       ) : (
         <div {...guideAnchor(GUIDE_ANCHORS.suspensionList)} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          {active.map((row, index) => (
+          {active.map(row => (
             <SuspensionRow
               key={row.id} row={row} lang={lang} canLift={canLift}
-              /* IG-2: row-level anchors on the FIRST active row only, so the
-                 guide never has to choose between equal candidates. */
-              guideAnchored={index === 0}
+              /* IG-2: exactly one active row carries the row-level anchors, and
+                 it is the frozen example above — never "whichever is first". */
+              guideAnchored={row.id === exampleRowId}
               resolveOutletName={resolveOutletName}
               busy={busyId === row.id}
               onBusy={busy => setBusyId(busy ? row.id : null)}
@@ -411,23 +484,30 @@ function SuspensionRow({ row, lang, canLift, guideAnchored, resolveOutletName, b
         </div>
       </div>
 
-      {isActive && canLift && !lifting && (
-        <div {...(guideAnchored ? guideAnchor(GUIDE_ANCHORS.suspensionLiftAction) : {})} style={{ marginTop: '10px' }}>
-          <PhoenixButton variant="secondary" onClick={() => setLifting(true)}>{t('mds_lift_action', lang)}</PhoenixButton>
-        </div>
-      )}
+      {isActive && (canLift || lifting) && (
+        /* IG-2 — the lift AREA, present whether the button or the reason form
+           the operator opened from it is showing; the lift step falls back
+           here rather than to a centred card. */
+        <div {...(guideAnchored ? guideAnchor(GUIDE_ANCHORS.suspensionRowActions) : {})}>
+          {canLift && !lifting && (
+            <div {...(guideAnchored ? guideAnchor(GUIDE_ANCHORS.suspensionLiftAction) : {})} style={{ marginTop: '10px' }}>
+              <PhoenixButton variant="secondary" onClick={() => setLifting(true)}>{t('mds_lift_action', lang)}</PhoenixButton>
+            </div>
+          )}
 
-      {lifting && (
-        <div style={{ display: 'grid', gap: '8px', marginTop: '10px' }}>
-          <div style={{ fontSize: '12px', color: 'var(--t2)' }}>{t('mds_lift_confirm_body', lang)}</div>
-          <PhoenixInput label={t('mds_lift_reason_label', lang)} value={liftReason} disabled={busy}
-            onChange={e => setLiftReason(e.target.value)} />
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <PhoenixButton disabled={busy || liftReason.trim() === ''} onClick={() => void submitLift()}>
-              {t('mds_lift_action', lang)}
-            </PhoenixButton>
-            <PhoenixButton variant="ghost" disabled={busy} onClick={() => setLifting(false)}>{t('mv_cancel', lang)}</PhoenixButton>
-          </div>
+          {lifting && (
+            <div style={{ display: 'grid', gap: '8px', marginTop: '10px' }}>
+              <div style={{ fontSize: '12px', color: 'var(--t2)' }}>{t('mds_lift_confirm_body', lang)}</div>
+              <PhoenixInput label={t('mds_lift_reason_label', lang)} value={liftReason} disabled={busy}
+                onChange={e => setLiftReason(e.target.value)} />
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <PhoenixButton disabled={busy || liftReason.trim() === ''} onClick={() => void submitLift()}>
+                  {t('mds_lift_action', lang)}
+                </PhoenixButton>
+                <PhoenixButton variant="ghost" disabled={busy} onClick={() => setLifting(false)}>{t('mv_cancel', lang)}</PhoenixButton>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </PhoenixCard>

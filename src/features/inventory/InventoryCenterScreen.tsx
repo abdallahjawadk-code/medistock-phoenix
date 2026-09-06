@@ -23,13 +23,13 @@ import { useInventoryScopes } from './useInventoryScopes';
 import { useWarehouseStockPermissions } from './useWarehouseStockPermissions';
 import { useReturnReceivePermission } from './useReturnReceivePermission';
 import { useOutletReturnExceptionResolvePermission } from './useOutletReturnExceptionResolvePermission';
-import { useQuarantinePermission } from './useQuarantinePermission';
+import { useQuarantinePermission, quarantinePermissionScopeKey } from './useQuarantinePermission';
 import { useInventoryReadAffordance } from './useInventoryReadAffordance';
 import { QuarantinePanel } from './QuarantinePanel';
 import { useMaterialDispensingSuspensionPermission } from './useMaterialDispensingSuspensionPermission';
 import { MaterialDispensingSuspensionPanel } from './MaterialDispensingSuspensionPanel';
 import { GUIDE_ANCHORS, guideAnchor } from '@/features/guide/guide.anchors';
-import { useGuideSurface } from '@/features/guide/guide.surface';
+import { useGuideSurface, useGuideCapabilities, useScopedGuideCapabilities } from '@/features/guide/guide.surface';
 import { useApproveCorrectionPermission } from './useApproveCorrectionPermission';
 import { PendingCorrectionsPanel } from './PendingCorrectionsPanel';
 import { SUPPLY_TYPES, supplyTypeLabelKey } from '@/shared/lib/supply-types';
@@ -172,6 +172,55 @@ export function InventoryCenterScreen({
    * open rather than navigating to it.
    */
   useGuideSurface(3, tab);
+
+  /**
+   * INTERACTIVE-GUIDE-IG2 — the quarantine answers are published FROM HERE,
+   * because this is where they exist.
+   *
+   * They used to be published by QuarantinePanel, out of the one boolean it is
+   * handed. That was wrong in two ways at once, and both mattered:
+   *
+   *   • the panel receives `canDispose` as a plain boolean, so it could only
+   *     ever declare the answer `ready` — it cannot see that the check is still
+   *     in flight, or that it failed; and
+   *   • `useAsync` KEEPS the previous result while the next one loads, and
+   *     turns `loading` back on from an effect. So on the first render after
+   *     the warehouse changes, warehouse A's "yes" is still in hand while the
+   *     scope already reads warehouse B. Published as `ready`, that is A's
+   *     answer attributed to B.
+   *
+   * Both are fixed by publishing the AsyncState itself through
+   * `useScopedGuideCapabilities`, which refuses to attribute an answer to a
+   * scope until the loader has acknowledged that scope.
+   *
+   * TWO SOURCES, NOT ONE — read authority and action authority are established
+   * independently and must fail independently. `hasInventoryReadAffordance` is
+   * a synchronous decision that owes nothing to the scoped RBAC round trip, so
+   * a quarantine permission check that is pending or FAILED must not cancel it:
+   * the operator can still be told what the list is. The converse never holds —
+   * a read affordance grants no disposition, and the action source is the only
+   * thing that can ever contribute `dispose`.
+   *
+   * Nothing operational changes: `canDisposeQuarantine` still flows to the
+   * panel exactly as before, and both RPCs re-check server-side regardless.
+   */
+  const quarantineScopeKey = quarantinePermissionScopeKey(activeOrgId, activeWarehouseId || null);
+  useGuideCapabilities(
+    'inventory.quarantine.read',
+    { 'inventory.quarantine.view': hasInventoryReadAffordance && activeWarehouseId !== '' },
+    'ready',
+    quarantineScopeKey,
+  );
+  useScopedGuideCapabilities(
+    'inventory.quarantine.action',
+    {
+      'inventory.quarantine.view': quarantinePerm.data === true,
+      'inventory.quarantine.dispose': quarantinePerm.data === true,
+    },
+    quarantinePerm.loading ? 'loading' : (quarantinePerm.error ? 'error' : 'ready'),
+    quarantineScopeKey,
+    quarantinePerm.dataScopeKey,
+  );
   const [toast, setToast] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
 

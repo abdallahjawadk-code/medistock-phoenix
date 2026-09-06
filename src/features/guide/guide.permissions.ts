@@ -1,6 +1,6 @@
 import { isScreenAuthorized } from '@/shared/authz/screen-access';
 import { isStepForViewport, type GuideViewport } from './guide.viewport';
-import type { GuideCapabilityState, GuideSurface } from './guide.surface';
+import type { GuideSurface } from './guide.surface';
 import type { GuideStep, GuideTour } from './guide.types';
 
 /**
@@ -29,28 +29,63 @@ export interface GuideAudience {
    * Absent reads as false; see guide.surface.tsx.
    */
   capabilities?: Readonly<Record<string, boolean>>;
-  /** IG-2 — whether those answers have finished resolving. */
-  capabilityState?: GuideCapabilityState;
   /** IG-2 — where the operator actually is. */
   surface?: GuideSurface;
+  /**
+   * IG-2 — which anchored elements the panels actually rendered.
+   *
+   * Kept apart from `capabilities` on purpose: presence answers "is it on
+   * screen", never "may this operator use it". Neither substitutes for the
+   * other, and an absent presence key reads as false exactly like an absent
+   * capability — but for a different reason and with a different consequence.
+   */
+  presence?: Readonly<Record<string, boolean>>;
 }
 
 /**
  * IG-2 — does the audience hold every scoped capability this thing declares?
  *
- * While the answers are still loading, or if a publisher failed, NOTHING is
- * admitted: a guess in this direction would offer an operator a tour about a
- * surface they may not act on, and a stale grant is exactly what a context
- * change must invalidate.
+ * A capability is present ONLY when some publisher that had SETTLED said yes:
+ * `guide.surface.tsx` builds this map from ready sources alone, so a check
+ * still in flight — or one that failed — contributes nothing and reads as
+ * false. That is the fail-closed direction, and it is the whole rule.
+ *
+ * WHY THERE IS NO LONGER A GLOBAL "everything must be ready" VETO. There was
+ * one, and it was wrong: capability answers come from SEPARATE sources with
+ * separate lifetimes, and one aggregate state cannot describe them. A
+ * quarantine ACTION check that failed would cancel the read affordance too —
+ * an independently established, synchronous decision that owed nothing to that
+ * round trip — and the operator would be told nothing at all about a list they
+ * were plainly allowed to look at. Whereas a per-source rule refuses exactly
+ * what failed: the reading steps survive, the action steps do not.
+ *
+ * The aggregate state still exists on the context, where it belongs — as part
+ * of the context key that invalidates an open tour — but it decides no grant.
  */
 function holdsCapabilities(
   required: readonly string[] | undefined,
   audience: GuideAudience,
 ): boolean {
   if (!required || required.length === 0) return true;
-  if (audience.capabilityState !== 'ready') return false;
   const held = audience.capabilities ?? {};
   return required.every(key => held[key] === true);
+}
+
+/**
+ * IG-2 — are the elements this step points at actually rendered?
+ *
+ * Unlike {@link holdsCapabilities} this has NO loading concept of its own. A
+ * panel that has not finished loading simply has not declared these keys, so
+ * they read as absent — the same answer, reached honestly, without inventing a
+ * second notion of "pending" that could drift from the first.
+ */
+function hasPresence(
+  required: readonly string[] | undefined,
+  audience: GuideAudience,
+): boolean {
+  if (!required || required.length === 0) return true;
+  const present = audience.presence ?? {};
+  return required.every(key => present[key] === true);
 }
 
 /** IG-2 — is this thing's screen/tab the one currently open? */
@@ -77,6 +112,9 @@ export function isStepPermitted(step: GuideStep, audience: GuideAudience): boole
     return false;
   }
   if (!holdsCapabilities(step.requiresCapabilities, audience)) return false;
+  // Presence is checked AFTER authorization and never instead of it, so a
+  // rendered element can never stand in for a permission the operator lacks.
+  if (!hasPresence(step.requiresPresence, audience)) return false;
   // A step naming a tab describes something only that tab renders, so it is
   // shown only while that tab is open — never as an off-screen explanation.
   if (step.tab !== undefined && !matchesSurface({ tab: step.tab }, audience)) return false;

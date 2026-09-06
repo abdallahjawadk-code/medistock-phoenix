@@ -5,23 +5,32 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { useMemo, useState } from 'react';
 import { GUIDE_ANCHORS } from '../guide.anchors';
 import { GUIDE_REGISTRY, GUIDE_CAPABILITIES } from '../guide.registry';
+import { COMMAND_CENTER_SCREEN, DASHBOARD_VIEW_PERMISSION } from '@/shared/authz/screen-access';
 import { permittedTours } from '../guide.permissions';
 import { GUIDE_PROGRESS_STORAGE_KEY } from '../guide.progress';
 import {
   GuideSurfaceProvider,
   useGuideCapabilities,
+  useGuidePresence,
   useGuideSurface,
   type GuideCapabilityState,
 } from '../guide.surface';
 
 /**
- * INTERACTIVE-GUIDE-IG2 — the two contextual tours, proven against the rules
- * that actually govern them.
+ * INTERACTIVE-GUIDE-IG2 — the ENGINE's contract for the two contextual tours.
  *
- * The subject here is NOT "does a tour render". It is that eligibility comes
- * from the scoped answers the panels computed, that a tour is absent — not
- * disabled, not titled — when it does not apply, and that nothing the guide
- * does can reach a write path or a business form.
+ * SCOPE, STATED SO IT CANNOT BE MISREAD. The surface below is a stand-in that
+ * renders the anchors and publishes capabilities directly. That makes it the
+ * right instrument for the ENGINE's rules — eligibility, absence, filtering,
+ * invalidation, progress, language — because each can be driven to an exact
+ * state and back.
+ *
+ * It proves NOTHING about the real panels. Whether QuarantinePanel and
+ * MaterialDispensingSuspensionPanel actually place those anchors, in every
+ * state they can be in, and whether a whole tour walks over them without
+ * touching an operational path, is proven against the real components in
+ * `guide-ig2-panels.runtime.test.tsx`, and the scoped-answer attribution in
+ * `guide-ig2-scope-attribution.runtime.test.tsx`. Neither claim is made here.
  */
 
 const rpc = vi.fn(() => Promise.resolve({ data: null, error: null }));
@@ -56,14 +65,29 @@ import { GuideEngine } from '../GuideEngine';
 const INERT_DRAWER = { isAvailable: false, isOpen: false, open: () => undefined, close: () => undefined };
 
 /** The two IG-2 surfaces, with the anchors the registry actually targets. */
-function Surface({ tab, caps, state, scopeKey }: {
-  tab: string;
+function Surface({ screen: screenNumber = 3, tab, caps, state, scopeKey }: {
+  screen?: number;
+  tab: string | null;
   caps: Record<string, boolean>;
   state: GuideCapabilityState;
   scopeKey: string;
 }) {
-  useGuideSurface(3, tab);
+  useGuideSurface(screenNumber, tab);
   useGuideCapabilities('panel', caps, state, scopeKey);
+  // Everything this stand-in renders, it also declares. Presence is a separate
+  // axis from permission (see guide.surface.tsx) and the engine reads it as
+  // one; a stand-in that placed anchors without declaring them would be
+  // testing a state the real panels can never produce.
+  useGuidePresence('panel', {
+    'inventory.quarantine.region': tab === 'quarantine',
+    'inventory.quarantine.row': tab === 'quarantine',
+    'inventory.quarantine.rowActions': tab === 'quarantine',
+    'inventory.suspension.region': tab === 'suspensions',
+    'inventory.suspension.row': tab === 'suspensions',
+    'inventory.suspension.rowActions': tab === 'suspensions',
+    'inventory.suspension.history': tab === 'suspensions',
+    'inventory.suspension.createArea': tab === 'suspensions',
+  });
   return (
     <div id="surface">
       <button data-guide-id={GUIDE_ANCHORS.inventoryTabQuarantine} type="button">q-tab</button>
@@ -100,7 +124,8 @@ function Surface({ tab, caps, state, scopeKey }: {
 let openedForms: string[] = [];
 
 function Harness({
-  tab = 'quarantine',
+  screen: screenNumber = 3,
+  tab = 'quarantine' as string | null,
   caps = {},
   state = 'ready' as GuideCapabilityState,
   scopeKey = 'wh:A',
@@ -111,7 +136,7 @@ function Harness({
   const drawer = useMemo(() => INERT_DRAWER, []);
   return (
     <GuideSurfaceProvider>
-      <Surface tab={tab} caps={caps} state={state} scopeKey={scopeKey} />
+      <Surface screen={screenNumber} tab={tab} caps={caps} state={state} scopeKey={scopeKey} />
       <GuideEngine currentScreen={3} onNavigate={() => undefined} drawer={drawer} onClose={onClose} />
     </GuideSurfaceProvider>
   );
@@ -187,7 +212,16 @@ function stepIds(caps: Record<string, boolean>, tab: string, tourId: string): st
     role: appState.role,
     permissions: appState.myPermissions,
     capabilities: caps,
-    capabilityState: 'ready',
+    presence: {
+      'inventory.quarantine.region': true,
+      'inventory.quarantine.row': true,
+      'inventory.quarantine.rowActions': true,
+      'inventory.suspension.region': true,
+      'inventory.suspension.row': true,
+      'inventory.suspension.rowActions': true,
+      'inventory.suspension.history': true,
+      'inventory.suspension.createArea': true,
+    },
     surface: { screen: 3, tab },
   }, 'desktop').find(e => e.tour.id === tourId);
   return entry?.steps.map(s => s.id) ?? [];
@@ -311,6 +345,40 @@ describe('IG-2 — a context change never reuses stale eligibility', () => {
     expect(tourTitles()).not.toContain('الحجر الصحي');
   });
 
+  it('does NOT cancel the guide’s own legitimate navigation to «الإحصائيات»', async () => {
+    /**
+     * The orientation tour ends on Statistics BY DESIGN — a step declares that
+     * screen and the engine moves there when the operator's own authorization
+     * already admits it. An earlier version folded the surface into the context
+     * key, so arriving read as "the authorization context changed" and the tour
+     * closed itself on its own last step.
+     *
+     * The surface is still honoured, and more precisely: a tab-scoped tour
+     * loses every step the moment its tab closes and returns to the Help
+     * Center for THAT reason. A tour that belongs to no tab is unaffected.
+     */
+    appState = { ...appState, myPermissions: new Set([DASHBOARD_VIEW_PERMISSION]) };
+    const { rerender } = render(<Harness screen={3} tab="quarantine" caps={ALL_CAPS} />);
+    await openCenter();
+    await startTour('جولة تعريفية');
+    const startedOn = layer().dataset.guideStep;
+    expect(startedOn).toBeDefined();
+
+    // The operator is carried to Statistics, exactly as a step asked.
+    rerender(<Harness screen={COMMAND_CENTER_SCREEN} tab={null} caps={ALL_CAPS} />);
+    await waitFor(() => expect(document.querySelector('[data-guide-tour]')).not.toBeNull());
+    expect(layer().dataset.guideTour).toBe('guide.tour.orientation');
+    expect(layer().dataset.guideStep).toBe(startedOn);
+  });
+
+  it('still closes a TAB-scoped tour when its tab closes', async () => {
+    const { rerender } = render(<Harness tab="quarantine" caps={ALL_CAPS} />);
+    await openCenter();
+    await startTour('الحجر الصحي');
+    rerender(<Harness screen={COMMAND_CENTER_SCREEN} tab={null} caps={ALL_CAPS} />);
+    await waitFor(() => expect(document.querySelector('[data-guide-tour]')).toBeNull());
+  });
+
   it('closes when the session goes away', async () => {
     const onClose = vi.fn();
     render(<Harness tab="quarantine" caps={ALL_CAPS} onClose={onClose} />);
@@ -324,23 +392,38 @@ describe('IG-2 — a context change never reuses stale eligibility', () => {
 });
 
 describe('IG-2 — the guide never touches an operational path', () => {
-  async function walkBothTours() {
-    render(<Harness tab="quarantine" caps={ALL_CAPS} />);
+  /**
+   * ONE tour, walked end to end. The previous version of this helper was named
+   * `walkBothTours` and walked only the quarantine one, so the suspension tour
+   * had no walk at all behind a name that claimed otherwise. Each tour now
+   * names the tour it walks, and the walks over the REAL panels live in
+   * guide-ig2-panels.runtime.test.tsx.
+   */
+  async function walk(tab: string, title: string, lastStepId: string) {
+    render(<Harness tab={tab} caps={ALL_CAPS} />);
     await openCenter();
-    await startTour('الحجر الصحي');
+    await startTour(title);
     for (let i = 0; i < 20; i += 1) {
-      if (layer().dataset.guideStep === 'quarantine.closing') break;
+      if (layer().dataset.guideStep === lastStepId) break;
       fireEvent.click(screen.getByRole('button', { name: 'التالي' }));
       await waitFor(() => expect(layer()).toBeInTheDocument());
     }
+    expect(layer().dataset.guideStep).toBe(lastStepId);
     fireEvent.click(screen.getByRole('button', { name: 'إنهاء' }));
     await waitFor(() => expect(document.querySelector('[data-guide-tour]')).toBeNull());
   }
 
-  it('opens no business form and calls no RPC', async () => {
-    await walkBothTours();
+  it('opens no business form and calls no RPC across the quarantine tour', async () => {
+    await walk('quarantine', 'الحجر الصحي', 'quarantine.closing');
     // The release form auto-selects a destination lot the moment it opens —
     // real business-form state. The guide must never cause that.
+    expect(openedForms).toEqual([]);
+    expect(rpc).not.toHaveBeenCalled();
+    expect(from).not.toHaveBeenCalled();
+  });
+
+  it('opens no business form and calls no RPC across the suspension tour', async () => {
+    await walk('suspensions', 'موقوفة الصرف', 'suspension.history');
     expect(openedForms).toEqual([]);
     expect(rpc).not.toHaveBeenCalled();
     expect(from).not.toHaveBeenCalled();

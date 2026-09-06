@@ -81,6 +81,22 @@ export interface GuideStep {
    */
   requiresCapabilities?: readonly string[];
   /**
+   * INTERACTIVE-GUIDE-IG2 — element-presence names this step needs, declared by
+   * the panel that renders (or does not render) them.
+   *
+   * A THIRD, independent axis, and the reason it is not folded into either of
+   * the two above: an empty quarantine list is neither a refusal nor a missing
+   * permission, it is simply nothing to point at. A step about "this row" must
+   * be REMOVED when the list has no row — not shown as a centred card, which
+   * would describe a record the operator cannot see and would let a genuine
+   * anchoring defect hide behind the fallback.
+   *
+   * `central` fallback keeps its original meaning and stays correct for the
+   * case it was written for: the operator is authorized AND the element exists
+   * in this panel's vocabulary, but the current layout is not showing it.
+   */
+  requiresPresence?: readonly string[];
+  /**
    * INTERACTIVE-GUIDE-IG2 — the tab within `screen` this step describes.
    *
    * The guide never switches tabs: switching unmounts the panel and would

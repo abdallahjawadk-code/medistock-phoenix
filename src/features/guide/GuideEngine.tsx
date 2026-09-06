@@ -57,15 +57,15 @@ type Mode =
 export function GuideEngine({ currentScreen, onNavigate, drawer, onClose }: Props) {
   const { lang, dir, role, myPermissions, authStatus, session } = useApp();
   const viewport = useGuideViewport();
-  const { surface, capabilities, capabilityState, contextKey } = useGuideSurfaceContext();
+  const { surface, capabilities, presence, contextKey, setTourActive } = useGuideSurfaceContext();
   const [progress, setProgress] = useState<GuideProgress>(readGuideProgress);
   const [mode, setMode] = useState<Mode>({ kind: 'center' });
   const [resetNotice, setResetNotice] = useState(false);
   const [panel, setPanel] = useState<HTMLDivElement | null>(null);
 
   const audience = useMemo<GuideAudience>(
-    () => ({ role, permissions: myPermissions, capabilities, capabilityState, surface }),
-    [role, myPermissions, capabilities, capabilityState, surface],
+    () => ({ role, permissions: myPermissions, capabilities, presence, surface }),
+    [role, myPermissions, capabilities, presence, surface],
   );
 
   /**
@@ -83,15 +83,26 @@ export function GuideEngine({ currentScreen, onNavigate, drawer, onClose }: Prop
     [audience, viewport],
   );
 
+
   /**
-   * IG-2 — a context change invalidates eligibility, never silently reuses it.
+   * IG-2 — a change of AUTHORIZATION CONTEXT invalidates eligibility, never
+   * silently reuses it.
    *
-   * A different organization, warehouse, outlet or tab, a permission read that
-   * is still in flight, or one that failed, all change `contextKey`. When that
+   * A different organization, warehouse or outlet, a permission read that is
+   * still in flight, or one that failed, all change `contextKey`. When that
    * happens while a tour is open, the tour is closed back to the Help Center
    * and the step list is recomputed from scratch. Nothing from the previous
    * context is carried across or shown: `setMode` drops the step index, and
    * the Help Center re-renders from the freshly filtered set.
+   *
+   * MOVING is not a change of context, and is deliberately NOT handled here.
+   * `contextKey` carries no screen and no tab (see guide.surface.tsx): a tour
+   * that belongs to a tab loses every one of its steps the moment that tab
+   * closes, and the `!activeEntry` effect below returns to the Help Center for
+   * that reason instead. Folding the surface into this key as well would make
+   * the guide cancel its OWN legitimate navigation — the orientation tour ends
+   * on «الإحصائيات» / Statistics by design, and arriving there must not read as
+   * "the context changed, discard the tour".
    */
   const contextKeyRef = useRef(contextKey);
   useEffect(() => {
@@ -99,6 +110,19 @@ export function GuideEngine({ currentScreen, onNavigate, drawer, onClose }: Prop
     contextKeyRef.current = contextKey;
     setMode(current => (current.kind === 'tour' ? { kind: 'center' } : current));
   }, [contextKey]);
+
+  /**
+   * Tell the panels a step is being walked.
+   *
+   * The only thing that reads it is the example-row freeze: a repeated list
+   * must not swap the record its anchors sit on while a card is describing it
+   * (see useGuideExampleRow). Cleared on the way out, including on unmount, so
+   * a panel is never left frozen against a guide that is no longer open.
+   */
+  useEffect(() => {
+    setTourActive(mode.kind === 'tour');
+    return () => setTourActive(false);
+  }, [mode.kind, setTourActive]);
 
   /**
    * Losing the session closes the guide.

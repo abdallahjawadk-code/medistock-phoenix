@@ -52,6 +52,18 @@ export const QA_FEFO_LIVE_PROOF_DISPATCH_HEADER = {
 };
 
 /** Exported so the scope-assignment fixtures bind to the SAME organization ids. */
+/**
+ * IG-2 — stand-ins for migration 150's GENERATED `material_identity_key`.
+ *
+ * The column is DATABASE DATA (see stock-identity.ts, which refuses to
+ * recompute it), so the fixtures carry it as data too. Two rows share a key
+ * exactly when they are the same material identity; `isExactReleaseCandidate`
+ * then decides on the remaining lot dimensions, unchanged.
+ */
+export const MIK_AMOX = 'qa-mik/amoxicillin/500mg/capsule';
+export const MIK_OMEP = 'qa-mik/omeprazole/20mg/capsule';
+export const MIK_PARA = 'qa-mik/paracetamol/500mg/tablet';
+
 export const ORG_A = 'qa-org-a1';
 export const ORG_B = 'qa-org-b2';
 
@@ -167,7 +179,7 @@ export const QA_FIXTURES: Record<string, unknown> = {
   // DIFFERENT expiry) so the OCR review surfaces a blocking `expiry_conflict`
   // without any mutation. Columns match getWarehouseStock's select exactly.
   warehouse_stock: [
-    { id: 'qa-ws-1', warehouse_id: 'qa-wh-inst-a', scientific_name: 'Amoxicillin', batch_number: 'B4471X', expiry_date: '2028-01-31', on_hand_quantity: 180, reserved_quantity: 20, available_quantity: 160, national_code: '1234567' },
+    { id: 'qa-ws-1', warehouse_id: 'qa-wh-inst-a', scientific_name: 'Amoxicillin', batch_number: 'B4471X', expiry_date: '2028-01-31', on_hand_quantity: 180, reserved_quantity: 20, available_quantity: 160, national_code: '1234567', central_item_id: 'qa-ci-amox', concentration: '500 mg', dosage_form: 'Capsule', unit: 'capsule', material_identity_key: MIK_AMOX, internal_batch_reference: null, supply_type: null, purchase_origin: null },
     // FEFO-OVERRIDE-DIALOG-CAPTURE: a SECOND Amoxicillin batch at the SAME
     // warehouse, same national_code, with an EARLIER expiry than qa-ws-1 —
     // the FEFO-compliant alternative. Picking qa-ws-1 (the later-expiry batch)
@@ -177,9 +189,9 @@ export const QA_FIXTURES: Record<string, unknown> = {
     // Picking qa-ws-1b (this row) is FEFO-compliant and adds directly with no
     // dialog. See `rpc:phoenix_inventory_fefo_batches` below for the paired
     // fixture that answers `getFefoAlternatives` with both rows, earliest first.
-    { id: 'qa-ws-1b', warehouse_id: 'qa-wh-inst-a', scientific_name: 'Amoxicillin', batch_number: 'B4470E', expiry_date: '2027-06-30', on_hand_quantity: 90, reserved_quantity: 10, available_quantity: 80, national_code: '1234567' },
-    { id: 'qa-ws-2', warehouse_id: 'qa-wh-inst-a', scientific_name: 'Omeprazole', batch_number: 'OMP5512', expiry_date: '2027-02-28', on_hand_quantity: 640, reserved_quantity: 0, available_quantity: 640, national_code: '2223334' },
-    { id: 'qa-ws-3', warehouse_id: 'qa-wh-inst-a', scientific_name: 'Paracetamol', batch_number: null, expiry_date: '2026-09-30', on_hand_quantity: 42, reserved_quantity: 12, available_quantity: 30, national_code: null },
+    { id: 'qa-ws-1b', warehouse_id: 'qa-wh-inst-a', scientific_name: 'Amoxicillin', batch_number: 'B4470E', expiry_date: '2027-06-30', on_hand_quantity: 90, reserved_quantity: 10, available_quantity: 80, national_code: '1234567', central_item_id: 'qa-ci-amox', concentration: '500 mg', dosage_form: 'Capsule', unit: 'capsule', material_identity_key: MIK_AMOX, internal_batch_reference: null, supply_type: null, purchase_origin: null },
+    { id: 'qa-ws-2', warehouse_id: 'qa-wh-inst-a', scientific_name: 'Omeprazole', batch_number: 'OMP5512', expiry_date: '2027-02-28', on_hand_quantity: 640, reserved_quantity: 0, available_quantity: 640, national_code: '2223334', central_item_id: 'qa-ci-omep', concentration: '20 mg', dosage_form: 'Capsule', unit: 'capsule', material_identity_key: MIK_OMEP, internal_batch_reference: null, supply_type: null, purchase_origin: null },
+    { id: 'qa-ws-3', warehouse_id: 'qa-wh-inst-a', scientific_name: 'Paracetamol', batch_number: null, expiry_date: '2026-09-30', on_hand_quantity: 42, reserved_quantity: 12, available_quantity: 30, national_code: null, central_item_id: 'qa-ci-para-500', concentration: '500 mg', dosage_form: 'Tablet', unit: 'tablet', material_identity_key: MIK_PARA, internal_batch_reference: null, supply_type: null, purchase_origin: null },
   ],
 
   // On-hand batches at each outlet. These are the rows the return request lines
@@ -447,8 +459,24 @@ export const QA_FIXTURES: Record<string, unknown> = {
   ],
 
   // ── Quarantine disposition (migration 099/105) — Screen 3 "الحجر الصحي" tab ─
+  /**
+   * IG-2 — three quarantined lots at `qa-wh-inst-a`, in the order the real read
+   * returns them (expiry ascending), chosen to cover the states the Quarantine
+   * tour actually describes:
+   *
+   *   qa-wq-1  a matching destination lot EXISTS (qa-ws-3), so the release form
+   *            can offer one — this is the frozen example row the tour anchors;
+   *   qa-wq-2  likewise (qa-ws-2), so "more than one row" is a real state and
+   *            the example-row freeze can be observed not to drift;
+   *   qa-wq-3  same material identity as qa-ws-1 but a DIFFERENT supply origin,
+   *            so it is genuinely a different lot and the release picker
+   *            correctly offers nothing — the "no matching lot" state the copy
+   *            promises, reached by the real predicate rather than staged.
+   */
   warehouse_quarantine_stock: [
-    { id: 'qa-wq-1', warehouse_id: 'qa-wh-inst-a', scientific_name: 'Paracetamol', batch_number: null, national_code: null, expiry_date: '2026-09-30', quarantine_reason: 'QA · نقص عدد الوحدات عند الاستلام (شحنة مرتجعة جزئياً)', quantity: 2 },
+    { id: 'qa-wq-1', warehouse_id: 'qa-wh-inst-a', scientific_name: 'Paracetamol', batch_number: null, national_code: null, expiry_date: '2026-09-30', quarantine_reason: 'QA · نقص عدد الوحدات عند الاستلام (شحنة مرتجعة جزئياً)', quantity: 2, material_identity_key: MIK_PARA, internal_batch_reference: null, supply_type: null, purchase_origin: null },
+    { id: 'qa-wq-2', warehouse_id: 'qa-wh-inst-a', scientific_name: 'Omeprazole', batch_number: 'OMP5512', national_code: '2223334', expiry_date: '2027-02-28', quarantine_reason: 'QA · بانتظار قرار بشأن ظروف النقل', quantity: 15, material_identity_key: MIK_OMEP, internal_batch_reference: null, supply_type: null, purchase_origin: null },
+    { id: 'qa-wq-3', warehouse_id: 'qa-wh-inst-a', scientific_name: 'Amoxicillin', batch_number: 'B4471X', national_code: '1234567', expiry_date: '2028-01-31', quarantine_reason: 'QA · اختلاف مصدر التجهيز عن الرصيد المتاح', quantity: 40, material_identity_key: MIK_AMOX, internal_batch_reference: null, supply_type: 'local_purchase', purchase_origin: 'qa-supplier-local' },
   ],
 
   // ── Second-person correction approval (migration 098/101) — Screen 3
@@ -465,6 +493,23 @@ export const QA_FIXTURES: Record<string, unknown> = {
   // The bell mounts inside PhoenixTopbar/PhoenixAppShell, so EVERY shell-based
   // scene calls phoenix_notifications_unread_count on mount; without a
   // fixture it logs a console.error on every captured cell.
+  /**
+   * IG-2 — «موقوفة الصرف» / Suspended from Dispensing.
+   *
+   * Two ACTIVE rows and one LIFTED one, so every state the tour names is real:
+   * an organization-wide scope, an outlet scope, and a history disclosure that
+   * exists because something was actually lifted. `central_items` is the
+   * embedded relation the real select requests, carried as data.
+   *
+   * The fixture client is read-only, so creating or lifting from this scene
+   * still resolves to its QA error and writes nothing anywhere.
+   */
+  material_dispensing_suspensions: [
+    { id: 'qa-mds-1', central_item_id: 'qa-ci-amox', organization_id: ORG_A, distribution_point_id: null, reason_code: 'regulatory_hold', reason_detail: null, reference_document: 'QA-REG-2026-114', effective_start: '2026-08-20T07:00:00Z', effective_end: null, created_by: 'qa-user-1', created_at: '2026-08-20T07:00:00Z', lifted_by: null, lifted_at: null, lift_reason: null, central_items: { name: 'Amoxicillin', name_ar: 'أموكسيسيلين' } },
+    { id: 'qa-mds-2', central_item_id: 'qa-ci-omep', organization_id: ORG_A, distribution_point_id: 'qa-outlet-1', reason_code: 'quality_investigation', reason_detail: 'QA · تحقيق جودة على دفعة واحدة', reference_document: null, effective_start: '2026-08-28T09:30:00Z', effective_end: null, created_by: 'qa-user-1', created_at: '2026-08-28T09:30:00Z', lifted_by: null, lifted_at: null, lift_reason: null, central_items: { name: 'Omeprazole', name_ar: 'أوميبرازول' } },
+    { id: 'qa-mds-3', central_item_id: 'qa-ci-para-500', organization_id: ORG_A, distribution_point_id: null, reason_code: 'other', reason_detail: 'QA · إيقاف احترازي مؤقت', reference_document: null, effective_start: '2026-07-02T06:00:00Z', effective_end: null, created_by: 'qa-user-1', created_at: '2026-07-02T06:00:00Z', lifted_by: 'qa-user-1', lifted_at: '2026-07-29T11:00:00Z', lift_reason: 'QA · انتهاء التحقق وعودة الصرف' , central_items: { name: 'Paracetamol', name_ar: 'باراسيتامول' } },
+  ],
+
   'rpc:phoenix_notifications_unread_count': 2,
   // event_type values must match the real dotted `table.status` vocabulary
   // (see `notif_evt_*` keys in strings.ts) — anything else falls back through

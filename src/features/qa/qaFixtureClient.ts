@@ -37,6 +37,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { QA_HARNESS_MARKER } from './qaConfig';
 import { QA_FIXTURES, QA_MUTATION_OUTCOMES, QA_FEFO_LIVE_PROOF_DISPATCH_HEADER, type QaRow } from './qaData';
+import { qaScopeTopologyRows } from './qaScopes';
 
 export interface QaResult {
   data: unknown;
@@ -136,7 +137,7 @@ class QaQueryBuilder implements PromiseLike<QaResult> {
  * services actually use (`.from`, `.rpc`); the unused Supabase API is not
  * implemented because the harness never exercises it.
  */
-export function createQaFixtureClient(): SupabaseClient {
+export function createQaFixtureClient(profileId?: string): SupabaseClient {
   const client = {
     from(table: string) {
       const rows = QA_FIXTURES[table];
@@ -148,6 +149,21 @@ export function createQaFixtureClient(): SupabaseClient {
       // object, matching the real RPC's schema).
       const fixture = QA_FIXTURES[`rpc:${name}`];
       if (fixture !== undefined) return Promise.resolve(ok(fixture));
+
+      /**
+       * IG-2 — the ONE read RPC whose answer depends on WHO is asking, so it
+       * cannot be a static fixture: migration 191's scope topology. Answered
+       * from the harness's existing assignment rows (see qaScopes.ts), which is
+       * what the database answers it from. Still a SELECT: it reads fixtures,
+       * writes nothing, and reaches no network.
+       */
+      if (name === 'phoenix_query_organization_scope_topology') {
+        const organizationId = args?.p_organization_id;
+        if (profileId === undefined || typeof organizationId !== 'string') {
+          return Promise.resolve(ok([]));
+        }
+        return Promise.resolve(ok(qaScopeTopologyRows(profileId, organizationId)));
+      }
 
       // Explicitly allowlisted migration-071 write RPCs resolve to a
       // deterministic LOCAL outcome so post-write surfaces (the canonical

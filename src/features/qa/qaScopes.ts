@@ -32,7 +32,7 @@
  */
 import type { RbacTransport, RbacRpcResult, ScopeAssignment } from '@/shared/authz/rbac.service';
 import { SCOPED_PERMISSION_KEY_SET, scopedPermissionDef } from '@/shared/authz/scoped-permissions';
-import { ORG_A } from './qaData';
+import { ORG_A, QA_FIXTURES } from './qaData';
 
 /**
  * ACTIVE assignment rows per profile id (`qa-<persona id>`).
@@ -127,4 +127,97 @@ export function createQaRbacTransport(): RbacTransport {
       return ok(covers(rows, warehouseId, distributionPointId));
     },
   };
+}
+
+/**
+ * IG-2 — the harness's answer for `phoenix_query_organization_scope_topology`.
+ *
+ * WHY THIS HAD TO EXIST. G4.2 moved scope resolution out of the browser and
+ * into migration 191: `useInventoryScopes` no longer derives a profile's
+ * effective warehouses from `getWarehouses` + assignment rows, it reads them
+ * from that one RPC. The harness never registered it, so the RPC fell through
+ * to the fixture client's read-only error, `manageableWarehouses` was empty for
+ * EVERY persona, and the Inventory Center could never reach a warehouse-selected
+ * state — which is why no Quarantine or Suspensions panel was reachable in the
+ * QA gallery at all. This restores exactly the parity the harness had before
+ * that migration, and nothing else.
+ *
+ * WHAT IT DOES NOT DO. It invents no authorization. `in_effective_scope` is
+ * derived from {@link QA_SCOPE_ASSIGNMENTS} — the same rows
+ * {@link createQaRbacTransport} answers from, and the same rows the real
+ * `profile_scope_assignments` table would hold — so an unassigned persona still
+ * gets an empty scope here, for the same reason the database would give it one.
+ * A warehouse assignment reaches that warehouse's outlets, which is the
+ * ancestry migration 182's helper applies; a point assignment reaches only that
+ * point. `super_admin` is not special-cased here: `useInventoryScopes` decides
+ * organization-level coverage itself, from permission, exactly as in production.
+ */
+export function qaScopeTopologyRows(
+  profileId: string,
+  organizationId: string,
+): Array<Record<string, unknown>> {
+  const rows = qaScopeAssignments(profileId).filter(r => r.organizationId === organizationId);
+  const assignedWarehouses = new Set(rows.map(r => r.warehouseId).filter(Boolean) as string[]);
+  const assignedPoints = new Set(rows.map(r => r.distributionPointId).filter(Boolean) as string[]);
+
+  const warehouses = (QA_FIXTURES.warehouses as Array<Record<string, unknown>> | undefined) ?? [];
+  const outlets = (QA_FIXTURES.distribution_points as Array<Record<string, unknown>> | undefined) ?? [];
+
+  const warehouseNodes = warehouses
+    .filter(w => w.organization_id === organizationId)
+    .map(w => ({
+      node_kind: 'warehouse',
+      organization_id: organizationId,
+      organization_kind: 'institution',
+      institution_class: null,
+      facility_id: null,
+      facility_class: null,
+      facility_status: null,
+      facility_name: null,
+      facility_name_ar: null,
+      warehouse_id: w.id,
+      warehouse_name: w.name,
+      warehouse_name_ar: w.name_ar,
+      warehouse_kind: w.warehouseKind,
+      warehouse_status: w.status,
+      warehouse_is_main: false,
+      structural_role: 'institution_store',
+      distribution_point_id: null,
+      distribution_point_name: null,
+      distribution_point_name_ar: null,
+      distribution_point_type: null,
+      distribution_point_status: null,
+      in_effective_scope: assignedWarehouses.has(w.id as string),
+    }));
+
+  const outletNodes = outlets
+    .filter(o => o.organization_id === organizationId)
+    .map(o => ({
+      node_kind: 'outlet',
+      organization_id: organizationId,
+      organization_kind: 'institution',
+      institution_class: null,
+      facility_id: null,
+      facility_class: null,
+      facility_status: null,
+      facility_name: null,
+      facility_name_ar: null,
+      warehouse_id: o.warehouse_id,
+      warehouse_name: null,
+      warehouse_name_ar: null,
+      warehouse_kind: null,
+      warehouse_status: null,
+      warehouse_is_main: null,
+      structural_role: 'unclassified',
+      distribution_point_id: o.id,
+      distribution_point_name: o.name,
+      distribution_point_name_ar: o.name_ar,
+      distribution_point_type: o.point_type,
+      distribution_point_status: o.status,
+      in_effective_scope:
+        assignedPoints.has(o.id as string)
+        || assignedWarehouses.has(o.warehouse_id as string),
+    }));
+
+  return [...warehouseNodes, ...outletNodes];
 }

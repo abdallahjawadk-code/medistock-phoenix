@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 /**
  * INTERACTIVE-GUIDE-IG2 — what the operator is actually looking at, and what
@@ -52,21 +52,75 @@ export interface GuideSurfaceContextValue {
   /**
    * Whether every publisher currently mounted has finished deciding.
    *
-   * A tour must not be offered from a half-resolved answer: while this is
-   * `loading` the guide shows nothing rather than a guess, and on `error` it
-   * shows nothing rather than a stale grant.
+   * DIAGNOSTIC AND INVALIDATION ONLY — it gates no grant. Grants are decided
+   * per source: `capabilities` is built from SETTLED publishers alone, so a
+   * check in flight or one that failed already contributes nothing. Letting
+   * this aggregate veto as well would make one publisher's failure cancel
+   * another publisher's independently established answer, which is how a
+   * failed quarantine ACTION check ended up hiding the reading steps an
+   * operator was plainly entitled to.
    */
   capabilityState: GuideCapabilityState;
   /**
-   * Changes whenever the surface or the publishers change identity — a
-   * different organization, warehouse, outlet, tab or screen.
+   * WHAT IS ACTUALLY ON SCREEN — deliberately a SEPARATE map from
+   * `capabilities`, and never merged with it.
+   *
+   * Three different questions decide whether a step may run, and conflating any
+   * two of them produces a wrong answer:
+   *
+   *   1. PERMISSION — may this operator be told about this action at all?
+   *      Answered by `capabilities`, and by nothing else.
+   *   2. DATA STATE — has the panel finished loading, or did it fail?
+   *      Answered by `capabilityState` for the permission read, and by a
+   *      publisher declining to declare presence while it has no data.
+   *   3. ELEMENT PRESENCE — is the thing the step points at rendered now?
+   *      Answered HERE.
+   *
+   * A quarantine tab with an empty list is not a permission refusal, and an
+   * authorized operator looking at an empty list must not be walked through a
+   * step about "this row" that has no row. Presence is what lets the tour drop
+   * exactly those steps instead of letting them fall back to a centred card and
+   * calling that success.
+   *
+   * Presence deliberately does NOT take part in {@link contextKey}: a row
+   * arriving from a refresh is not a change of authorization context and must
+   * not close an open tour.
+   */
+  presence: Readonly<Record<string, boolean>>;
+  /**
+   * Changes whenever a PUBLISHER changes identity or settlement — a different
+   * organization, warehouse or outlet, a read still in flight, or one that
+   * failed.
+   *
+   * It deliberately does NOT include the surface. The surface is already
+   * handled, more precisely, by step and tour filtering: a tab-scoped tour
+   * loses every step the moment its tab closes, and the engine returns to the
+   * Help Center on its own. Folding the surface in here as well would cancel
+   * the guide's OWN legitimate navigation — the orientation tour moves the
+   * operator to «الإحصائيات» / Statistics by design, and that must not read as
+   * "the authorization context changed, discard the tour".
    *
    * Deliberately opaque and never persisted: the guide only needs to know THAT
    * the context changed so it can recompute, never what it changed to.
    */
   contextKey: string;
+  /**
+   * Whether a tour is being walked RIGHT NOW.
+   *
+   * The one thing a panel legitimately needs to know about the guide, and it
+   * is used for exactly one thing: {@link useGuideExampleRow} must not swap the
+   * record it is pointing at while a step is describing it. Outside a tour
+   * there is no explanation in progress, so the example is free to follow the
+   * list again.
+   *
+   * It grants nothing, hides nothing and changes no data — and it is
+   * deliberately not part of {@link contextKey}.
+   */
+  tourActive: boolean;
   publish: (source: string, entry: GuideCapabilityEntry | null) => void;
+  publishPresence: (source: string, presence: Record<string, boolean> | null) => void;
   setSurface: (surface: GuideSurface) => void;
+  setTourActive: (active: boolean) => void;
 }
 
 export interface GuideCapabilityEntry {
@@ -80,9 +134,13 @@ const EMPTY: GuideSurfaceContextValue = {
   surface: { screen: null, tab: null },
   capabilities: {},
   capabilityState: 'ready',
+  presence: {},
   contextKey: 'none',
+  tourActive: false,
   publish: () => undefined,
+  publishPresence: () => undefined,
   setSurface: () => undefined,
+  setTourActive: () => undefined,
 };
 
 const GuideSurfaceContext = createContext<GuideSurfaceContextValue>(EMPTY);
@@ -94,6 +152,8 @@ const GuideSurfaceContext = createContext<GuideSurfaceContextValue>(EMPTY);
 export function GuideSurfaceProvider({ children }: { children: ReactNode }) {
   const [surface, setSurface] = useState<GuideSurface>({ screen: null, tab: null });
   const [entries, setEntries] = useState<Record<string, GuideCapabilityEntry>>({});
+  const [presenceEntries, setPresenceEntries] = useState<Record<string, Record<string, boolean>>>({});
+  const [tourActive, setTourActive] = useState(false);
 
   const publish = useMemo(() => (source: string, entry: GuideCapabilityEntry | null) => {
     setEntries(previous => {
@@ -114,6 +174,19 @@ export function GuideSurfaceProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const publishPresence = useMemo(() => (source: string, presence: Record<string, boolean> | null) => {
+    setPresenceEntries(previous => {
+      if (presence === null) {
+        if (!(source in previous)) return previous;
+        const next = { ...previous };
+        delete next[source];
+        return next;
+      }
+      if (previous[source] && sameCapabilities(previous[source], presence)) return previous;
+      return { ...previous, [source]: presence };
+    });
+  }, []);
+
   const value = useMemo<GuideSurfaceContextValue>(() => {
     const sources = Object.keys(entries).sort();
     const capabilities: Record<string, boolean> = {};
@@ -121,9 +194,10 @@ export function GuideSurfaceProvider({ children }: { children: ReactNode }) {
 
     for (const source of sources) {
       const entry = entries[source];
-      // A publisher that is still deciding, or that failed, must not
-      // contribute a value — an absent capability reads as false, which is the
-      // safe direction.
+      // A publisher that is still deciding, or that failed, contributes
+      // NOTHING — not a false, not a stale true. An absent capability reads as
+      // false at the filter, which is the safe direction, and it leaves every
+      // OTHER publisher's settled answer untouched.
       if (entry.state !== 'ready') {
         if (entry.state === 'error' || state !== 'error') state = entry.state;
         continue;
@@ -133,14 +207,22 @@ export function GuideSurfaceProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    const contextKey = [
-      `s:${surface.screen ?? '-'}`,
-      `t:${surface.tab ?? '-'}`,
-      ...sources.map(source => `${source}@${entries[source].scopeKey}:${entries[source].state}`),
-    ].join('|');
+    const presence: Record<string, boolean> = {};
+    for (const source of Object.keys(presenceEntries).sort()) {
+      for (const [key, present] of Object.entries(presenceEntries[source])) {
+        presence[key] = (presence[key] ?? false) || present;
+      }
+    }
 
-    return { surface, capabilities, capabilityState: state, contextKey, publish, setSurface };
-  }, [surface, entries, publish]);
+    const contextKey = sources
+      .map(source => `${source}@${entries[source].scopeKey}:${entries[source].state}`)
+      .join('|') || 'none';
+
+    return {
+      surface, capabilities, capabilityState: state, presence, contextKey, tourActive,
+      publish, publishPresence, setSurface, setTourActive,
+    };
+  }, [surface, entries, presenceEntries, tourActive, publish, publishPresence]);
 
   return <GuideSurfaceContext.Provider value={value}>{children}</GuideSurfaceContext.Provider>;
 }
@@ -187,4 +269,107 @@ export function useGuideCapabilities(
     publish(source, { capabilities: JSON.parse(serialised) as Record<string, boolean>, state, scopeKey });
     return () => publish(source, null);
   }, [publish, source, serialised, state, scopeKey]);
+}
+
+/**
+ * The same, for an answer produced ASYNCHRONOUSLY for one scope.
+ *
+ * ---------------------------------------------------------------------------
+ * WHY THE PLAIN HOOK IS NOT ENOUGH, AND WHAT THIS ADDS
+ *
+ * `useAsync` — the loader behind every scoped permission hook in this codebase
+ * — deliberately keeps the PREVIOUS result while the next one loads, and it
+ * flips `loading` back to true from an EFFECT. So on the render that first
+ * carries a new warehouse there is a window in which:
+ *
+ *     scopeKey  = the NEW warehouse       (a prop, already updated)
+ *     loading   = false                   (the effect has not run yet)
+ *     data      = the PREVIOUS warehouse's answer
+ *
+ * Published as-is, that is warehouse A's "yes" filed under warehouse B — the
+ * guide would offer management steps for a warehouse whose check has not even
+ * started.
+ *
+ * WHAT THIS DOES NOT DO: infer the answer's subject from timing. An earlier
+ * version of this hook waited to observe a render reporting `loading` before
+ * trusting the next answer, and that is not sound — when the loader resolves in
+ * a microtask (a `super_admin` short-circuit, a cached transport), React
+ * batches the effect's `loading = true` together with the resolution and NO
+ * render ever reports it. The publisher then never becomes attributable and the
+ * guide silently offers nothing at all.
+ *
+ * So attribution is a COMPARISON, not an observation: the caller passes the
+ * scope its answer was computed for, and this publishes `ready` only when that
+ * equals the scope being asked about. `useInventoryScopes` has always worked
+ * this way — it rejects a catalog whose `organizationId` is not the one asked
+ * for. An `error` is passed through unchanged, because an error is never a
+ * grant in either direction.
+ * ---------------------------------------------------------------------------
+ */
+export function useScopedGuideCapabilities(
+  source: string,
+  capabilities: Record<string, boolean>,
+  state: GuideCapabilityState,
+  scopeKey: string,
+  /** The scope the published answers were actually computed for. */
+  answerScopeKey: string | null,
+): void {
+  const effective: GuideCapabilityState =
+    state === 'error' ? 'error'
+      : answerScopeKey === scopeKey ? state
+        : 'loading';
+  useGuideCapabilities(source, capabilities, effective, scopeKey);
+}
+
+/**
+ * A component declares which of its guide-anchored ELEMENTS are on screen.
+ *
+ * Presence is not authorization and is never treated as such — see the
+ * `presence` field's own note. Cleared when the publisher unmounts.
+ */
+export function useGuidePresence(source: string, presence: Record<string, boolean>): void {
+  const { publishPresence } = useGuideSurfaceContext();
+  const serialised = JSON.stringify(presence);
+
+  useEffect(() => {
+    publishPresence(source, JSON.parse(serialised) as Record<string, boolean>);
+    return () => publishPresence(source, null);
+  }, [publishPresence, source, serialised]);
+}
+
+/**
+ * Freeze ONE declared example out of a repeated list, by identity.
+ *
+ * Row-level anchors have to sit on exactly one card — several equal candidates
+ * would let the guide highlight an arbitrary record. Choosing "whichever is
+ * first right now" is not enough: the quarantine list is ordered by expiry and
+ * reloads after every disposition, so "first" can become a DIFFERENT record
+ * while a step is explaining it, and the operator would be told they are
+ * looking at one lot while the ring had moved to another.
+ *
+ * This picks the first id it ever sees and keeps it for as long as that record
+ * is still in the list. When the record leaves, the example is released and the
+ * row anchors simply stop being placed — the affected steps fall back to their
+ * declared region anchor, which is a true statement about the list, rather than
+ * silently substituting a different record.
+ */
+export function useGuideExampleRow(ids: readonly string[]): string | null {
+  const { tourActive } = useGuideSurfaceContext();
+  const chosen = useRef<string | null>(null);
+  const releasedMidTour = useRef(false);
+
+  if (chosen.current !== null && !ids.includes(chosen.current)) {
+    chosen.current = null;
+    // Disposed of, lifted, or simply gone from a refreshed list. If a step is
+    // describing it at this moment, the honest outcome is that the row anchors
+    // stop being placed and the row steps disappear — NOT that the same
+    // anchors reappear on a different record while the card still says "this
+    // lot". Once the explanation is over the list is free to be re-exemplified.
+    if (tourActive) releasedMidTour.current = true;
+  }
+  if (!tourActive) releasedMidTour.current = false;
+  if (chosen.current === null && !releasedMidTour.current && ids.length > 0) {
+    chosen.current = ids[0];
+  }
+  return chosen.current;
 }
