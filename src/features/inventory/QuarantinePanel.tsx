@@ -44,8 +44,8 @@ export function QuarantinePanel({ warehouseId, canDispose }: Props) {
 
   // A release/destroy action already in flight when the operator switches
   // warehouse keeps running — its promise has no idea the component moved
-  // on. When it settles, its onBusy/onDone/onError closures are still the
-  // ones captured at the render where the click happened, bound to THAT
+  // on. When it settles, its onDone/onError closures are still the ones
+  // captured at the render where the click happened, bound to THAT
   // warehouse's row and (via onDone) THAT warehouse's own `reload`. Calling
   // that stale `reload()` would legitimately claim the newest requestId and
   // overwrite the CURRENT warehouse's already-rendered rows with the old
@@ -57,6 +57,32 @@ export function QuarantinePanel({ warehouseId, canDispose }: Props) {
   // completes, not the one selected when the row was rendered.
   const currentWarehouseIdRef = useRef(warehouseId);
   currentWarehouseIdRef.current = warehouseId;
+
+  // OWNERSHIP of the single, panel-level `busyId` slot — comparing
+  // warehouseId alone (above) is not enough for this, and must not be
+  // asked to do this job.
+  //
+  // `rows` is cleared to null on every warehouseId change (below), so EVERY
+  // QuarantineRow instance unmounts on a switch — including a later
+  // revisit of the identical warehouse, which remounts a FRESH instance for
+  // the identical row id once its data is refetched. A token minted once
+  // per QuarantineRow MOUNT (its own useRef initializer) is therefore
+  // automatically distinct between "row A1 before the trip to B" and "row
+  // A1 after returning from B", even though `warehouseId` reads the same
+  // string both times and `row.id` is identical.
+  //
+  // A completion is allowed to touch `busyId` only if its token still
+  // matches the one most recently granted — this is what actually answers
+  // "does this completion still own the slot", which warehouseId cannot:
+  //   - A1 starts (owns the slot) → operator leaves to B and back to A → A1's
+  //     STALE completion finally arrives while the slot is unclaimed: token
+  //     still matches (nothing else claimed it) → the slot is released, so
+  //     the remaining row is never stuck "busy" once the operator returns.
+  //   - A1 starts → leaves to B and back to A → A2 starts (claims a NEW
+  //     token) → A1's stale completion NOW arrives: token no longer
+  //     matches (A2 owns it) → discarded outright, A2's busy state and form
+  //     are completely untouched.
+  const activeActionRef = useRef<{ token: symbol; warehouseId: string } | null>(null);
 
   // A switch to a different warehouse must drop the previous warehouse's
   // rows (and, with them, any release/destroy form open on one of those
@@ -122,19 +148,33 @@ export function QuarantinePanel({ warehouseId, canDispose }: Props) {
           stock={stock}
           canDispose={canDispose}
           busy={busyId === row.id}
-          onBusy={busy => {
-            if (row.warehouseId !== currentWarehouseIdRef.current) return;
-            setBusyId(busy ? row.id : null);
+          onBusyStart={() => {
+            const token = Symbol(row.id);
+            activeActionRef.current = { token, warehouseId: row.warehouseId };
+            setBusyId(row.id);
+            return token;
           }}
-          onDone={(msg) => {
-            // Do not resubmit or auto-restore the abandoned warehouse's
-            // context — just refuse to let its completion touch the
-            // warehouse the operator is actually looking at now.
+          onDone={(token, msg) => {
+            // A newer action (on this row after a remount, or on a
+            // different one) already claimed the slot — this completion is
+            // answering for an action nothing depends on any more.
+            if (activeActionRef.current?.token !== token) return;
+            activeActionRef.current = null;
+            setBusyId(null);
+            // Releasing the slot above must happen regardless of which
+            // warehouse is displayed now (that is what keeps a row from
+            // getting stuck "busy" forever), but do not resubmit or
+            // auto-restore the abandoned warehouse's context otherwise —
+            // just refuse to let its completion touch the warehouse the
+            // operator is actually looking at now.
             if (row.warehouseId !== currentWarehouseIdRef.current) return;
             showToast(msg);
             void reload();
           }}
-          onError={(msg) => {
+          onError={(token, msg) => {
+            if (activeActionRef.current?.token !== token) return;
+            activeActionRef.current = null;
+            setBusyId(null);
             if (row.warehouseId !== currentWarehouseIdRef.current) return;
             showToast(msg);
           }}
@@ -156,13 +196,14 @@ interface RowProps {
   stock: WarehouseStockBatch[];
   canDispose: boolean;
   busy: boolean;
-  onBusy: (busy: boolean) => void;
-  onDone: (message: string) => void;
-  onError: (message: string) => void;
+  /** Claims the panel's single busy slot and returns a token identifying THIS action — pass it back to onDone/onError so a stale, superseded completion can be told apart from the one currently owning the slot. */
+  onBusyStart: () => symbol;
+  onDone: (token: symbol, message: string) => void;
+  onError: (token: symbol, message: string) => void;
   lang: 'ar' | 'en';
 }
 
-function QuarantineRow({ row, stock, canDispose, busy, onBusy, onDone, onError, lang }: RowProps) {
+function QuarantineRow({ row, stock, canDispose, busy, onBusyStart, onDone, onError, lang }: RowProps) {
   const [mode, setMode] = useState<'none' | 'release' | 'destroy'>('none');
   const [quantity, setQuantity] = useState(String(row.quantity));
   const [reason, setReason] = useState('');
@@ -195,32 +236,30 @@ function QuarantineRow({ row, stock, canDispose, busy, onBusy, onDone, onError, 
 
   const submitRelease = async () => {
     if (busy || !quantityValid || !reasonValid || !destinationId) return;
-    onBusy(true);
+    const token = onBusyStart();
     const result = await releaseQuarantineStock({
       requestId: newRequestId(), quarantineStockId: row.id, quantity: quantityNum,
       reason: reason.trim(), destinationWarehouseStockId: destinationId,
     });
-    onBusy(false);
     if (result.ok) {
-      onDone(t('qz_release_ok', lang));
+      onDone(token, t('qz_release_ok', lang));
       setMode('none');
     } else {
-      onError(t('qz_action_failed', lang) + (result.error ? `: ${result.error}` : ''));
+      onError(token, t('qz_action_failed', lang) + (result.error ? `: ${result.error}` : ''));
     }
   };
 
   const submitDestroy = async () => {
     if (busy || !quantityValid || !reasonValid) return;
-    onBusy(true);
+    const token = onBusyStart();
     const result = await destroyQuarantineStock({
       requestId: newRequestId(), quarantineStockId: row.id, quantity: quantityNum, reason: reason.trim(),
     });
-    onBusy(false);
     if (result.ok) {
-      onDone(t('qz_destroy_ok', lang));
+      onDone(token, t('qz_destroy_ok', lang));
       setMode('none');
     } else {
-      onError(t('qz_action_failed', lang) + (result.error ? `: ${result.error}` : ''));
+      onError(token, t('qz_action_failed', lang) + (result.error ? `: ${result.error}` : ''));
     }
   };
 

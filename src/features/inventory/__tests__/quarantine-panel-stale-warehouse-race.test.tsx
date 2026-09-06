@@ -186,25 +186,33 @@ function setWarehouseStock(warehouseId: string, stock: StockBatch[]) {
 }
 
 const getQuarantineStockCalls: string[] = [];
-let pendingReleaseCall: ReturnType<typeof deferred<{ ok: boolean; data?: unknown; error?: string }>> | null = null;
-let pendingDestroyCall: ReturnType<typeof deferred<{ ok: boolean; data?: unknown; error?: string }>> | null = null;
+// A QUEUE, not a single slot: two overlapping actions (e.g. an old one on
+// A1 still pending when a new one starts on A2) each need their OWN
+// deferred, consumed in the order the calls actually happen — a single
+// slot would let the second call silently steal the first call's hold (or
+// resolve instantly instead of waiting for one), masking exactly the
+// overlap these tests exist to exercise.
+const pendingReleaseCalls: ReturnType<typeof deferred<{ ok: boolean; data?: unknown; error?: string }>>[] = [];
+const pendingDestroyCalls: ReturnType<typeof deferred<{ ok: boolean; data?: unknown; error?: string }>>[] = [];
 function holdRelease() {
   const d = deferred<{ ok: boolean; data?: unknown; error?: string }>();
-  pendingReleaseCall = d;
+  pendingReleaseCalls.push(d);
   return d;
 }
 function holdDestroy() {
   const d = deferred<{ ok: boolean; data?: unknown; error?: string }>();
-  pendingDestroyCall = d;
+  pendingDestroyCalls.push(d);
   return d;
 }
 
 const releaseQuarantineStock = vi.fn((_input: { quarantineStockId: string }) => {
-  if (pendingReleaseCall) { const d = pendingReleaseCall; pendingReleaseCall = null; return d.promise; }
+  const d = pendingReleaseCalls.shift();
+  if (d) return d.promise;
   return Promise.resolve({ ok: true, data: { movement_id: 'm1' } });
 });
 const destroyQuarantineStock = vi.fn((_input: { quarantineStockId: string }) => {
-  if (pendingDestroyCall) { const d = pendingDestroyCall; pendingDestroyCall = null; return d.promise; }
+  const d = pendingDestroyCalls.shift();
+  if (d) return d.promise;
   return Promise.resolve({ ok: true, data: { movement_id: 'm2' } });
 });
 
@@ -312,8 +320,8 @@ beforeEach(() => {
   settledPermission.clear();
   settledStock.clear();
   getQuarantineStockCalls.length = 0;
-  pendingReleaseCall = null;
-  pendingDestroyCall = null;
+  pendingReleaseCalls.length = 0;
+  pendingDestroyCalls.length = 0;
   hasScopedPermission.mockClear();
   releaseQuarantineStock.mockClear();
   destroyQuarantineStock.mockClear();
@@ -683,5 +691,202 @@ describe('reproduction — an action opened on A completes AFTER the operator ha
     expect(screen.queryByText('تم الإتلاف بنجاح'), 'A’s own success toast must not surface while viewing B').toBeNull();
     expect(screen.getByText('إتلاف')).toBeInTheDocument();
     expect(getQuarantineStockCalls, 'A’s stale onDone must not re-fetch A').not.toContain(WH_A);
+  });
+});
+
+describe('reproduction — the busy slot must be OWNED by the action that claimed it, not merely gated on warehouseId', () => {
+  it('a partial release from A, completed while B is on screen, must not leave the remaining A row stuck busy once the operator returns', async () => {
+    const rowA = quarantineRow('row-a1', WH_A, 'Alpha');
+    settleRowsImmediately(WH_A, [rowA]);
+    settlePermissionImmediately(WH_A, true);
+    setWarehouseStock(WH_A, [matchingStockBatch('lot-a1', rowA)]);
+    render(<InventoryCenterScreen />);
+    await selectWarehouse(WH_A);
+    await openQuarantineTab();
+    await waitFor(() => expect(screen.getByText('إفراج')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByText('إفراج'));
+    await waitFor(() => expect(screen.getByLabelText('سبب القرار')).toBeInTheDocument());
+    fireEvent.change(screen.getByLabelText('سبب القرار'), { target: { value: 'سبب' } });
+    // Partial: row.quantity is 5, releasing only 2 — the row survives.
+    fireEvent.change(screen.getByLabelText('الكمية'), { target: { value: '2' } });
+    const confirmA = await waitFor(() => {
+      const btn = screen.getByText('تأكيد الإفراج') as HTMLButtonElement;
+      expect(btn.disabled).toBe(false);
+      return btn;
+    });
+
+    const releaseCall = holdRelease();
+    fireEvent.click(confirmA);
+    await waitFor(() => expect(releaseQuarantineStock).toHaveBeenCalledTimes(1));
+
+    // Switch to B while A's partial release is still in flight.
+    const rowB = quarantineRow('row-b1', WH_B, 'Beta');
+    settleRowsImmediately(WH_B, [rowB]);
+    settlePermissionImmediately(WH_B, true);
+    await selectWarehouse(WH_B);
+    await waitFor(() => expect(screen.getByText('Beta')).toBeInTheDocument());
+
+    // The old release completes while B is shown.
+    releaseCall.resolve({ ok: true, data: { movement_id: 'm1' } });
+    await new Promise(resolve => setTimeout(resolve, 20));
+
+    // Return to A — server-side the row survived with less stock; the
+    // fixture is refreshed to reflect that (same id, still present).
+    settleRowsImmediately(WH_A, [quarantineRow('row-a1', WH_A, 'Alpha')]);
+    await selectWarehouse(WH_A);
+    await waitFor(() => expect(screen.getByText('Alpha')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('إفراج')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByText('إفراج'));
+    await waitFor(() => expect(screen.getByLabelText('سبب القرار')).toBeInTheDocument());
+    const reasonInput = screen.getByLabelText('سبب القرار') as HTMLInputElement;
+    const quantityInput = screen.getByLabelText('الكمية') as HTMLInputElement;
+    const cancelBtn = screen.getByText('إلغاء') as HTMLButtonElement;
+    expect(reasonInput, 'reason field must not be stuck disabled by the OLD, already-completed action').not.toBeDisabled();
+    expect(quantityInput, 'quantity field must not be stuck disabled').not.toBeDisabled();
+    expect(cancelBtn, 'cancel must not be stuck disabled').not.toBeDisabled();
+
+    fireEvent.change(reasonInput, { target: { value: 'سبب جديد' } });
+    fireEvent.change(quantityInput, { target: { value: '1' } });
+    await waitFor(() => {
+      const confirmNew = screen.getByText('تأكيد الإفراج') as HTMLButtonElement;
+      expect(confirmNew, 'confirm must be reachable again — the row must not be permanently locked').not.toBeDisabled();
+    });
+  });
+
+  it('destroy: an old, long-pending action on A1 that finally SUCCEEDS after a trip to B and back must not touch a newer, still-pending action on A2', async () => {
+    const rowA1 = quarantineRow('row-a1', WH_A, 'Alpha');
+    const rowA2 = quarantineRow('row-a2', WH_A, 'Gamma');
+    settleRowsImmediately(WH_A, [rowA1, rowA2]);
+    settlePermissionImmediately(WH_A, true);
+    render(<InventoryCenterScreen />);
+    await selectWarehouse(WH_A);
+    await openQuarantineTab();
+    await waitFor(() => expect(screen.getByText('Alpha')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Gamma')).toBeInTheDocument());
+
+    // Start (but do not finish) a destroy on A1 — the first row in DOM order.
+    fireEvent.click(screen.getAllByText('إتلاف')[0]);
+    await waitFor(() => expect(screen.getAllByLabelText('سبب القرار')).toHaveLength(1));
+    fireEvent.change(screen.getByLabelText('سبب القرار'), { target: { value: 'سبب أول' } });
+    fireEvent.change(screen.getByLabelText('الكمية'), { target: { value: '1' } });
+    const confirmA1 = await waitFor(() => {
+      const btn = screen.getByText('تأكيد الإتلاف') as HTMLButtonElement;
+      expect(btn.disabled).toBe(false);
+      return btn;
+    });
+    const destroyCallA1 = holdDestroy();
+    fireEvent.click(confirmA1);
+    await waitFor(() => expect(destroyQuarantineStock).toHaveBeenCalledTimes(1));
+
+    // Leave to B and come back to A — A1's action is STILL pending the
+    // whole time; nothing about it has settled yet.
+    const rowB = quarantineRow('row-b1', WH_B, 'Beta');
+    settleRowsImmediately(WH_B, [rowB]);
+    settlePermissionImmediately(WH_B, true);
+    await selectWarehouse(WH_B);
+    await waitFor(() => expect(screen.getByText('Beta')).toBeInTheDocument());
+
+    settleRowsImmediately(WH_A, [rowA1, rowA2]); // fresh fetch on return — nothing has changed server-side yet
+    await selectWarehouse(WH_A);
+    await waitFor(() => expect(screen.getByText('Alpha')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Gamma')).toBeInTheDocument());
+
+    // Start a NEW action on A2, on this fresh visit.
+    fireEvent.click(screen.getAllByText('إتلاف')[1]);
+    await waitFor(() => expect(screen.getAllByLabelText('سبب القرار')).toHaveLength(1));
+    fireEvent.change(screen.getByLabelText('سبب القرار'), { target: { value: 'سبب ثانٍ' } });
+    fireEvent.change(screen.getByLabelText('الكمية'), { target: { value: '1' } });
+    const confirmA2 = await waitFor(() => {
+      const btn = screen.getByText('تأكيد الإتلاف') as HTMLButtonElement;
+      expect(btn.disabled).toBe(false);
+      return btn;
+    });
+    const destroyCallA2 = holdDestroy(); // A2's own request must stay genuinely in flight throughout
+    fireEvent.click(confirmA2);
+    await waitFor(() => expect(destroyQuarantineStock).toHaveBeenCalledTimes(2));
+
+    // A2's own form is now genuinely busy (its own request is in flight,
+    // still unresolved).
+    expect(screen.getByLabelText('الكمية'), 'A2 must read busy right before A1’s stale completion arrives').toBeDisabled();
+
+    // NOW A1's OLD, long-pending destroy finally completes — successfully.
+    destroyCallA1.resolve({ ok: true, data: { movement_id: 'm-old' } });
+    await new Promise(resolve => setTimeout(resolve, 30));
+
+    // A2's own busy state, form, and confirm reachability must be
+    // completely undisturbed by A1's unrelated completion.
+    expect(screen.getByLabelText('الكمية'), 'A1 completing must not clear A2’s busy slot').toBeDisabled();
+    expect(screen.getByLabelText('سبب القرار'), 'A2’s form must remain exactly as it was').toBeDisabled();
+    expect(destroyQuarantineStock, 'no extra confirm must have been reachable/sendable for A2').toHaveBeenCalledTimes(2);
+
+    destroyCallA2.resolve({ ok: true, data: { movement_id: 'm-a2' } });
+    await new Promise(resolve => setTimeout(resolve, 20));
+  });
+
+  it('destroy: an old, long-pending action on A1 that finally FAILS after a trip to B and back must not touch a newer, still-pending action on A2', async () => {
+    const rowA1 = quarantineRow('row-a1', WH_A, 'Alpha');
+    const rowA2 = quarantineRow('row-a2', WH_A, 'Gamma');
+    settleRowsImmediately(WH_A, [rowA1, rowA2]);
+    settlePermissionImmediately(WH_A, true);
+    render(<InventoryCenterScreen />);
+    await selectWarehouse(WH_A);
+    await openQuarantineTab();
+    await waitFor(() => expect(screen.getByText('Alpha')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Gamma')).toBeInTheDocument());
+
+    fireEvent.click(screen.getAllByText('إتلاف')[0]);
+    await waitFor(() => expect(screen.getAllByLabelText('سبب القرار')).toHaveLength(1));
+    fireEvent.change(screen.getByLabelText('سبب القرار'), { target: { value: 'سبب أول' } });
+    fireEvent.change(screen.getByLabelText('الكمية'), { target: { value: '1' } });
+    const confirmA1 = await waitFor(() => {
+      const btn = screen.getByText('تأكيد الإتلاف') as HTMLButtonElement;
+      expect(btn.disabled).toBe(false);
+      return btn;
+    });
+    const destroyCallA1 = holdDestroy();
+    fireEvent.click(confirmA1);
+    await waitFor(() => expect(destroyQuarantineStock).toHaveBeenCalledTimes(1));
+
+    const rowB = quarantineRow('row-b1', WH_B, 'Beta');
+    settleRowsImmediately(WH_B, [rowB]);
+    settlePermissionImmediately(WH_B, true);
+    await selectWarehouse(WH_B);
+    await waitFor(() => expect(screen.getByText('Beta')).toBeInTheDocument());
+
+    settleRowsImmediately(WH_A, [rowA1, rowA2]);
+    await selectWarehouse(WH_A);
+    await waitFor(() => expect(screen.getByText('Alpha')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Gamma')).toBeInTheDocument());
+
+    fireEvent.click(screen.getAllByText('إتلاف')[1]);
+    await waitFor(() => expect(screen.getAllByLabelText('سبب القرار')).toHaveLength(1));
+    fireEvent.change(screen.getByLabelText('سبب القرار'), { target: { value: 'سبب ثانٍ' } });
+    fireEvent.change(screen.getByLabelText('الكمية'), { target: { value: '1' } });
+    const confirmA2 = await waitFor(() => {
+      const btn = screen.getByText('تأكيد الإتلاف') as HTMLButtonElement;
+      expect(btn.disabled).toBe(false);
+      return btn;
+    });
+    const destroyCallA2 = holdDestroy(); // A2's own request must stay genuinely in flight throughout
+    fireEvent.click(confirmA2);
+    await waitFor(() => expect(destroyQuarantineStock).toHaveBeenCalledTimes(2));
+
+    expect(screen.getByLabelText('الكمية')).toBeDisabled();
+
+    // A1's OLD action finally settles — this time with a failure.
+    destroyCallA1.resolve({ ok: false, error: 'CONFLICT' });
+    await new Promise(resolve => setTimeout(resolve, 30));
+
+    expect(screen.getByLabelText('الكمية'), 'A1 failing must not clear A2’s busy slot either').toBeDisabled();
+    expect(screen.getByLabelText('سبب القرار')).toBeDisabled();
+    expect(destroyQuarantineStock).toHaveBeenCalledTimes(2);
+    // A1's own failure toast must not appear at all — it was superseded,
+    // not merely off-warehouse.
+    expect(screen.queryByText(/فشل الإجراء/)).toBeNull();
+
+    destroyCallA2.resolve({ ok: true, data: { movement_id: 'm-a2' } });
+    await new Promise(resolve => setTimeout(resolve, 20));
   });
 });
