@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import { useApp } from '@/app/AppContext';
 import { useAsync, type AsyncState } from '@/shared/lib/useAsync';
 import { supabaseRbacTransport } from '@/shared/authz/rbac.service';
@@ -19,13 +20,32 @@ import { supabaseRbacTransport } from '@/shared/authz/rbac.service';
  * UI preflight ONLY: both RPCs repeat this authorization server-side before
  * any custody moves.
  */
+export interface QuarantinePermissionState extends AsyncState<boolean> {
+  /**
+   * True only once `data` reflects a fresh, error-free resolution for the
+   * CURRENT (orgId, warehouseId, profile) triple — never a value merely
+   * carried over from a previous warehouse.
+   *
+   * useAsync does not clear `data` when its deps change, nor on error: if
+   * warehouse A resolved `true` and the operator switches to warehouse B,
+   * `data` keeps reporting `true` for the whole window where B's own check
+   * is pending, denied-with-a-transport-error, or throws — not just while
+   * it is cleanly pending. Gating a disposal action on `data` alone lets a
+   * confirm button light up for B using authorization that was never
+   * actually checked against B. `confirmed` is false for that entire
+   * window and only becomes true once THIS hook's own request for the
+   * current args has settled with no error.
+   */
+  confirmed: boolean;
+}
+
 export function useQuarantinePermission(
   orgId: string | null,
   warehouseId: string | null,
-): AsyncState<boolean> {
+): QuarantinePermissionState {
   const { profile } = useApp();
 
-  return useAsync(async () => {
+  const state = useAsync(async () => {
     if (!orgId || !warehouseId || !profile?.id) return false;
     if (profile.role === 'super_admin') return true;
 
@@ -38,4 +58,12 @@ export function useQuarantinePermission(
     });
     return result.ok && result.allowed;
   }, [orgId, warehouseId, profile?.id, profile?.role]);
+
+  const currentKey = `${orgId ?? ''}:${warehouseId ?? ''}:${profile?.id ?? ''}:${profile?.role ?? ''}`;
+  const settledKeyRef = useRef<string | null>(null);
+  if (!state.loading && !state.error) {
+    settledKeyRef.current = currentKey;
+  }
+
+  return { ...state, confirmed: !state.loading && !state.error && settledKeyRef.current === currentKey };
 }

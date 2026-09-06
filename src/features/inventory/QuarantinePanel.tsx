@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
@@ -40,8 +40,25 @@ export function QuarantinePanel({ warehouseId, canDispose }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const requestIdRef = useRef(0);
+
+  // A switch to a different warehouse must drop the previous warehouse's
+  // rows (and, with them, any release/destroy form open on one of those
+  // rows — each row unmounts once its `key` leaves `rows`) BEFORE the new
+  // warehouse's own fetch resolves. Without this, the old rows/forms stay
+  // mounted and interactive for the whole pending window, and an operator
+  // can submit a disposal against stock that belonged to the warehouse they
+  // already navigated away from. This must run whenever warehouseId itself
+  // changes, not on every reload() (e.g. the post-action refresh in onDone
+  // reloads the SAME warehouse and should not blank the list).
+  useEffect(() => {
+    setRows(null);
+    setStock([]);
+    setError(null);
+  }, [warehouseId]);
 
   const reload = useCallback(async () => {
+    const requestId = ++requestIdRef.current;
     if (!warehouseId) { setRows([]); setStock([]); return; }
     setLoading(true);
     setError(null);
@@ -50,13 +67,19 @@ export function QuarantinePanel({ warehouseId, canDispose }: Props) {
         getQuarantineStock(warehouseId),
         getWarehouseStock(warehouseId),
       ]);
+      // A later warehouse switch (or another reload()) may have started
+      // after this request but resolved before it. Discard this response —
+      // committing it now would overwrite the current warehouse's already-
+      // rendered, more current rows with stale ones.
+      if (requestIdRef.current !== requestId) return;
       setRows(q);
       setStock(s);
     } catch {
+      if (requestIdRef.current !== requestId) return;
       setError(t('err_generic', lang));
       setRows(null);
     } finally {
-      setLoading(false);
+      if (requestIdRef.current === requestId) setLoading(false);
     }
   }, [warehouseId, lang]);
 

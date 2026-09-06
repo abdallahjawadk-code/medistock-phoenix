@@ -116,6 +116,13 @@ export function InventoryCenterScreen({
   // row's own warehouse), matching 105's widened read policy.
   const quarantinePerm = useQuarantinePermission(activeOrgId, activeWarehouseId || null);
   const canDisposeQuarantine = quarantinePerm.data ?? false;
+  // Tab affordance above stays permissive (unchanged, documented behavior —
+  // canDisposeQuarantine can briefly read stale-true right after a warehouse
+  // switch). The disposal ACTIONS below use the stricter `confirmed` signal
+  // instead, so QuarantinePanel never enables a confirm button using a
+  // permission value that was never actually checked against the currently
+  // selected warehouse.
+  const canDisposeQuarantineConfirmed = quarantinePerm.confirmed && quarantinePerm.data === true;
 
   // MATERIAL-DISPENSING-SUSPENSION (203) — deliberately org-scoped, not
   // warehouse-scoped like quarantine above: موقوف الصرف applies to a
@@ -425,7 +432,7 @@ export function InventoryCenterScreen({
       ) : tab === 'quarantine' && canViewQuarantine ? (
         /* Mutation stays on the scoped key — a viewer sees the held lots with
            no release/destroy controls. */
-        <QuarantinePanel warehouseId={activeWarehouseId} canDispose={canDisposeQuarantine} />
+        <QuarantinePanel warehouseId={activeWarehouseId} canDispose={canDisposeQuarantineConfirmed} />
       ) : tab === 'suspensions' && canViewSuspensions ? (
         <MaterialDispensingSuspensionPanel organizationId={activeOrgId ?? ''} />
       ) : tab === 'corrections' && canViewCorrections ? (
