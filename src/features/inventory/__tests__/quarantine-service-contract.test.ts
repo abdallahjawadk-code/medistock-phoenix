@@ -39,6 +39,11 @@ describe('useQuarantinePermission checks the same key 099/105 check', () => {
     expect(hook).toMatch(/distributionPointId: null/);
   });
   it('super_admin bypasses the scoped check, exactly like every other permission hook in this feature', () => {
-    expect(hook).toMatch(/profile\.role === 'super_admin'/);
+    // QUARANTINE-PANEL-STALE-WAREHOUSE-RACE fix: the role is read once into
+    // a local `profileRole` (part of the current-context key the fix uses to
+    // guard against cross-warehouse attribution), so the literal expression
+    // is `profileRole === 'super_admin'` now, not `profile.role === ...`.
+    expect(hook).toMatch(/profileRole === 'super_admin'/);
+    expect(hook).toContain("const profileRole = profile?.role ?? null");
   });
 });

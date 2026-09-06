@@ -42,6 +42,22 @@ export function QuarantinePanel({ warehouseId, canDispose }: Props) {
   const [toast, setToast] = useState<string | null>(null);
   const requestIdRef = useRef(0);
 
+  // A release/destroy action already in flight when the operator switches
+  // warehouse keeps running — its promise has no idea the component moved
+  // on. When it settles, its onBusy/onDone/onError closures are still the
+  // ones captured at the render where the click happened, bound to THAT
+  // warehouse's row and (via onDone) THAT warehouse's own `reload`. Calling
+  // that stale `reload()` would legitimately claim the newest requestId and
+  // overwrite the CURRENT warehouse's already-rendered rows with the old
+  // warehouse's data — the generation counter above only orders requests
+  // against each other, it does not know one of them is answering on behalf
+  // of a warehouse the operator already left. Read via a ref (not the
+  // `warehouseId` closed over by the stale callback) so the check reflects
+  // whichever warehouse is ACTUALLY selected at the moment the action
+  // completes, not the one selected when the row was rendered.
+  const currentWarehouseIdRef = useRef(warehouseId);
+  currentWarehouseIdRef.current = warehouseId;
+
   // A switch to a different warehouse must drop the previous warehouse's
   // rows (and, with them, any release/destroy form open on one of those
   // rows — each row unmounts once its `key` leaves `rows`) BEFORE the new
@@ -106,9 +122,22 @@ export function QuarantinePanel({ warehouseId, canDispose }: Props) {
           stock={stock}
           canDispose={canDispose}
           busy={busyId === row.id}
-          onBusy={busy => setBusyId(busy ? row.id : null)}
-          onDone={(msg) => { showToast(msg); void reload(); }}
-          onError={showToast}
+          onBusy={busy => {
+            if (row.warehouseId !== currentWarehouseIdRef.current) return;
+            setBusyId(busy ? row.id : null);
+          }}
+          onDone={(msg) => {
+            // Do not resubmit or auto-restore the abandoned warehouse's
+            // context — just refuse to let its completion touch the
+            // warehouse the operator is actually looking at now.
+            if (row.warehouseId !== currentWarehouseIdRef.current) return;
+            showToast(msg);
+            void reload();
+          }}
+          onError={(msg) => {
+            if (row.warehouseId !== currentWarehouseIdRef.current) return;
+            showToast(msg);
+          }}
           lang={lang}
         />
       ))}

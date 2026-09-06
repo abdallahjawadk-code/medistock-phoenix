@@ -158,14 +158,62 @@ const quarantineRow = (id: string, warehouseId: string, name: string): QRow => (
   internalBatchReference: null, supplyType: null, purchaseOrigin: null,
 });
 
-const releaseQuarantineStock = vi.fn((_input: { quarantineStockId: string }) => Promise.resolve({ ok: true, data: { movement_id: 'm1' } }));
-const destroyQuarantineStock = vi.fn((_input: { quarantineStockId: string }) => Promise.resolve({ ok: true, data: { movement_id: 'm2' } }));
+interface StockBatch {
+  id: string; warehouseId: string; scientificName: string;
+  batchNumber: string | null; expiryDate: string | null;
+  onHandQuantity: number; reservedQuantity: number; availableQuantity: number;
+  nationalCode: string | null; centralItemId: string | null;
+  concentration: string | null; dosageForm: string | null; unit: string | null;
+  materialIdentityKey: string | null; internalBatchReference: string | null;
+  supplyType: string | null; purchaseOrigin: string | null;
+}
+
+/** A warehouse_stock lot that `isExactReleaseCandidate` will accept as an EXACT destination for `row` — matches all six identity dimensions the real predicate checks. */
+const matchingStockBatch = (id: string, row: QRow): StockBatch => ({
+  id, warehouseId: row.warehouseId, scientificName: row.scientificName,
+  batchNumber: row.batchNumber, expiryDate: row.expiryDate,
+  onHandQuantity: 100, reservedQuantity: 0, availableQuantity: 100,
+  nationalCode: row.nationalCode, centralItemId: null,
+  concentration: null, dosageForm: null, unit: null,
+  materialIdentityKey: row.materialIdentityKey,
+  internalBatchReference: row.internalBatchReference,
+  supplyType: row.supplyType, purchaseOrigin: row.purchaseOrigin,
+});
+
+const settledStock = new Map<string, StockBatch[]>();
+function setWarehouseStock(warehouseId: string, stock: StockBatch[]) {
+  settledStock.set(warehouseId, stock);
+}
+
+const getQuarantineStockCalls: string[] = [];
+let pendingReleaseCall: ReturnType<typeof deferred<{ ok: boolean; data?: unknown; error?: string }>> | null = null;
+let pendingDestroyCall: ReturnType<typeof deferred<{ ok: boolean; data?: unknown; error?: string }>> | null = null;
+function holdRelease() {
+  const d = deferred<{ ok: boolean; data?: unknown; error?: string }>();
+  pendingReleaseCall = d;
+  return d;
+}
+function holdDestroy() {
+  const d = deferred<{ ok: boolean; data?: unknown; error?: string }>();
+  pendingDestroyCall = d;
+  return d;
+}
+
+const releaseQuarantineStock = vi.fn((_input: { quarantineStockId: string }) => {
+  if (pendingReleaseCall) { const d = pendingReleaseCall; pendingReleaseCall = null; return d.promise; }
+  return Promise.resolve({ ok: true, data: { movement_id: 'm1' } });
+});
+const destroyQuarantineStock = vi.fn((_input: { quarantineStockId: string }) => {
+  if (pendingDestroyCall) { const d = pendingDestroyCall; pendingDestroyCall = null; return d.promise; }
+  return Promise.resolve({ ok: true, data: { movement_id: 'm2' } });
+});
 
 vi.mock('@/features/inventory/quarantine.service', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/features/inventory/quarantine.service')>();
   return {
     ...actual,
     getQuarantineStock: (warehouseId: string): Promise<QRow[]> => {
+      getQuarantineStockCalls.push(warehouseId);
       const held = pendingRows.get(warehouseId);
       if (held) return held.promise;
       return Promise.resolve(settledRows.get(warehouseId) ?? []);
@@ -177,7 +225,7 @@ vi.mock('@/features/inventory/quarantine.service', async (importOriginal) => {
 
 vi.mock('@/features/network/network.service', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/features/network/network.service')>();
-  return { ...actual, getWarehouseStock: () => Promise.resolve([]) };
+  return { ...actual, getWarehouseStock: (warehouseId: string) => Promise.resolve(settledStock.get(warehouseId) ?? []) };
 });
 
 vi.mock('@/shared/supabase/services/organizations.service', async (importOriginal) => {
@@ -262,6 +310,10 @@ beforeEach(() => {
   pendingPermission.clear();
   settledRows.clear();
   settledPermission.clear();
+  settledStock.clear();
+  getQuarantineStockCalls.length = 0;
+  pendingReleaseCall = null;
+  pendingDestroyCall = null;
   hasScopedPermission.mockClear();
   releaseQuarantineStock.mockClear();
   destroyQuarantineStock.mockClear();
@@ -329,6 +381,11 @@ describe('reproduction — an OPEN release/destroy form exists before switching'
 
 describe('reproduction — how B settling resolves (denied / failed / stale-after-fresh)', () => {
   it('B denies the permission: no dispose affordance appears once B answers', async () => {
+    // health_center_manager keeps the tab visible independent of
+    // canDisposeQuarantine's own staleness window (documented, unchanged,
+    // out of scope here) — isolating what this test checks: the dispose
+    // buttons, not tab-visibility timing.
+    appState = { ...appState, role: 'health_center_manager', profile: { ...appState.profile, role: 'health_center_manager' } };
     settleRowsImmediately(WH_A, [quarantineRow('row-a1', WH_A, 'Alpha')]);
     settlePermissionImmediately(WH_A, true);
     render(<InventoryCenterScreen />);
@@ -449,9 +506,18 @@ describe('reproduction — B’s PERMISSION check itself: denial, a real RBAC tr
 });
 
 describe('what the disposal service would actually receive right now (structural check)', () => {
-  it('records the row id that a click on release/destroy would submit', async () => {
-    settleRowsImmediately(WH_A, [quarantineRow('row-a1', WH_A, 'Alpha')]);
+  // No "if (!confirm.disabled)" escape hatch here: without a matching
+  // destination lot the release confirm button is disabled and the whole
+  // assertion block below it would silently never run — the earlier version
+  // of this test guarded on exactly that and so never actually asserted
+  // anything for release. A genuinely matching warehouse_stock lot is
+  // provided so the button really does activate and the click is real.
+
+  it('release: the confirm button activates on a matching lot and the service is called exactly once with the open row', async () => {
+    const row = quarantineRow('row-a1', WH_A, 'Alpha');
+    settleRowsImmediately(WH_A, [row]);
     settlePermissionImmediately(WH_A, true);
+    setWarehouseStock(WH_A, [matchingStockBatch('lot-a1', row)]);
     render(<InventoryCenterScreen />);
     await selectWarehouse(WH_A);
     await openQuarantineTab();
@@ -462,12 +528,160 @@ describe('what the disposal service would actually receive right now (structural
     fireEvent.change(screen.getByLabelText('سبب القرار'), { target: { value: 'سبب' } });
     fireEvent.change(screen.getByLabelText('الكمية'), { target: { value: '1' } });
 
-    const confirm = screen.getByText('تأكيد الإفراج');
-    if (!(confirm as HTMLButtonElement).disabled) {
-      fireEvent.click(confirm);
-      await waitFor(() => expect(releaseQuarantineStock).toHaveBeenCalled());
-      const arg = releaseQuarantineStock.mock.calls[0][0];
-      expect(arg.quarantineStockId).toBe('row-a1');
-    }
+    const confirm = await waitFor(() => {
+      const btn = screen.getByText('تأكيد الإفراج') as HTMLButtonElement;
+      expect(btn.disabled, 'a matching lot must activate the confirm button').toBe(false);
+      return btn;
+    });
+    fireEvent.click(confirm);
+
+    await waitFor(() => expect(releaseQuarantineStock).toHaveBeenCalledTimes(1));
+    expect(releaseQuarantineStock.mock.calls[0][0].quarantineStockId).toBe('row-a1');
+  });
+
+  it('destroy: the confirm button activates (no destination lot needed) and the service is called exactly once with the open row', async () => {
+    settleRowsImmediately(WH_A, [quarantineRow('row-a1', WH_A, 'Alpha')]);
+    settlePermissionImmediately(WH_A, true);
+    render(<InventoryCenterScreen />);
+    await selectWarehouse(WH_A);
+    await openQuarantineTab();
+    await waitFor(() => expect(screen.getByText('إتلاف')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByText('إتلاف'));
+    await waitFor(() => expect(screen.getByLabelText('سبب القرار')).toBeInTheDocument());
+    fireEvent.change(screen.getByLabelText('سبب القرار'), { target: { value: 'سبب' } });
+    fireEvent.change(screen.getByLabelText('الكمية'), { target: { value: '1' } });
+
+    const confirm = await waitFor(() => {
+      const btn = screen.getByText('تأكيد الإتلاف') as HTMLButtonElement;
+      expect(btn.disabled).toBe(false);
+      return btn;
+    });
+    fireEvent.click(confirm);
+
+    await waitFor(() => expect(destroyQuarantineStock).toHaveBeenCalledTimes(1));
+    expect(destroyQuarantineStock.mock.calls[0][0].quarantineStockId).toBe('row-a1');
+  });
+
+  it('after switching warehouse, the submitted id belongs to the CURRENTLY selected warehouse’s row, never a stale one', async () => {
+    const rowA = quarantineRow('row-a1', WH_A, 'Alpha');
+    const rowB = quarantineRow('row-b1', WH_B, 'Beta');
+    settleRowsImmediately(WH_A, [rowA]);
+    settlePermissionImmediately(WH_A, true);
+    setWarehouseStock(WH_A, [matchingStockBatch('lot-a1', rowA)]);
+    settleRowsImmediately(WH_B, [rowB]);
+    settlePermissionImmediately(WH_B, true);
+    setWarehouseStock(WH_B, [matchingStockBatch('lot-b1', rowB)]);
+
+    render(<InventoryCenterScreen />);
+    await selectWarehouse(WH_A);
+    await openQuarantineTab();
+    await waitFor(() => expect(screen.getByText('إفراج')).toBeInTheDocument());
+
+    await selectWarehouse(WH_B);
+    await waitFor(() => expect(screen.getByText('Beta')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('إفراج'));
+    await waitFor(() => expect(screen.getByLabelText('سبب القرار')).toBeInTheDocument());
+    fireEvent.change(screen.getByLabelText('سبب القرار'), { target: { value: 'سبب' } });
+    fireEvent.change(screen.getByLabelText('الكمية'), { target: { value: '1' } });
+    const confirm = await waitFor(() => {
+      const btn = screen.getByText('تأكيد الإفراج') as HTMLButtonElement;
+      expect(btn.disabled).toBe(false);
+      return btn;
+    });
+    fireEvent.click(confirm);
+
+    await waitFor(() => expect(releaseQuarantineStock).toHaveBeenCalledTimes(1));
+    expect(releaseQuarantineStock.mock.calls[0][0].quarantineStockId).toBe('row-b1');
+  });
+});
+
+describe('reproduction — an action opened on A completes AFTER the operator has already switched to B', () => {
+  it('release: A’s completion does not reload A into view, and does not touch B’s rows, form, busy state, or toast', async () => {
+    const rowA = quarantineRow('row-a1', WH_A, 'Alpha');
+    const rowB = quarantineRow('row-b1', WH_B, 'Beta');
+    settleRowsImmediately(WH_A, [rowA]);
+    settlePermissionImmediately(WH_A, true);
+    setWarehouseStock(WH_A, [matchingStockBatch('lot-a1', rowA)]);
+    render(<InventoryCenterScreen />);
+    await selectWarehouse(WH_A);
+    await openQuarantineTab();
+    await waitFor(() => expect(screen.getByText('إفراج')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByText('إفراج'));
+    await waitFor(() => expect(screen.getByLabelText('سبب القرار')).toBeInTheDocument());
+    fireEvent.change(screen.getByLabelText('سبب القرار'), { target: { value: 'سبب' } });
+    fireEvent.change(screen.getByLabelText('الكمية'), { target: { value: '1' } });
+    const confirmA = await waitFor(() => {
+      const btn = screen.getByText('تأكيد الإفراج') as HTMLButtonElement;
+      expect(btn.disabled).toBe(false);
+      return btn;
+    });
+
+    const releaseCall = holdRelease();
+    fireEvent.click(confirmA);
+    await waitFor(() => expect(releaseQuarantineStock).toHaveBeenCalledTimes(1));
+
+    // Switch away from A to B WHILE A's release request is still pending.
+    settleRowsImmediately(WH_B, [rowB]);
+    settlePermissionImmediately(WH_B, true);
+    getQuarantineStockCalls.length = 0; // only care about fetches AFTER this point
+    await selectWarehouse(WH_B);
+    await waitFor(() => expect(screen.getByText('Beta')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('إفراج')).toBeInTheDocument());
+
+    // NOW A's release finally completes, entirely after the switch.
+    releaseCall.resolve({ ok: true, data: { movement_id: 'm1' } });
+    await new Promise(resolve => setTimeout(resolve, 30));
+
+    expect(screen.getByText('Beta'), 'B’s row must still be shown').toBeInTheDocument();
+    expect(screen.queryByText('Alpha'), 'A must not reappear — this is not a resubmit or auto-restore of A').toBeNull();
+    expect(screen.queryByText('تم الإفراج بنجاح'), 'A’s own success toast must not surface while viewing B').toBeNull();
+    expect(screen.getByText('إفراج'), 'B’s own dispose affordance must remain, undisturbed by A’s completion').toBeInTheDocument();
+    expect(
+      getQuarantineStockCalls,
+      'A’s stale onDone must not call reload() and re-fetch A — the request-generation counter alone does not catch this, since a stale reload() looks like a legitimate newest request',
+    ).not.toContain(WH_A);
+  });
+
+  it('destroy: A’s completion does not reload A into view, and does not touch B’s rows, form, busy state, or toast', async () => {
+    const rowA = quarantineRow('row-a1', WH_A, 'Alpha');
+    const rowB = quarantineRow('row-b1', WH_B, 'Beta');
+    settleRowsImmediately(WH_A, [rowA]);
+    settlePermissionImmediately(WH_A, true);
+    render(<InventoryCenterScreen />);
+    await selectWarehouse(WH_A);
+    await openQuarantineTab();
+    await waitFor(() => expect(screen.getByText('إتلاف')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByText('إتلاف'));
+    await waitFor(() => expect(screen.getByLabelText('سبب القرار')).toBeInTheDocument());
+    fireEvent.change(screen.getByLabelText('سبب القرار'), { target: { value: 'سبب' } });
+    fireEvent.change(screen.getByLabelText('الكمية'), { target: { value: '1' } });
+    const confirmA = await waitFor(() => {
+      const btn = screen.getByText('تأكيد الإتلاف') as HTMLButtonElement;
+      expect(btn.disabled).toBe(false);
+      return btn;
+    });
+
+    const destroyCall = holdDestroy();
+    fireEvent.click(confirmA);
+    await waitFor(() => expect(destroyQuarantineStock).toHaveBeenCalledTimes(1));
+
+    settleRowsImmediately(WH_B, [rowB]);
+    settlePermissionImmediately(WH_B, true);
+    getQuarantineStockCalls.length = 0;
+    await selectWarehouse(WH_B);
+    await waitFor(() => expect(screen.getByText('Beta')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('إتلاف')).toBeInTheDocument());
+
+    destroyCall.resolve({ ok: true, data: { movement_id: 'm2' } });
+    await new Promise(resolve => setTimeout(resolve, 30));
+
+    expect(screen.getByText('Beta'), 'B’s row must still be shown').toBeInTheDocument();
+    expect(screen.queryByText('Alpha'), 'A must not reappear').toBeNull();
+    expect(screen.queryByText('تم الإتلاف بنجاح'), 'A’s own success toast must not surface while viewing B').toBeNull();
+    expect(screen.getByText('إتلاف')).toBeInTheDocument();
+    expect(getQuarantineStockCalls, 'A’s stale onDone must not re-fetch A').not.toContain(WH_A);
   });
 });
