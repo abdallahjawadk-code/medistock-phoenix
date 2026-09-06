@@ -28,7 +28,9 @@ export type QaPersonaId =
   | 'warehouse_officer'
   | 'warehouse_officer_assigned'
   | 'outlet_officer'
-  | 'outlet_officer_assigned';
+  | 'outlet_officer_assigned'
+  | 'institution_admin'
+  | 'health_center_manager_assigned';
 
 export interface QaPersona {
   id: QaPersonaId;
@@ -112,6 +114,32 @@ export const QA_PERSONAS: QaPersona[] = [
     labelAr: 'أمين منفذ (مخصَّص)',
     labelEn: 'Outlet officer (assigned)',
     profile: qaProfile('outlet_officer_assigned', 'outlet_officer', 'أمين المنفذ المخصَّص', QA_ORG),
+  },
+  /**
+   * IG-2 ROUND 3 — the ORG-WIDE (NULL,NULL) suspension claim's holder, per
+   * MaterialDispensingSuspensionPanel.tsx's own doc comment on the
+   * institution_admin case. Carries no migration-062 warehouse/outlet
+   * assignment at all — an org-wide claim needs none.
+   */
+  {
+    id: 'institution_admin',
+    labelAr: 'مسؤول المؤسسة',
+    labelEn: 'Institution admin',
+    profile: qaProfile('institution_admin', 'institution_admin', 'مسؤول المؤسسة', QA_ORG),
+  },
+  /**
+   * IG-2 ROUND 3 — the "read-only, no admin steps" persona for the Quarantine
+   * tour. `health_center_manager`'s read affordance
+   * (`useInventoryReadAffordance`, R1.5-E) is a ROLE predicate needing no
+   * scoped-permission grant; this persona is ASSIGNED to `qa-wh-inst-a`
+   * (reachability only, see qaScopes.ts) and is granted NO
+   * `warehouse_transfer.return_request` anywhere.
+   */
+  {
+    id: 'health_center_manager_assigned',
+    labelAr: 'مدير مركز صحي (مخصَّص)',
+    labelEn: 'Health-centre manager (assigned)',
+    profile: qaProfile('health_center_manager_assigned', 'health_center_manager', 'مدير المركز الصحي', QA_ORG),
   },
 ];
 

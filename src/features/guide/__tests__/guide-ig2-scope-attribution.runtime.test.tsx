@@ -36,6 +36,17 @@ import { join } from 'node:path';
  * whole point.
  *
  * The screen's own call site is asserted separately, structurally, at the end.
+ *
+ * A SECOND, INDEPENDENT SHAPE OF THE SAME BUG. The scope key first covered only
+ * the resource (organization + warehouse / outlet). A reproduction showed that
+ * was not the whole subject: two DIFFERENT profiles asked about the identical
+ * resource produce the identical key, so switching WHO is asking, with the
+ * resource held constant, was invisible to a comparison that only looked at
+ * the resource. `quarantinePermissionScopeKey` / `suspensionPermissionScopeKey`
+ * now fold the asking profile's id in as well, and the "never attributed to
+ * the previous identity" describe block below proves it the same way the
+ * warehouse block does — hold the new identity's own check in flight and
+ * confirm the former identity's settled answer never surfaces as theirs.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -89,11 +100,23 @@ function deferred<T>() {
 
 type Answer = { ok: boolean; allowed: boolean };
 const pending = new Map<string, ReturnType<typeof deferred<Answer>>>();
+/** Forces a re-render of IdentityHarness after `appState.profile` is mutated. */
+let identityNotify: (() => void) | null = null;
 
 /** Hold the check for `warehouseId` until the test decides its outcome. */
 function hold(warehouseId: string) {
   const d = deferred<Answer>();
   pending.set(warehouseId, d);
+  return d;
+}
+
+/**
+ * Hold the check for one PROFILE, independent of warehouse. Prefixed so it can
+ * never collide with a warehouse id above — 'wh-A'/'wh-B' vs 'profile:p2'.
+ */
+function holdProfile(profileId: string) {
+  const d = deferred<Answer>();
+  pending.set(`profile:${profileId}`, d);
   return d;
 }
 
@@ -116,7 +139,7 @@ function QuarantinePublisher({ warehouseId }: { warehouseId: string }) {
       'inventory.quarantine.dispose': perm.data === true,
     },
     perm.loading ? 'loading' : (perm.error ? 'error' : 'ready'),
-    quarantinePermissionScopeKey(appState.activeOrgId, warehouseId || null),
+    quarantinePermissionScopeKey(appState.activeOrgId, warehouseId || null, appState.profile.id),
     perm.dataScopeKey,
   );
   return <div data-testid="perm">{String(perm.data)}|{perm.loading ? 'loading' : 'settled'}</div>;
@@ -167,16 +190,26 @@ const observer = () => screen.getByTestId('observer');
 beforeEach(() => {
   pending.clear();
   hasScopedPermission.mockReset();
-  hasScopedPermission.mockImplementation((input: { warehouseId: string }) => {
+  hasScopedPermission.mockImplementation((input: { profileId: string; warehouseId: string }) => {
+    const byProfile = pending.get(`profile:${input.profileId}`);
+    if (byProfile) return byProfile.promise;
     const held = pending.get(input.warehouseId);
     if (held) return held.promise;
     return Promise.resolve({ ok: true, allowed: false });
   });
-  appState = { ...appState, activeOrgId: 'org-1' };
+  appState = {
+    ...appState,
+    activeOrgId: 'org-1',
+    // Reset explicitly rather than carrying forward whatever a PRIOR test in
+    // this file left `profile` as — the identity describe block below swaps
+    // it mid-test, and every OTHER test's assumptions are keyed on 'p1'.
+    profile: { id: 'p1', full_name: 'T', role: 'central_warehouse_manager', organization_id: 'org-1' },
+  };
 });
 
 afterEach(() => {
   cleanup();
+  identityNotify = null;
   vi.restoreAllMocks();
 });
 
@@ -266,6 +299,86 @@ describe('IG-2 — warehouse A’s answer is never attributed to warehouse B', (
   });
 });
 
+describe('IG-2 — a change of IDENTITY is never attributed to the previous identity', () => {
+  /**
+   * SAME organization, SAME warehouse, DIFFERENT profile. A reproduction
+   * (kept here as the regression) showed the ORIGINAL scope key — resource
+   * only — could not tell the two apart: it renders identically for both
+   * profiles, so nothing about it changes when the operator does.
+   *
+   * `useAsync` starts a fresh check the moment `profile?.id` changes (it is
+   * one of the hook's own deps), but while that check is still in flight the
+   * PREVIOUS profile's settled `data` is still sitting in state — the same
+   * shape of staleness the warehouse block above exists for, just keyed on
+   * identity instead of on a warehouse id. Concretely: profile 1 is granted,
+   * switch to profile 2 (org and warehouse held constant) while profile 2's
+   * own check is pending — profile 1's `true` must not be presented as
+   * profile 2's answer, and the guide must not act on it.
+   */
+  function IdentityHarness() {
+    const [, force] = useState(0);
+    identityNotify = () => force(n => n + 1);
+    return (
+      <GuideSurfaceProvider>
+        <button type="button" onClick={() => { appState = { ...appState, profile: { ...appState.profile, id: 'user-2' } }; identityNotify?.(); }}>
+          to-user-2
+        </button>
+        <QuarantinePublisher warehouseId="wh-A" />
+        <Observer />
+      </GuideSurfaceProvider>
+    );
+  }
+
+  it('holds the tour back while the new identity’s own check is pending, and never grants from the old one', async () => {
+    // ── user-1 (the default 'p1' from beforeEach) is granted. ────────────
+    const u1 = hold('wh-A');
+    render(<IdentityHarness />);
+    await waitFor(() => expect(observer()).toHaveAttribute('data-state', 'loading'));
+    u1.resolve({ ok: true, allowed: true });
+    await waitFor(() => expect(observer()).toHaveAttribute('data-tour', 'offered'));
+    expect(observer()).toHaveAttribute('data-dispose', 'true');
+
+    // ── SWITCH IDENTITY. Same org, same warehouse. user-2's check pends. ──
+    const u2 = holdProfile('user-2');
+    fireEvent.click(screen.getByText('to-user-2'));
+
+    // THE CLAIM: user-1's grant must not be presented as user-2's, at any
+    // point before user-2's OWN check settles.
+    expect(observer()).toHaveAttribute('data-dispose', 'false');
+    expect(observer()).toHaveAttribute('data-tour', 'absent');
+    await new Promise(resolve => setTimeout(resolve, 20));
+    expect(observer()).toHaveAttribute('data-dispose', 'false');
+    expect(observer()).toHaveAttribute('data-tour', 'absent');
+
+    // ── user-2 is denied. ─────────────────────────────────────────────────
+    u2.resolve({ ok: true, allowed: false });
+    await waitFor(() => expect(screen.getByTestId('perm')).toHaveTextContent('false|settled'));
+    expect(observer()).toHaveAttribute('data-dispose', 'false');
+    expect(observer()).toHaveAttribute('data-tour', 'absent');
+  });
+
+  it('asks the transport for the NEW profile, tagged with the SAME resource', async () => {
+    const u1 = hold('wh-A');
+    render(<IdentityHarness />);
+    u1.resolve({ ok: true, allowed: true });
+    await waitFor(() => expect(observer()).toHaveAttribute('data-tour', 'offered'));
+
+    holdProfile('user-2');
+    fireEvent.click(screen.getByText('to-user-2'));
+    await waitFor(() => expect(hasScopedPermission).toHaveBeenCalledTimes(2));
+    expect(hasScopedPermission.mock.calls[1][0]).toMatchObject({
+      profileId: 'user-2',
+      organizationId: 'org-1',
+      warehouseId: 'wh-A',
+    });
+  });
+
+  it('the scope key itself distinguishes two profiles asking about the identical resource', () => {
+    expect(quarantinePermissionScopeKey('org-1', 'wh-A', 'p1'))
+      .not.toBe(quarantinePermissionScopeKey('org-1', 'wh-A', 'user-2'));
+  });
+});
+
 describe('IG-2 — read authority and action authority fail independently', () => {
   /**
    * The read affordance is a synchronous decision that owes nothing to the
@@ -275,7 +388,7 @@ describe('IG-2 — read authority and action authority fail independently', () =
    */
   function TwoSources({ warehouseId, readAffordance }: { warehouseId: string; readAffordance: boolean }) {
     const perm = useQuarantinePermission(appState.activeOrgId, warehouseId || null);
-    const scopeKey = quarantinePermissionScopeKey(appState.activeOrgId, warehouseId || null);
+    const scopeKey = quarantinePermissionScopeKey(appState.activeOrgId, warehouseId || null, appState.profile.id);
     useGuideSurface(3, 'quarantine');
     // Source 1 — synchronous, independent.
     useScopedGuideCapabilities(
@@ -349,20 +462,20 @@ describe('IG-2 — the answer carries the scope it was computed for', () => {
     );
   }
 
-  it('tags a settled answer with its own warehouse, and keeps the old tag while the next loads', async () => {
+  it('tags a settled answer with its own warehouse AND profile, and keeps the old tag while the next loads', async () => {
     const a = hold('wh-A');
     const { rerender } = render(<Probe warehouseId="wh-A" />);
     a.resolve({ ok: true, allowed: true });
     await waitFor(() =>
-      expect(screen.getByTestId('probe')).toHaveAttribute('data-scope', 'org-1/wh-A'));
+      expect(screen.getByTestId('probe')).toHaveAttribute('data-scope', 'org-1/wh-A/p1'));
 
     hold('wh-B');
     rerender(<Probe warehouseId="wh-B" />);
     // The retained data is A's, and it SAYS so — which is exactly what lets a
     // caller refuse to attribute it to B.
     expect(screen.getByTestId('probe')).toHaveAttribute('data-data', 'true');
-    expect(screen.getByTestId('probe')).toHaveAttribute('data-scope', 'org-1/wh-A');
-    expect(quarantinePermissionScopeKey('org-1', 'wh-B')).toBe('org-1/wh-B');
+    expect(screen.getByTestId('probe')).toHaveAttribute('data-scope', 'org-1/wh-A/p1');
+    expect(quarantinePermissionScopeKey('org-1', 'wh-B', 'p1')).toBe('org-1/wh-B/p1');
   });
 });
 

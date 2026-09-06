@@ -60,7 +60,7 @@ interface Props {
  * this list is only ever a candidate set.
  */
 export function MaterialDispensingSuspensionPanel({ organizationId }: Props) {
-  const { lang, dir } = useApp();
+  const { lang, dir, profile } = useApp();
   const perm = useMaterialDispensingSuspensionPermission(organizationId, null);
   const [rows, setRows] = useState<MaterialDispensingSuspensionRow[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -155,7 +155,7 @@ export function MaterialDispensingSuspensionPanel({ organizationId }: Props) {
       'inventory.suspension.lift': canLift,
     },
     scopedState,
-    suspensionPermissionScopeKey(organizationId, null),
+    suspensionPermissionScopeKey(organizationId, null, profile?.id ?? null),
     // The catalog half of `canSuspendAnywhere` needs no separate tag:
     // useInventoryScopes already refuses a catalog belonging to another
     // organization and reports `loading` until its own has arrived.

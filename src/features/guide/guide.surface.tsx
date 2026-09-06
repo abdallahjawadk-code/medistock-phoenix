@@ -81,29 +81,8 @@ export interface GuideSurfaceContextValue {
    * step about "this row" that has no row. Presence is what lets the tour drop
    * exactly those steps instead of letting them fall back to a centred card and
    * calling that success.
-   *
-   * Presence deliberately does NOT take part in {@link contextKey}: a row
-   * arriving from a refresh is not a change of authorization context and must
-   * not close an open tour.
    */
   presence: Readonly<Record<string, boolean>>;
-  /**
-   * Changes whenever a PUBLISHER changes identity or settlement — a different
-   * organization, warehouse or outlet, a read still in flight, or one that
-   * failed.
-   *
-   * It deliberately does NOT include the surface. The surface is already
-   * handled, more precisely, by step and tour filtering: a tab-scoped tour
-   * loses every step the moment its tab closes, and the engine returns to the
-   * Help Center on its own. Folding the surface in here as well would cancel
-   * the guide's OWN legitimate navigation — the orientation tour moves the
-   * operator to «الإحصائيات» / Statistics by design, and that must not read as
-   * "the authorization context changed, discard the tour".
-   *
-   * Deliberately opaque and never persisted: the guide only needs to know THAT
-   * the context changed so it can recompute, never what it changed to.
-   */
-  contextKey: string;
   /**
    * Whether a tour is being walked RIGHT NOW.
    *
@@ -113,8 +92,7 @@ export interface GuideSurfaceContextValue {
    * there is no explanation in progress, so the example is free to follow the
    * list again.
    *
-   * It grants nothing, hides nothing and changes no data — and it is
-   * deliberately not part of {@link contextKey}.
+   * It grants nothing, hides nothing and changes no data.
    */
   tourActive: boolean;
   publish: (source: string, entry: GuideCapabilityEntry | null) => void;
@@ -135,7 +113,6 @@ const EMPTY: GuideSurfaceContextValue = {
   capabilities: {},
   capabilityState: 'ready',
   presence: {},
-  contextKey: 'none',
   tourActive: false,
   publish: () => undefined,
   publishPresence: () => undefined,
@@ -214,12 +191,8 @@ export function GuideSurfaceProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    const contextKey = sources
-      .map(source => `${source}@${entries[source].scopeKey}:${entries[source].state}`)
-      .join('|') || 'none';
-
     return {
-      surface, capabilities, capabilityState: state, presence, contextKey, tourActive,
+      surface, capabilities, capabilityState: state, presence, tourActive,
       publish, publishPresence, setSurface, setTourActive,
     };
   }, [surface, entries, presenceEntries, tourActive, publish, publishPresence]);

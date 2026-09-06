@@ -43,12 +43,32 @@ export interface ScopedQuarantinePermission extends AsyncState<boolean> {
   dataScopeKey: string | null;
 }
 
-/** Opaque, comparison-only identity of a quarantine permission scope. */
+/**
+ * Opaque, comparison-only identity of a quarantine permission scope.
+ *
+ * IDENTITY IS PART OF THE SCOPE, NOT AN ADDENDUM TO IT.
+ *
+ * The resource half (org + warehouse) was the whole key until a reproduction
+ * showed the gap: two different profiles asked about the SAME organization and
+ * the SAME warehouse produce the SAME key, so switching who is asking — while
+ * the resource stays put — was invisible to every consumer that compares this
+ * key for attribution. Concretely: profile 1 is granted, profile 2 is denied;
+ * switch from 1 to 2 while 2's own check is still in flight, and `useAsync`
+ * hands back profile 1's `true` tagged with a key that still matches, because
+ * nothing in it said WHO the answer was for. `useScopedGuideCapabilities`
+ * would have attributed a stranger's grant to the operator now on screen.
+ *
+ * `profileId` closes that: two profiles asking the identical question now
+ * produce different keys, so a caller comparing keys can never mistake one
+ * profile's settled answer for another's — for the identical reason the
+ * warehouse half already existed.
+ */
 export function quarantinePermissionScopeKey(
   orgId: string | null,
   warehouseId: string | null,
+  profileId: string | null,
 ): string {
-  return `${orgId ?? '-'}/${warehouseId ?? '-'}`;
+  return `${orgId ?? '-'}/${warehouseId ?? '-'}/${profileId ?? '-'}`;
 }
 
 export function useQuarantinePermission(
@@ -56,7 +76,7 @@ export function useQuarantinePermission(
   warehouseId: string | null,
 ): ScopedQuarantinePermission {
   const { profile } = useApp();
-  const scopeKey = quarantinePermissionScopeKey(orgId, warehouseId);
+  const scopeKey = quarantinePermissionScopeKey(orgId, warehouseId, profile?.id ?? null);
 
   // The loader closes over the scope of the render whose effect runs it, so
   // the tag travels with the answer rather than being read back afterwards

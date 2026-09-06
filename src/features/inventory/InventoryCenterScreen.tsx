@@ -72,7 +72,7 @@ export function InventoryCenterScreen({
 }: {
   initialSuggestionDocument?: SuggestionDocumentTarget;
 } = {}) {
-  const { lang, dir, activeOrgId, role, myPermissions } = useApp();
+  const { lang, dir, activeOrgId, role, myPermissions, profile } = useApp();
 
   const scopes = useInventoryScopes(activeOrgId);
   const opensDispatch = initialSuggestionDocument?.documentKind === 'warehouse_dispatch';
@@ -204,7 +204,7 @@ export function InventoryCenterScreen({
    * Nothing operational changes: `canDisposeQuarantine` still flows to the
    * panel exactly as before, and both RPCs re-check server-side regardless.
    */
-  const quarantineScopeKey = quarantinePermissionScopeKey(activeOrgId, activeWarehouseId || null);
+  const quarantineScopeKey = quarantinePermissionScopeKey(activeOrgId, activeWarehouseId || null, profile?.id ?? null);
   useGuideCapabilities(
     'inventory.quarantine.read',
     { 'inventory.quarantine.view': hasInventoryReadAffordance && activeWarehouseId !== '' },

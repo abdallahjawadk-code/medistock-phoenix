@@ -34,12 +34,22 @@ export interface ScopedMaterialDispensingSuspensionPermission
   dataScopeKey: string | null;
 }
 
-/** Opaque, comparison-only identity of a suspension permission scope. */
+/**
+ * Opaque, comparison-only identity of a suspension permission scope.
+ *
+ * Carries the asking PROFILE as well as the resource — see the identical
+ * reasoning in useQuarantinePermission.ts's own doc comment on
+ * `quarantinePermissionScopeKey`. Two profiles asking about the same
+ * organization/outlet must never produce the same key, or a switch of
+ * identity with the resource held constant lets the FORMER profile's settled
+ * answer outlive them.
+ */
 export function suspensionPermissionScopeKey(
   organizationId: string | null,
   distributionPointId: string | null,
+  profileId: string | null,
 ): string {
-  return `${organizationId ?? '-'}/${distributionPointId ?? '-'}`;
+  return `${organizationId ?? '-'}/${distributionPointId ?? '-'}/${profileId ?? '-'}`;
 }
 
 export function useMaterialDispensingSuspensionPermission(
@@ -47,7 +57,7 @@ export function useMaterialDispensingSuspensionPermission(
   distributionPointId: string | null = null,
 ): ScopedMaterialDispensingSuspensionPermission {
   const { profile } = useApp();
-  const scopeKey = suspensionPermissionScopeKey(organizationId, distributionPointId);
+  const scopeKey = suspensionPermissionScopeKey(organizationId, distributionPointId, profile?.id ?? null);
 
   const inner = useAsync<{ scopeKey: string; permissions: MaterialDispensingSuspensionPermissions }>(async () => {
     const deny: MaterialDispensingSuspensionPermissions = { canViewDetail: false, canSuspend: false, canLift: false };

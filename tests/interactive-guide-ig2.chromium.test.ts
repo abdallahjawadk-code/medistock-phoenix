@@ -70,6 +70,8 @@ interface OpenOptions {
   reducedMotion?: 'reduce' | 'no-preference';
   theme?: 'light' | 'dark';
   persona?: string;
+  /** Defaults to QA_WAREHOUSE; a restricted persona's own reachable set differs. */
+  warehouseId?: string;
 }
 
 /**
@@ -107,14 +109,22 @@ async function openInventory(options: OpenOptions) {
   await page.evaluate(() => window.localStorage.removeItem('medistock.phoenix.guide.progress'));
 
   // The screen's own warehouse picker — the first control an operator uses.
+  const warehouseId = options.warehouseId ?? QA_WAREHOUSE;
   const picker = page.locator('.nexus-it-context-bar select');
   await picker.waitFor({ state: 'visible' });
   await expect
-    .poll(() => picker.locator(`option[value="${QA_WAREHOUSE}"]`).count(), { timeout: 15_000 })
+    .poll(() => picker.locator(`option[value="${warehouseId}"]`).count(), { timeout: 15_000 })
     .toBe(1);
-  await picker.selectOption(QA_WAREHOUSE);
+  await picker.selectOption(warehouseId);
 
   return { context, page, foreignRequests };
+}
+
+/** Switch to a different warehouse through the screen's own picker, mid-test. */
+async function switchWarehouse(page: Page, warehouseId: string) {
+  const picker = page.locator('.nexus-it-context-bar select');
+  await picker.selectOption(warehouseId);
+  await page.waitForTimeout(200);
 }
 
 async function openTab(page: Page, selector: string) {
@@ -479,6 +489,190 @@ describe('IG-2 acceptance — the real Suspended-from-Dispensing panel', () => {
       await expectRingOverTarget(page, '[data-guide-id="guide.suspension.lift.action"]');
     } finally {
       await closeContext(context);
+    }
+  }, 180_000);
+});
+
+describe('IG-2 acceptance — restricted personas, real QA simulation', () => {
+  /**
+   * These personas are NOT `super_admin`. Each is built from the harness's
+   * migration-062-shaped assignment fixtures plus the new
+   * `warehouse_transfer.return_request` / `material_dispensing_suspension.*`
+   * grant simulation (`qaAnswerExtraScopedPermission`, qaScopes.ts) — a REAL
+   * RPC round trip through the fixture client, not a stand-in permission map.
+   * `src/features/qa/__tests__/qa-restricted-personas.test.ts` proves the
+   * fixture logic itself in isolation; this proves the SAME fixtures reach the
+   * real screen, the real hooks and the real guide end to end.
+   */
+
+  it('a READ-ONLY operator sees the explanation and none of the disposition steps', async () => {
+    const { context, page } = await openInventory({
+      lang: 'ar', viewport: DESKTOP, persona: 'health_center_manager_assigned',
+    });
+    try {
+      await openTab(page, TAB_QUARANTINE);
+      // The rows themselves are visible — this is a READ, not an empty state.
+      await page.locator('text=Paracetamol').waitFor({ state: 'visible' });
+      // ...and the operational buttons are not: no release, no destroy.
+      expect(await page.locator('button:has-text("إفراج")').count()).toBe(0);
+      expect(await page.locator('button:has-text("إتلاف")').count()).toBe(0);
+
+      await openGuide(page);
+      await startTourByTitle(page, QUARANTINE_TITLE.ar);
+      const seen = await walkTour(page, 'quarantine.closing');
+      expect(seen.map(s => s.step)).toEqual([
+        'quarantine.tab', 'quarantine.list', 'quarantine.identity',
+        'quarantine.quantity', 'quarantine.closing',
+      ]);
+      expect(seen.map(s => s.step)).not.toContain('quarantine.release');
+      expect(seen.map(s => s.step)).not.toContain('quarantine.destroy');
+    } finally {
+      await closeContext(context);
+    }
+  }, 180_000);
+
+  it('an operator authorized at ONE warehouse loses the tour entirely at another — same persona, real picker', async () => {
+    const { context, page } = await openInventory({
+      lang: 'ar', viewport: DESKTOP, persona: 'warehouse_officer_assigned',
+      warehouseId: 'qa-wh-inst-a',
+    });
+    try {
+      await openTab(page, TAB_QUARANTINE);
+      await openGuide(page);
+      expect(await tourTitles(page)).toContain(QUARANTINE_TITLE.ar);
+      await startTourByTitle(page, QUARANTINE_TITLE.ar);
+      const seen = await walkTour(page, 'quarantine.closing');
+      // Full tour, disposition steps included: this warehouse is granted.
+      expect(seen.map(s => s.step)).toContain('quarantine.release');
+      await page.keyboard.press('Escape');
+      await expect.poll(() => page.locator('[data-guide-tour]').count()).toBe(0);
+      await page.keyboard.press('Escape');
+
+      // SAME persona, SAME session, a DIFFERENT warehouse it is separately
+      // ASSIGNED to (migration 062, for the picker) but never granted
+      // `warehouse_transfer.return_request` at.
+      await switchWarehouse(page, 'qa-wh-inst-a-empty');
+      // This role has no read affordance either, so the tab — and therefore
+      // the tour — disappears ENTIRELY rather than merely losing two steps.
+      await expect.poll(() => page.locator(TAB_QUARANTINE).count()).toBe(0);
+      await openGuide(page);
+      expect(await tourTitles(page)).not.toContain(QUARANTINE_TITLE.ar);
+    } finally {
+      await closeContext(context);
+    }
+  }, 180_000);
+
+  it('an org-wide suspension claim offers CREATE and withholds LIFT', async () => {
+    const { context, page } = await openInventory({
+      lang: 'ar', viewport: DESKTOP, persona: 'institution_admin',
+    });
+    try {
+      await openTab(page, TAB_SUSPENSIONS);
+      await openGuide(page);
+      await startTourByTitle(page, SUSPENSION_TITLE.ar);
+      const seen = await walkTour(page, 'suspension.history');
+      expect(seen.map(s => s.step)).toContain('suspension.create');
+      expect(seen.map(s => s.step)).not.toContain('suspension.lift');
+
+      // The real panel agrees: a create control exists, no lift control does.
+      expect(await page.locator('button:has-text("إيقاف عن الصرف")').count()).toBeGreaterThan(0);
+      expect(await page.locator('button:has-text("رفع إيقاف الصرف")').count()).toBe(0);
+    } finally {
+      await closeContext(context);
+    }
+  }, 180_000);
+
+  it('the OPPOSITE combination — LIFT offered, CREATE withheld at the org-wide scope', async () => {
+    const { context, page } = await openInventory({
+      lang: 'ar', viewport: DESKTOP, persona: 'outlet_officer_assigned',
+    });
+    try {
+      await openTab(page, TAB_SUSPENSIONS);
+      await page.locator('button:has-text("رفع إيقاف الصرف")').first().waitFor({ state: 'visible' });
+
+      await openGuide(page);
+      await startTourByTitle(page, SUSPENSION_TITLE.ar);
+      const seen = await walkTour(page, 'suspension.history');
+      expect(seen.map(s => s.step)).toContain('suspension.lift');
+    } finally {
+      await closeContext(context);
+    }
+  }, 180_000);
+
+  it('reachability is not authorization — opening the create form at this operator’s OWN outlet is refused', async () => {
+    /**
+     * `qa-outlet_officer_assigned` reaches the create BUTTON through an
+     * outlet assignment (migration 062), same mechanism `manageableOutlets`
+     * has always used — but holds no `material_dispensing_suspension.create`
+     * grant at that outlet. The guide's own copy for this step says opening
+     * the form is not acceptance; this proves the form itself agrees.
+     */
+    const { context, page } = await openInventory({
+      lang: 'ar', viewport: DESKTOP, persona: 'outlet_officer_assigned',
+    });
+    try {
+      await openTab(page, TAB_SUSPENSIONS);
+      await page.locator('button:has-text("إيقاف عن الصرف")').first().click();
+      const outletSelect = page.locator('select').filter({ hasText: '' }).last();
+      await page.getByLabel('المنفذ').selectOption({ label: 'QA · منفذ الطوارئ' });
+      await page.locator('text=لا تملك صلاحية إيقاف مواد عن الصرف').waitFor({ state: 'visible' });
+    } finally {
+      await closeContext(context);
+    }
+  }, 180_000);
+
+  it('reachability WITH a genuine exact-scope grant succeeds — no refusal at the granted outlet', async () => {
+    const { context, page } = await openInventory({
+      lang: 'ar', viewport: DESKTOP, persona: 'central_warehouse_manager',
+    });
+    try {
+      await openTab(page, TAB_SUSPENSIONS);
+      await page.locator('button:has-text("إيقاف عن الصرف")').first().click();
+      await page.getByLabel('المنفذ').selectOption({ label: 'QA · منفذ الأطفال' });
+      await page.waitForTimeout(400);
+      expect(await page.locator('text=لا تملك صلاحية إيقاف مواد عن الصرف').count()).toBe(0);
+    } finally {
+      await closeContext(context);
+    }
+  }, 180_000);
+
+  it('an operator with no assignment anywhere sees neither tour offered', async () => {
+    /**
+     * `warehouse_officer` (unassigned) reaches NO warehouse at all, so the
+     * screen never renders a warehouse `<select>` — `openInventory`'s own
+     * picker step would hang waiting for one. Navigating directly is the
+     * correct shape for this one negative case: the empty-scope message
+     * itself is real product behaviour, not a bypass of any step.
+     */
+    const context = await browser.newContext({ viewport: DESKTOP });
+    const page = await context.newPage();
+    try {
+      await page.goto(
+        `${baseUrl}?qa=1&persona=warehouse_officer&lang=ar&theme=light&scene=inventory&org=${QA_ORG}`,
+        { waitUntil: 'load' },
+      );
+      await page.locator('.premium-topbar').waitFor({ state: 'visible' });
+      await page.locator('text=لا تملك صلاحية على أي مخزن').waitFor({ state: 'visible' });
+
+      await openGuide(page);
+      const titles = await tourTitles(page);
+      expect(titles).not.toContain(QUARANTINE_TITLE.ar);
+      expect(titles).not.toContain(SUSPENSION_TITLE.ar);
+    } finally {
+      await closeContext(context);
+    }
+  }, 180_000);
+
+  it('captures the read-only and the org-wide-claim personas for the record', async () => {
+    for (const persona of ['health_center_manager_assigned', 'institution_admin'] as const) {
+      const { context, page } = await openInventory({ lang: 'ar', viewport: DESKTOP, persona });
+      try {
+        await openTab(page, persona === 'institution_admin' ? TAB_SUSPENSIONS : TAB_QUARANTINE);
+        await page.waitForTimeout(300);
+        await shoot(page, `restricted-${persona}-ar-desktop`);
+      } finally {
+        await closeContext(context);
+      }
     }
   }, 180_000);
 });

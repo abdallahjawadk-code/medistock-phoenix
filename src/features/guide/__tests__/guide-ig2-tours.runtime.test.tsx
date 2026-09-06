@@ -345,17 +345,15 @@ describe('IG-2 — a context change never reuses stale eligibility', () => {
     expect(tourTitles()).not.toContain('الحجر الصحي');
   });
 
-  it('does NOT cancel the guide’s own legitimate navigation to «الإحصائيات»', async () => {
+  it('does NOT cancel the guide’s own legitimate navigation to «الإحصائيات» — PROP SWAP ONLY', async () => {
     /**
-     * The orientation tour ends on Statistics BY DESIGN — a step declares that
-     * screen and the engine moves there when the operator's own authorization
-     * already admits it. An earlier version folded the surface into the context
-     * key, so arriving read as "the authorization context changed" and the tour
-     * closed itself on its own last step.
-     *
-     * The surface is still honoured, and more precisely: a tab-scoped tour
-     * loses every step the moment its tab closes and returns to the Help
-     * Center for THAT reason. A tour that belongs to no tab is unaffected.
+     * NARROWER than it looks: `Harness` hard-codes `currentScreen={3}` and
+     * `onNavigate={() => undefined}`, so this never drives the engine's own
+     * `onNavigate` call or an actual subtree remount — it only checks that
+     * swapping `<Surface>`'s `screen`/`tab` PROPS in place does not, on its
+     * own, read as a capability change. `NavigationHarness` below is the
+     * test that answers the real question: does a REAL screen unmount, of the
+     * kind `onNavigate` actually causes, survive?
      */
     appState = { ...appState, myPermissions: new Set([DASHBOARD_VIEW_PERMISSION]) };
     const { rerender } = render(<Harness screen={3} tab="quarantine" caps={ALL_CAPS} />);
@@ -364,19 +362,96 @@ describe('IG-2 — a context change never reuses stale eligibility', () => {
     const startedOn = layer().dataset.guideStep;
     expect(startedOn).toBeDefined();
 
-    // The operator is carried to Statistics, exactly as a step asked.
     rerender(<Harness screen={COMMAND_CENTER_SCREEN} tab={null} caps={ALL_CAPS} />);
     await waitFor(() => expect(document.querySelector('[data-guide-tour]')).not.toBeNull());
     expect(layer().dataset.guideTour).toBe('guide.tour.orientation');
     expect(layer().dataset.guideStep).toBe(startedOn);
   });
 
-  it('still closes a TAB-scoped tour when its tab closes', async () => {
+  it('still closes a TAB-scoped tour when its tab changes — PROP SWAP ONLY', async () => {
     const { rerender } = render(<Harness tab="quarantine" caps={ALL_CAPS} />);
     await openCenter();
     await startTour('الحجر الصحي');
     rerender(<Harness screen={COMMAND_CENTER_SCREEN} tab={null} caps={ALL_CAPS} />);
     await waitFor(() => expect(document.querySelector('[data-guide-tour]')).toBeNull());
+  });
+
+  /**
+   * THE REAL PATH: `onNavigate` swaps which SCREEN COMPONENT is mounted —
+   * exactly what `AuthenticatedApp`'s own `case <screen>: return <...Screen />`
+   * dispatch does — so the Inventory Center's surface-and-capability
+   * publisher genuinely UNMOUNTS, the way `InventoryCenterScreen` and
+   * `QuarantinePanel` would when the operator is carried to a different
+   * screen. `Harness` above cannot exercise this: it hard-codes
+   * `currentScreen={3}` and discards `onNavigate` entirely, so a previous
+   * version of this suite asserted a PROP swap on the same still-mounted
+   * component and called it proof of navigation surviving — it never was.
+   *
+   * A prior implementation of the engine's own invalidation watched a
+   * signal built from every mounted capability publisher's existence; that
+   * signal vanishing when Inventory Center unmounts read as "the
+   * authorization context changed" and closed the orientation tour on its
+   * own last step. Reproduced here with a REAL unmount before it was fixed.
+   */
+  function StatisticsStandIn() {
+    useGuideSurface(COMMAND_CENTER_SCREEN, null);
+    return <div id="statistics-screen" />;
+  }
+
+  function NavigationHarness({ onClose = () => undefined }: { onClose?: () => void }) {
+    const [currentScreen, setCurrentScreen] = useState(3);
+    const drawer = useMemo(() => INERT_DRAWER, []);
+    return (
+      <GuideSurfaceProvider>
+        <button type="button" onClick={() => setCurrentScreen(COMMAND_CENTER_SCREEN)}>manual-navigate-away</button>
+        {currentScreen === 3
+          ? <Surface screen={3} tab="quarantine" caps={ALL_CAPS} state="ready" scopeKey="wh:A" />
+          : <StatisticsStandIn />}
+        <GuideEngine currentScreen={currentScreen} onNavigate={setCurrentScreen} drawer={drawer} onClose={onClose} />
+      </GuideSurfaceProvider>
+    );
+  }
+
+  it('survives the engine’s OWN real navigation — a genuine screen unmount, not a prop swap', async () => {
+    appState = { ...appState, myPermissions: new Set([DASHBOARD_VIEW_PERMISSION]) };
+    render(<NavigationHarness />);
+    await openCenter();
+    await startTour('جولة تعريفية');
+
+    // Walk until the tour's own «الإحصائيات» step fires the engine's REAL
+    // onNavigate, actually unmounting the Inventory Center subtree.
+    for (let guard = 0; guard < 15; guard += 1) {
+      if (document.querySelector('#statistics-screen')) break;
+      const primary = document.querySelector('.guide-card .guide-btn--primary') as HTMLElement | null;
+      if (!primary) break;
+      fireEvent.click(primary);
+      await waitFor(() => expect(document.querySelector('[data-guide-tour]')).not.toBeNull());
+    }
+
+    expect(document.querySelector('#statistics-screen')).not.toBeNull();
+    expect(document.querySelector('#surface')).toBeNull(); // Inventory Center genuinely gone.
+    expect(layer().dataset.guideTour).toBe('guide.tour.orientation');
+  });
+
+  it('a TAB-scoped tour still closes on a genuine navigate-away unmount (not just a prop swap)', async () => {
+    /**
+     * The counterpart negative case: the quarantine tour is NOT the
+     * orientation tour, and belongs to a tab that a real navigation genuinely
+     * destroys. This must still close — the fix narrows WHAT is watched
+     * (capabilities the active tour declares, not every mounted publisher),
+     * it does not stop watching the active tour's own eligibility. `!
+     * activeEntry` (surface no longer matches) is what closes it here, the
+     * same mechanism the prop-swap test above already exercises — this
+     * confirms it survives a REAL unmount too, not only a prop change.
+     */
+    render(<NavigationHarness />);
+    await openCenter();
+    await startTour('الحجر الصحي');
+    expect(layer().dataset.guideTour).toBe('guide.tour.quarantine');
+
+    fireEvent.click(screen.getByText('manual-navigate-away'));
+    await waitFor(() => expect(document.querySelector('[data-guide-tour]')).toBeNull());
+    expect(document.querySelector('#surface')).toBeNull();
   });
 
   it('closes when the session goes away', async () => {

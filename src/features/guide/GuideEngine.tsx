@@ -57,7 +57,7 @@ type Mode =
 export function GuideEngine({ currentScreen, onNavigate, drawer, onClose }: Props) {
   const { lang, dir, role, myPermissions, authStatus, session } = useApp();
   const viewport = useGuideViewport();
-  const { surface, capabilities, presence, contextKey, setTourActive } = useGuideSurfaceContext();
+  const { surface, capabilities, presence, setTourActive } = useGuideSurfaceContext();
   const [progress, setProgress] = useState<GuideProgress>(readGuideProgress);
   const [mode, setMode] = useState<Mode>({ kind: 'center' });
   const [resetNotice, setResetNotice] = useState(false);
@@ -83,33 +83,6 @@ export function GuideEngine({ currentScreen, onNavigate, drawer, onClose }: Prop
     [audience, viewport],
   );
 
-
-  /**
-   * IG-2 — a change of AUTHORIZATION CONTEXT invalidates eligibility, never
-   * silently reuses it.
-   *
-   * A different organization, warehouse or outlet, a permission read that is
-   * still in flight, or one that failed, all change `contextKey`. When that
-   * happens while a tour is open, the tour is closed back to the Help Center
-   * and the step list is recomputed from scratch. Nothing from the previous
-   * context is carried across or shown: `setMode` drops the step index, and
-   * the Help Center re-renders from the freshly filtered set.
-   *
-   * MOVING is not a change of context, and is deliberately NOT handled here.
-   * `contextKey` carries no screen and no tab (see guide.surface.tsx): a tour
-   * that belongs to a tab loses every one of its steps the moment that tab
-   * closes, and the `!activeEntry` effect below returns to the Help Center for
-   * that reason instead. Folding the surface into this key as well would make
-   * the guide cancel its OWN legitimate navigation — the orientation tour ends
-   * on «الإحصائيات» / Statistics by design, and arriving there must not read as
-   * "the context changed, discard the tour".
-   */
-  const contextKeyRef = useRef(contextKey);
-  useEffect(() => {
-    if (contextKeyRef.current === contextKey) return;
-    contextKeyRef.current = contextKey;
-    setMode(current => (current.kind === 'tour' ? { kind: 'center' } : current));
-  }, [contextKey]);
 
   /**
    * Tell the panels a step is being walked.
@@ -173,6 +146,82 @@ export function GuideEngine({ currentScreen, onNavigate, drawer, onClose }: Prop
   useEffect(() => {
     if (mode.kind === 'tour' && !activeEntry) setMode({ kind: 'center' });
   }, [mode, activeEntry]);
+
+  /**
+   * IG-2 — a change to a CAPABILITY the active tour actually depends on
+   * closes it back to the Help Center, never silently substituting a
+   * different step at the same index. Scoped to that one tour's own declared
+   * requirements — nothing else.
+   *
+   * ───────────────────────────────────────────────────────────────────────
+   * TWO WRONG VERSIONS BEFORE THIS ONE
+   *
+   * V1 watched `contextKey` — a string built from EVERY capability publisher
+   * mounted anywhere, whether or not the active tour reads it. Walking the
+   * orientation tour (no `requiresCapabilities` at all) from the Inventory
+   * Center to «الإحصائيات» / Statistics — by the tour's OWN design — unmounts
+   * QuarantinePanel, its capability source vanishes, `contextKey` changes, and
+   * V1 closed the tour on its own last step. Reproduced with a real screen
+   * unmount, not a prop swap.
+   *
+   * V2 watched the active tour's own step-ID array instead — narrower, but it
+   * conflated PRESENCE with CAPABILITY. `QuarantinePanel`'s presence
+   * (`useGuidePresence`) starts false and flips true once its fetch resolves,
+   * so the tour's step array WIDENS a moment after it opens. Presence is
+   * deliberately excluded from active invalidation elsewhere in this codebase
+   * (see guide.surface.tsx's own note: "a row arriving from a refresh ... must
+   * not close an open tour") — a passing runtime suite already relies on a
+   * row disappearing mid-tour being handled PASSIVELY, by
+   * `GuideTourOverlay`'s own `stepIndex` clamp, landing gracefully on
+   * whatever step now remains rather than closing outright. V2 broke that:
+   * treating the array itself as the signal reacted to presence too, and
+   * closed the tour on the very data-arrival its own steps were waiting for.
+   *
+   * WHAT ACTUALLY DIFFERS, AND WHY THIS ONE STAYS SCOPED. Capability loss and
+   * presence loss look similar (both shrink `activeEntry.steps`) but call for
+   * different treatment: capability loss is an AUTHORIZATION change — the
+   * concept itself may no longer be shown, and the safe behaviour is to leave
+   * the tour entirely and let the operator re-enter fresh. Presence loss is a
+   * DATA-SHAPE change — the concept is still authorized, there is just nothing
+   * on screen to point at right now — and the existing passive clamp already
+   * degrades that gracefully. So only CAPABILITY keys are watched here, read
+   * from the tour's own STATIC registry definition (not the current, already-
+   * filtered `activeEntry.steps` — a key must stay watched even after the step
+   * that named it has been filtered out): the tour's own
+   * `requiresCapabilities` plus every one of its steps'. The orientation tour
+   * declares none, so this can never fire for it, whatever unmounts elsewhere.
+   * ───────────────────────────────────────────────────────────────────────
+   */
+  const activeTourDef = mode.kind === 'tour'
+    ? GUIDE_REGISTRY.tours.find(tour => tour.id === mode.tourId) ?? null
+    : null;
+  const activeCapabilityKeys = useMemo(() => {
+    if (!activeTourDef) return [] as string[];
+    const keys = new Set<string>(activeTourDef.requiresCapabilities ?? []);
+    for (const step of activeTourDef.steps) {
+      for (const key of step.requiresCapabilities ?? []) keys.add(key);
+    }
+    return [...keys].sort();
+  }, [activeTourDef]);
+  const activeCapabilitySignature = activeCapabilityKeys
+    .map(key => `${key}:${capabilities[key] === true}`)
+    .join('|');
+  const activeTourIdRef = useRef<string | null>(null);
+  const activeCapabilitySignatureRef = useRef('');
+  useEffect(() => {
+    if (mode.kind !== 'tour') {
+      activeTourIdRef.current = null;
+      activeCapabilitySignatureRef.current = '';
+      return;
+    }
+    const sameTour = activeTourIdRef.current === mode.tourId;
+    const signatureChanged = activeCapabilitySignatureRef.current !== activeCapabilitySignature;
+    activeTourIdRef.current = mode.tourId;
+    activeCapabilitySignatureRef.current = activeCapabilitySignature;
+    if (sameTour && signatureChanged) {
+      setMode({ kind: 'center' });
+    }
+  }, [mode, activeCapabilitySignature]);
 
   const onStepIndexChange = useCallback((index: number) => {
     if (mode.kind !== 'tour' || !activeEntry) return;

@@ -44,6 +44,20 @@ const FORBIDDEN = [
   'qa-wh-inst-a',
   'warehouse_officer_assigned',
   'outlet_officer_assigned',
+  // IG-2 ROUND 3 — the two new restricted-persona fixtures and their
+  // scoped-permission grant catalog. Same contract as the rows above: their
+  // absence from dist/ is part of the harness's own tree-shaking proof.
+  'qa-psa-wh-a-empty',
+  'qa-psa-hcm-wh-a',
+  'qa-psa-inst-admin-wh-a',
+  'qa-psa-outlet-officer-wh-a',
+  'qa-psa-cwm-wh-a',
+  'qa-psa-cwm-pt-2',
+  'qa-institution_admin', // bare 'institution_admin' is a REAL product role name (roles.ts OFFICIAL_ROLES)
+  'health_center_manager_assigned',
+  'qaAnswerExtraScopedPermission',
+  'QA_EXTRA_GRANTS',
+  'QA_EXTRA_SCOPED_PERMISSION_KEYS',
   // Migration-071 return-corridor fixtures and the simulated-outcome allowlist.
   // The allowlist decides which write RPCs the harness can answer locally, so
   // its absence from dist/ is as important as the fixture rows themselves.
