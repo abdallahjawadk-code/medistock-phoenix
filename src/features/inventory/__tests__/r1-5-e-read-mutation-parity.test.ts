@@ -150,7 +150,14 @@ describe('E13 — mutation authority is untouched by the affordance', () => {
 
   it('the panels still receive the mutation flags, not the view flags', () => {
     expect(SCREEN).toContain('canReceive={canReceiveReturns}');
-    expect(SCREEN).toContain('canDispose={canDisposeQuarantine}');
+    // QUARANTINE-PANEL-STALE-WAREHOUSE-RACE fix: the panel prop is
+    // canDisposeQuarantineConfirmed, a STRICTER derivative of
+    // canDisposeQuarantine (true only once quarantinePerm has settled with
+    // no error for the CURRENT warehouse — see useQuarantinePermission's
+    // `confirmed` field). It can never be true when canDisposeQuarantine is
+    // false, so this stays a mutation-scoped flag, never the view flag.
+    expect(SCREEN).toContain('const canDisposeQuarantineConfirmed = quarantinePerm.confirmed && quarantinePerm.data === true');
+    expect(SCREEN).toContain('canDispose={canDisposeQuarantineConfirmed}');
     expect(SCREEN).toContain('canApproveOutlet={canApproveOutletCorrection}');
     expect(SCREEN).toContain('canApproveWarehouse={canApproveWarehouseCorrection}');
   });

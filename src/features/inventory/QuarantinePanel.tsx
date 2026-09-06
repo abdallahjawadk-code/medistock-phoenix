@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
@@ -38,10 +38,104 @@ export function QuarantinePanel({ warehouseId, canDispose }: Props) {
   const [stock, setStock] = useState<WarehouseStockBatch[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [busyId, setBusyId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const requestIdRef = useRef(0);
+
+  // A release/destroy action already in flight when the operator switches
+  // warehouse keeps running — its promise has no idea the component moved
+  // on. When it settles, its onDone/onError closures are still the ones
+  // captured at the render where the click happened, bound to THAT
+  // warehouse's row and (via onDone) THAT warehouse's own `reload`. Calling
+  // that stale `reload()` would legitimately claim the newest requestId and
+  // overwrite the CURRENT warehouse's already-rendered rows with the old
+  // warehouse's data — the generation counter above only orders requests
+  // against each other, it does not know one of them is answering on behalf
+  // of a warehouse the operator already left. Read via a ref (not the
+  // `warehouseId` closed over by the stale callback) so the check reflects
+  // whichever warehouse is ACTUALLY selected at the moment the action
+  // completes, not the one selected when the row was rendered.
+  const currentWarehouseIdRef = useRef(warehouseId);
+  currentWarehouseIdRef.current = warehouseId;
+
+  // Registry of PENDING disposal operations, one entry per (warehouseId,
+  // row id) — never a single shared slot, and never scoped to any one
+  // QuarantineRow's own mount lifecycle.
+  //
+  // A single shared slot (an earlier version of this fix) cannot represent
+  // two rows each having their own action in flight at once: starting an
+  // action on A2 would overwrite the ONE slot that A1's still-pending
+  // action was relying on, silently re-enabling A1's own confirm button —
+  // exactly a double-submission hazard, not merely a cross-warehouse one.
+  // Protecting only the latest action from a stale completion is not the
+  // same thing as protecting every pending action.
+  //
+  // Keyed on (warehouseId, row id), not the row's own component instance:
+  // `rows` is cleared to null and refetched on every warehouseId change
+  // (below), so revisiting a warehouse remounts a BRAND NEW QuarantineRow
+  // for the identical row id, with no memory of anything the previous
+  // mount did. This registry is the only thing that still remembers "this
+  // row already has a request outstanding" across that remount — a switch
+  // away and back must not lose track of a still-pending action, and a
+  // fresh attempt to confirm the SAME row again while its earlier request
+  // is still in flight must be refused, not treated as a brand new one.
+  //
+  // Release and destroy on the same row deliberately share one entry —
+  // starting either kind of action blocks the other on that row, since
+  // both would resolve the identical quarantine_stock_id server-side.
+  const pendingActionsRef = useRef<Record<string, symbol>>({});
+  // Mirrors pendingActionsRef's key set into render-visible state — a ref
+  // alone never triggers a re-render when a row's busy status changes.
+  const [busyKeys, setBusyKeys] = useState<ReadonlySet<string>>(new Set());
+  const actionKey = useCallback(
+    (rowWarehouseId: string, rowId: string) => `${rowWarehouseId}::${rowId}`,
+    [],
+  );
+
+  // The actual guard against a duplicate submission: claims the row's slot
+  // SYNCHRONOUSLY, directly against the ref, at the moment an action is
+  // about to be sent — never by trusting the `busy` PROP alone. `busy` is
+  // derived from React state, which can lag a rapid, same-tick second
+  // invocation by a full render; a ref write is immediate. Returns null,
+  // starting nothing, if the row already has an action outstanding.
+  const tryStartAction = useCallback((rowWarehouseId: string, rowId: string): symbol | null => {
+    const key = actionKey(rowWarehouseId, rowId);
+    if (key in pendingActionsRef.current) return null;
+    const token = Symbol(key);
+    pendingActionsRef.current[key] = token;
+    setBusyKeys(new Set(Object.keys(pendingActionsRef.current)));
+    return token;
+  }, [actionKey]);
+
+  // Releases the row's slot ONLY if `token` is still the one on file. A
+  // completion whose token no longer matches is answering for an action
+  // nothing depends on any more (superseded by a fresh attempt on the same
+  // row) and must not release — or otherwise touch — whatever currently
+  // occupies that slot.
+  const finishAction = useCallback((rowWarehouseId: string, rowId: string, token: symbol): boolean => {
+    const key = actionKey(rowWarehouseId, rowId);
+    if (pendingActionsRef.current[key] !== token) return false;
+    delete pendingActionsRef.current[key];
+    setBusyKeys(new Set(Object.keys(pendingActionsRef.current)));
+    return true;
+  }, [actionKey]);
+
+  // A switch to a different warehouse must drop the previous warehouse's
+  // rows (and, with them, any release/destroy form open on one of those
+  // rows — each row unmounts once its `key` leaves `rows`) BEFORE the new
+  // warehouse's own fetch resolves. Without this, the old rows/forms stay
+  // mounted and interactive for the whole pending window, and an operator
+  // can submit a disposal against stock that belonged to the warehouse they
+  // already navigated away from. This must run whenever warehouseId itself
+  // changes, not on every reload() (e.g. the post-action refresh in onDone
+  // reloads the SAME warehouse and should not blank the list).
+  useEffect(() => {
+    setRows(null);
+    setStock([]);
+    setError(null);
+  }, [warehouseId]);
 
   const reload = useCallback(async () => {
+    const requestId = ++requestIdRef.current;
     if (!warehouseId) { setRows([]); setStock([]); return; }
     setLoading(true);
     setError(null);
@@ -50,13 +144,19 @@ export function QuarantinePanel({ warehouseId, canDispose }: Props) {
         getQuarantineStock(warehouseId),
         getWarehouseStock(warehouseId),
       ]);
+      // A later warehouse switch (or another reload()) may have started
+      // after this request but resolved before it. Discard this response —
+      // committing it now would overwrite the current warehouse's already-
+      // rendered, more current rows with stale ones.
+      if (requestIdRef.current !== requestId) return;
       setRows(q);
       setStock(s);
     } catch {
+      if (requestIdRef.current !== requestId) return;
       setError(t('err_generic', lang));
       setRows(null);
     } finally {
-      setLoading(false);
+      if (requestIdRef.current === requestId) setLoading(false);
     }
   }, [warehouseId, lang]);
 
@@ -82,10 +182,30 @@ export function QuarantinePanel({ warehouseId, canDispose }: Props) {
           row={row}
           stock={stock}
           canDispose={canDispose}
-          busy={busyId === row.id}
-          onBusy={busy => setBusyId(busy ? row.id : null)}
-          onDone={(msg) => { showToast(msg); void reload(); }}
-          onError={showToast}
+          busy={busyKeys.has(actionKey(row.warehouseId, row.id))}
+          onBusyStart={() => tryStartAction(row.warehouseId, row.id)}
+          onDone={(token, msg) => {
+            const released = finishAction(row.warehouseId, row.id, token);
+            // A fresh attempt on this SAME row already claimed the slot —
+            // this completion is answering for an action nothing depends
+            // on any more.
+            if (!released) return;
+            // Releasing the slot above must happen regardless of which
+            // warehouse is displayed now (that is what keeps a row from
+            // getting stuck "busy" forever), but do not resubmit or
+            // auto-restore the abandoned warehouse's context otherwise —
+            // just refuse to let its completion touch the warehouse the
+            // operator is actually looking at now.
+            if (row.warehouseId !== currentWarehouseIdRef.current) return;
+            showToast(msg);
+            void reload();
+          }}
+          onError={(token, msg) => {
+            const released = finishAction(row.warehouseId, row.id, token);
+            if (!released) return;
+            if (row.warehouseId !== currentWarehouseIdRef.current) return;
+            showToast(msg);
+          }}
           lang={lang}
         />
       ))}
@@ -104,13 +224,14 @@ interface RowProps {
   stock: WarehouseStockBatch[];
   canDispose: boolean;
   busy: boolean;
-  onBusy: (busy: boolean) => void;
-  onDone: (message: string) => void;
-  onError: (message: string) => void;
+  /** Tries to claim this row's action slot, synchronously. Returns a token identifying THIS action — pass it back to onDone/onError so a stale, superseded completion can be told apart from the one currently owning the slot — or null if the row already has an action in flight, in which case nothing must be sent. */
+  onBusyStart: () => symbol | null;
+  onDone: (token: symbol, message: string) => void;
+  onError: (token: symbol, message: string) => void;
   lang: 'ar' | 'en';
 }
 
-function QuarantineRow({ row, stock, canDispose, busy, onBusy, onDone, onError, lang }: RowProps) {
+function QuarantineRow({ row, stock, canDispose, busy, onBusyStart, onDone, onError, lang }: RowProps) {
   const [mode, setMode] = useState<'none' | 'release' | 'destroy'>('none');
   const [quantity, setQuantity] = useState(String(row.quantity));
   const [reason, setReason] = useState('');
@@ -143,32 +264,32 @@ function QuarantineRow({ row, stock, canDispose, busy, onBusy, onDone, onError, 
 
   const submitRelease = async () => {
     if (busy || !quantityValid || !reasonValid || !destinationId) return;
-    onBusy(true);
+    const token = onBusyStart();
+    if (!token) return; // another action for this row is already in flight — refuse, do not resubmit
     const result = await releaseQuarantineStock({
       requestId: newRequestId(), quarantineStockId: row.id, quantity: quantityNum,
       reason: reason.trim(), destinationWarehouseStockId: destinationId,
     });
-    onBusy(false);
     if (result.ok) {
-      onDone(t('qz_release_ok', lang));
+      onDone(token, t('qz_release_ok', lang));
       setMode('none');
     } else {
-      onError(t('qz_action_failed', lang) + (result.error ? `: ${result.error}` : ''));
+      onError(token, t('qz_action_failed', lang) + (result.error ? `: ${result.error}` : ''));
     }
   };
 
   const submitDestroy = async () => {
     if (busy || !quantityValid || !reasonValid) return;
-    onBusy(true);
+    const token = onBusyStart();
+    if (!token) return;
     const result = await destroyQuarantineStock({
       requestId: newRequestId(), quarantineStockId: row.id, quantity: quantityNum, reason: reason.trim(),
     });
-    onBusy(false);
     if (result.ok) {
-      onDone(t('qz_destroy_ok', lang));
+      onDone(token, t('qz_destroy_ok', lang));
       setMode('none');
     } else {
-      onError(t('qz_action_failed', lang) + (result.error ? `: ${result.error}` : ''));
+      onError(token, t('qz_action_failed', lang) + (result.error ? `: ${result.error}` : ''));
     }
   };
 
