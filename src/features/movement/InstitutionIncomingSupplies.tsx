@@ -30,6 +30,8 @@ import { assessReceive, bulkEligibleLines, validateReceive, type ReceivableLine 
 import { runStockMutation, type TokenedWriter } from '@/shared/lib/stock-mutation-runner';
 import { parseMovementQrPayload } from './movement-trace';
 import { pairedPartyLabel } from './ui/MovementPartySelector';
+import { GUIDE_ANCHORS, guideAnchor } from '@/features/guide/guide.anchors';
+import { useGuideExampleRow, useGuidePresence } from '@/features/guide/guide.surface';
 
 const dash = (v: string | number | null | undefined) =>
   (v === null || v === undefined || v === '' ? '—' : String(v));
@@ -138,6 +140,17 @@ export function InstitutionIncomingSupplies({
     () => bulkEligibleLines(pending.map(toReceivable)),
     [pending],
   );
+
+  /**
+   * INTERACTIVE-GUIDE-IG3 — one frozen example line, by the SAME identity
+   * discipline as QuarantinePanel's own row: chosen once, released (not
+   * reassigned) if it leaves `pending` mid-tour.
+   */
+  const guideExampleLineId = useGuideExampleRow(pending.map(l => l.id));
+  useGuidePresence('inventory.incoming', {
+    'inventory.incoming.region': !loading || lines.length > 0,
+    'inventory.incoming.rowActions': guideExampleLineId !== null,
+  });
 
   // ── receiving ─────────────────────────────────────────────────────────────
 
@@ -264,6 +277,7 @@ export function InstitutionIncomingSupplies({
 
       <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
         <PhoenixButton
+          {...guideAnchor(GUIDE_ANCHORS.incomingBulkAction)}
           disabled={!canReceive || busy || bulkSet.length === 0}
           onClick={acceptAllSafe}
           data-testid="accept-all-safe"
@@ -277,9 +291,11 @@ export function InstitutionIncomingSupplies({
       </div>
 
       {pending.length === 0 ? (
-        <PhoenixEmptyState icon="package" title={t('mv_incoming_none', lang)} />
+        <div {...guideAnchor(GUIDE_ANCHORS.incomingListRegion)}>
+          <PhoenixEmptyState icon="package" title={t('mv_incoming_none', lang)} />
+        </div>
       ) : (
-        <div style={{ display: 'grid', gap: '10px' }} data-testid="incoming-lines">
+        <div {...guideAnchor(GUIDE_ANCHORS.incomingListRegion)} style={{ display: 'grid', gap: '10px' }} data-testid="incoming-lines">
           {pending.map(line => {
             const transfer = transferById.get(line.transferId);
             const eligibility = assessReceive(toReceivable(line));
@@ -288,6 +304,7 @@ export function InstitutionIncomingSupplies({
             const reason = reasons[line.id] ?? '';
             const quantity = Number(typed);
             const issues = validateReceive(toReceivable(line), quantity, reason.trim() || null);
+            const guideAnchored = line.id === guideExampleLineId;
 
             return (
               <PhoenixCard key={line.id}>
@@ -329,7 +346,7 @@ export function InstitutionIncomingSupplies({
                     )}
                   </div>
 
-                  <div style={{ display: 'grid', gap: '6px', minWidth: '220px' }}>
+                  <div {...(guideAnchored ? guideAnchor(GUIDE_ANCHORS.incomingRowReceiveAction) : {})} style={{ display: 'grid', gap: '6px', minWidth: '220px' }}>
                     <PhoenixInput
                       label={t('mv_f_received_quantity', lang)}
                       value={typed}

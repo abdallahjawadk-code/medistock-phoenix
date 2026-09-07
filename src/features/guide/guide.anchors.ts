@@ -64,6 +64,51 @@ export const GUIDE_ANCHORS = {
   suspensionLiftAction:     'guide.suspension.lift.action',
   suspensionHistory:        'guide.suspension.history.region',
 
+  /* ── Inventory Center — Intake (IG-3) ── */
+  inventoryTabIntake:       'guide.inventory.intake.tab',
+  intakeBlockedRegion:      'guide.intake.blocked.region',
+  intakeFormRegion:         'guide.intake.form.region',
+  intakeSubmitAction:       'guide.intake.submit.action',
+
+  /* ── Inventory Center — Stock (IG-3) ── */
+  inventoryTabStock:        'guide.inventory.stock.tab',
+  stockListRegion:          'guide.stock.list.region',
+  stockRowBalances:         'guide.stock.row.balances',
+  stockRowMovementAction:   'guide.stock.row.movement-action',
+
+  /* ── Inventory Center — Ledger (IG-3) ── */
+  inventoryTabLedger:       'guide.inventory.ledger.tab',
+  ledgerSelect:             'guide.ledger.select.control',
+  ledgerListRegion:         'guide.ledger.list.region',
+
+  /* ── Inventory Center — Incoming supplies (IG-3) ── */
+  inventoryTabIncoming:     'guide.inventory.incoming.tab',
+  incomingListRegion:       'guide.incoming.list.region',
+  incomingRowReceiveAction: 'guide.incoming.row.receive-action',
+  incomingBulkAction:       'guide.incoming.bulk.action',
+
+  /* ── Inventory Center — Dispatch to outlets (IG-3) ── */
+  inventoryTabDispatch:     'guide.inventory.dispatch.tab',
+  dispatchListRegion:       'guide.dispatch.list.region',
+  dispatchCreateAction:     'guide.dispatch.create.action',
+  dispatchRowActions:       'guide.dispatch.row.actions',
+
+  /* ── Inventory Center — Receive outlet returns (IG-3) ── */
+  inventoryTabReturns:      'guide.inventory.returns.tab',
+  returnsListRegion:        'guide.returns.list.region',
+  returnsRowReceiveAction:  'guide.returns.row.receive-action',
+  returnsBulkAction:        'guide.returns.bulk.action',
+
+  /* ── Inventory Center — Return exceptions (IG-3) ── */
+  inventoryTabReturnExceptions: 'guide.inventory.return-exceptions.tab',
+  exceptionsListRegion:         'guide.return-exceptions.list.region',
+  exceptionsRowResolveAction:   'guide.return-exceptions.row.resolve-action',
+
+  /* ── Inventory Center — Corrections (IG-3) ── */
+  inventoryTabCorrections:  'guide.inventory.corrections.tab',
+  correctionsListRegion:    'guide.corrections.list.region',
+  correctionsRowActions:    'guide.corrections.row.actions',
+
   /* ── Command Center (Dashboard pilot) ── */
   dashboardContextHeader:   'guide.dashboard.context.header',
   dashboardOverviewKpis:    'guide.dashboard.overview.kpis',

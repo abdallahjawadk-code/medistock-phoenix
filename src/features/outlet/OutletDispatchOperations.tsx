@@ -25,6 +25,8 @@ import {
   getWarehouseDispatches, getWarehouseDispatchLines, sendWarehouseDispatch, cancelWarehouseDispatch,
   type WarehouseDispatch,
 } from './dispatch.service';
+import { GUIDE_ANCHORS, guideAnchor } from '@/features/guide/guide.anchors';
+import { useGuideExampleRow, useGuidePresence } from '@/features/guide/guide.surface';
 
 type Lang = 'ar' | 'en';
 type Status = { msg: string; error: boolean } | null;
@@ -96,6 +98,20 @@ export function OutletDispatchOperations({
   const [status, setStatus] = useState<Status>(null);
   const outletName = useMemo(() => new Map(outlets.map(o => [o.id, o.name])), [outlets]);
 
+  /**
+   * INTERACTIVE-GUIDE-IG3 — decided ONCE, before the composer's own early
+   * return, so presence can never drift from what actually renders. The
+   * list region disappears entirely while composing (the composer replaces
+   * this whole view), which the guide's own "presence, not capability"
+   * model already handles correctly with no special case needed.
+   */
+  const draftDispatches = (dispatches.data ?? []).filter(d => d.status === 'draft');
+  const guideExampleDispatchId = useGuideExampleRow(draftDispatches.map(d => d.id));
+  useGuidePresence('inventory.dispatch', {
+    'inventory.dispatch.region': !creating && !dispatches.loading,
+    'inventory.dispatch.rowActions': !creating && guideExampleDispatchId !== null,
+  });
+
   if (creating) {
     return (
       <OutletDispatchComposer
@@ -111,7 +127,7 @@ export function OutletDispatchOperations({
   return (
     <div>
       <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
-        <PhoenixButton onClick={() => setCreating(true)} disabled={!canDispatch || outlets.length === 0}>
+        <PhoenixButton {...guideAnchor(GUIDE_ANCHORS.dispatchCreateAction)} onClick={() => setCreating(true)} disabled={!canDispatch || outlets.length === 0}>
           {t('net_op_new', lang)}
         </PhoenixButton>
         <PhoenixButton variant="ghost" onClick={reload}>{t('net_op_refresh', lang)}</PhoenixButton>
@@ -121,14 +137,19 @@ export function OutletDispatchOperations({
       <StatusLine status={status} />
 
       {dispatches.loading && <PhoenixLoadingState />}
-      {!dispatches.loading && (dispatches.data ?? []).length === 0 && <PhoenixEmptyState icon="package" title={t('mv_dispatch_none', lang)} />}
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+      {!dispatches.loading && (
+        (dispatches.data ?? []).length === 0 ? (
+          <div {...guideAnchor(GUIDE_ANCHORS.dispatchListRegion)}>
+            <PhoenixEmptyState icon="package" title={t('mv_dispatch_none', lang)} />
+          </div>
+        ) : (
+      <div {...guideAnchor(GUIDE_ANCHORS.dispatchListRegion)} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
         {(dispatches.data ?? []).map(d => (
           <DispatchRow
             key={d.id} dispatch={d} outletName={outletName.get(d.destinationDistributionPointId) ?? '—'}
             canDispatch={canDispatch} lang={lang}
             initiallyOpen={d.id === initialDispatchId}
+            guideAnchored={d.id === guideExampleDispatchId}
             onDone={(res) => {
               setStatus(res.ok ? { msg: t('net_op_done', lang), error: false } : { msg: opError(res.error, lang), error: true });
               if (res.ok) reload();
@@ -136,14 +157,18 @@ export function OutletDispatchOperations({
           />
         ))}
       </div>
+        )
+      )}
     </div>
   );
 }
 
-function DispatchRow({ dispatch, outletName, canDispatch, lang, onDone, initiallyOpen }: {
+function DispatchRow({ dispatch, outletName, canDispatch, lang, onDone, initiallyOpen, guideAnchored }: {
   dispatch: WarehouseDispatch; outletName: string; canDispatch: boolean; lang: Lang;
   onDone: (res: { ok: boolean; error?: string }) => void;
   initiallyOpen?: boolean;
+  /** INTERACTIVE-GUIDE-IG3 — this is the ONE draft row the frozen example points at. */
+  guideAnchored: boolean;
 }) {
   const [open, setOpen] = useState(initiallyOpen ?? false);
   const [busy, setBusy] = useState(false);
@@ -188,7 +213,7 @@ function DispatchRow({ dispatch, outletName, canDispatch, lang, onDone, initiall
         <StatusBadge status={dispatch.status} />
         <PhoenixButton size="sm" variant="ghost" onClick={() => setOpen(o => !o)}>{t('net_op_edit', lang)}</PhoenixButton>
         {isDraft && (
-          <>
+          <span {...(guideAnchored ? guideAnchor(GUIDE_ANCHORS.dispatchRowActions) : {})} style={{ display: 'contents' }}>
             <PhoenixButton size="sm" loading={busy} disabled={!canDispatch} onClick={send}>{t('net_op_send', lang)}</PhoenixButton>
             {!cancelling
               ? <PhoenixButton size="sm" variant="danger" onClick={() => setCancelling(true)}>{t('net_op_cancel_req', lang)}</PhoenixButton>
@@ -200,7 +225,7 @@ function DispatchRow({ dispatch, outletName, canDispatch, lang, onDone, initiall
                   }}>{t('net_op_cancel_req', lang)}</PhoenixButton>
                 </span>
               )}
-          </>
+          </span>
         )}
       </div>
       {open && (

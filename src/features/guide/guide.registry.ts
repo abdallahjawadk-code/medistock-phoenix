@@ -257,12 +257,38 @@ export const GUIDE_PRESENCE = {
   suspensionRowActions: 'inventory.suspension.rowActions',
   suspensionHistory:    'inventory.suspension.history',
   suspensionCreateArea: 'inventory.suspension.createArea',
+
+  /* ── IG-3 — Inventory Center lifecycle tabs ── */
+  intakeBlockedRegion:      'inventory.intake.blockedRegion',
+  intakeFormRegion:         'inventory.intake.formRegion',
+  stockRegion:              'inventory.stock.region',
+  stockRow:                 'inventory.stock.row',
+  stockRowMovementAction:   'inventory.stock.rowMovementAction',
+  ledgerRegion:             'inventory.ledger.region',
+  incomingRegion:           'inventory.incoming.region',
+  incomingRowActions:       'inventory.incoming.rowActions',
+  dispatchRegion:           'inventory.dispatch.region',
+  dispatchRowActions:       'inventory.dispatch.rowActions',
+  returnsRegion:            'inventory.returns.region',
+  returnsRowActions:        'inventory.returns.rowActions',
+  exceptionsRegion:         'inventory.returnExceptions.region',
+  exceptionsRowActions:     'inventory.returnExceptions.rowActions',
+  correctionsRegion:        'inventory.corrections.region',
+  correctionsRowActions:    'inventory.corrections.rowActions',
 } as const;
 
-/** The Inventory Center screen and the two tabs these tours belong to. */
+/** The Inventory Center screen and the tabs these tours belong to. */
 const INVENTORY_SCREEN = 3;
 const QUARANTINE_TAB = 'quarantine';
 const SUSPENSIONS_TAB = 'suspensions';
+const INTAKE_TAB = 'intake';
+const STOCK_TAB = 'stock';
+const LEDGER_TAB = 'ledger';
+const INCOMING_TAB = 'incoming';
+const DISPATCH_TAB = 'dispatch';
+const RETURNS_TAB = 'returns';
+const RETURN_EXCEPTIONS_TAB = 'return_exceptions';
+const CORRECTIONS_TAB = 'corrections';
 
 /**
  * ── IG-2 · «الحجر الصحي» / Quarantine ──────────────────────────────────────
@@ -507,15 +533,651 @@ const SUSPENSION_TOUR: GuideTour = {
   ],
 };
 
+/**
+ * ── IG-3 · «إدخال مواد» / Material intake ──────────────────────────────────
+ *
+ * Derived from InventoryCenterScreen.tsx's own `IntakeTab`/`IntakeForm` as they
+ * are. `canAdjust`/`canCorrect` (useWarehouseStockPermissions) are per-warehouse
+ * scoped answers that — unlike the fixed useQuarantinePermission — carry no
+ * freshness-provable scope tag of their own (no `dataScopeKey`/`confirmed`
+ * equivalent). Rewriting that hook is outside this stage's scope, so the
+ * submit-describing step below is gated on PRESENCE (the form is actually on
+ * screen) rather than on a claimed-fresh capability, and its copy defers to the
+ * real button exactly like the IG-2 tours already do for quarantine/suspension
+ * ("close the guide, then use the button itself if you are authorized").
+ */
+const INTAKE_TOUR: GuideTour = {
+  id: 'guide.tour.intake',
+  title: { ar: 'إدخال مواد', en: 'Material intake' },
+  description: {
+    ar: 'شرح تبويب إدخال المواد: الإدخال اليدوي وحدود مخازن المؤسسات. شرح ومشاهدة فقط.',
+    en: 'How the Material Intake tab works: manual entry, and the limit for institution warehouses. Explanation only.',
+  },
+  screen: INVENTORY_SCREEN,
+  tab: INTAKE_TAB,
+  steps: [
+    {
+      id: 'intake.tab',
+      title: { ar: 'تبويب إدخال المواد', en: 'The Material Intake tab' },
+      body: {
+        ar: 'يسجّل هذا التبويب استلام مواد جديدة في المخزن المحدد حاليًا عبر سجل المخزن مباشرة. الإدخال اليدوي هو الافتراضي.',
+        en: 'This tab records newly received materials into the warehouse currently selected, directly through the warehouse ledger. Manual entry is the default.',
+      },
+      anchors: [GUIDE_ANCHORS.inventoryTabIntake],
+      tab: INTAKE_TAB,
+    },
+    {
+      id: 'intake.blocked',
+      /**
+       * COPY ACCURACY — this step's wording is the product's OWN
+       * `inv_institution_intake_blocked_description` string (see
+       * strings.ts), not a paraphrase: "receives only from pharmacy-
+       * department stores, via an incoming transfer or an outlet return —
+       * use the Incoming tab ... or the Returns tab". The tour repeats the
+       * actual permitted path rather than only naming the restriction.
+       */
+      title: { ar: 'مخازن المؤسسات', en: 'Institution warehouses' },
+      body: {
+        ar: 'لا يتوفر الإدخال المباشر لمخازن المؤسسات في هذه الشاشة. يستلم مخزن المؤسسة فقط من مخازن قسم الصيدلة عبر تبويب «الوارد» لاستلام تحويل، أو تبويب «المرتجعات» لاستلام مرتجع منفذ.',
+        en: 'Direct intake is not available for institution warehouses on this screen. An institution warehouse receives only from pharmacy-department stores — use the Incoming tab to receive a transfer, or the Returns tab to receive an outlet return.',
+      },
+      anchors: [GUIDE_ANCHORS.intakeBlockedRegion],
+      requiresPresence: [GUIDE_PRESENCE.intakeBlockedRegion],
+      tab: INTAKE_TAB,
+    },
+    {
+      id: 'intake.form',
+      title: { ar: 'الإدخال اليدوي', en: 'Manual entry' },
+      body: {
+        ar: 'أدخل الاسم العلمي والكمية المستلمة ونوع التوريد، مع تأكيد وجود أو غياب الرمز الوطني ورقم التشغيلة صراحةً. لا حقل يُترك فارغًا ويُفسَّر تلقائيًا كغياب.',
+        en: 'Enter the scientific name, the quantity received, and the supply type, and explicitly confirm whether a national code and a batch number exist. No field is left blank and read as "does not exist".',
+      },
+      anchors: [GUIDE_ANCHORS.intakeFormRegion],
+      requiresPresence: [GUIDE_PRESENCE.intakeFormRegion],
+      tab: INTAKE_TAB,
+    },
+    {
+      id: 'intake.submit',
+      title: { ar: 'تسجيل الاستلام', en: 'Recording the receipt' },
+      body: {
+        ar: 'يسجّل الزر الاستلام في سجل المخزن مباشرةً بعد التحقق من صحة الحقول. أغلق الدليل ثم نفّذ الإجراء من زره إذا كنت مخوّلًا.',
+        en: 'The button records the receipt directly into the warehouse ledger once the fields validate. Close the guide, then use the button itself if you are authorized.',
+      },
+      anchors: [GUIDE_ANCHORS.intakeSubmitAction, GUIDE_ANCHORS.intakeFormRegion],
+      requiresPresence: [GUIDE_PRESENCE.intakeFormRegion],
+      tab: INTAKE_TAB,
+    },
+    {
+      id: 'intake.closing',
+      title: { ar: 'حالة التوفر', en: 'The availability condition' },
+      body: {
+        ar: 'حالة توفر المادة تُشتق آليًا من سجل المخزن بعد التسجيل، ولا تُدخل يدويًا في أي مكان.',
+        en: 'The material’s availability condition is derived automatically from the ledger after recording — it is never entered by hand anywhere.',
+      },
+      anchors: [],
+      tab: INTAKE_TAB,
+    },
+  ],
+};
+
+/**
+ * ── IG-3 · «رصيد المخزن» / Warehouse stock ─────────────────────────────────
+ *
+ * Derived from InventoryCenterScreen.tsx's `StockList`/`BatchRow`. Same
+ * freshness caveat as intake above applies to the movement-action step: gated
+ * on presence, not on a claimed-fresh `canAdjust`/`canCorrect` capability.
+ */
+const STOCK_TOUR: GuideTour = {
+  id: 'guide.tour.stock',
+  title: { ar: 'رصيد المخزن', en: 'Warehouse stock' },
+  description: {
+    ar: 'شرح تبويب رصيد المخزن: ما يعرضه، وكيف تُسجَّل حركة تصحيحية. شرح ومشاهدة فقط.',
+    en: 'How the Warehouse Stock tab works: what it lists, and how a correction movement is recorded. Explanation only.',
+  },
+  screen: INVENTORY_SCREEN,
+  tab: STOCK_TAB,
+  steps: [
+    {
+      id: 'stock.tab',
+      title: { ar: 'تبويب رصيد المخزن', en: 'The Warehouse Stock tab' },
+      body: {
+        ar: 'يعرض هذا التبويب الرصيد الحالي لكل تشغيلة في المخزن المحدد — وهو غير تبويب «سجل الحركات» الذي يعرض تاريخ كل حركة.',
+        en: 'This tab shows the CURRENT balance of every lot in the selected warehouse — it is not the Movement Ledger tab, which shows the history of every movement.',
+      },
+      anchors: [GUIDE_ANCHORS.inventoryTabStock],
+      tab: STOCK_TAB,
+    },
+    {
+      id: 'stock.list',
+      title: { ar: 'قائمة التشغيلات', en: 'The list of lots' },
+      body: {
+        ar: 'يمكن البحث ضمن القائمة بالاسم العلمي أو الاسم التجاري أو الرمز الوطني أو رقم التشغيلة.',
+        en: 'The list can be searched by scientific name, trade name, national code or batch number.',
+      },
+      anchors: [GUIDE_ANCHORS.stockListRegion],
+      requiresPresence: [GUIDE_PRESENCE.stockRegion],
+      tab: STOCK_TAB,
+    },
+    {
+      id: 'stock.balances',
+      title: { ar: 'الرصيد والمحجوز والمتاح', en: 'On hand, reserved and available' },
+      body: {
+        ar: 'الرصيد هو الكمية الموجودة فعليًا، والمحجوز جزء منها مرتبط بعملية جارية، والمتاح هو ما يمكن التصرف به الآن.',
+        en: 'On hand is what physically exists, reserved is the part of it tied to something already in progress, and available is what can be acted on right now.',
+      },
+      anchors: [GUIDE_ANCHORS.stockRowBalances, GUIDE_ANCHORS.stockListRegion],
+      requiresPresence: [GUIDE_PRESENCE.stockRow],
+      tab: STOCK_TAB,
+    },
+    {
+      id: 'stock.movement',
+      /**
+       * COPY ACCURACY — CLOSED-CUSTODY-102-B: at an institution warehouse
+       * BatchRow's own `allowedTypes` filter offers ONLY 'correction', never
+       * add/subtract. The step says this plainly rather than describing a
+       * uniform three-option form every warehouse would show identically.
+       */
+      title: { ar: 'الحركة التصحيحية', en: 'A correction movement' },
+      body: {
+        ar: 'يفتح الزر نموذجًا لتسجيل زيادة أو نقصان أو تصحيح للرصيد مع سبب. وفي مخازن المؤسسات لا يُتاح إلا التصحيح، الذي يمر عبر اعتماد شخص ثانٍ. أغلق الدليل ثم نفّذ الإجراء من زره إذا كنت مخوّلًا.',
+        en: 'The button opens a form to record an addition, a subtraction, or a correction to the balance, with a reason. At institution warehouses only correction is offered, and it goes through second-person approval. Close the guide, then use the button itself if you are authorized.',
+      },
+      anchors: [GUIDE_ANCHORS.stockRowMovementAction, GUIDE_ANCHORS.stockListRegion],
+      requiresPresence: [GUIDE_PRESENCE.stockRowMovementAction],
+      tab: STOCK_TAB,
+    },
+    {
+      id: 'stock.closing',
+      title: { ar: 'حدود هذا التبويب', en: 'What this tab does not do' },
+      body: {
+        ar: 'هذا التبويب يعرض الرصيد الحالي فقط. لمراجعة كل حركة سابقة بالتفصيل استخدم تبويب سجل الحركات.',
+        en: 'This tab shows only the current balance. To review every past movement in detail, use the Movement Ledger tab.',
+      },
+      anchors: [],
+      tab: STOCK_TAB,
+    },
+  ],
+};
+
+/**
+ * ── IG-3 · «سجل الحركات» / Movement ledger ─────────────────────────────────
+ *
+ * Derived from InventoryCenterScreen.tsx's exported `LedgerList`. Read-only —
+ * no action of any kind exists on this tab.
+ */
+const LEDGER_TOUR: GuideTour = {
+  id: 'guide.tour.ledger',
+  title: { ar: 'سجل الحركات', en: 'Movement ledger' },
+  description: {
+    ar: 'شرح تبويب سجل الحركات: اختيار تشغيلة ومطالعة تاريخ حركاتها. شرح ومشاهدة فقط.',
+    en: 'How the Movement Ledger tab works: choosing a lot and reading its movement history. Explanation only.',
+  },
+  screen: INVENTORY_SCREEN,
+  tab: LEDGER_TAB,
+  steps: [
+    {
+      id: 'ledger.tab',
+      title: { ar: 'تبويب سجل الحركات', en: 'The Movement Ledger tab' },
+      body: {
+        ar: 'يعرض هذا التبويب تاريخ حركات تشغيلة واحدة تختارها — وهو للاطلاع فقط ولا يُنفَّذ منه أي إجراء.',
+        en: 'This tab shows the movement history of one lot you choose — it is read-only, and no action is performed from it.',
+      },
+      anchors: [GUIDE_ANCHORS.inventoryTabLedger],
+      tab: LEDGER_TAB,
+    },
+    {
+      id: 'ledger.select',
+      title: { ar: 'اختيار التشغيلة', en: 'Choosing a lot' },
+      body: {
+        ar: 'اختر تشغيلة من القائمة لعرض حركاتها. القائمة تضم تشغيلات المخزن المحدد حاليًا.',
+        en: 'Choose a lot from the list to see its movements. The list holds the lots of the currently selected warehouse.',
+      },
+      anchors: [GUIDE_ANCHORS.ledgerSelect],
+      tab: LEDGER_TAB,
+    },
+    {
+      id: 'ledger.list',
+      title: { ar: 'قراءة الحركات', en: 'Reading the movements' },
+      body: {
+        ar: 'كل سطر حركة يبيّن نوعها والرصيد قبلها وبعدها ووقتها ومن نفّذها وسببها إن وُجد، إلى جانب رقم المرجع الورقي.',
+        en: 'Each movement line shows its type, the balance before and after it, when it happened, who performed it, its reason if any, and its paper reference number.',
+      },
+      anchors: [GUIDE_ANCHORS.ledgerListRegion],
+      requiresPresence: [GUIDE_PRESENCE.ledgerRegion],
+      tab: LEDGER_TAB,
+    },
+    {
+      id: 'ledger.closing',
+      title: { ar: 'سجل للاطلاع فقط', en: 'A read-only record' },
+      body: {
+        ar: 'لا يمكن تعديل حركة سابقة من هنا. أي تصحيح لرصيد حالي يتم من تبويب رصيد المخزن، ويُضيف حركة جديدة إلى هذا السجل ولا يُبدّل القديمة.',
+        en: 'A past movement cannot be edited from here. Any correction to a current balance is made from the Warehouse Stock tab, and adds a new movement to this record rather than replacing an old one.',
+      },
+      anchors: [],
+      tab: LEDGER_TAB,
+    },
+  ],
+};
+
+/**
+ * ── IG-3 · «واردات تجهيز الدائرة» / Incoming department supplies ───────────
+ *
+ * Derived from InstitutionIncomingSupplies.tsx and receive-model.ts.
+ * `canReceive` (`warehouse_transfer.receive`) is read from the GLOBAL,
+ * synchronous effective-permission set (`myPermissions`) — unlike the
+ * per-warehouse RBAC hooks elsewhere in this file, it carries no A→B→A
+ * staleness risk at all, so it is used directly via `requiresPermissions`,
+ * the same safe mechanism the orientation tour already uses for
+ * `DASHBOARD_VIEW_PERMISSION`.
+ */
+const INCOMING_TOUR: GuideTour = {
+  id: 'guide.tour.incoming',
+  title: { ar: 'واردات تجهيز الدائرة', en: 'Incoming department supplies' },
+  description: {
+    ar: 'شرح تبويب الوارد: استلام التحويلات من مخازن قسم الصيدلة. شرح ومشاهدة فقط.',
+    en: 'How the Incoming tab works: receiving transfers from pharmacy-department stores. Explanation only.',
+  },
+  screen: INVENTORY_SCREEN,
+  tab: INCOMING_TAB,
+  steps: [
+    {
+      id: 'incoming.tab',
+      title: { ar: 'تبويب الوارد', en: 'The Incoming tab' },
+      body: {
+        ar: 'يعرض هذا التبويب ما أُرسل إلى هذا المخزن من مخازن قسم الصيدلة ولم يُستلم بعد.',
+        en: 'This tab lists what has been sent to this warehouse from pharmacy-department stores and not yet received.',
+      },
+      anchors: [GUIDE_ANCHORS.inventoryTabIncoming],
+      requiresPermissions: ['warehouse_transfer.receive'],
+      tab: INCOMING_TAB,
+    },
+    {
+      id: 'incoming.list',
+      title: { ar: 'القائمة المعلّقة', en: 'The pending list' },
+      body: {
+        ar: 'كل بطاقة سطر تحويل واحد بانتظار الاستلام، مع الكمية المُرسَلة.',
+        en: 'Each card is one transfer line waiting to be received, with the quantity that was sent.',
+      },
+      anchors: [GUIDE_ANCHORS.incomingListRegion],
+      requiresPresence: [GUIDE_PRESENCE.incomingRegion],
+      requiresPermissions: ['warehouse_transfer.receive'],
+      tab: INCOMING_TAB,
+    },
+    {
+      id: 'incoming.receive',
+      /**
+       * COPY ACCURACY — the field DEFAULTS to the sent quantity but is fully
+       * editable; the program does not assume sent equals received. Changing
+       * it requires a written reason (receive-model.ts `validateReceive`).
+       */
+      title: { ar: 'تأكيد الكمية المستلمة', en: 'Confirming the received quantity' },
+      body: {
+        ar: 'تظهر الكمية المرسلة مبدئيًا، لكنها تُدخَل يدويًا وتُعدَّل عند الحاجة — البرنامج لا يفترض وصول الكمية كاملة. أي فرق عن المُرسل يتطلب سببًا مكتوبًا. أغلق الدليل ثم نفّذ الإجراء من زره إذا كنت مخوّلًا.',
+        en: 'The sent quantity is shown as a starting value, but it is entered and adjusted by hand — the program does not assume the full quantity arrived. Any difference from what was sent requires a written reason. Close the guide, then use the button itself if you are authorized.',
+      },
+      anchors: [GUIDE_ANCHORS.incomingRowReceiveAction, GUIDE_ANCHORS.incomingListRegion],
+      requiresPresence: [GUIDE_PRESENCE.incomingRowActions],
+      requiresPermissions: ['warehouse_transfer.receive'],
+      tab: INCOMING_TAB,
+    },
+    {
+      id: 'incoming.bulk',
+      /**
+       * COPY ACCURACY — "accept all safe" is restricted to bulkEligibleLines
+       * (not already received/expired/adjusted/etc.) and always accepts at
+       * the FULL sent quantity with no difference reason — a distinct,
+       * narrower path from the per-line form above.
+       */
+      title: { ar: 'قبول كل ما هو آمن', en: 'Accept all safe' },
+      body: {
+        ar: 'يستلم هذا الزر دفعة واحدة كل سطر لم تظهر عليه أي مشكلة — لم تنتهِ صلاحيته ولم يُعدَّل ولم يُستلم سابقًا — بكامل كميته المُرسلة دون سبب اختلاف.',
+        en: 'This button receives, in one batch, every line with nothing flagged about it — not expired, not previously adjusted, not already received — at its full sent quantity, with no difference reason.',
+      },
+      anchors: [GUIDE_ANCHORS.incomingBulkAction],
+      requiresPresence: [GUIDE_PRESENCE.incomingRegion],
+      requiresPermissions: ['warehouse_transfer.receive'],
+      tab: INCOMING_TAB,
+    },
+    {
+      id: 'incoming.closing',
+      title: { ar: 'حدود هذا التبويب', en: 'What this tab does not do' },
+      body: {
+        ar: 'هذا التبويب يخص استلام هذا المخزن فقط. إرسال بضاعة من هذا المخزن إلى المنافذ يتم من تبويب تجهيز المنافذ.',
+        en: 'This tab is only about what this warehouse receives. Sending stock out from this warehouse to outlets is done from the Dispatch to Outlets tab.',
+      },
+      anchors: [],
+      requiresPermissions: ['warehouse_transfer.receive'],
+      tab: INCOMING_TAB,
+    },
+  ],
+};
+
+/**
+ * ── IG-3 · «تجهيز المنافذ» / Dispatch to outlets ───────────────────────────
+ *
+ * Derived from OutletDispatchOperations.tsx/OutletDispatchComposer.tsx.
+ * `canDispatch` (`warehouse_dispatch.create`) is the same kind of GLOBAL,
+ * synchronous flag as `canReceive` above — safe as `requiresPermissions`.
+ * "Send" is client-gated on the SAME flag (the UI does not distinguish it
+ * from `warehouse_dispatch.send`, though the server does) — the copy below
+ * says only what the client actually does, per the research finding.
+ */
+const DISPATCH_TOUR: GuideTour = {
+  id: 'guide.tour.dispatch',
+  title: { ar: 'تجهيز المنافذ', en: 'Dispatch to outlets' },
+  description: {
+    ar: 'شرح تبويب تجهيز المنافذ: تحضير شحنة وإرسالها إلى منفذ تابع لهذا المخزن. شرح ومشاهدة فقط.',
+    en: 'How the Dispatch to Outlets tab works: composing a shipment and sending it to an outlet of this warehouse. Explanation only.',
+  },
+  screen: INVENTORY_SCREEN,
+  tab: DISPATCH_TAB,
+  steps: [
+    {
+      id: 'dispatch.tab',
+      title: { ar: 'تبويب تجهيز المنافذ', en: 'The Dispatch to Outlets tab' },
+      body: {
+        ar: 'يعرض هذا التبويب شحنات هذا المخزن إلى منافذه، ويتيح تحضير شحنة جديدة.',
+        en: 'This tab lists this warehouse’s shipments to its outlets, and offers composing a new one.',
+      },
+      anchors: [GUIDE_ANCHORS.inventoryTabDispatch],
+      requiresPermissions: ['warehouse_dispatch.create'],
+      tab: DISPATCH_TAB,
+    },
+    {
+      id: 'dispatch.list',
+      title: { ar: 'قائمة الشحنات', en: 'The list of shipments' },
+      body: {
+        ar: 'تعرض القائمة شحنات هذا المخزن بحالاتها — مسوّدة أو مُرسَلة أو ملغاة.',
+        en: 'The list shows this warehouse’s shipments and their state — draft, sent, or cancelled.',
+      },
+      anchors: [GUIDE_ANCHORS.dispatchListRegion],
+      requiresPresence: [GUIDE_PRESENCE.dispatchRegion],
+      requiresPermissions: ['warehouse_dispatch.create'],
+      tab: DISPATCH_TAB,
+    },
+    {
+      id: 'dispatch.create',
+      title: { ar: 'تحضير شحنة جديدة', en: 'Composing a new shipment' },
+      body: {
+        ar: 'يبدأ التحضير باختيار المنفذ الوجهة، ثم إضافة المواد من رصيد هذا المخزن نفسه. لا يُحفَظ شيء على الخادم حتى تؤكّد المراجعة النهائية. أغلق الدليل ثم نفّذ الإجراء من زره إذا كنت مخوّلًا.',
+        en: 'Composing starts with choosing the destination outlet, then adding materials from this warehouse’s own stock. Nothing is saved on the server until you confirm the final review. Close the guide, then use the button itself if you are authorized.',
+      },
+      anchors: [GUIDE_ANCHORS.dispatchCreateAction, GUIDE_ANCHORS.dispatchListRegion],
+      requiresPresence: [GUIDE_PRESENCE.dispatchRegion],
+      requiresPermissions: ['warehouse_dispatch.create'],
+      tab: DISPATCH_TAB,
+    },
+    {
+      id: 'dispatch.send',
+      title: { ar: 'إرسال شحنة', en: 'Sending a shipment' },
+      body: {
+        ar: 'الإرسال خطوة منفصلة عن التحضير: شحنة بحالة «مسوّدة» تبقى غير مرسلة حتى تضغط زر الإرسال، وعندها فقط يتحرك الرصيد وينشأ استلام معلّق لدى المنفذ. أغلق الدليل ثم نفّذ الإجراء من زره إذا كنت مخوّلًا.',
+        en: 'Sending is a separate step from composing: a shipment in "draft" state stays unsent until you press Send — only then does stock actually move and a pending receipt is created at the outlet. Close the guide, then use the button itself if you are authorized.',
+      },
+      anchors: [GUIDE_ANCHORS.dispatchRowActions, GUIDE_ANCHORS.dispatchListRegion],
+      requiresPresence: [GUIDE_PRESENCE.dispatchRowActions],
+      requiresPermissions: ['warehouse_dispatch.create'],
+      tab: DISPATCH_TAB,
+    },
+    {
+      id: 'dispatch.closing',
+      title: { ar: 'حدود هذا التبويب', en: 'What this tab does not do' },
+      body: {
+        ar: 'هذا التبويب يخص إرسال هذا المخزن فقط. استلام المنفذ لما يصله لا يُنفَّذ من هذه الشاشة.',
+        en: 'This tab is only about what this warehouse sends. The outlet’s own receipt of what arrives is not performed from this screen.',
+      },
+      anchors: [],
+      requiresPermissions: ['warehouse_dispatch.create'],
+      tab: DISPATCH_TAB,
+    },
+  ],
+};
+
+/**
+ * ── IG-3 · «استلام مرتجعات المنافذ» / Receive outlet returns ───────────────
+ *
+ * Derived from InstitutionReturnReceipts.tsx and receive-model.ts.
+ * `useReturnReceivePermission` has no freshness-provable scope tag (no
+ * `dataScopeKey`/`confirmed`), so — same reasoning as intake/stock above —
+ * the receive-describing step is gated on PRESENCE, not on a claimed-fresh
+ * capability, and defers to the real control. TAB visibility is already
+ * split from mutation authority in the real screen (a read-only affordance
+ * can see this tab with every control disabled) — this tour is offered on
+ * tab-surface match alone, matching that existing split rather than
+ * re-asserting a narrower gate of its own.
+ */
+const RETURNS_TOUR: GuideTour = {
+  id: 'guide.tour.returns',
+  title: { ar: 'استلام مرتجعات المنافذ', en: 'Receive outlet returns' },
+  description: {
+    ar: 'شرح تبويب استلام المرتجعات: تأكيد ما وصل فعليًا من شحنة مرتجعة. شرح ومشاهدة فقط.',
+    en: 'How the Receive Outlet Returns tab works: confirming what actually arrived from a returned shipment. Explanation only.',
+  },
+  screen: INVENTORY_SCREEN,
+  tab: RETURNS_TAB,
+  steps: [
+    {
+      id: 'returns.tab',
+      title: { ar: 'تبويب استلام المرتجعات', en: 'The Receive Outlet Returns tab' },
+      body: {
+        ar: 'يعرض هذا التبويب سطور شحنات مرتجعة من المنافذ بانتظار الاستلام في هذا المخزن.',
+        en: 'This tab lists lines from outlet-returned shipments waiting to be received at this warehouse.',
+      },
+      anchors: [GUIDE_ANCHORS.inventoryTabReturns],
+      tab: RETURNS_TAB,
+    },
+    {
+      id: 'returns.list',
+      title: { ar: 'القائمة المعلّقة', en: 'The pending list' },
+      body: {
+        ar: 'كل بطاقة سطر مرتجع واحد بانتظار الاستلام، مع الكمية التي أُرسلت من المنفذ.',
+        en: 'Each card is one returned line waiting to be received, with the quantity the outlet sent.',
+      },
+      anchors: [GUIDE_ANCHORS.returnsListRegion],
+      requiresPresence: [GUIDE_PRESENCE.returnsRegion],
+      tab: RETURNS_TAB,
+    },
+    {
+      id: 'returns.receive',
+      /**
+       * COPY ACCURACY — same "displayed default, not an assumption" fact as
+       * incoming.receive above, PLUS the disposition choice (restockable vs
+       * quarantined) that incoming supplies does not have.
+       */
+      title: { ar: 'تأكيد الكمية والمصير', en: 'Confirming the quantity and disposition' },
+      body: {
+        ar: 'تظهر الكمية المُرسلة مبدئيًا، وتُعدَّل يدويًا عند الحاجة مع سبب — البرنامج لا يفترض وصولها كاملة. وتختار مصير ما وصل: صالح لإعادة التخزين أو محجور. أغلق الدليل ثم نفّذ الإجراء من زره إذا كنت مخوّلًا.',
+        en: 'The sent quantity is shown as a starting value and is adjusted by hand when needed, with a reason — the program does not assume it all arrived. You also choose the disposition of what arrived: restockable or quarantined. Close the guide, then use the button itself if you are authorized.',
+      },
+      anchors: [GUIDE_ANCHORS.returnsRowReceiveAction, GUIDE_ANCHORS.returnsListRegion],
+      requiresPresence: [GUIDE_PRESENCE.returnsRowActions],
+      tab: RETURNS_TAB,
+    },
+    {
+      id: 'returns.bulk',
+      title: { ar: 'استلام آمن جماعي', en: 'Bulk safe receive' },
+      body: {
+        ar: 'يستلم هذا الزر دفعة واحدة كل سطر وصل تمامًا كما أُرسل، ويحجره تلقائيًا دون إعادته إلى التخزين مباشرةً.',
+        en: 'This button receives, in one batch, every line that arrived exactly as sent, and quarantines it automatically rather than restocking it directly.',
+      },
+      anchors: [GUIDE_ANCHORS.returnsBulkAction],
+      requiresPresence: [GUIDE_PRESENCE.returnsRegion],
+      tab: RETURNS_TAB,
+    },
+    {
+      id: 'returns.closing',
+      title: { ar: 'حين لا يصل شيء', en: 'When nothing arrives' },
+      body: {
+        ar: 'سطر لم تصل منه أي كمية يصبح استثناء يُعالَج من تبويب استثناءات المرتجعات، لا من هنا.',
+        en: 'A line where nothing at all arrived becomes an exception, handled from the Return Exceptions tab, not from here.',
+      },
+      anchors: [],
+      tab: RETURNS_TAB,
+    },
+  ],
+};
+
+/**
+ * ── IG-3 · «استثناءات مرتجعات المنافذ» / Return exceptions ─────────────────
+ *
+ * Derived from OutletReturnExceptions.tsx and migration 157's own SQL
+ * (verified directly, not inferred): a zero-quantity receipt sets
+ * custody_state='exception_pending' and resolution is a SEPARATE, additive
+ * record — the original line is never rewritten. `useOutletReturnException
+ * ResolvePermission` has the same freshness limitation as the hooks above,
+ * so the resolve step is presence-gated, deferring to the real control.
+ */
+const RETURN_EXCEPTIONS_TOUR: GuideTour = {
+  id: 'guide.tour.return-exceptions',
+  title: { ar: 'استثناءات مرتجعات المنافذ', en: 'Return exceptions' },
+  description: {
+    ar: 'شرح تبويب استثناءات المرتجعات: ما يعنيه السطر المعلّق، وكيف يُغلق. شرح ومشاهدة فقط.',
+    en: 'How the Return Exceptions tab works: what a pending line means, and how it is closed. Explanation only.',
+  },
+  screen: INVENTORY_SCREEN,
+  tab: RETURN_EXCEPTIONS_TAB,
+  steps: [
+    {
+      id: 'return-exceptions.tab',
+      title: { ar: 'تبويب استثناءات المرتجعات', en: 'The Return Exceptions tab' },
+      body: {
+        ar: 'يعرض هذا التبويب سطور مرتجعات سُجِّل استلامها بكمية صفر — أي لم يصل منها شيء فعليًا — ولم يُتَّخذ قرار بشأنها بعد.',
+        en: 'This tab lists returned lines whose receipt was recorded at zero quantity — nothing physically arrived — and that have no decision recorded yet.',
+      },
+      anchors: [GUIDE_ANCHORS.inventoryTabReturnExceptions],
+      tab: RETURN_EXCEPTIONS_TAB,
+    },
+    {
+      id: 'return-exceptions.list',
+      title: { ar: 'القائمة المعلّقة', en: 'The pending list' },
+      body: {
+        ar: 'يبقى السطر في هذه القائمة حتى يُسجَّل قرار بشأنه صراحةً.',
+        en: 'A line stays in this list until a decision about it is explicitly recorded.',
+      },
+      anchors: [GUIDE_ANCHORS.exceptionsListRegion],
+      requiresPresence: [GUIDE_PRESENCE.exceptionsRegion],
+      tab: RETURN_EXCEPTIONS_TAB,
+    },
+    {
+      id: 'return-exceptions.resolve',
+      /**
+       * COPY ACCURACY — a reason is required for BOTH resolution kinds
+       * (client line 119 runs before the kind branch; server 157 line
+       * 285-287 same order) — the copy must not say it is required only for
+       * "confirmed, nothing arrived".
+       */
+      title: { ar: 'إغلاق الاستثناء', en: 'Closing the exception' },
+      body: {
+        ar: 'مساران فقط: «مؤكَّد، لم يصل شيء» إغلاق إداري دون أي حركة مخزون، أو «وصلت كمية مصحَّحة» وتذكر الكمية الفعلية ومصيرها. يتطلب كلا المسارين سببًا مكتوبًا. أغلق الدليل ثم نفّذ الإجراء من زره إذا كنت مخوّلًا.',
+        en: 'Only two paths: "confirmed, nothing arrived" is an administrative closure with no stock movement, or "a corrected quantity arrived" where you state the actual quantity and its disposition. BOTH paths require a written reason. Close the guide, then use the button itself if you are authorized.',
+      },
+      anchors: [GUIDE_ANCHORS.exceptionsRowResolveAction, GUIDE_ANCHORS.exceptionsListRegion],
+      requiresPresence: [GUIDE_PRESENCE.exceptionsRowActions],
+      tab: RETURN_EXCEPTIONS_TAB,
+    },
+    {
+      id: 'return-exceptions.closing',
+      title: { ar: 'قرار منفصل، لا إعادة كتابة', en: 'A separate decision, not a rewrite' },
+      body: {
+        ar: 'يُسجَّل القرار كسجل مستقل، ولا يُعاد كتابة سطر الاستلام الأصلي بكمية الصفر في أي حال.',
+        en: 'The decision is recorded as its own separate record. The original zero-quantity receipt line is never rewritten, either way.',
+      },
+      anchors: [],
+      tab: RETURN_EXCEPTIONS_TAB,
+    },
+  ],
+};
+
+/**
+ * ── IG-3 · «تصحيحات بانتظار الاعتماد» / Corrections awaiting approval ──────
+ *
+ * Derived from PendingCorrectionsPanel.tsx, useApproveCorrectionPermission.ts,
+ * and migrations 098/101 (verified directly). This panel is VIEW +
+ * APPROVE/REJECT only — REQUESTING a correction happens elsewhere (the Stock
+ * tab's own movement form for a warehouse lot; a separate outlet screen for
+ * outlet stock) — the tour says this explicitly rather than implying the
+ * request itself happens here. Same freshness caveat as the tours above
+ * applies to the decide step.
+ */
+const CORRECTIONS_TOUR: GuideTour = {
+  id: 'guide.tour.corrections',
+  title: { ar: 'تصحيحات بانتظار الاعتماد', en: 'Corrections awaiting approval' },
+  description: {
+    ar: 'شرح تبويب التصحيحات: مطالعة الطلبات المعلّقة واعتمادها أو رفضها. شرح ومشاهدة فقط.',
+    en: 'How the Corrections tab works: reviewing pending requests and deciding them. Explanation only.',
+  },
+  screen: INVENTORY_SCREEN,
+  tab: CORRECTIONS_TAB,
+  steps: [
+    {
+      id: 'corrections.tab',
+      title: { ar: 'تبويب التصحيحات', en: 'The Corrections tab' },
+      body: {
+        ar: 'يجمع هذا التبويب طلبات تصحيح رصيد المخزن وتصحيح رصيد المنفذ معًا في قائمة واحدة مرتبة زمنيًا، للمطالعة والاعتماد أو الرفض فقط. طلب التصحيح نفسه يبدأ من مكانه: تبويب رصيد المخزن لتصحيح مخزن، أو شاشة المنفذ لتصحيح منفذ.',
+        en: 'This tab combines warehouse-stock and outlet-stock correction requests into one time-ordered list, for reviewing and deciding only. Requesting a correction itself starts elsewhere: the Warehouse Stock tab for a warehouse lot, or the outlet’s own screen for outlet stock.',
+      },
+      anchors: [GUIDE_ANCHORS.inventoryTabCorrections],
+      tab: CORRECTIONS_TAB,
+    },
+    {
+      id: 'corrections.list',
+      title: { ar: 'القائمة المعلّقة', en: 'The pending list' },
+      body: {
+        ar: 'كل بطاقة طلب واحد، وتبيّن الرصيد قبل التصحيح وبعده وسببه ونطاقه، مخزنًا كان أو منفذًا.',
+        en: 'Each card is one request, showing the balance before and after the correction, its reason, and its scope — warehouse or outlet.',
+      },
+      anchors: [GUIDE_ANCHORS.correctionsListRegion],
+      requiresPresence: [GUIDE_PRESENCE.correctionsRegion],
+      tab: CORRECTIONS_TAB,
+    },
+    {
+      id: 'corrections.decide',
+      /**
+       * COPY ACCURACY — the second-person rule is enforced server-side by
+       * PROFILE IDENTITY (`proposed_by = v_actor`), not by role — migrations
+       * 098/101, verified directly. The proposer sees no action controls at
+       * all for their own request (client mirrors this, but the rule is the
+       * server's).
+       */
+      title: { ar: 'الاعتماد أو الرفض', en: 'Approving or rejecting' },
+      body: {
+        ar: 'لا يمكن لمن اقترح التصحيح اعتماده بنفسه — البرنامج يمنع ذلك بالهوية لا بالدور، ولا يعرض لمقترح الطلب أزرار قرار على طلبه. الرفض يطلب سببًا مكتوبًا. أغلق الدليل ثم نفّذ الإجراء من زره إذا كنت مخوّلًا.',
+        en: 'Whoever proposed a correction cannot approve it themselves — the program prevents this by identity, not by role, and shows the proposer no decision buttons on their own request. Rejecting asks for a written reason. Close the guide, then use the button itself if you are authorized.',
+      },
+      anchors: [GUIDE_ANCHORS.correctionsRowActions, GUIDE_ANCHORS.correctionsListRegion],
+      requiresPresence: [GUIDE_PRESENCE.correctionsRowActions],
+      tab: CORRECTIONS_TAB,
+    },
+    {
+      id: 'corrections.closing',
+      title: { ar: 'الاعتماد ينفّذ التصحيح', en: 'Approval applies the correction' },
+      body: {
+        ar: 'اعتماد الطلب هنا ينفّذ التصحيح فعليًا على الرصيد. القرار لا يُراجَع من هذه الشاشة بعد اتخاذه.',
+        en: 'Approving a request here actually applies the correction to the balance. The decision is not revisited from this screen once made.',
+      },
+      anchors: [],
+      tab: CORRECTIONS_TAB,
+    },
+  ],
+};
+
 export const GUIDE_REGISTRY: GuideRegistry = {
   /**
    * 2 — IG-1.1 made steps viewport-scoped.
-   * 3 — IG-2 adds capability- and surface-scoped tours. Progress recorded
-   *     under an earlier version still resolves: it stores a tour id and a
-   *     step id, both of which are unchanged for the orientation tour.
+   * 3 — IG-2 adds capability- and surface-scoped tours.
+   * 4 — IG-3 adds eight lifecycle tours (intake, stock, ledger, incoming,
+   *     dispatch, returns, return exceptions, corrections), all
+   *     `requiresPresence`/`requiresPermissions`-gated — no new capability
+   *     names and no engine change. Progress recorded under an earlier
+   *     version still resolves: it stores a tour id and a step id, both of
+   *     which are unchanged for every pre-existing tour.
    */
-  version: 3,
-  tours: [ORIENTATION_TOUR, QUARANTINE_TOUR, SUSPENSION_TOUR],
+  version: 4,
+  tours: [
+    ORIENTATION_TOUR, QUARANTINE_TOUR, SUSPENSION_TOUR,
+    INTAKE_TOUR, STOCK_TOUR, LEDGER_TOUR, INCOMING_TOUR, DISPATCH_TOUR,
+    RETURNS_TOUR, RETURN_EXCEPTIONS_TOUR, CORRECTIONS_TOUR,
+  ],
 };
 
 /** Look up a tour by its stable id. Returns null rather than throwing. */

@@ -18,6 +18,8 @@ import {
 import { getPaperReference, setPaperReference } from '@/features/movement/paper-reference.service';
 import { PaperReferenceFields, EMPTY_PAPER_REFERENCE, paperReferenceSummary, type PaperReferenceValue } from '@/features/movement/ui/PaperReferenceFields';
 import { useAsync } from '@/shared/lib/useAsync';
+import { GUIDE_ANCHORS, guideAnchor } from '@/features/guide/guide.anchors';
+import { useGuideExampleRow, useGuidePresence } from '@/features/guide/guide.surface';
 
 /** A single scope's pending correction, normalized for shared rendering. */
 interface NormalizedCorrection {
@@ -164,14 +166,36 @@ export function PendingCorrectionsPanel({
     }
   };
 
+  /**
+   * INTERACTIVE-GUIDE-IG3 — decided ONCE, before any of the three early
+   * returns below, so presence can never drift from what actually renders.
+   * The composite `${scope}:${id}` key matches the row's own React key
+   * (`row.id` alone is not guaranteed unique across the two scope tables —
+   * see the panel's own key usage below).
+   */
+  const allRows = rows ?? [];
+  const guideExampleRowKey = useGuideExampleRow(allRows.map(r => `${r.scope}:${r.id}`));
+  const guideExampleRow = allRows.find(r => `${r.scope}:${r.id}` === guideExampleRowKey) ?? null;
+  const guideExampleShowsActions = guideExampleRow !== null
+    && (guideExampleRow.scope === 'outlet' ? canApproveOutlet : canApproveWarehouse)
+    && profile?.id !== guideExampleRow.proposedBy;
+  useGuidePresence('inventory.corrections', {
+    'inventory.corrections.region': !(loading && rows === null) && !error && allRows.length > 0,
+    'inventory.corrections.rowActions': guideExampleShowsActions,
+  });
+
   if (loading && rows === null) return <PhoenixLoadingState />;
   if (error) return <PhoenixErrorState title={t('err_generic', lang)} message={error} onRetry={reload} />;
   if (!rows || rows.length === 0) {
-    return <PhoenixEmptyState icon="🔒" title={t('cor_pending_empty_title', lang)} description={t('cor_pending_empty_description', lang)} />;
+    return (
+      <div {...guideAnchor(GUIDE_ANCHORS.correctionsListRegion)}>
+        <PhoenixEmptyState icon="🔒" title={t('cor_pending_empty_title', lang)} description={t('cor_pending_empty_description', lang)} />
+      </div>
+    );
   }
 
   return (
-    <div dir={dir} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+    <div dir={dir} {...guideAnchor(GUIDE_ANCHORS.correctionsListRegion)} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
       {toast && <div style={{ fontSize: '12px', color: 'var(--ok)' }}>{toast}</div>}
       {rows.map(row => {
         const isOwnRequest = profile?.id === row.proposedBy;
@@ -181,6 +205,7 @@ export function PendingCorrectionsPanel({
         // viewer must reach the history and no control — and an actor holding
         // only one scope's key must not be offered the other scope's buttons.
         const canDecide = row.scope === 'outlet' ? canApproveOutlet : canApproveWarehouse;
+        const guideAnchored = `${row.scope}:${row.id}` === guideExampleRowKey;
         return (
           <PhoenixCard key={`${row.scope}:${row.id}`}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
@@ -234,7 +259,7 @@ export function PendingCorrectionsPanel({
                 </div>
               </div>
             ) : (
-              <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
+              <div {...(guideAnchored ? guideAnchor(GUIDE_ANCHORS.correctionsRowActions) : {})} style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
                 <PhoenixButton disabled={busy} loading={busy} onClick={() => void approve(row)}>
                   {t('cor_approve', lang)}
                 </PhoenixButton>

@@ -31,6 +31,8 @@ import {
   getExceptionPendingLines, resolveOutletReturnException,
   type OutletReturnShipmentLine,
 } from './outlet-return.service';
+import { GUIDE_ANCHORS, guideAnchor } from '@/features/guide/guide.anchors';
+import { useGuideExampleRow, useGuidePresence } from '@/features/guide/guide.surface';
 
 type Lang = 'ar' | 'en';
 type ResolutionKind = 'corrected_receipt' | 'confirmed_no_stock';
@@ -150,6 +152,16 @@ export function OutletReturnExceptions({ destinationWarehouseId, warehouseName, 
     setBusy(false);
   };
 
+  /**
+   * INTERACTIVE-GUIDE-IG3 — decided ONCE, before the loading early return
+   * below, so presence can never drift from what actually renders.
+   */
+  const guideExampleLineId = useGuideExampleRow(allLines.map(l => l.id));
+  useGuidePresence('inventory.returnExceptions', {
+    'inventory.returnExceptions.region': !lines.loading || allLines.length > 0,
+    'inventory.returnExceptions.rowActions': guideExampleLineId !== null,
+  });
+
   if (lines.loading && allLines.length === 0) return <PhoenixLoadingState />;
 
   const failures = Object.entries(lineStates).filter(([, v]) => v.state === 'failed');
@@ -186,12 +198,15 @@ export function OutletReturnExceptions({ destinationWarehouseId, warehouseName, 
       </div>
 
       {allLines.length === 0 ? (
-        <PhoenixEmptyState icon="check" title={t('mv_return_exceptions_none', lang)} />
+        <div {...guideAnchor(GUIDE_ANCHORS.exceptionsListRegion)}>
+          <PhoenixEmptyState icon="check" title={t('mv_return_exceptions_none', lang)} />
+        </div>
       ) : (
-        <div style={{ display: 'grid', gap: '10px' }} data-testid="return-exception-lines">
+        <div {...guideAnchor(GUIDE_ANCHORS.exceptionsListRegion)} style={{ display: 'grid', gap: '10px' }} data-testid="return-exception-lines">
           {allLines.map(line => {
             const form = formOf(line);
             const state = lineStates[line.id];
+            const guideAnchored = line.id === guideExampleLineId;
 
             return (
               <PhoenixCard key={line.id}>
@@ -214,7 +229,7 @@ export function OutletReturnExceptions({ destinationWarehouseId, warehouseName, 
                     )}
                   </div>
 
-                  <div style={{ display: 'grid', gap: '6px', minWidth: '260px' }}>
+                  <div {...(guideAnchored ? guideAnchor(GUIDE_ANCHORS.exceptionsRowResolveAction) : {})} style={{ display: 'grid', gap: '6px', minWidth: '260px' }}>
                     <PhoenixSelect
                       label={t('mv_f_resolution_kind', lang)}
                       value={form.kind}
