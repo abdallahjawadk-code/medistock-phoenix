@@ -186,7 +186,9 @@ export function OutletReturnExceptions({ destinationWarehouseId, warehouseName, 
       </div>
 
       {allLines.length === 0 ? (
-        <PhoenixEmptyState icon="check" title={t('mv_return_exceptions_none', lang)} />
+        <div>
+          <PhoenixEmptyState icon="check" title={t('mv_return_exceptions_none', lang)} />
+        </div>
       ) : (
         <div style={{ display: 'grid', gap: '10px' }} data-testid="return-exception-lines">
           {allLines.map(line => {

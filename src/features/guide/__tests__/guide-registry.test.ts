@@ -192,7 +192,11 @@ describe('guide registry — IG-2 domain separation (AD-10)', () => {
   });
 
   it('keeps every tour short and each step to one idea', () => {
-    expect(GUIDE_REGISTRY.tours.length).toBeLessThanOrEqual(4);
+    // IG-3 adds eight lifecycle tours (intake, stock, ledger, incoming,
+    // dispatch, returns, return exceptions, corrections) to the three from
+    // IG-1/IG-2 — 11 total. Bumped narrowly for this authorized stage, not
+    // removed, so unbounded future growth still fails this test.
+    expect(GUIDE_REGISTRY.tours.length).toBeLessThanOrEqual(11);
     for (const tour of GUIDE_REGISTRY.tours) {
       expect(tour.steps.length, `${tour.id} is too long`).toBeLessThanOrEqual(12);
       for (const step of tour.steps) {

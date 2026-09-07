@@ -93,11 +93,23 @@ export const SHL_1 = '0dd44444-0000-4000-8000-000000000001';
 export const SHL_2 = '0dd44444-0000-4000-8000-000000000002';
 export const SHL_3 = '0dd44444-0000-4000-8000-000000000003';
 export const SHL_4 = '0dd44444-0000-4000-8000-000000000004';
+export const SHL_5 = '0dd44444-0000-4000-8000-000000000005';
 
 /** Upstream dispatch lines these returns trace back to (provenance). */
 export const DISPATCH_LINE_1 = '0ee55555-0000-4000-8000-000000000001';
 export const DISPATCH_LINE_2 = '0ee55555-0000-4000-8000-000000000002';
 export const DISPATCH_LINE_3 = '0ee55555-0000-4000-8000-000000000003';
+
+/**
+ * IG-3 PHONE ACCEPTANCE — a genuine in-transit transfer and a genuine draft
+ * dispatch at `qa-wh-inst-a`, so the Incoming and Dispatch tabs' guide tours
+ * reach their real per-row steps (`incoming.receive`/`.bulk`,
+ * `dispatch.send`) instead of skipping them for want of a populated row —
+ * neither table had a QA fixture at all before this round.
+ */
+export const QA_TRANSFER_1 = '0ff66666-0000-4000-8000-000000000001';
+export const QA_TRANSFER_LINE_1 = '0ff77777-0000-4000-8000-000000000001';
+export const QA_DISPATCH_1 = '0ff88888-0000-4000-8000-000000000001';
 
 /**
  * Fixtures for the fixture client. Table keys hold row arrays (read by
@@ -194,6 +206,25 @@ export const QA_FIXTURES: Record<string, unknown> = {
     { id: 'qa-ws-3', warehouse_id: 'qa-wh-inst-a', scientific_name: 'Paracetamol', batch_number: null, expiry_date: '2026-09-30', on_hand_quantity: 42, reserved_quantity: 12, available_quantity: 30, national_code: null, central_item_id: 'qa-ci-para-500', concentration: '500 mg', dosage_form: 'Tablet', unit: 'tablet', material_identity_key: MIK_PARA, internal_batch_reference: null, supply_type: null, purchase_origin: null },
   ],
 
+  // IG-3 PHONE ACCEPTANCE — one in-transit transfer INTO qa-wh-inst-a (the
+  // Incoming tab's receive queue) with one genuinely receivable line, so
+  // `incoming.receive`/`incoming.bulk` reach a real target instead of being
+  // skipped. Columns match getTransfers'/getIncomingTransferLines' own
+  // selects (network.service.ts).
+  warehouse_transfers: [
+    { id: QA_TRANSFER_1, route_id: null, transfer_request_id: null, source_warehouse_id: 'qa-wh-central', destination_warehouse_id: 'qa-wh-inst-a', destination_organization_id: ORG_A, transfer_number: 'QA-TRF-0001', status: 'in_transit', document_number: null, sent_at: '2026-07-20T09:00:00Z' },
+  ],
+  warehouse_transfer_lines: [
+    { id: QA_TRANSFER_LINE_1, transfer_id: QA_TRANSFER_1, source_organization_id: ORG_A, source_warehouse_stock_id: 'qa-ws-central-1', transfer_request_line_id: null, central_item_id: 'qa-ci-amox', scientific_name: 'Amoxicillin', trade_name: null, concentration: '500 mg', dosage_form: 'Capsule', unit: 'capsule', national_code: '1234567', has_no_national_code: false, batch_number: 'QA-TRF-B1', has_no_batch_number: false, internal_batch_reference: null, expiry_date: '2028-03-31', unit_price: null, price_basis: null, currency: null, supply_type_text: null, sent_quantity: 30, received_quantity: null, returned_quantity: 0, return_received_quantity: 0, status: 'in_transit', difference_reason: null, received_at: null, resulting_warehouse_stock_id: null },
+  ],
+
+  // IG-3 PHONE ACCEPTANCE — one DRAFT dispatch from qa-wh-inst-a, so
+  // `dispatch.send` reaches a real draft row instead of being skipped.
+  // Columns match getWarehouseDispatches' own select (dispatch.service.ts).
+  warehouse_dispatches: [
+    { id: QA_DISPATCH_1, organization_id: ORG_A, warehouse_id: 'qa-wh-inst-a', destination_distribution_point_id: 'qa-outlet-1', dispatch_number: 'QA-DSP-0001', status: 'draft', document_number: null, default_currency: null, notes: null, sent_at: null, created_at: '2026-07-21T09:00:00Z' },
+  ],
+
   // On-hand batches at each outlet. These are the rows the return request lines
   // above cite as `source_outlet_stock_id`, so the corridor's provenance chain
   // (outlet stock → return line → shipment line) resolves end to end.
@@ -258,6 +289,13 @@ export const QA_FIXTURES: Record<string, unknown> = {
     // A short-shipped line: sent 6, only 4 arrived, with the difference stated.
     { id: SHL_3, shipment_id: SH_PARTIAL, return_request_line_id: RRL_3, original_dispatch_line_id: DISPATCH_LINE_3, scientific_name: 'Paracetamol', batch_number: null, expiry_date: '2026-09-30', sent_quantity: 6, received_quantity: 4, status: 'received_with_difference', difference_reason: 'QA · 2 units missing on arrival', disposition: 'quarantine', custody_state: 'received' },
     { id: SHL_4, shipment_id: SH_RECEIVED, return_request_line_id: null, original_dispatch_line_id: DISPATCH_LINE_1, scientific_name: 'Amoxicillin', batch_number: 'B4471X', expiry_date: '2028-01-31', sent_quantity: 10, received_quantity: 10, status: 'received', difference_reason: null, disposition: 'return_to_stock', custody_state: 'received' },
+    // IG-3-CORRECTION §5 — a GENUINE exception_pending line (a zero-quantity
+    // receipt: migration 135's receive RPC sets this custody_state and
+    // creates no stock/quarantine row of any kind). `getExceptionPendingLines`
+    // (outlet-return.service.ts) filters on exactly this custody_state — none
+    // of SHL_1..4 above satisfy it, so the Return Exceptions tab previously
+    // had no real-browser-reachable populated row at all.
+    { id: SHL_5, shipment_id: SH_IN_TRANSIT, return_request_line_id: null, original_dispatch_line_id: DISPATCH_LINE_2, scientific_name: 'Metronidazole', batch_number: 'MTZ9081', expiry_date: '2027-04-30', sent_quantity: 15, received_quantity: 0, status: 'received_with_difference', difference_reason: 'QA · zero-quantity receipt, exception raised', disposition: null, custody_state: 'exception_pending' },
   ],
 
   // ── Read RPC fixtures (shapes match the real read-only RPCs) ──────────────

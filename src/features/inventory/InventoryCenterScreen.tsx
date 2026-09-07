@@ -29,7 +29,10 @@ import { QuarantinePanel } from './QuarantinePanel';
 import { useMaterialDispensingSuspensionPermission } from './useMaterialDispensingSuspensionPermission';
 import { MaterialDispensingSuspensionPanel } from './MaterialDispensingSuspensionPanel';
 import { GUIDE_ANCHORS, guideAnchor } from '@/features/guide/guide.anchors';
-import { useGuideSurface, useGuideCapabilities, useScopedGuideCapabilities } from '@/features/guide/guide.surface';
+import {
+  useGuideSurface, useGuideCapabilities, useScopedGuideCapabilities,
+  useGuidePresence, useGuideExampleRow,
+} from '@/features/guide/guide.surface';
 import { useApproveCorrectionPermission } from './useApproveCorrectionPermission';
 import { PendingCorrectionsPanel } from './PendingCorrectionsPanel';
 import { SUPPLY_TYPES, supplyTypeLabelKey } from '@/shared/lib/supply-types';
@@ -270,6 +273,18 @@ export function InventoryCenterScreen({
   // same rule, not the authority for it.
   const activeWarehouseKind = manageableWarehouses.find(w => w.id === activeWarehouseId)?.warehouseKind ?? null;
   const isInstitutionWarehouse = activeWarehouseKind === 'institution';
+
+  /**
+   * INTERACTIVE-GUIDE-IG3 — which of intake's two mutually exclusive regions
+   * is actually on screen. Decided the same way the panel itself decides
+   * which branch to render (`isInstitutionWarehouse`), so presence can never
+   * drift from what actually renders below.
+   */
+  useGuidePresence('inventory.intake', {
+    'inventory.intake.blockedRegion': tab === 'intake' && !!activeWarehouseId && isInstitutionWarehouse,
+    'inventory.intake.formRegion': tab === 'intake' && !!activeWarehouseId && !isInstitutionWarehouse,
+  });
+
   // Outlets belonging to the selected institution warehouse (parent link), and
   // within the officer's manageable scope — the only valid ORDINARY dispatch
   // destinations.
@@ -419,6 +434,13 @@ export function InventoryCenterScreen({
             onClick={() => setTab(x.id)}
             {...(x.id === 'quarantine' ? guideAnchor(GUIDE_ANCHORS.inventoryTabQuarantine) : {})}
             {...(x.id === 'suspensions' ? guideAnchor(GUIDE_ANCHORS.inventoryTabSuspensions) : {})}
+            {...(x.id === 'intake' ? guideAnchor(GUIDE_ANCHORS.inventoryTabIntake) : {})}
+            {...(x.id === 'stock' ? guideAnchor(GUIDE_ANCHORS.inventoryTabStock) : {})}
+            {...(x.id === 'ledger' ? guideAnchor(GUIDE_ANCHORS.inventoryTabLedger) : {})}
+            {...(x.id === 'incoming' ? guideAnchor(GUIDE_ANCHORS.inventoryTabIncoming) : {})}
+            {...(x.id === 'dispatch' ? guideAnchor(GUIDE_ANCHORS.inventoryTabDispatch) : {})}
+            {...(x.id === 'returns' ? guideAnchor(GUIDE_ANCHORS.inventoryTabReturns) : {})}
+            {...(x.id === 'corrections' ? guideAnchor(GUIDE_ANCHORS.inventoryTabCorrections) : {})}
             className="nexus-it-tab"
             style={{
               padding: '8px 14px', minHeight: '44px', borderRadius: 'var(--r3)',
@@ -441,21 +463,25 @@ export function InventoryCenterScreen({
         <PhoenixEmptyState icon="📦" title={t('inv_select_warehouse', lang)} />
       ) : tab === 'intake' ? (
         isInstitutionWarehouse ? (
-          <PhoenixEmptyState
-            icon="🔒"
-            title={t('inv_institution_intake_blocked_title', lang)}
-            description={t('inv_institution_intake_blocked_description', lang)}
-          />
+          <div {...guideAnchor(GUIDE_ANCHORS.intakeBlockedRegion)}>
+            <PhoenixEmptyState
+              icon="🔒"
+              title={t('inv_institution_intake_blocked_title', lang)}
+              description={t('inv_institution_intake_blocked_description', lang)}
+            />
+          </div>
         ) : (
-          <IntakeTab
-            warehouseId={activeWarehouseId}
-            canSubmit={canAdjust}
-            lang={lang}
-            stock={stock.data ?? []}
-            onSuccess={afterWrite}
-            onError={showToast}
-            onConflictReload={reloadCanonicalStock}
-          />
+          <div {...guideAnchor(GUIDE_ANCHORS.intakeFormRegion)}>
+            <IntakeTab
+              warehouseId={activeWarehouseId}
+              canSubmit={canAdjust}
+              lang={lang}
+              stock={stock.data ?? []}
+              onSuccess={afterWrite}
+              onError={showToast}
+              onConflictReload={reloadCanonicalStock}
+            />
+          </div>
         )
       ) : tab === 'stock' ? (
         <div className="nexus-it-stock-panel" style={{ display: 'grid', gap: '12px' }}>
@@ -858,16 +884,32 @@ function StockList({ state, lang, canAdjust, canCorrect, isInstitutionWarehouse,
   // (scientific, trade, national code, batch) — AR/EN, hamza/taa/diacritic
   // folding, case-insensitive; the query is NEVER treated as a new material.
   const [query, setQuery] = useState('');
-  if (state.loading) return <PhoenixLoadingState />;
-  const batches = (state.data ?? []).filter(b =>
+  const allBatches = state.data ?? [];
+  const batches = allBatches.filter(b =>
     !query.trim()
     || normalizedIncludes(b.scientificName ?? '', query)
     || normalizedIncludes(b.nationalCode ?? '', query)
     || normalizedIncludes(b.batchNumber ?? '', query));
-  if ((state.data ?? []).length === 0) return <PhoenixEmptyState icon="📭" title={t('inv_no_stock', lang)} />;
+  const exampleRowId = useGuideExampleRow(batches.map(b => b.id));
+
+  /**
+   * INTERACTIVE-GUIDE-IG3 — decided ONCE, before either early return below,
+   * so this can never drift from what actually renders. The region covers
+   * the list AND its own empty state (same reasoning as quarantine's own
+   * region presence) — a search that matches nothing is a different, nested
+   * empty state, not the absence of this region.
+   */
+  const showRegion = !state.loading && allBatches.length > 0;
+  useGuidePresence('inventory.stock', {
+    'inventory.stock.region': showRegion,
+    'inventory.stock.row': showRegion && exampleRowId !== null,
+  });
+
+  if (state.loading) return <PhoenixLoadingState />;
+  if (allBatches.length === 0) return <PhoenixEmptyState icon="📭" title={t('inv_no_stock', lang)} />;
 
   return (
-    <div className="nexus-it-stock-list" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+    <div className="nexus-it-stock-list" {...guideAnchor(GUIDE_ANCHORS.stockListRegion)} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
       <input
         type="search"
         value={query}
@@ -884,6 +926,7 @@ function StockList({ state, lang, canAdjust, canCorrect, isInstitutionWarehouse,
         <BatchRow
           key={b.id}
           batch={b}
+          guideAnchored={b.id === exampleRowId}
           lang={lang}
           canAdjust={canAdjust}
           canCorrect={canCorrect}
@@ -900,6 +943,8 @@ function StockList({ state, lang, canAdjust, canCorrect, isInstitutionWarehouse,
 
 interface BatchRowProps {
   batch: WarehouseStockBatch;
+  /** INTERACTIVE-GUIDE-IG3 — this is the ONE row the frozen example points at. */
+  guideAnchored: boolean;
   lang: 'ar' | 'en';
   canAdjust: boolean;
   canCorrect: boolean;
@@ -910,7 +955,7 @@ interface BatchRowProps {
   onConflictReload: () => void;
 }
 
-function BatchRow({ batch, lang, canAdjust, canCorrect, isInstitutionWarehouse, onSuccess, onError, onConflictReload }: BatchRowProps) {
+function BatchRow({ batch, guideAnchored, lang, canAdjust, canCorrect, isInstitutionWarehouse, onSuccess, onError, onConflictReload }: BatchRowProps) {
   const [open, setOpen] = useState(false);
   const [requestId, setRequestId] = useState(newRequestId);
   const [movementType, setMovementType] = useState<WarehouseStockMovementType>('add');
@@ -1008,7 +1053,7 @@ function BatchRow({ batch, lang, canAdjust, canCorrect, isInstitutionWarehouse, 
             {[batch.batchNumber, batch.nationalCode, batch.expiryDate].filter(Boolean).join(' · ') || '—'}
           </div>
         </div>
-        <div className="nexus-it-batch-row__stats" style={{ display: 'flex', gap: '14px', fontSize: '12px' }}>
+        <div {...(guideAnchored ? guideAnchor(GUIDE_ANCHORS.stockRowBalances) : {})} className="nexus-it-batch-row__stats" style={{ display: 'flex', gap: '14px', fontSize: '12px' }}>
           <span className="nexus-it-stat nexus-it-stat--onhand">{t('inv_on_hand', lang)}: <strong>{batch.onHandQuantity}</strong></span>
           <span className="nexus-it-stat nexus-it-stat--reserved">{t('inv_reserved', lang)}: <strong>{batch.reservedQuantity}</strong></span>
           <span className={`nexus-it-stat nexus-it-stat--available${batch.availableQuantity === 0 ? ' nexus-it-stat--zero' : ''}`}>{t('inv_available', lang)}: <strong>{batch.availableQuantity}</strong></span>
@@ -1080,20 +1125,31 @@ export function LedgerList({ batches, lang }: { batches: WarehouseStockBatch[]; 
     [movementIds.join(',')],
   );
 
+  /**
+   * INTERACTIVE-GUIDE-IG3 — the region covers the populated list AND its own
+   * genuine empty state (same reasoning as quarantine's own region presence),
+   * but excludes loading and a failed read, neither of which is "the list".
+   */
+  useGuidePresence('inventory.ledger', {
+    'inventory.ledger.region': activeBatchId !== '' && !movements.loading && !movements.error,
+  });
+
   return (
     <PhoenixCard className="nexus-it-ledger">
-      <PhoenixSelect
-        label={t('inv_tab_ledger', lang)}
-        value={activeBatchId}
-        onChange={e => setBatchId(e.target.value)}
-        options={[
-          { value: '', label: '—' },
-          ...batches.map(b => ({
-            value: b.id,
-            label: [b.scientificName, b.batchNumber].filter(Boolean).join(' · '),
-          })),
-        ]}
-      />
+      <div {...guideAnchor(GUIDE_ANCHORS.ledgerSelect)}>
+        <PhoenixSelect
+          label={t('inv_tab_ledger', lang)}
+          value={activeBatchId}
+          onChange={e => setBatchId(e.target.value)}
+          options={[
+            { value: '', label: '—' },
+            ...batches.map(b => ({
+              value: b.id,
+              label: [b.scientificName, b.batchNumber].filter(Boolean).join(' · '),
+            })),
+          ]}
+        />
+      </div>
       {/* UAT-DEFECT-004 — FOUR STATES, NEVER THREE.
           This used to be `loading ? spinner : rows.length === 0 ? empty : list`,
           which has no branch for a FAILED read: on error `movements.data` stays
@@ -1107,9 +1163,13 @@ export function LedgerList({ batches, lang }: { batches: WarehouseStockBatch[]; 
         : movements.error
           ? <PhoenixErrorState title={t('load_error', lang)} message={t('inv_ledger_read_failed', lang)} onRetry={movements.reload} />
           : (movements.data ?? []).length === 0
-            ? <PhoenixEmptyState icon="🗒️" title={t('inv_no_movements', lang)} />
+            ? (
+              <div {...guideAnchor(GUIDE_ANCHORS.ledgerListRegion)}>
+                <PhoenixEmptyState icon="🗒️" title={t('inv_no_movements', lang)} />
+              </div>
+            )
             : (
-              <ul className="nexus-it-ledger-list" style={{ listStyle: 'none', padding: 0, margin: '12px 0 0', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <ul {...guideAnchor(GUIDE_ANCHORS.ledgerListRegion)} className="nexus-it-ledger-list" style={{ listStyle: 'none', padding: 0, margin: '12px 0 0', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {(movements.data ?? []).map(m => (
                   <li key={m.id} className="nexus-it-ledger-row" style={{ fontSize: '12px', borderBottom: '1px solid var(--brd)', paddingBottom: '8px' }}>
                     <strong>{m.movementType}</strong> {m.onHandBefore} → {m.onHandAfter}

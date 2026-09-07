@@ -38,6 +38,8 @@ import {
 } from './outlet-return.service';
 import { MovementDocumentActions } from '@/features/movement/ui/MovementDocumentActions';
 import { buildOutletReturnShipmentReceipt } from './outlet-receipt-source';
+import { GUIDE_ANCHORS, guideAnchor } from '@/features/guide/guide.anchors';
+import { useGuidePresence } from '@/features/guide/guide.surface';
 
 type Lang = 'ar' | 'en';
 
@@ -166,6 +168,10 @@ export function InstitutionReturnReceipts({ destinationWarehouseId, warehouseNam
   );
 
   const dispositionOf = (id: string): ReturnDisposition => dispositions[id] ?? 'quarantined';
+
+  useGuidePresence('inventory.returns', {
+    'inventory.returns.region': !(shipments.loading || lines.loading) || allLines.length > 0,
+  });
 
   // ── receiving — the ONLY mutation on this surface ─────────────────────────
 
@@ -306,9 +312,11 @@ export function InstitutionReturnReceipts({ destinationWarehouseId, warehouseNam
       </div>
 
       {pending.length === 0 ? (
-        <PhoenixEmptyState icon="package" title={t('mv_return_receipts_none', lang)} />
+        <div {...guideAnchor(GUIDE_ANCHORS.returnsListRegion)}>
+          <PhoenixEmptyState icon="package" title={t('mv_return_receipts_none', lang)} />
+        </div>
       ) : (
-        <div style={{ display: 'grid', gap: '10px' }} data-testid="return-receipt-lines">
+        <div {...guideAnchor(GUIDE_ANCHORS.returnsListRegion)} style={{ display: 'grid', gap: '10px' }} data-testid="return-receipt-lines">
           {pending.map(line => {
             const parent = shipmentById.get(line.shipmentId);
             const eligibility = assessReceive(toReceivable(line));
