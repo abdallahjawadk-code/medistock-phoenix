@@ -185,6 +185,23 @@ export function qaPersona(id: QaPersonaId): QaPersona {
  */
 const QA_EXTRA_PERMISSIONS: Partial<Record<QaPersonaId, readonly string[]>> = {
   warehouse_officer_assigned: ['warehouse_dispatch.create'],
+  /**
+   * IG-3 PHONE ACCEPTANCE — `warehouse_transfer.receive` and
+   * `warehouse_dispatch.create` are BOTH migration-066 keys absent from
+   * `PERMISSION_KEYS` entirely (confirmed by direct search), so `ALL_KEYS`
+   * — `super_admin`'s own `roleDefaults()` — does not carry them either,
+   * the same gap the `warehouse_officer_assigned` overlay above already
+   * documents. `InventoryCenterScreen`'s OPERATIONAL tab visibility bypasses
+   * this via `role === 'super_admin' || myPermissions.has(...)`, but the
+   * guide's own `permittedTours`/`isStepPermitted` (guide.permissions.ts)
+   * checks `audience.permissions.has(key)` ONLY, with no role-based bypass
+   * of its own — so without this overlay, `super_admin` (the persona used
+   * throughout this QA harness's IG-3 acceptance tests) could reach the
+   * Incoming/Dispatch tabs and see their real, populated content, but the
+   * Help Center would offer no tour for either, for want of these two
+   * literal keys. Additive only — no RPC, RLS, or migration touched.
+   */
+  super_admin: ['warehouse_transfer.receive', 'warehouse_dispatch.create'],
 };
 
 interface BuildArgs {

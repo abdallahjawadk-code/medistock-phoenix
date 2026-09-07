@@ -213,7 +213,21 @@ function DispatchRow({ dispatch, outletName, canDispatch, lang, onDone, initiall
         <StatusBadge status={dispatch.status} />
         <PhoenixButton size="sm" variant="ghost" onClick={() => setOpen(o => !o)}>{t('net_op_edit', lang)}</PhoenixButton>
         {isDraft && (
-          <span {...(guideAnchored ? guideAnchor(GUIDE_ANCHORS.dispatchRowActions) : {})} style={{ display: 'contents' }}>
+          // IG-3 PHONE ACCEPTANCE — `display: 'contents'` makes this span
+          // generate no box of its own, so `getBoundingClientRect()` (which
+          // `GuideTourOverlay` calls directly on the resolved anchor element)
+          // returns a degenerate rect and the guide's ring could never
+          // actually align with these controls in any real browser, at any
+          // viewport — confirmed by a real Chromium acceptance run before
+          // this fix (offset >600px from the real buttons) and after (<2px).
+          // `inline-flex` keeps the exact same visual layout (the pair still
+          // sits inline with the row's other controls, wrapping the same way)
+          // while giving the anchor a real, measurable box. Purely a layout
+          // fix — no business logic, RPC, or data flow touched.
+          <span
+            {...(guideAnchored ? guideAnchor(GUIDE_ANCHORS.dispatchRowActions) : {})}
+            style={{ display: 'inline-flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}
+          >
             <PhoenixButton size="sm" loading={busy} disabled={!canDispatch} onClick={send}>{t('net_op_send', lang)}</PhoenixButton>
             {!cancelling
               ? <PhoenixButton size="sm" variant="danger" onClick={() => setCancelling(true)}>{t('net_op_cancel_req', lang)}</PhoenixButton>
