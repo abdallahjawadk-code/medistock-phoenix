@@ -19,7 +19,7 @@ import { getPaperReference, setPaperReference } from '@/features/movement/paper-
 import { PaperReferenceFields, EMPTY_PAPER_REFERENCE, paperReferenceSummary, type PaperReferenceValue } from '@/features/movement/ui/PaperReferenceFields';
 import { useAsync } from '@/shared/lib/useAsync';
 import { GUIDE_ANCHORS, guideAnchor } from '@/features/guide/guide.anchors';
-import { useGuideExampleRow, useGuidePresence } from '@/features/guide/guide.surface';
+import { useGuidePresence } from '@/features/guide/guide.surface';
 
 /** A single scope's pending correction, normalized for shared rendering. */
 interface NormalizedCorrection {
@@ -166,22 +166,9 @@ export function PendingCorrectionsPanel({
     }
   };
 
-  /**
-   * INTERACTIVE-GUIDE-IG3 — decided ONCE, before any of the three early
-   * returns below, so presence can never drift from what actually renders.
-   * The composite `${scope}:${id}` key matches the row's own React key
-   * (`row.id` alone is not guaranteed unique across the two scope tables —
-   * see the panel's own key usage below).
-   */
   const allRows = rows ?? [];
-  const guideExampleRowKey = useGuideExampleRow(allRows.map(r => `${r.scope}:${r.id}`));
-  const guideExampleRow = allRows.find(r => `${r.scope}:${r.id}` === guideExampleRowKey) ?? null;
-  const guideExampleShowsActions = guideExampleRow !== null
-    && (guideExampleRow.scope === 'outlet' ? canApproveOutlet : canApproveWarehouse)
-    && profile?.id !== guideExampleRow.proposedBy;
   useGuidePresence('inventory.corrections', {
     'inventory.corrections.region': !(loading && rows === null) && !error && allRows.length > 0,
-    'inventory.corrections.rowActions': guideExampleShowsActions,
   });
 
   if (loading && rows === null) return <PhoenixLoadingState />;
@@ -205,7 +192,6 @@ export function PendingCorrectionsPanel({
         // viewer must reach the history and no control — and an actor holding
         // only one scope's key must not be offered the other scope's buttons.
         const canDecide = row.scope === 'outlet' ? canApproveOutlet : canApproveWarehouse;
-        const guideAnchored = `${row.scope}:${row.id}` === guideExampleRowKey;
         return (
           <PhoenixCard key={`${row.scope}:${row.id}`}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
@@ -259,7 +245,7 @@ export function PendingCorrectionsPanel({
                 </div>
               </div>
             ) : (
-              <div {...(guideAnchored ? guideAnchor(GUIDE_ANCHORS.correctionsRowActions) : {})} style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
+              <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
                 <PhoenixButton disabled={busy} loading={busy} onClick={() => void approve(row)}>
                   {t('cor_approve', lang)}
                 </PhoenixButton>

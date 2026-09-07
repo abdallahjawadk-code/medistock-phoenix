@@ -68,13 +68,11 @@ export const GUIDE_ANCHORS = {
   inventoryTabIntake:       'guide.inventory.intake.tab',
   intakeBlockedRegion:      'guide.intake.blocked.region',
   intakeFormRegion:         'guide.intake.form.region',
-  intakeSubmitAction:       'guide.intake.submit.action',
 
   /* ── Inventory Center — Stock (IG-3) ── */
   inventoryTabStock:        'guide.inventory.stock.tab',
   stockListRegion:          'guide.stock.list.region',
   stockRowBalances:         'guide.stock.row.balances',
-  stockRowMovementAction:   'guide.stock.row.movement-action',
 
   /* ── Inventory Center — Ledger (IG-3) ── */
   inventoryTabLedger:       'guide.inventory.ledger.tab',
@@ -96,18 +94,14 @@ export const GUIDE_ANCHORS = {
   /* ── Inventory Center — Receive outlet returns (IG-3) ── */
   inventoryTabReturns:      'guide.inventory.returns.tab',
   returnsListRegion:        'guide.returns.list.region',
-  returnsRowReceiveAction:  'guide.returns.row.receive-action',
-  returnsBulkAction:        'guide.returns.bulk.action',
 
   /* ── Inventory Center — Return exceptions (IG-3) ── */
   inventoryTabReturnExceptions: 'guide.inventory.return-exceptions.tab',
   exceptionsListRegion:         'guide.return-exceptions.list.region',
-  exceptionsRowResolveAction:   'guide.return-exceptions.row.resolve-action',
 
   /* ── Inventory Center — Corrections (IG-3) ── */
   inventoryTabCorrections:  'guide.inventory.corrections.tab',
   correctionsListRegion:    'guide.corrections.list.region',
-  correctionsRowActions:    'guide.corrections.row.actions',
 
   /* ── Command Center (Dashboard pilot) ── */
   dashboardContextHeader:   'guide.dashboard.context.header',

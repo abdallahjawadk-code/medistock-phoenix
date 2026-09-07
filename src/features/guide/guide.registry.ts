@@ -263,18 +263,14 @@ export const GUIDE_PRESENCE = {
   intakeFormRegion:         'inventory.intake.formRegion',
   stockRegion:              'inventory.stock.region',
   stockRow:                 'inventory.stock.row',
-  stockRowMovementAction:   'inventory.stock.rowMovementAction',
   ledgerRegion:             'inventory.ledger.region',
   incomingRegion:           'inventory.incoming.region',
   incomingRowActions:       'inventory.incoming.rowActions',
   dispatchRegion:           'inventory.dispatch.region',
   dispatchRowActions:       'inventory.dispatch.rowActions',
   returnsRegion:            'inventory.returns.region',
-  returnsRowActions:        'inventory.returns.rowActions',
   exceptionsRegion:         'inventory.returnExceptions.region',
-  exceptionsRowActions:     'inventory.returnExceptions.rowActions',
   correctionsRegion:        'inventory.corrections.region',
-  correctionsRowActions:    'inventory.corrections.rowActions',
 } as const;
 
 /** The Inventory Center screen and the tabs these tours belong to. */
@@ -537,21 +533,32 @@ const SUSPENSION_TOUR: GuideTour = {
  * ── IG-3 · «إدخال مواد» / Material intake ──────────────────────────────────
  *
  * Derived from InventoryCenterScreen.tsx's own `IntakeTab`/`IntakeForm` as they
- * are. `canAdjust`/`canCorrect` (useWarehouseStockPermissions) are per-warehouse
- * scoped answers that — unlike the fixed useQuarantinePermission — carry no
- * freshness-provable scope tag of their own (no `dataScopeKey`/`confirmed`
- * equivalent). Rewriting that hook is outside this stage's scope, so the
- * submit-describing step below is gated on PRESENCE (the form is actually on
- * screen) rather than on a claimed-fresh capability, and its copy defers to the
- * real button exactly like the IG-2 tours already do for quarantine/suspension
- * ("close the guide, then use the button itself if you are authorized").
+ * are.
+ *
+ * HELD, on independent review: an earlier revision gated the submit-describing
+ * step on PRESENCE alone (the form is on screen), reasoning that with no
+ * freshness-provable scope tag on `useWarehouseStockPermissions` (no
+ * `dataScopeKey`/`confirmed` equivalent, unlike the fixed
+ * useQuarantinePermission), presence was the best available signal. That is
+ * wrong: presence answers "does the form exist", never "is `canAdjust`
+ * actually true for the CURRENT warehouse right now" — a plain `useAsync`
+ * hook can carry warehouse A's settled `true` into the very first render after
+ * switching to warehouse B, and an A→B→A revisit repeats the same identity
+ * without ever re-proving it. No existing canonical decision in this codebase
+ * closes that gap for this hook, and rewriting `useWarehouseStockPermissions`
+ * to add one is outside this change's authorized scope. So there is no
+ * `intake.submit` step: the tour explains the form's fields (a fact true
+ * regardless of who is looking, since typing needs no authorization — only
+ * submitting does) and stops there. This is a deliberate, permanent hold, not
+ * a capability anyone will ever see flip true — see the PR description's
+ * "held units" section.
  */
 const INTAKE_TOUR: GuideTour = {
   id: 'guide.tour.intake',
   title: { ar: 'إدخال مواد', en: 'Material intake' },
   description: {
-    ar: 'شرح تبويب إدخال المواد: الإدخال اليدوي وحدود مخازن المؤسسات. شرح ومشاهدة فقط.',
-    en: 'How the Material Intake tab works: manual entry, and the limit for institution warehouses. Explanation only.',
+    ar: 'شرح تبويب إدخال المواد: حقول الإدخال اليدوي وحدود مخازن المؤسسات. شرح ومشاهدة فقط.',
+    en: 'How the Material Intake tab is laid out: the manual-entry fields, and the limit for institution warehouses. Explanation only.',
   },
   screen: INVENTORY_SCREEN,
   tab: INTAKE_TAB,
@@ -597,17 +604,6 @@ const INTAKE_TOUR: GuideTour = {
       tab: INTAKE_TAB,
     },
     {
-      id: 'intake.submit',
-      title: { ar: 'تسجيل الاستلام', en: 'Recording the receipt' },
-      body: {
-        ar: 'يسجّل الزر الاستلام في سجل المخزن مباشرةً بعد التحقق من صحة الحقول. أغلق الدليل ثم نفّذ الإجراء من زره إذا كنت مخوّلًا.',
-        en: 'The button records the receipt directly into the warehouse ledger once the fields validate. Close the guide, then use the button itself if you are authorized.',
-      },
-      anchors: [GUIDE_ANCHORS.intakeSubmitAction, GUIDE_ANCHORS.intakeFormRegion],
-      requiresPresence: [GUIDE_PRESENCE.intakeFormRegion],
-      tab: INTAKE_TAB,
-    },
-    {
       id: 'intake.closing',
       title: { ar: 'حالة التوفر', en: 'The availability condition' },
       body: {
@@ -623,16 +619,20 @@ const INTAKE_TOUR: GuideTour = {
 /**
  * ── IG-3 · «رصيد المخزن» / Warehouse stock ─────────────────────────────────
  *
- * Derived from InventoryCenterScreen.tsx's `StockList`/`BatchRow`. Same
- * freshness caveat as intake above applies to the movement-action step: gated
- * on presence, not on a claimed-fresh `canAdjust`/`canCorrect` capability.
+ * Derived from InventoryCenterScreen.tsx's `StockList`/`BatchRow`.
+ *
+ * HELD, on independent review — same reasoning as intake above:
+ * `useWarehouseStockPermissions` (`canAdjust`/`canCorrect`) has no freshness-
+ * provable scope tag, so there is no `stock.movement` step describing the
+ * correction-movement button. Presence alone cannot stand in for a fresh
+ * grant. Permanent hold, not a pending capability — see the PR description.
  */
 const STOCK_TOUR: GuideTour = {
   id: 'guide.tour.stock',
   title: { ar: 'رصيد المخزن', en: 'Warehouse stock' },
   description: {
-    ar: 'شرح تبويب رصيد المخزن: ما يعرضه، وكيف تُسجَّل حركة تصحيحية. شرح ومشاهدة فقط.',
-    en: 'How the Warehouse Stock tab works: what it lists, and how a correction movement is recorded. Explanation only.',
+    ar: 'شرح تبويب رصيد المخزن: ما يعرضه من رصيد حالي لكل تشغيلة. شرح ومشاهدة فقط.',
+    en: 'How the Warehouse Stock tab works: the current balance it shows for every lot. Explanation only.',
   },
   screen: INVENTORY_SCREEN,
   tab: STOCK_TAB,
@@ -667,23 +667,6 @@ const STOCK_TOUR: GuideTour = {
       },
       anchors: [GUIDE_ANCHORS.stockRowBalances, GUIDE_ANCHORS.stockListRegion],
       requiresPresence: [GUIDE_PRESENCE.stockRow],
-      tab: STOCK_TAB,
-    },
-    {
-      id: 'stock.movement',
-      /**
-       * COPY ACCURACY — CLOSED-CUSTODY-102-B: at an institution warehouse
-       * BatchRow's own `allowedTypes` filter offers ONLY 'correction', never
-       * add/subtract. The step says this plainly rather than describing a
-       * uniform three-option form every warehouse would show identically.
-       */
-      title: { ar: 'الحركة التصحيحية', en: 'A correction movement' },
-      body: {
-        ar: 'يفتح الزر نموذجًا لتسجيل زيادة أو نقصان أو تصحيح للرصيد مع سبب. وفي مخازن المؤسسات لا يُتاح إلا التصحيح، الذي يمر عبر اعتماد شخص ثانٍ. أغلق الدليل ثم نفّذ الإجراء من زره إذا كنت مخوّلًا.',
-        en: 'The button opens a form to record an addition, a subtraction, or a correction to the balance, with a reason. At institution warehouses only correction is offered, and it goes through second-person approval. Close the guide, then use the button itself if you are authorized.',
-      },
-      anchors: [GUIDE_ANCHORS.stockRowMovementAction, GUIDE_ANCHORS.stockListRegion],
-      requiresPresence: [GUIDE_PRESENCE.stockRowMovementAction],
       tab: STOCK_TAB,
     },
     {
@@ -937,21 +920,27 @@ const DISPATCH_TOUR: GuideTour = {
  * ── IG-3 · «استلام مرتجعات المنافذ» / Receive outlet returns ───────────────
  *
  * Derived from InstitutionReturnReceipts.tsx and receive-model.ts.
- * `useReturnReceivePermission` has no freshness-provable scope tag (no
- * `dataScopeKey`/`confirmed`), so — same reasoning as intake/stock above —
- * the receive-describing step is gated on PRESENCE, not on a claimed-fresh
- * capability, and defers to the real control. TAB visibility is already
- * split from mutation authority in the real screen (a read-only affordance
- * can see this tab with every control disabled) — this tour is offered on
- * tab-surface match alone, matching that existing split rather than
- * re-asserting a narrower gate of its own.
+ *
+ * HELD, on independent review: `useReturnReceivePermission` has no
+ * freshness-provable scope tag (no `dataScopeKey`/`confirmed`), so there is
+ * no `returns.receive` or `returns.bulk` step — presence (a row exists)
+ * cannot stand in for a fresh, attributable grant, and this is exactly the
+ * screen where the gap is easiest to observe: `canViewReturns` (tab
+ * visibility) is deliberately WIDER than `canReceiveReturns` (mutation), so a
+ * genuinely read-only actor reaches this tab with every receive control
+ * disabled — the pending list is a perfectly valid thing to explain to that
+ * actor, and describing the receive/bulk buttons to them would have been
+ * wrong regardless of any staleness question. The tour keeps its viewing
+ * content (the tab, the pending list, the "nothing arrived → exceptions"
+ * business fact) and holds only the two action steps. Permanent hold, not a
+ * pending capability — see the PR description.
  */
 const RETURNS_TOUR: GuideTour = {
   id: 'guide.tour.returns',
   title: { ar: 'استلام مرتجعات المنافذ', en: 'Receive outlet returns' },
   description: {
-    ar: 'شرح تبويب استلام المرتجعات: تأكيد ما وصل فعليًا من شحنة مرتجعة. شرح ومشاهدة فقط.',
-    en: 'How the Receive Outlet Returns tab works: confirming what actually arrived from a returned shipment. Explanation only.',
+    ar: 'شرح تبويب استلام المرتجعات: ما تعرضه قائمة السطور المعلّقة. شرح ومشاهدة فقط.',
+    en: 'How the Receive Outlet Returns tab works: what the pending-lines list shows. Explanation only.',
   },
   screen: INVENTORY_SCREEN,
   tab: RETURNS_TAB,
@@ -978,33 +967,6 @@ const RETURNS_TOUR: GuideTour = {
       tab: RETURNS_TAB,
     },
     {
-      id: 'returns.receive',
-      /**
-       * COPY ACCURACY — same "displayed default, not an assumption" fact as
-       * incoming.receive above, PLUS the disposition choice (restockable vs
-       * quarantined) that incoming supplies does not have.
-       */
-      title: { ar: 'تأكيد الكمية والمصير', en: 'Confirming the quantity and disposition' },
-      body: {
-        ar: 'تظهر الكمية المُرسلة مبدئيًا، وتُعدَّل يدويًا عند الحاجة مع سبب — البرنامج لا يفترض وصولها كاملة. وتختار مصير ما وصل: صالح لإعادة التخزين أو محجور. أغلق الدليل ثم نفّذ الإجراء من زره إذا كنت مخوّلًا.',
-        en: 'The sent quantity is shown as a starting value and is adjusted by hand when needed, with a reason — the program does not assume it all arrived. You also choose the disposition of what arrived: restockable or quarantined. Close the guide, then use the button itself if you are authorized.',
-      },
-      anchors: [GUIDE_ANCHORS.returnsRowReceiveAction, GUIDE_ANCHORS.returnsListRegion],
-      requiresPresence: [GUIDE_PRESENCE.returnsRowActions],
-      tab: RETURNS_TAB,
-    },
-    {
-      id: 'returns.bulk',
-      title: { ar: 'استلام آمن جماعي', en: 'Bulk safe receive' },
-      body: {
-        ar: 'يستلم هذا الزر دفعة واحدة كل سطر وصل تمامًا كما أُرسل، ويحجره تلقائيًا دون إعادته إلى التخزين مباشرةً.',
-        en: 'This button receives, in one batch, every line that arrived exactly as sent, and quarantines it automatically rather than restocking it directly.',
-      },
-      anchors: [GUIDE_ANCHORS.returnsBulkAction],
-      requiresPresence: [GUIDE_PRESENCE.returnsRegion],
-      tab: RETURNS_TAB,
-    },
-    {
       id: 'returns.closing',
       title: { ar: 'حين لا يصل شيء', en: 'When nothing arrives' },
       body: {
@@ -1023,16 +985,21 @@ const RETURNS_TOUR: GuideTour = {
  * Derived from OutletReturnExceptions.tsx and migration 157's own SQL
  * (verified directly, not inferred): a zero-quantity receipt sets
  * custody_state='exception_pending' and resolution is a SEPARATE, additive
- * record — the original line is never rewritten. `useOutletReturnException
- * ResolvePermission` has the same freshness limitation as the hooks above,
- * so the resolve step is presence-gated, deferring to the real control.
+ * record — the original line is never rewritten.
+ *
+ * HELD, on independent review: `useOutletReturnExceptionResolvePermission`
+ * has the same freshness limitation as the hooks above, so there is no
+ * `return-exceptions.resolve` step. The tour keeps its viewing content (what
+ * `exception_pending` means, the pending list, the separate-record business
+ * fact) and holds only the action step. Permanent hold, not a pending
+ * capability — see the PR description.
  */
 const RETURN_EXCEPTIONS_TOUR: GuideTour = {
   id: 'guide.tour.return-exceptions',
   title: { ar: 'استثناءات مرتجعات المنافذ', en: 'Return exceptions' },
   description: {
-    ar: 'شرح تبويب استثناءات المرتجعات: ما يعنيه السطر المعلّق، وكيف يُغلق. شرح ومشاهدة فقط.',
-    en: 'How the Return Exceptions tab works: what a pending line means, and how it is closed. Explanation only.',
+    ar: 'شرح تبويب استثناءات المرتجعات: ما يعنيه السطر المعلّق. شرح ومشاهدة فقط.',
+    en: 'How the Return Exceptions tab works: what a pending line means. Explanation only.',
   },
   screen: INVENTORY_SCREEN,
   tab: RETURN_EXCEPTIONS_TAB,
@@ -1059,28 +1026,18 @@ const RETURN_EXCEPTIONS_TOUR: GuideTour = {
       tab: RETURN_EXCEPTIONS_TAB,
     },
     {
-      id: 'return-exceptions.resolve',
       /**
        * COPY ACCURACY — a reason is required for BOTH resolution kinds
        * (client line 119 runs before the kind branch; server 157 line
-       * 285-287 same order) — the copy must not say it is required only for
-       * "confirmed, nothing arrived".
+       * 285-287 same order) — kept here as a business-concept fact (what the
+       * two paths ARE), not as an action-authorization claim, since the
+       * decide step itself is held (see the module doc comment above).
        */
-      title: { ar: 'إغلاق الاستثناء', en: 'Closing the exception' },
-      body: {
-        ar: 'مساران فقط: «مؤكَّد، لم يصل شيء» إغلاق إداري دون أي حركة مخزون، أو «وصلت كمية مصحَّحة» وتذكر الكمية الفعلية ومصيرها. يتطلب كلا المسارين سببًا مكتوبًا. أغلق الدليل ثم نفّذ الإجراء من زره إذا كنت مخوّلًا.',
-        en: 'Only two paths: "confirmed, nothing arrived" is an administrative closure with no stock movement, or "a corrected quantity arrived" where you state the actual quantity and its disposition. BOTH paths require a written reason. Close the guide, then use the button itself if you are authorized.',
-      },
-      anchors: [GUIDE_ANCHORS.exceptionsRowResolveAction, GUIDE_ANCHORS.exceptionsListRegion],
-      requiresPresence: [GUIDE_PRESENCE.exceptionsRowActions],
-      tab: RETURN_EXCEPTIONS_TAB,
-    },
-    {
       id: 'return-exceptions.closing',
       title: { ar: 'قرار منفصل، لا إعادة كتابة', en: 'A separate decision, not a rewrite' },
       body: {
-        ar: 'يُسجَّل القرار كسجل مستقل، ولا يُعاد كتابة سطر الاستلام الأصلي بكمية الصفر في أي حال.',
-        en: 'The decision is recorded as its own separate record. The original zero-quantity receipt line is never rewritten, either way.',
+        ar: 'يُحسم كل سطر بأحد مسارين: «مؤكَّد، لم يصل شيء» إغلاق إداري دون حركة مخزون، أو «وصلت كمية مصحَّحة» بذكر الكمية الفعلية ومصيرها — ويتطلب المساران سببًا مكتوبًا. يُسجَّل القرار كسجل مستقل، ولا يُعاد كتابة سطر الاستلام الأصلي بكمية الصفر.',
+        en: 'Every line closes one of two ways: "confirmed, nothing arrived" — an administrative closure, no stock movement — or "a corrected quantity arrived", stating the actual quantity and its disposition; both require a written reason. The decision is its own separate record; the original zero-quantity line is never rewritten.',
       },
       anchors: [],
       tab: RETURN_EXCEPTIONS_TAB,
@@ -1096,8 +1053,17 @@ const RETURN_EXCEPTIONS_TOUR: GuideTour = {
  * APPROVE/REJECT only — REQUESTING a correction happens elsewhere (the Stock
  * tab's own movement form for a warehouse lot; a separate outlet screen for
  * outlet stock) — the tour says this explicitly rather than implying the
- * request itself happens here. Same freshness caveat as the tours above
- * applies to the decide step.
+ * request itself happens here.
+ *
+ * HELD, on independent review: `useApproveCorrectionPermission` has the same
+ * freshness limitation as the hooks above — both approval keys are org-wide,
+ * but org is still a dependency of the same plain `useAsync` shape, so an
+ * organization (or profile/role) change carries the identical A→B→A
+ * misattribution risk. There is no `corrections.decide` step. The tour keeps
+ * its viewing content (the combined list, where a request actually starts,
+ * the closing business fact about what approval does) and holds only the
+ * action step. Permanent hold, not a pending capability — see the PR
+ * description.
  */
 const CORRECTIONS_TOUR: GuideTour = {
   id: 'guide.tour.corrections',
@@ -1131,29 +1097,18 @@ const CORRECTIONS_TOUR: GuideTour = {
       tab: CORRECTIONS_TAB,
     },
     {
-      id: 'corrections.decide',
       /**
        * COPY ACCURACY — the second-person rule is enforced server-side by
        * PROFILE IDENTITY (`proposed_by = v_actor`), not by role — migrations
-       * 098/101, verified directly. The proposer sees no action controls at
-       * all for their own request (client mirrors this, but the rule is the
-       * server's).
+       * 098/101, verified directly. Kept here as a business-concept fact
+       * (what the rule IS), not as an action-authorization claim, since the
+       * decide step itself is held (see the module doc comment above).
        */
-      title: { ar: 'الاعتماد أو الرفض', en: 'Approving or rejecting' },
-      body: {
-        ar: 'لا يمكن لمن اقترح التصحيح اعتماده بنفسه — البرنامج يمنع ذلك بالهوية لا بالدور، ولا يعرض لمقترح الطلب أزرار قرار على طلبه. الرفض يطلب سببًا مكتوبًا. أغلق الدليل ثم نفّذ الإجراء من زره إذا كنت مخوّلًا.',
-        en: 'Whoever proposed a correction cannot approve it themselves — the program prevents this by identity, not by role, and shows the proposer no decision buttons on their own request. Rejecting asks for a written reason. Close the guide, then use the button itself if you are authorized.',
-      },
-      anchors: [GUIDE_ANCHORS.correctionsRowActions, GUIDE_ANCHORS.correctionsListRegion],
-      requiresPresence: [GUIDE_PRESENCE.correctionsRowActions],
-      tab: CORRECTIONS_TAB,
-    },
-    {
       id: 'corrections.closing',
       title: { ar: 'الاعتماد ينفّذ التصحيح', en: 'Approval applies the correction' },
       body: {
-        ar: 'اعتماد الطلب هنا ينفّذ التصحيح فعليًا على الرصيد. القرار لا يُراجَع من هذه الشاشة بعد اتخاذه.',
-        en: 'Approving a request here actually applies the correction to the balance. The decision is not revisited from this screen once made.',
+        ar: 'اعتماد طلب هنا ينفّذ التصحيح فعليًا على الرصيد، ولا يمكن لمن اقترحه اعتماده بنفسه — البرنامج يمنع ذلك بالهوية لا بالدور. القرار لا يُراجَع من هذه الشاشة بعد اتخاذه.',
+        en: 'Approving a request here actually applies the correction to the balance, and whoever proposed it cannot approve it themselves — the program prevents this by identity, not by role. The decision is not revisited from this screen once made.',
       },
       anchors: [],
       tab: CORRECTIONS_TAB,

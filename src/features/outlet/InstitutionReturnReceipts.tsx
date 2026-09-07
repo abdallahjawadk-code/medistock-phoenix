@@ -39,7 +39,7 @@ import {
 import { MovementDocumentActions } from '@/features/movement/ui/MovementDocumentActions';
 import { buildOutletReturnShipmentReceipt } from './outlet-receipt-source';
 import { GUIDE_ANCHORS, guideAnchor } from '@/features/guide/guide.anchors';
-import { useGuideExampleRow, useGuidePresence } from '@/features/guide/guide.surface';
+import { useGuidePresence } from '@/features/guide/guide.surface';
 
 type Lang = 'ar' | 'en';
 
@@ -169,14 +169,8 @@ export function InstitutionReturnReceipts({ destinationWarehouseId, warehouseNam
 
   const dispositionOf = (id: string): ReturnDisposition => dispositions[id] ?? 'quarantined';
 
-  /**
-   * INTERACTIVE-GUIDE-IG3 — decided ONCE, before the loading early return
-   * below, so presence can never drift from what actually renders.
-   */
-  const guideExampleLineId = useGuideExampleRow(pending.map(l => l.id));
   useGuidePresence('inventory.returns', {
     'inventory.returns.region': !(shipments.loading || lines.loading) || allLines.length > 0,
-    'inventory.returns.rowActions': guideExampleLineId !== null,
   });
 
   // ── receiving — the ONLY mutation on this surface ─────────────────────────
@@ -303,7 +297,6 @@ export function InstitutionReturnReceipts({ destinationWarehouseId, warehouseNam
 
       <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
         <PhoenixButton
-          {...guideAnchor(GUIDE_ANCHORS.returnsBulkAction)}
           disabled={!canReceive || busy || selectedBulkIds.length === 0}
           onClick={() => void receiveAllSafeToQuarantine()}
           data-testid="return-receive-all-safe"
@@ -332,7 +325,6 @@ export function InstitutionReturnReceipts({ destinationWarehouseId, warehouseNam
             const reason = reasons[line.id] ?? '';
             const quantity = Number(typed);
             const issues = validateReceive(toReceivable(line), quantity, reason.trim() || null);
-            const guideAnchored = line.id === guideExampleLineId;
 
             return (
               <PhoenixCard key={line.id}>
@@ -381,7 +373,7 @@ export function InstitutionReturnReceipts({ destinationWarehouseId, warehouseNam
                     )}
                   </div>
 
-                  <div {...(guideAnchored ? guideAnchor(GUIDE_ANCHORS.returnsRowReceiveAction) : {})} style={{ display: 'grid', gap: '6px', minWidth: '230px' }}>
+                  <div style={{ display: 'grid', gap: '6px', minWidth: '230px' }}>
                     <PhoenixInput
                       label={t('mv_f_received_quantity', lang)}
                       value={typed}

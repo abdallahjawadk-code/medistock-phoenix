@@ -855,7 +855,7 @@ function IntakeForm({ warehouseId, canSubmit, lang, onSuccess, onError, onConfli
       )}
 
       <div style={{ marginTop: '14px' }}>
-        <PhoenixButton {...guideAnchor(GUIDE_ANCHORS.intakeSubmitAction)} onClick={submit} disabled={!canSubmit || busy}>
+        <PhoenixButton onClick={submit} disabled={!canSubmit || busy}>
           {busy ? t('inv_retry_intake', lang) : t('inv_submit_intake', lang)}
         </PhoenixButton>
       </div>
@@ -980,16 +980,6 @@ function BatchRow({ batch, guideAnchored, lang, canAdjust, canCorrect, isInstitu
     return x === 'correction' ? canCorrect : canAdjust;
   });
 
-  /**
-   * INTERACTIVE-GUIDE-IG3 — only the ONE frozen example row ever publishes
-   * this; every other row's instance runs the same hook (required — hooks
-   * cannot be called conditionally) but with an empty map, contributing
-   * nothing.
-   */
-  useGuidePresence(`inventory.stock.row.${batch.id}`, guideAnchored
-    ? { 'inventory.stock.rowMovementAction': allowedTypes.length > 0 }
-    : {});
-
   /** A changed payload is a NEW logical attempt; only an unchanged retry replays. */
   const touch = () => setRequestId(newRequestId());
 
@@ -1072,7 +1062,7 @@ function BatchRow({ batch, guideAnchored, lang, canAdjust, canCorrect, isInstitu
       </div>
 
       {allowedTypes.length > 0 && (
-        <div {...(guideAnchored ? guideAnchor(GUIDE_ANCHORS.stockRowMovementAction) : {})} style={{ marginTop: '10px' }}>
+        <div style={{ marginTop: '10px' }}>
           <PhoenixButton variant="ghost" onClick={() => setOpen(o => !o)}>
             {t('inv_movement', lang)}
           </PhoenixButton>
