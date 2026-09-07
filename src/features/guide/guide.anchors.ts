@@ -95,10 +95,6 @@ export const GUIDE_ANCHORS = {
   inventoryTabReturns:      'guide.inventory.returns.tab',
   returnsListRegion:        'guide.returns.list.region',
 
-  /* ── Inventory Center — Return exceptions (IG-3) ── */
-  inventoryTabReturnExceptions: 'guide.inventory.return-exceptions.tab',
-  exceptionsListRegion:         'guide.return-exceptions.list.region',
-
   /* ── Inventory Center — Corrections (IG-3) ── */
   inventoryTabCorrections:  'guide.inventory.corrections.tab',
   correctionsListRegion:    'guide.corrections.list.region',

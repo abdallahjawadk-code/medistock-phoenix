@@ -31,8 +31,6 @@ import {
   getExceptionPendingLines, resolveOutletReturnException,
   type OutletReturnShipmentLine,
 } from './outlet-return.service';
-import { GUIDE_ANCHORS, guideAnchor } from '@/features/guide/guide.anchors';
-import { useGuidePresence } from '@/features/guide/guide.surface';
 
 type Lang = 'ar' | 'en';
 type ResolutionKind = 'corrected_receipt' | 'confirmed_no_stock';
@@ -152,10 +150,6 @@ export function OutletReturnExceptions({ destinationWarehouseId, warehouseName, 
     setBusy(false);
   };
 
-  useGuidePresence('inventory.returnExceptions', {
-    'inventory.returnExceptions.region': !lines.loading || allLines.length > 0,
-  });
-
   if (lines.loading && allLines.length === 0) return <PhoenixLoadingState />;
 
   const failures = Object.entries(lineStates).filter(([, v]) => v.state === 'failed');
@@ -192,11 +186,11 @@ export function OutletReturnExceptions({ destinationWarehouseId, warehouseName, 
       </div>
 
       {allLines.length === 0 ? (
-        <div {...guideAnchor(GUIDE_ANCHORS.exceptionsListRegion)}>
+        <div>
           <PhoenixEmptyState icon="check" title={t('mv_return_exceptions_none', lang)} />
         </div>
       ) : (
-        <div {...guideAnchor(GUIDE_ANCHORS.exceptionsListRegion)} style={{ display: 'grid', gap: '10px' }} data-testid="return-exception-lines">
+        <div style={{ display: 'grid', gap: '10px' }} data-testid="return-exception-lines">
           {allLines.map(line => {
             const form = formOf(line);
             const state = lineStates[line.id];

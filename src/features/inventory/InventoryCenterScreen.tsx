@@ -440,7 +440,6 @@ export function InventoryCenterScreen({
             {...(x.id === 'incoming' ? guideAnchor(GUIDE_ANCHORS.inventoryTabIncoming) : {})}
             {...(x.id === 'dispatch' ? guideAnchor(GUIDE_ANCHORS.inventoryTabDispatch) : {})}
             {...(x.id === 'returns' ? guideAnchor(GUIDE_ANCHORS.inventoryTabReturns) : {})}
-            {...(x.id === 'return_exceptions' ? guideAnchor(GUIDE_ANCHORS.inventoryTabReturnExceptions) : {})}
             {...(x.id === 'corrections' ? guideAnchor(GUIDE_ANCHORS.inventoryTabCorrections) : {})}
             className="nexus-it-tab"
             style={{

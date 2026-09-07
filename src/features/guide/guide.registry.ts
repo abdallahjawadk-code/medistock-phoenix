@@ -269,7 +269,6 @@ export const GUIDE_PRESENCE = {
   dispatchRegion:           'inventory.dispatch.region',
   dispatchRowActions:       'inventory.dispatch.rowActions',
   returnsRegion:            'inventory.returns.region',
-  exceptionsRegion:         'inventory.returnExceptions.region',
   correctionsRegion:        'inventory.corrections.region',
 } as const;
 
@@ -283,7 +282,6 @@ const LEDGER_TAB = 'ledger';
 const INCOMING_TAB = 'incoming';
 const DISPATCH_TAB = 'dispatch';
 const RETURNS_TAB = 'returns';
-const RETURN_EXCEPTIONS_TAB = 'return_exceptions';
 const CORRECTIONS_TAB = 'corrections';
 
 /**
@@ -980,70 +978,52 @@ const RETURNS_TOUR: GuideTour = {
 };
 
 /**
- * ── IG-3 · «استثناءات مرتجعات المنافذ» / Return exceptions ─────────────────
+ * ── IG-3 · «استثناءات مرتجعات المنافذ» / Return exceptions — WHOLE TOUR HELD ──
  *
- * Derived from OutletReturnExceptions.tsx and migration 157's own SQL
- * (verified directly, not inferred): a zero-quantity receipt sets
- * custody_state='exception_pending' and resolution is a SEPARATE, additive
- * record — the original line is never rewritten.
+ * A second independent review found that `permittedTours` offered this tour
+ * on tab-surface match ALONE — the same defect class already fixed for the
+ * six action steps above, but at the TOUR level here, because this tab has
+ * no independently-established read entitlement to fall back on. Contrast
+ * with `returns`: its tab visibility is `canReceiveReturns ||
+ * hasInventoryReadAffordance` — a genuinely wider, separately-sourced read
+ * affordance — so a stale-false `canReceiveReturns` still leaves a real
+ * "may view" answer standing. This tab's visibility is `canResolveExceptions`
+ * ALONE (see InventoryCenterScreen.tsx), itself the settled value of
+ * `useOutletReturnExceptionResolvePermission` — the exact plain `useAsync`
+ * hook with no freshness-provable scope tag already named above. There is no
+ * SECOND, independent signal here the way `hasInventoryReadAffordance` gives
+ * `returns` one.
  *
- * HELD, on independent review: `useOutletReturnExceptionResolvePermission`
- * has the same freshness limitation as the hooks above, so there is no
- * `return-exceptions.resolve` step. The tour keeps its viewing content (what
- * `exception_pending` means, the pending list, the separate-record business
- * fact) and holds only the action step. Permanent hold, not a pending
- * capability — see the PR description.
+ * Concretely: an operator whose access to THIS warehouse's exceptions was
+ * revoked, or who never had it, can still carry a stale `canResolveExceptions
+ * === true` from a prior warehouse across an A→B→A revisit long enough for
+ * the tab button to have rendered and been clicked once — and once
+ * `surface.tab === 'return_exceptions'`, `permittedTours`'s own tour-level
+ * `matchesSurface` check passes regardless of whether that stale `true` is
+ * still accurate right now. A tab string surviving in local component state
+ * after the underlying permission has already flipped false (the panel then
+ * renders nothing for that tab) reproduces the identical hazard, absent even
+ * a stale permission entry point.
+ *
+ * No tour-level `requiresCapabilities` gate was added, because the only
+ * candidate key is `canResolveExceptions` itself — gating on the very signal
+ * that cannot prove its own freshness would not close this gap, it would
+ * merely relocate it one level up and make it LOOK closed. Rewriting
+ * `useOutletReturnExceptionResolvePermission` to add a freshness tag (the
+ * `useQuarantinePermission` technique) is outside this correction's
+ * authorized scope. So the entire tour — `return-exceptions.tab`,
+ * `.list`, and `.closing` alike — is HELD: removed from
+ * `GUIDE_REGISTRY.tours` entirely, not merely stripped of its one action
+ * step as in the prior round. This is a stronger conclusion than the first
+ * correction reached for this tour, superseding it — see the PR description's
+ * "held units" table for the full, current list.
+ *
+ * Nothing here disputes the underlying business facts this tour used to
+ * explain (custody_state='exception_pending' is a zero-quantity receipt;
+ * resolution is a separate, additive record — migration 157, verified
+ * directly) — only that NO existing signal can honestly gate telling this
+ * specific operator, right now, that this specific queue exists.
  */
-const RETURN_EXCEPTIONS_TOUR: GuideTour = {
-  id: 'guide.tour.return-exceptions',
-  title: { ar: 'استثناءات مرتجعات المنافذ', en: 'Return exceptions' },
-  description: {
-    ar: 'شرح تبويب استثناءات المرتجعات: ما يعنيه السطر المعلّق. شرح ومشاهدة فقط.',
-    en: 'How the Return Exceptions tab works: what a pending line means. Explanation only.',
-  },
-  screen: INVENTORY_SCREEN,
-  tab: RETURN_EXCEPTIONS_TAB,
-  steps: [
-    {
-      id: 'return-exceptions.tab',
-      title: { ar: 'تبويب استثناءات المرتجعات', en: 'The Return Exceptions tab' },
-      body: {
-        ar: 'يعرض هذا التبويب سطور مرتجعات سُجِّل استلامها بكمية صفر — أي لم يصل منها شيء فعليًا — ولم يُتَّخذ قرار بشأنها بعد.',
-        en: 'This tab lists returned lines whose receipt was recorded at zero quantity — nothing physically arrived — and that have no decision recorded yet.',
-      },
-      anchors: [GUIDE_ANCHORS.inventoryTabReturnExceptions],
-      tab: RETURN_EXCEPTIONS_TAB,
-    },
-    {
-      id: 'return-exceptions.list',
-      title: { ar: 'القائمة المعلّقة', en: 'The pending list' },
-      body: {
-        ar: 'يبقى السطر في هذه القائمة حتى يُسجَّل قرار بشأنه صراحةً.',
-        en: 'A line stays in this list until a decision about it is explicitly recorded.',
-      },
-      anchors: [GUIDE_ANCHORS.exceptionsListRegion],
-      requiresPresence: [GUIDE_PRESENCE.exceptionsRegion],
-      tab: RETURN_EXCEPTIONS_TAB,
-    },
-    {
-      /**
-       * COPY ACCURACY — a reason is required for BOTH resolution kinds
-       * (client line 119 runs before the kind branch; server 157 line
-       * 285-287 same order) — kept here as a business-concept fact (what the
-       * two paths ARE), not as an action-authorization claim, since the
-       * decide step itself is held (see the module doc comment above).
-       */
-      id: 'return-exceptions.closing',
-      title: { ar: 'قرار منفصل، لا إعادة كتابة', en: 'A separate decision, not a rewrite' },
-      body: {
-        ar: 'يُحسم كل سطر بأحد مسارين: «مؤكَّد، لم يصل شيء» إغلاق إداري دون حركة مخزون، أو «وصلت كمية مصحَّحة» بذكر الكمية الفعلية ومصيرها — ويتطلب المساران سببًا مكتوبًا. يُسجَّل القرار كسجل مستقل، ولا يُعاد كتابة سطر الاستلام الأصلي بكمية الصفر.',
-        en: 'Every line closes one of two ways: "confirmed, nothing arrived" — an administrative closure, no stock movement — or "a corrected quantity arrived", stating the actual quantity and its disposition; both require a written reason. The decision is its own separate record; the original zero-quantity line is never rewritten.',
-      },
-      anchors: [],
-      tab: RETURN_EXCEPTIONS_TAB,
-    },
-  ],
-};
 
 /**
  * ── IG-3 · «تصحيحات بانتظار الاعتماد» / Corrections awaiting approval ──────
@@ -1126,12 +1106,24 @@ export const GUIDE_REGISTRY: GuideRegistry = {
    *     names and no engine change. Progress recorded under an earlier
    *     version still resolves: it stores a tour id and a step id, both of
    *     which are unchanged for every pre-existing tour.
+   *
+   * IG-3 CORRECTION — `guide.tour.return-exceptions` (one of the eight added
+   * at version 4) is HELD in its entirety as of this correction: its own
+   * tab visibility has no independently-established read entitlement the
+   * way `returns` does, so tab-surface match alone let `permittedTours`
+   * offer it without proof of current access — see the (now-removed) tour's
+   * former module doc comment, preserved in git history, for the full
+   * reasoning. Seven tours are offered from this stage on. A progress
+   * record naming `guide.tour.return-exceptions` from before this
+   * correction simply no longer resolves to an offered tour — the same
+   * honest "absent, not broken" behavior an id from a decommissioned
+   * pre-IG-3 tour would already get.
    */
   version: 4,
   tours: [
     ORIENTATION_TOUR, QUARANTINE_TOUR, SUSPENSION_TOUR,
     INTAKE_TOUR, STOCK_TOUR, LEDGER_TOUR, INCOMING_TOUR, DISPATCH_TOUR,
-    RETURNS_TOUR, RETURN_EXCEPTIONS_TOUR, CORRECTIONS_TOUR,
+    RETURNS_TOUR, CORRECTIONS_TOUR,
   ],
 };
 
