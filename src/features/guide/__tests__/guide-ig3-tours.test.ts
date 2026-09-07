@@ -28,10 +28,15 @@ function audience(over: Partial<GuideAudience> = {}): GuideAudience {
   };
 }
 
+/**
+ * `guide.tour.return-exceptions` is deliberately absent from this list — see
+ * the dedicated "entire return-exceptions tour is held" describe block below
+ * for its own regression coverage. It is NOT one of the offered tours.
+ */
 const TOUR_IDS = [
   'guide.tour.intake', 'guide.tour.stock', 'guide.tour.ledger',
   'guide.tour.incoming', 'guide.tour.dispatch', 'guide.tour.returns',
-  'guide.tour.return-exceptions', 'guide.tour.corrections',
+  'guide.tour.corrections',
 ] as const;
 
 const TAB_OF: Record<(typeof TOUR_IDS)[number], string> = {
@@ -41,7 +46,6 @@ const TAB_OF: Record<(typeof TOUR_IDS)[number], string> = {
   'guide.tour.incoming': 'incoming',
   'guide.tour.dispatch': 'dispatch',
   'guide.tour.returns': 'returns',
-  'guide.tour.return-exceptions': 'return_exceptions',
   'guide.tour.corrections': 'corrections',
 };
 
@@ -68,7 +72,6 @@ const ALL_PRESENCE: Record<string, boolean> = {
   'inventory.incoming.region': true, 'inventory.incoming.rowActions': true,
   'inventory.dispatch.region': true, 'inventory.dispatch.rowActions': true,
   'inventory.returns.region': true,
-  'inventory.returnExceptions.region': true,
   'inventory.corrections.region': true,
 };
 
@@ -83,11 +86,10 @@ const FORMER_ACTION_PRESENCE_KEYS: Record<string, boolean> = {
   'inventory.intake.formRegion': true,
   'inventory.stock.rowMovementAction': true,
   'inventory.returns.rowActions': true,
-  'inventory.returnExceptions.rowActions': true,
   'inventory.corrections.rowActions': true,
 };
 
-describe('guide IG-3 — all eight tours exist, once each, correctly scoped', () => {
+describe('guide IG-3 — all seven offered tours exist, once each, correctly scoped', () => {
   it('registers exactly one tour per tab, findable by id', () => {
     for (const id of TOUR_IDS) {
       const tour = findTour(id);
@@ -225,23 +227,73 @@ describe('guide IG-3 — incoming and dispatch require the real, global effectiv
   });
 });
 
-describe('guide IG-3 — the return-exceptions closing step preserves the both-paths-require-a-reason fact', () => {
-  /**
-   * The fact ("both resolution paths require a written reason") used to live
-   * in the now-held `return-exceptions.resolve` step; it is a business
-   * concept true regardless of who is looking, not an action-authorization
-   * claim, so it was merged into the surviving `return-exceptions.closing`
-   * step with the personal-action-invitation sentence stripped out.
-   */
-  it('the closing step body still states both paths require a reason, in both languages, without inviting the reader to act', () => {
-    const tour = findTour('guide.tour.return-exceptions')!;
-    expect(tour.steps.map(s => s.id)).not.toContain('return-exceptions.resolve');
-    const closingStep = tour.steps.find(s => s.id === 'return-exceptions.closing')!;
-    expect(closingStep).toBeDefined();
-    expect(closingStep.body.ar).toMatch(/سببًا مكتوبًا/);
-    expect(closingStep.body.en).toMatch(/both require a written reason/i);
-    expect(closingStep.body.en).not.toMatch(/close the guide/i);
-    expect(closingStep.body.ar).not.toMatch(/أغلق الدليل/);
+/**
+ * ── Second independent review finding, corrected ────────────────────────
+ *
+ * `guide.tour.return-exceptions` in its ENTIRETY (not merely its former
+ * `.resolve` step) has been removed from the registry: unlike `returns`
+ * (tab visibility `canReceiveReturns || hasInventoryReadAffordance` — a
+ * genuinely independent, wider read entitlement), this tab's ONLY gate is
+ * `canResolveExceptions` — the settled value of
+ * `useOutletReturnExceptionResolvePermission`, a plain `useAsync` hook with
+ * no freshness-provable scope tag. Tab-surface match alone let
+ * `permittedTours` offer the whole tour with no proof that access is
+ * CURRENT, and no independent signal exists to gate on instead — gating on
+ * `canResolveExceptions` itself would only relocate the same unproven
+ * signal one level up. The full per-tour reasoning lives in the module doc
+ * comment directly above the tour's former definition in guide.registry.ts
+ * (removed along with the tour; preserved in git history).
+ *
+ * The "both paths need a reason" business fact this tour used to state
+ * (merged into its now-removed `.closing` step by the first correction) had
+ * no other legitimate home once the entire surface lost its authorization
+ * basis, and is not preserved elsewhere — a fact whose only reason to be
+ * told is "you are looking at this specific queue" cannot outlive the
+ * queue's own removal from the offered catalog.
+ */
+describe('guide IG-3-CORRECTION — the entire return-exceptions tour is held, not merely its former action step', () => {
+  const RETURN_EXCEPTIONS_SURFACE = { screen: INVENTORY_SCREEN, tab: 'return_exceptions' };
+
+  it('is absent from the registry entirely', () => {
+    expect(findTour('guide.tour.return-exceptions')).toBeNull();
+    expect(GUIDE_REGISTRY.tours.some(t => t.id === 'guide.tour.return-exceptions')).toBe(false);
+  });
+
+  it('is never offered by permittedTours — full presence, a granted permission, or a granted (hypothetical) capability change nothing', () => {
+    const scenarios: GuideAudience[] = [
+      audience({ surface: RETURN_EXCEPTIONS_SURFACE, presence: {} }),
+      audience({ surface: RETURN_EXCEPTIONS_SURFACE, presence: ALL_PRESENCE }),
+      audience({
+        surface: RETURN_EXCEPTIONS_SURFACE, presence: ALL_PRESENCE,
+        capabilities: { 'outlet_stock.resolve_return_exception': true },
+      }),
+      audience({
+        surface: RETURN_EXCEPTIONS_SURFACE, presence: ALL_PRESENCE,
+        permissions: new Set(['outlet_stock.resolve_return_exception']),
+      }),
+    ];
+    for (const a of scenarios) {
+      const offered = permittedTours(GUIDE_REGISTRY.tours, a);
+      expect(offered.some(e => e.tour.id === 'guide.tour.return-exceptions')).toBe(false);
+    }
+  });
+
+  it('stays absent across a simulated warehouse revisit (A → B → A) even with presence RETAINED throughout — a stale tab selection cannot resurrect it', () => {
+    // Warehouse A: presence fully set, as if the panel had genuinely rendered
+    // rows here once (the strongest possible case for a false positive).
+    const atA = permittedTours(GUIDE_REGISTRY.tours, audience({ surface: RETURN_EXCEPTIONS_SURFACE, presence: ALL_PRESENCE }));
+    expect(atA.some(e => e.tour.id === 'guide.tour.return-exceptions')).toBe(false);
+
+    // Switch to warehouse B: presence RETAINED rather than collapsing — the
+    // exact "stale publisher hasn't cleared its keys yet" shape this
+    // correction must be immune to, on top of the tab string itself
+    // surviving the switch in local component state.
+    const atB = permittedTours(GUIDE_REGISTRY.tours, audience({ surface: RETURN_EXCEPTIONS_SURFACE, presence: ALL_PRESENCE }));
+    expect(atB.some(e => e.tour.id === 'guide.tour.return-exceptions')).toBe(false);
+
+    // Revisit warehouse A.
+    const backAtA = permittedTours(GUIDE_REGISTRY.tours, audience({ surface: RETURN_EXCEPTIONS_SURFACE, presence: ALL_PRESENCE }));
+    expect(backAtA.some(e => e.tour.id === 'guide.tour.return-exceptions')).toBe(false);
   });
 });
 
@@ -260,25 +312,30 @@ describe('guide IG-3 — the corrections closing step preserves the proposer-can
 /**
  * ── Reviewer finding #1, corrected ──────────────────────────────────────
  *
- * Six action-describing steps were removed from the registry entirely
+ * Five action-describing steps were removed from the registry entirely
  * (`intake.submit`, `stock.movement`, `returns.receive`, `returns.bulk`,
- * `return-exceptions.resolve`, `corrections.decide`) because their source
- * hooks (`useWarehouseStockPermissions`, `useReturnReceivePermission`,
- * `useOutletReturnExceptionResolvePermission`, `useApproveCorrectionPermission`)
- * are plain `useAsync` reads with no freshness-provable scope tag — unlike
- * the fixed `useQuarantinePermission` — so no guide-only wrapper could prove
- * a settled `true` belongs to the CURRENT warehouse/scope rather than a
- * stale one carried over from an A→B→A revisit. See the module doc comments
- * directly above each tour in guide.registry.ts for the full per-tour
- * reasoning.
+ * `corrections.decide`) because their source hooks
+ * (`useWarehouseStockPermissions`, `useReturnReceivePermission`,
+ * `useApproveCorrectionPermission`) are plain `useAsync` reads with no
+ * freshness-provable scope tag — unlike the fixed `useQuarantinePermission`
+ * — so no guide-only wrapper could prove a settled `true` belongs to the
+ * CURRENT warehouse/scope rather than a stale one carried over from an
+ * A→B→A revisit. See the module doc comments directly above each tour in
+ * guide.registry.ts for the full per-tour reasoning.
+ *
+ * A sixth step, `return-exceptions.resolve`, was held the same way in the
+ * first correction — but a second review found the entire
+ * `guide.tour.return-exceptions` tour had no independent authorization
+ * basis of its own either, so the WHOLE tour was subsequently removed; see
+ * the dedicated "entire return-exceptions tour is held" describe block
+ * above, which supersedes this one for that tour.
  */
-describe('guide IG-3 — six action-describing steps are permanently held, not presence-gated', () => {
+describe('guide IG-3 — five action-describing steps are permanently held, not presence-gated', () => {
   const HELD_STEPS: Array<{ tourId: (typeof TOUR_IDS)[number]; tab: string; stepId: string }> = [
     { tourId: 'guide.tour.intake', tab: 'intake', stepId: 'intake.submit' },
     { tourId: 'guide.tour.stock', tab: 'stock', stepId: 'stock.movement' },
     { tourId: 'guide.tour.returns', tab: 'returns', stepId: 'returns.receive' },
     { tourId: 'guide.tour.returns', tab: 'returns', stepId: 'returns.bulk' },
-    { tourId: 'guide.tour.return-exceptions', tab: 'return_exceptions', stepId: 'return-exceptions.resolve' },
     { tourId: 'guide.tour.corrections', tab: 'corrections', stepId: 'corrections.decide' },
   ];
   const HELD_TOUR_IDS = [...new Set(HELD_STEPS.map(h => h.tourId))];

@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import '@testing-library/jest-dom/vitest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 
 /**
  * INTERACTIVE-GUIDE-IG3 — the eight lifecycle tours, over the REAL
@@ -153,11 +153,8 @@ vi.mock('@/shared/ui/PhoenixIcon', () => ({
   PhoenixIcon: ({ name }: { name: string }) => <span aria-hidden="true" data-icon={name} />,
 }));
 
-import { GuideSurfaceProvider } from '../guide.surface';
-import { GuideEngine } from '../GuideEngine';
+import { PhoenixAppShell } from '@/shared/ui/PhoenixAppShell';
 import { InventoryCenterScreen } from '@/features/inventory/InventoryCenterScreen';
-
-const INERT_DRAWER = { isAvailable: false, isOpen: false, open: () => undefined, close: () => undefined };
 
 const WH_A = 'wh-A';
 
@@ -168,12 +165,22 @@ const topologyRow = (over: Row = {}): Row => ({
   facility_id: null, distribution_point_id: null, in_effective_scope: true, ...over,
 });
 
+/**
+ * IG-3-CORRECTION §2 — a REAL open/close lifecycle, not an always-mounted
+ * engine. `PhoenixAppShell` is the same shell component the real app (and
+ * the QA harness) wraps every authenticated screen in: it owns `useGuideHost`
+ * internally and renders the actual "Guide & Help" topbar entry, so opening
+ * the guide here means a real click on the real control that ships to
+ * production — not a harness shortcut that skips `useGuideHost` entirely.
+ * The guide is CLOSED (nothing of it mounted) until that entry is clicked,
+ * and clicking the Help Center's own close control genuinely unmounts it —
+ * see `openGuideCenter`/`closeGuideCenter` below.
+ */
 function Harness() {
   return (
-    <GuideSurfaceProvider>
+    <PhoenixAppShell currentScreen={3} onNavigate={() => undefined} onLogout={() => undefined}>
       <InventoryCenterScreen />
-      <GuideEngine currentScreen={3} onNavigate={() => undefined} drawer={INERT_DRAWER} onClose={() => undefined} />
-    </GuideSurfaceProvider>
+    </PhoenixAppShell>
   );
 }
 
@@ -299,16 +306,15 @@ afterEach(() => {
 /* ── helpers ────────────────────────────────────────────────────────────────
  * PLAIN DOM QUERIES ONLY for anything inside InventoryCenterScreen.
  *
- * This harness mounts `<GuideEngine>` unconditionally (there is no
- * `useGuideHost` shell here to own an open/closed boolean), so its Help
- * Center is open from the very first render — which means
- * `useGuideBackgroundInert` marks the ENTIRE InventoryCenterScreen tree
- * `inert`/`aria-hidden` immediately, for the harness's whole lifetime.
+ * The guide is CLOSED until `openGuideCenter()` performs a real click on the
+ * real topbar entry (see the Harness doc comment above) — `useGuideBackground
+ * Inert` therefore marks the InventoryCenterScreen tree inert/aria-hidden
+ * only while the guide is genuinely open, exactly as in production.
  * `screen.getByRole`/`getByLabelText` respect that (by design — they compute
- * the ACCESSIBLE tree), so they can never see anything under it. Only the
- * guide's own portal content (never inert) is fair game for role queries;
- * everything else goes through `document.querySelector`, exactly like
- * `guide-ig2-panels.runtime.test.tsx` already does for the same reason.
+ * the ACCESSIBLE tree), so they can never see anything under it while open.
+ * Only the guide's own portal content (never inert) is fair game for role
+ * queries while open; everything else goes through `document.querySelector`,
+ * exactly like `guide-ig2-panels.runtime.test.tsx` already does.
  * ────────────────────────────────────────────────────────────────────────── */
 
 function fieldByLabel(text: string): HTMLInputElement | HTMLSelectElement {
@@ -336,10 +342,42 @@ function clickTab(labelAr: string) {
   fireEvent.click(tab);
 }
 
+/**
+ * IG-3-CORRECTION §2 — the REAL entry action: a click on the topbar's own
+ * "Guide & Help" control (`GuideHost`'s `controller.open`, wired by
+ * `PhoenixAppShell`), not a harness shortcut. Nothing of the guide is
+ * mounted before this click — `React.lazy` means the engine's chunk resolves
+ * asynchronously even in this same-process test, hence the `waitFor`.
+ */
 async function openGuideCenter() {
-  // Open from the harness's first render (see the block comment above) — this
-  // just waits for the engine's own chunk/state to have settled.
-  await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument());
+  const openButton = document.querySelector('[data-guide-id="guide.shell.topbar.help"]') as HTMLElement | null;
+  if (!openButton) throw new Error('the real "Guide & Help" topbar entry was not found — is the viewport desktop-width?');
+  fireEvent.click(openButton);
+  await waitFor(() => expect(document.querySelector('[aria-labelledby="guide-center-title"]')).not.toBeNull());
+}
+
+/**
+ * IG-3-CORRECTION §2 — the REAL exit action: a click on the Help Center's own
+ * close control (`aria-label={t('guide_close', lang)}`, selected here by its
+ * stable class rather than the translated string so this helper works in
+ * either language). This calls the SAME `onClose` `GuideHost` handed the
+ * engine, which flips `useGuideHost`'s `open` state to `false` and genuinely
+ * UNMOUNTS `GuideEngine` — reaching a tour's closing card, or even clicking
+ * Finish, does neither: both just return to the still-open catalog.
+ */
+async function closeGuideCenter() {
+  // `.guide-center__head` also carries the language-switch button, which
+  // shares the same `.guide-btn--quiet` class — excluded by its own
+  // `data-guide-language-control` marker so this always finds the actual X.
+  const headButtons = Array.from(document.querySelectorAll('.guide-center__head button')) as HTMLElement[];
+  const closeButton = headButtons.find(b => !b.hasAttribute('data-guide-language-control')) ?? null;
+  if (!closeButton) throw new Error('the Help Center close control was not found — is a tour still active?');
+  fireEvent.click(closeButton);
+  await waitFor(() => {
+    expect(document.querySelector('.guide-layer')).toBeNull();
+    expect(document.querySelector('[data-guide-tour]')).toBeNull();
+    expect(document.querySelector('[aria-labelledby="guide-center-title"]')).toBeNull();
+  });
 }
 
 function tourTitles(): string[] {
@@ -375,6 +413,25 @@ async function walkToClosing(maxSteps = 15) {
   throw new Error('tour did not reach a closing step within the guard');
 }
 
+/**
+ * IG-3-CORRECTION §2 — actually presses Finish (the same `.guide-btn--primary`
+ * button, on the tour's last step, calls `onFinish` instead of advancing —
+ * see GuideTourOverlay.tsx). Reaching the closing CARD via `walkToClosing`
+ * is not the same as completing the tour: this click is what the real
+ * "Finish" action does, returning to the still-open Help Center catalog.
+ */
+async function finishTour() {
+  const btn = document.querySelector('.guide-card .guide-btn--primary') as HTMLElement;
+  if (!btn) throw new Error('no primary button found on the closing card — did walkToClosing run first?');
+  fireEvent.click(btn);
+  await waitFor(() => {
+    expect(document.querySelector('[data-guide-tour]')).toBeNull();
+    expect(document.querySelector('[aria-labelledby="guide-center-title"]')).not.toBeNull();
+  });
+}
+
+/** `return_exceptions` stays here — the TAB itself is still real and
+ *  reachable (unaffected by this correction); only its GUIDE tour is held. */
 const TAB_LABEL: Record<string, string> = {
   intake: 'إدخال مواد', stock: 'رصيد المخزن', ledger: 'سجل الحركات',
   incoming: 'واردات تجهيز الدائرة', dispatch: 'تجهيز المنافذ',
@@ -382,15 +439,27 @@ const TAB_LABEL: Record<string, string> = {
   corrections: 'تصحيحات بانتظار الاعتماد',
 };
 
+/**
+ * IG-3-CORRECTION — `return_exceptions` is deliberately ABSENT: a second
+ * independent review found the entire `guide.tour.return-exceptions` tour
+ * has no independent authorization basis (unlike `returns`), so it was
+ * removed from the registry outright — see guide.registry.ts's module doc
+ * comment above the former tour's definition. There is no tour to look for
+ * by title for this tab; see the dedicated "held tour" describe blocks below
+ * for its own regression coverage.
+ */
 const TOUR_TITLE_AR: Record<string, string> = {
   intake: 'إدخال مواد', stock: 'رصيد المخزن', ledger: 'سجل الحركات',
   incoming: 'واردات تجهيز الدائرة', dispatch: 'تجهيز المنافذ',
-  returns: 'استلام مرتجعات المنافذ', return_exceptions: 'استثناءات مرتجعات المنافذ',
+  returns: 'استلام مرتجعات المنافذ',
   corrections: 'تصحيحات بانتظار الاعتماد',
 };
 
+/** The seven tabs that still offer a real IG-3 tour. */
+const AVAILABLE_TABS = Object.keys(TOUR_TITLE_AR);
+
 describe('IG-3 — each tab surface offers exactly its own tour, over the real screen', () => {
-  for (const tab of Object.keys(TAB_LABEL)) {
+  for (const tab of AVAILABLE_TABS) {
     it(`offers "${TOUR_TITLE_AR[tab]}" while the ${tab} tab is open, real tab click and all`, async () => {
       render(<Harness />);
       await selectWarehouse();
@@ -399,10 +468,18 @@ describe('IG-3 — each tab surface offers exactly its own tour, over the real s
       expect(tourTitles()).toContain(TOUR_TITLE_AR[tab]);
     });
   }
+
+  it('offers NO tour at all while the return_exceptions tab is open — the entire tour is held, not merely hidden', async () => {
+    render(<Harness />);
+    await selectWarehouse();
+    clickTab(TAB_LABEL.return_exceptions);
+    await openGuideCenter();
+    expect(tourTitles()).not.toContain('استثناءات مرتجعات المنافذ');
+  });
 });
 
 describe('IG-3 — mutation freedom: walking every tour performs zero writes', () => {
-  for (const tab of Object.keys(TAB_LABEL)) {
+  for (const tab of AVAILABLE_TABS) {
     it(`"${TOUR_TITLE_AR[tab]}" calls no write RPC across its whole walk`, async () => {
       render(<Harness />);
       await selectWarehouse();
@@ -485,21 +562,38 @@ async function settleForTab(tab: string): Promise<void> {
   ).not.toBeUndefined());
 }
 
-describe('IG-3 — the guide adds no read beyond what each panel already made on its own, across all eight tabs', () => {
+describe('IG-3-CORRECTION §2 — the COMPLETE guide lifecycle (real open → tour → real Finish → real close) adds no read, RPC, or write', () => {
   /**
-   * IG-3-CORRECTION §6 — count-preserving, not name-based. A length-slice on
-   * the append-only `readTables`/`rpcCalls` logs catches EVERY read/call
-   * that happens after the snapshot, including a second call to a
-   * table/RPC the panel had already read once before — which the old
-   * Set-based diff this replaces could not see. See the dedicated proof
-   * test below for a direct demonstration of the difference.
+   * IG-3-CORRECTION §2 — this replaces a version that opened the guide via an
+   * always-mounted `<GuideEngine>` and stopped measuring at "reached the
+   * closing card". Neither was the real lifecycle: production mounts nothing
+   * of the guide until `useGuideHost`'s real `open()` fires (see the Harness
+   * doc comment above), and reaching a closing CARD is not the same as
+   * pressing Finish, which is not the same as closing the Help Center itself
+   * — `onFinish`/`onExitTour` both return to the still-mounted, still-open
+   * catalog (GuideEngine.tsx), and only the Help Center's own close control
+   * calls the `onClose` that actually unmounts the engine. This test walks
+   * the REAL sequence end to end — closed → real open click → start → advance
+   * → real Finish click → real close click → confirmed unmount — and proves
+   * NOTHING beyond the panel's own settled initial load was read, called, or
+   * written anywhere across the whole thing.
+   *
+   * §6's count-preserving technique is unchanged here: a length-slice on the
+   * append-only `readTables`/`rpcCalls` logs catches every read/call after
+   * the snapshot, including a repeat of one already seen — see the dedicated
+   * proof test below for a direct demonstration against the rejected
+   * `Set`-based alternative.
    */
-  for (const tab of Object.keys(TAB_LABEL)) {
-    it(`"${TOUR_TITLE_AR[tab]}": opening and walking the tour adds no table read or RPC call beyond the panel's own settled initial load`, async () => {
+  for (const tab of AVAILABLE_TABS) {
+    it(`"${TOUR_TITLE_AR[tab]}": the complete open→start→advance→Finish→close lifecycle adds nothing beyond the panel's own settled initial load`, async () => {
       render(<Harness />);
       await selectWarehouse();
       clickTab(TAB_LABEL[tab]);
       await settleForTab(tab);
+
+      // The guide is genuinely CLOSED at this point — nothing of it mounted.
+      expect(document.querySelector('.guide-layer')).toBeNull();
+      expect(document.querySelector('[data-guide-tour]')).toBeNull();
 
       const readsBeforeLen = readTables.length;
       const rpcsBeforeLen = rpcCalls.length;
@@ -507,13 +601,43 @@ describe('IG-3 — the guide adds no read beyond what each panel already made on
       await openGuideCenter();
       await startTour(TOUR_TITLE_AR[tab]);
       await walkToClosing();
+      await finishTour();
+      await closeGuideCenter();
 
       const newReads = readTables.slice(readsBeforeLen);
       const newRpcs = rpcCalls.slice(rpcsBeforeLen);
-      expect(newReads, `new/duplicate table read(s) during the guide walk: ${newReads.join(', ')} (filters: ${JSON.stringify(readFilters.slice(readsBeforeLen))})`).toEqual([]);
-      expect(newRpcs, `new/duplicate RPC call(s) during the guide walk: ${newRpcs.join(', ')} (params: ${JSON.stringify(rpcParams.slice(rpcsBeforeLen))})`).toEqual([]);
+      const writesSeen = newRpcs.filter(name => WRITE_RPCS.includes(name));
+      expect(newReads, `new/duplicate table read(s) across the complete lifecycle: ${newReads.join(', ')} (filters: ${JSON.stringify(readFilters.slice(readsBeforeLen))})`).toEqual([]);
+      expect(newRpcs, `new/duplicate RPC call(s) across the complete lifecycle: ${newRpcs.join(', ')} (params: ${JSON.stringify(rpcParams.slice(rpcsBeforeLen))})`).toEqual([]);
+      expect(writesSeen, `write RPC(s) fired across the complete lifecycle: ${writesSeen.join(', ')}`).toEqual([]);
     });
   }
+
+  /**
+   * The held tab: no tour to start, but the FULL open→close lifecycle (real
+   * clicks both ways) must still add nothing. Verifies absence rather than
+   * fabricating eligibility — see the dedicated "held tour" describes above
+   * and in guide-ig3-tours.test.ts for the registry-level proof.
+   */
+  it('the held return_exceptions tab: opening and closing the Help Center (no tour to start) adds nothing beyond the panel\'s own settled initial load', async () => {
+    render(<Harness />);
+    await selectWarehouse();
+    clickTab(TAB_LABEL.return_exceptions);
+    await settleForTab('return_exceptions');
+    expect(document.querySelector('.guide-layer')).toBeNull();
+
+    const readsBeforeLen = readTables.length;
+    const rpcsBeforeLen = rpcCalls.length;
+
+    await openGuideCenter();
+    expect(tourTitles()).not.toContain('استثناءات مرتجعات المنافذ');
+    await closeGuideCenter();
+
+    const newReads = readTables.slice(readsBeforeLen);
+    const newRpcs = rpcCalls.slice(rpcsBeforeLen);
+    expect(newReads, `new/duplicate table read(s): ${newReads.join(', ')}`).toEqual([]);
+    expect(newRpcs, `new/duplicate RPC call(s): ${newRpcs.join(', ')}`).toEqual([]);
+  });
 });
 
 describe('IG-3-CORRECTION §6 — the measurement itself is proven to catch a duplicate request a Set-based diff would miss', () => {
@@ -615,16 +739,18 @@ describe('IG-3-CORRECTION §5 — incoming/dispatch: the surviving per-row actio
 });
 
 /**
- * The reviewed head's fixture gave `outlet_return_shipment_lines` only a
- * `custody_state: 'in_transit'` row — `getExceptionPendingLines` filters on
- * `custody_state = 'exception_pending'` (outlet-return.service.ts), so that
- * fixture NEVER matched and the return-exceptions tab's "populated row"
- * claim was never actually exercised. `sl-2` (custody_state
- * 'exception_pending', no matching row in
- * `phoenix_outlet_return_exception_resolutions`) closes that gap.
+ * IG-3-CORRECTION — a second independent review found that the ENTIRE
+ * `guide.tour.return-exceptions` tour (not merely its former `.resolve`
+ * step) has no independent authorization basis, so it was removed from the
+ * registry outright — see guide.registry.ts's module doc comment above the
+ * former tour's definition. `sl-2` (custody_state 'exception_pending', no
+ * matching row in `phoenix_outlet_return_exception_resolutions`) is kept as
+ * a fixture specifically so the FIRST test below can show the hold is a
+ * deliberate authorization decision against a panel that genuinely renders
+ * a populated row — not an accident of a panel that never renders anything.
  */
-describe('IG-3-CORRECTION §5 — return-exceptions: reaches a genuinely populated exception_pending line, real component and real data', () => {
-  it('renders the real Metronidazole exception line, offers return-exceptions.list anchored uniquely over it, and never offers the held resolve step', async () => {
+describe('IG-3-CORRECTION — return-exceptions: the held tour stays absent whether the queue is populated or empty', () => {
+  it('renders the real populated Metronidazole row (operational, unrelated to the guide) yet still offers no tour and no anchor', async () => {
     render(<Harness />);
     await selectWarehouse();
     clickTab(TAB_LABEL.return_exceptions);
@@ -634,30 +760,11 @@ describe('IG-3-CORRECTION §5 — return-exceptions: reaches a genuinely populat
     expect(document.body.textContent).not.toContain('Omeprazole');
 
     await openGuideCenter();
-    await startTour(TOUR_TITLE_AR.return_exceptions);
-    const ids = await stepIdsUntil('return-exceptions.closing');
-    expect(ids).toContain('return-exceptions.list');
-    expect(ids).not.toContain('return-exceptions.resolve');
-
-    const anchored = document.querySelectorAll('[data-guide-id="guide.return-exceptions.list.region"]');
-    expect(anchored.length).toBe(1);
-    expect(anchored[0].textContent).toContain('Metronidazole');
+    expect(tourTitles()).not.toContain('استثناءات مرتجعات المنافذ');
+    expect(document.querySelectorAll('[data-guide-id="guide.return-exceptions.list.region"]').length).toBe(0);
   });
-});
 
-describe('IG-3-CORRECTION §5 — return-exceptions: an empty queue is handled honestly, no fabricated row', () => {
-  /**
-   * `exceptionsRegion` presence is `!lines.loading || allLines.length > 0`
-   * (OutletReturnExceptions.tsx) — true once the panel has settled,
-   * REGARDLESS of whether any line is pending. That is correct, not a bug:
-   * the list AREA genuinely exists and renders its own real empty state
-   * (`PhoenixEmptyState`, same anchor, same mutually-exclusive-ternary
-   * pattern as the other IG-3 panels) even with zero rows, so
-   * `return-exceptions.list` staying offered describes real DOM, not a
-   * fabricated row. What must NOT happen is the held `resolve` step
-   * reappearing, or the list step's body claiming a specific row exists.
-   */
-  it('keeps return-exceptions.list describing the real (now-empty) region, never resurrects the held resolve step, and anchors the real empty state', async () => {
+  it('stays absent when the queue is genuinely empty too', async () => {
     fixtures.outlet_return_shipment_lines = fixtures.outlet_return_shipment_lines.filter(
       l => l.custody_state !== 'exception_pending',
     );
@@ -667,17 +774,7 @@ describe('IG-3-CORRECTION §5 — return-exceptions: an empty queue is handled h
     await waitFor(() => expect(document.body.textContent).not.toContain('Metronidazole'));
 
     await openGuideCenter();
-    await startTour(TOUR_TITLE_AR.return_exceptions);
-    const ids = await stepIdsUntil('return-exceptions.closing');
-    expect(ids).toContain('return-exceptions.tab');
-    expect(ids).toContain('return-exceptions.list');
-    expect(ids).not.toContain('return-exceptions.resolve');
-    expect(ids).toContain('return-exceptions.closing');
-
-    const anchored = document.querySelectorAll('[data-guide-id="guide.return-exceptions.list.region"]');
-    expect(anchored.length).toBe(1);
-    // The anchored region is the real empty state, not a stand-in for a row.
-    expect(anchored[0].textContent).not.toContain('Metronidazole');
+    expect(tourTitles()).not.toContain('استثناءات مرتجعات المنافذ');
   });
 });
 
