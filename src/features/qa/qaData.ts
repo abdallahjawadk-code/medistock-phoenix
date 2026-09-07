@@ -93,6 +93,7 @@ export const SHL_1 = '0dd44444-0000-4000-8000-000000000001';
 export const SHL_2 = '0dd44444-0000-4000-8000-000000000002';
 export const SHL_3 = '0dd44444-0000-4000-8000-000000000003';
 export const SHL_4 = '0dd44444-0000-4000-8000-000000000004';
+export const SHL_5 = '0dd44444-0000-4000-8000-000000000005';
 
 /** Upstream dispatch lines these returns trace back to (provenance). */
 export const DISPATCH_LINE_1 = '0ee55555-0000-4000-8000-000000000001';
@@ -258,6 +259,13 @@ export const QA_FIXTURES: Record<string, unknown> = {
     // A short-shipped line: sent 6, only 4 arrived, with the difference stated.
     { id: SHL_3, shipment_id: SH_PARTIAL, return_request_line_id: RRL_3, original_dispatch_line_id: DISPATCH_LINE_3, scientific_name: 'Paracetamol', batch_number: null, expiry_date: '2026-09-30', sent_quantity: 6, received_quantity: 4, status: 'received_with_difference', difference_reason: 'QA · 2 units missing on arrival', disposition: 'quarantine', custody_state: 'received' },
     { id: SHL_4, shipment_id: SH_RECEIVED, return_request_line_id: null, original_dispatch_line_id: DISPATCH_LINE_1, scientific_name: 'Amoxicillin', batch_number: 'B4471X', expiry_date: '2028-01-31', sent_quantity: 10, received_quantity: 10, status: 'received', difference_reason: null, disposition: 'return_to_stock', custody_state: 'received' },
+    // IG-3-CORRECTION §5 — a GENUINE exception_pending line (a zero-quantity
+    // receipt: migration 135's receive RPC sets this custody_state and
+    // creates no stock/quarantine row of any kind). `getExceptionPendingLines`
+    // (outlet-return.service.ts) filters on exactly this custody_state — none
+    // of SHL_1..4 above satisfy it, so the Return Exceptions tab previously
+    // had no real-browser-reachable populated row at all.
+    { id: SHL_5, shipment_id: SH_IN_TRANSIT, return_request_line_id: null, original_dispatch_line_id: DISPATCH_LINE_2, scientific_name: 'Metronidazole', batch_number: 'MTZ9081', expiry_date: '2027-04-30', sent_quantity: 15, received_quantity: 0, status: 'received_with_difference', difference_reason: 'QA · zero-quantity receipt, exception raised', disposition: null, custody_state: 'exception_pending' },
   ],
 
   // ── Read RPC fixtures (shapes match the real read-only RPCs) ──────────────
