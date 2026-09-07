@@ -38,7 +38,7 @@ describe('Phase A auth and welcome presentation contract', () => {
 
     expect(welcome).toContain('onComplete');
     expect(welcome).toContain('تم إصدار هذا النظام بواسطة الصيدلاني عبدالله جواد كاظم');
-    expect(welcome).toContain('بإشراف الصيدلاني باسم كاظم رمح');
+    expect(welcome).toContain('بإشراف الصيدلاني باسم رمح كاظم');
     expect(welcome).not.toContain("supabase.from(");
   });
 
