@@ -37,6 +37,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { QA_HARNESS_MARKER } from './qaConfig';
 import { QA_FIXTURES, QA_MUTATION_OUTCOMES, QA_FEFO_LIVE_PROOF_DISPATCH_HEADER, type QaRow } from './qaData';
+import { qaAnswerExtraScopedPermission, qaScopeTopologyRows } from './qaScopes';
 
 export interface QaResult {
   data: unknown;
@@ -136,7 +137,7 @@ class QaQueryBuilder implements PromiseLike<QaResult> {
  * services actually use (`.from`, `.rpc`); the unused Supabase API is not
  * implemented because the harness never exercises it.
  */
-export function createQaFixtureClient(): SupabaseClient {
+export function createQaFixtureClient(profileId?: string): SupabaseClient {
   const client = {
     from(table: string) {
       const rows = QA_FIXTURES[table];
@@ -148,6 +149,48 @@ export function createQaFixtureClient(): SupabaseClient {
       // object, matching the real RPC's schema).
       const fixture = QA_FIXTURES[`rpc:${name}`];
       if (fixture !== undefined) return Promise.resolve(ok(fixture));
+
+      /**
+       * IG-2 — the ONE read RPC whose answer depends on WHO is asking, so it
+       * cannot be a static fixture: migration 191's scope topology. Answered
+       * from the harness's existing assignment rows (see qaScopes.ts), which is
+       * what the database answers it from. Still a SELECT: it reads fixtures,
+       * writes nothing, and reaches no network.
+       */
+      if (name === 'phoenix_query_organization_scope_topology') {
+        const organizationId = args?.p_organization_id;
+        if (profileId === undefined || typeof organizationId !== 'string') {
+          return Promise.resolve(ok([]));
+        }
+        return Promise.resolve(ok(qaScopeTopologyRows(profileId, organizationId)));
+      }
+
+      /**
+       * IG-2 ROUND 3 — `phoenix_profile_has_scoped_permission`, for the two
+       * migration-099/105/203 keys `useQuarantinePermission` /
+       * `useMaterialDispensingSuspensionPermission` call THIS RPC to ask.
+       * `supabaseRbacTransport.hasScopedPermission` (rbac.service.ts) sends
+       * every key straight through with no client-side allowlist of its own —
+       * see qaScopes.ts's own note on why that means this key set is answered
+       * here, not by extending the migration-062 SCOPED_PERMISSION_KEY_SET.
+       *
+       * `qaAnswerExtraScopedPermission` returns `null` for a key it does not
+       * own (nothing calls this RPC, through this path, for one of the
+       * original ten — see its own doc comment), and this branch is skipped
+       * for it, falling through to the ordinary QA_READONLY failure below —
+       * unchanged from today's behaviour for every key this round did not
+       * touch. The real RPC returns a bare boolean; so does this.
+       */
+      if (name === 'phoenix_profile_has_scoped_permission') {
+        const answer = qaAnswerExtraScopedPermission({
+          profileId: typeof args?.p_profile_id === 'string' ? args.p_profile_id : '',
+          permissionKey: typeof args?.p_permission_key === 'string' ? args.p_permission_key : '',
+          organizationId: typeof args?.p_organization_id === 'string' ? args.p_organization_id : null,
+          warehouseId: typeof args?.p_warehouse_id === 'string' ? args.p_warehouse_id : null,
+          distributionPointId: typeof args?.p_distribution_point_id === 'string' ? args.p_distribution_point_id : null,
+        });
+        if (answer !== null) return Promise.resolve(ok(answer));
+      }
 
       // Explicitly allowlisted migration-071 write RPCs resolve to a
       // deterministic LOCAL outcome so post-write surfaces (the canonical

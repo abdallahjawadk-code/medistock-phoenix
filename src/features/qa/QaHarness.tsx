@@ -28,17 +28,6 @@ import { QA_HARNESS_MARKER } from './qaConfig';
 import { QA_PERSONAS, qaPersona, type QaPersonaId } from './qaFixtures';
 import { createQaFixtureClient, QA_RPC_CALLS } from './qaFixtureClient';
 
-// Install the network-free fixture client before any screen service runs. This
-// module is dev-only and tree-shaken from production, and the installer itself
-// is a no-op in a production build (see client.ts).
-__installQaSupabaseClient(createQaFixtureClient());
-
-// FEFO-OVERRIDE-DIALOG-CAPTURE: expose the fixture client's RPC call log for
-// the capture/verification tooling to read (`window.__phoenixQaRpcCalls`).
-// This file is reachable only behind `visualQaEnabled` (see qaConfig.ts) and
-// is tree-shaken from every production build, same as the rest of the module.
-(window as unknown as { __phoenixQaRpcCalls?: typeof QA_RPC_CALLS }).__phoenixQaRpcCalls = QA_RPC_CALLS;
-
 type SceneId = 'shell' | 'states' | 'institutions' | 'welcome' | 'dashboard' | 'twin' | 'inventory' | 'outlet' | 'procurement' | 'status' | 'monthly' | 'reports' | 'statistics';
 
 const SCENE_IDS: SceneId[] = ['shell', 'states', 'institutions', 'welcome', 'dashboard', 'twin', 'inventory', 'outlet', 'procurement', 'status', 'monthly', 'reports', 'statistics'];
@@ -55,6 +44,22 @@ function readParams() {
   const org = q.get('org');
   return { persona, lang, theme, scene, org };
 }
+
+// Install the network-free fixture client before any screen service runs. This
+// module is dev-only and tree-shaken from production, and the installer itself
+// is a no-op in a production build (see client.ts).
+//
+// IG-2: the client is told WHICH profile it is answering for, because migration
+// 191's scope topology is a per-profile read. It is used for nothing else, and
+// it grants nothing — see qaScopeTopologyRows.
+__installQaSupabaseClient(createQaFixtureClient(qaPersona(readParams().persona).profile.id));
+
+// FEFO-OVERRIDE-DIALOG-CAPTURE: expose the fixture client's RPC call log for
+// the capture/verification tooling to read (`window.__phoenixQaRpcCalls`).
+// This file is reachable only behind `visualQaEnabled` (see qaConfig.ts) and
+// is tree-shaken from every production build, same as the rest of the module.
+(window as unknown as { __phoenixQaRpcCalls?: typeof QA_RPC_CALLS }).__phoenixQaRpcCalls = QA_RPC_CALLS;
+
 
 /** A real operational screen (screen 11) rendered against fixture data — proves
  *  the fixture client drives an actual service-backed screen, not a mock view. */

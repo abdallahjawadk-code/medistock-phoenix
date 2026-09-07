@@ -71,6 +71,41 @@ export interface GuideStep {
    */
   viewports?: readonly GuideViewport[];
   /**
+   * INTERACTIVE-GUIDE-IG2 — capability names this step needs, answered by the
+   * component that already computed them (guide.surface.tsx).
+   *
+   * Separate from `requiresPermissions` on purpose. That reads the GLOBAL
+   * effective key set, which is the right question for a screen-level gate and
+   * the wrong one for a per-warehouse or per-outlet decision — those are
+   * asynchronous, scoped answers the guide must consume rather than re-derive.
+   */
+  requiresCapabilities?: readonly string[];
+  /**
+   * INTERACTIVE-GUIDE-IG2 — element-presence names this step needs, declared by
+   * the panel that renders (or does not render) them.
+   *
+   * A THIRD, independent axis, and the reason it is not folded into either of
+   * the two above: an empty quarantine list is neither a refusal nor a missing
+   * permission, it is simply nothing to point at. A step about "this row" must
+   * be REMOVED when the list has no row — not shown as a centred card, which
+   * would describe a record the operator cannot see and would let a genuine
+   * anchoring defect hide behind the fallback.
+   *
+   * `central` fallback keeps its original meaning and stays correct for the
+   * case it was written for: the operator is authorized AND the element exists
+   * in this panel's vocabulary, but the current layout is not showing it.
+   */
+  requiresPresence?: readonly string[];
+  /**
+   * INTERACTIVE-GUIDE-IG2 — the tab within `screen` this step describes.
+   *
+   * The guide never switches tabs: switching unmounts the panel and would
+   * discard an operator's half-filled form. A step that names a tab is offered
+   * only while that tab is already open, which is what makes these tours
+   * contextual rather than navigational.
+   */
+  tab?: string;
+  /**
    * INTERACTIVE-GUIDE-IG1.1 — this step points at something inside the shell's
    * mobile drawer, so the drawer must be open for it to have a target.
    *
@@ -96,6 +131,19 @@ export interface GuideTour {
   id: string;
   title: GuideText;
   description: GuideText;
+  /**
+   * INTERACTIVE-GUIDE-IG2 — eligibility for the TOUR ITSELF.
+   *
+   * Filtering steps alone is not enough: a tour titled «الحجر الصحي» listed in
+   * the Help Center already tells an unauthorized operator that the surface
+   * exists. A tour whose requirements are unmet is absent entirely — no title,
+   * no description, no disabled row.
+   */
+  requiresCapabilities?: readonly string[];
+  /** The screen this tour belongs to; it is not offered anywhere else. */
+  screen?: number;
+  /** The tab this tour belongs to; it is not offered on any other tab. */
+  tab?: string;
   steps: readonly GuideStep[];
 }
 

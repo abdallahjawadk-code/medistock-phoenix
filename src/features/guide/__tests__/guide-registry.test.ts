@@ -113,30 +113,125 @@ describe('guide registry — content', () => {
   });
 });
 
-describe('guide registry — IG-1 scope boundary', () => {
+describe('guide registry — IG-2 domain separation (AD-10)', () => {
   /**
-   * IG-2 owns Quarantine and Suspended-from-Dispensing, behind pharmaceutical
-   * copy approval. Shipping either concept early — in EITHER language, and
-   * especially conflating the two — is the failure this guards. Delete this
-   * test only together with the approved IG-2 content.
+   * The IG-1 guard that forbade this content outright is replaced, not
+   * deleted: its real subject was never "no quarantine copy", it was that the
+   * two domains must never be presented as interchangeable. That rule outlives
+   * IG-1 and is what these assert now.
    */
-  it('ships no Quarantine or Suspended-from-Dispensing content yet', () => {
+  const quarantine = GUIDE_REGISTRY.tours.find(t => t.id === 'guide.tour.quarantine');
+  const suspension = GUIDE_REGISTRY.tours.find(t => t.id === 'guide.tour.dispensing-suspension');
+
+  const QUARANTINE_TERMS = [/الحجر الصحي/, /quarantine/i];
+  const SUSPENSION_TERMS = [/موقوفة الصرف/, /موقوف الصرف/, /إيقاف الصرف/, /suspended from dispensing/i, /dispensing suspension/i, /suspension/i];
+
+  it('ships both IG-2 tours, each named by its own canonical term', () => {
+    expect(quarantine).toBeDefined();
+    expect(suspension).toBeDefined();
+    expect(quarantine?.title.ar).toBe('الحجر الصحي');
+    expect(quarantine?.title.en).toBe('Quarantine');
+    expect(suspension?.title.ar).toBe('موقوفة الصرف');
+    expect(suspension?.title.en).toBe('Suspended from Dispensing');
+  });
+
+  it('mentions the other domain only to DENY that it is affected', () => {
+    /**
+     * The real rule, stated as a property rather than as a blocklist.
+     *
+     * A step may name the other domain — both tours close by saying the two
+     * are separate, which is the point — but any sentence that names both must
+     * be a denial. An affirmative cross-domain sentence ("releasing quarantine
+     * lifts the suspension") is the conflation AD-10 forbids, and it is
+     * exactly what a naive keyword blocklist would have flagged the correct
+     * denial for instead.
+     */
+    // No `` here: JavaScript word boundaries are ASCII-based, so they do not
+    // sit where a reader would expect them around Arabic letters and would
+    // make every one of these alternatives silently unmatchable.
+    const AR_NEGATION = /لا |ليس|غير |دون |منفصل/;
+    const EN_NEGATION = /(^|[^a-z])(not|never|no|nothing|separate|neither)([^a-z]|$)/i;
+
+    for (const { step } of ALL_STEPS) {
+      const namesQuarantineAr = /الحجر/.test(step.body.ar);
+      const namesSuspensionAr = /(موقوف|إيقاف)/.test(step.body.ar);
+      if (namesQuarantineAr && namesSuspensionAr) {
+        expect(AR_NEGATION.test(step.body.ar), `${step.id} ar names both domains without denying a link`).toBe(true);
+      }
+
+      const namesQuarantineEn = /quarantine/i.test(step.body.en);
+      const namesSuspensionEn = /suspension|suspended/i.test(step.body.en);
+      if (namesQuarantineEn && namesSuspensionEn) {
+        expect(EN_NEGATION.test(step.body.en), `${step.id} en names both domains without denying a link`).toBe(true);
+      }
+    }
+  });
+
+  it('states the separation explicitly in BOTH tours', () => {
+    const quarantineCopy = (quarantine?.steps ?? []).map(s => s.body.ar + s.body.en).join(' ');
+    const suspensionCopy = (suspension?.steps ?? []).map(s => s.body.ar + s.body.en).join(' ');
+    expect(SUSPENSION_TERMS.some(p => p.test(quarantineCopy))).toBe(true);
+    expect(QUARANTINE_TERMS.some(p => p.test(suspensionCopy))).toBe(true);
+  });
+
+  it('promises no clinical or regulatory rule of its own', () => {
+    // The guide explains what the program does. It must not invent an
+    // approval, an authority, or a safety determination the program has no
+    // concept of.
     const forbidden = [
-      /الحجر الصحي/, /موقوفة الصرف/, /إيقاف الصرف/,
-      /quarantine/i, /suspended from dispensing/i, /dispensing suspension/i,
+      /يجب على الطبيب/, /موافقة اللجنة/, /وفق التعليمات الدوائية/, /الجهة الرقابية تلزم/,
+      /doctor must/i, /committee approval/i, /regulation requires/i, /per pharmacopoeia/i,
     ];
     for (const { step } of ALL_STEPS) {
       for (const value of [step.title.ar, step.title.en, step.body.ar, step.body.en]) {
         for (const pattern of forbidden) {
-          expect(pattern.test(value), `${step.id} contains IG-2 content: ${pattern}`).toBe(false);
+          expect(pattern.test(value), `${step.id} asserts an external rule: ${pattern}`).toBe(false);
         }
       }
     }
   });
 
-  it('stays one short orientation tour', () => {
-    expect(GUIDE_REGISTRY.tours).toHaveLength(1);
-    expect(GUIDE_REGISTRY.tours[0].id).toBe('guide.tour.orientation');
-    expect(GUIDE_REGISTRY.tours[0].steps.length).toBeLessThanOrEqual(12);
+  it('keeps every tour short and each step to one idea', () => {
+    expect(GUIDE_REGISTRY.tours.length).toBeLessThanOrEqual(4);
+    for (const tour of GUIDE_REGISTRY.tours) {
+      expect(tour.steps.length, `${tour.id} is too long`).toBeLessThanOrEqual(12);
+      for (const step of tour.steps) {
+        expect(step.body.ar.length, `${step.id} ar is too long`).toBeLessThanOrEqual(340);
+        expect(step.body.en.length, `${step.id} en is too long`).toBeLessThanOrEqual(340);
+      }
+    }
+  });
+
+  it('scopes both IG-2 tours to their own screen, tab and capability', () => {
+    for (const tour of [quarantine, suspension]) {
+      expect(tour?.screen).toBe(3);
+      expect(tour?.tab).toBeDefined();
+      expect(tour?.requiresCapabilities?.length ?? 0).toBeGreaterThan(0);
+      for (const step of tour?.steps ?? []) {
+        expect(step.tab, `${step.id} must name its tab`).toBe(tour?.tab);
+      }
+    }
+    expect(quarantine?.tab).not.toBe(suspension?.tab);
+  });
+
+  it('gates every action step on a scoped capability, never on a global key', () => {
+    const actionSteps = ['quarantine.release', 'quarantine.destroy', 'suspension.create', 'suspension.lift'];
+    for (const id of actionSteps) {
+      const step = ALL_STEPS.find(entry => entry.step.id === id)?.step;
+      expect(step, `${id} is missing`).toBeDefined();
+      expect(step?.requiresCapabilities?.length ?? 0, `${id} must require a capability`).toBeGreaterThan(0);
+      // requiresPermissions reads the GLOBAL key set and cannot express a
+      // per-warehouse or per-outlet decision, so an action step must not lean
+      // on it here.
+      expect(step?.requiresPermissions, `${id} must not use a global key`).toBeUndefined();
+    }
+  });
+
+  it('tells the operator to act from the real control, not from the guide', () => {
+    for (const id of ['quarantine.release', 'suspension.create']) {
+      const step = ALL_STEPS.find(entry => entry.step.id === id)?.step;
+      expect(step?.body.ar).toMatch(/أغلق الدليل/);
+      expect(step?.body.en.toLowerCase()).toMatch(/close the guide/);
+    }
   });
 });

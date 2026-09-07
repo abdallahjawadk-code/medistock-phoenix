@@ -10,6 +10,7 @@ import { PwaInstallPrompt } from '@/shared/pwa/PwaInstallPrompt';
 import { CommandPalette } from './CommandPalette';
 import { PlatformBroadcastGate } from '@/features/platform-broadcast/PlatformBroadcastGate';
 import { useGuideHost } from '@/features/guide/GuideHost';
+import { GuideSurfaceProvider } from '@/features/guide/guide.surface';
 import type { GuideDrawerController } from '@/features/guide/useGuideDrawerStep';
 
 // PRODUCTION-READINESS-CLEANUP-A: screen 2 (the former central dashboard) no
@@ -51,7 +52,22 @@ interface Props {
   onLogout: () => void;
 }
 
-export function PhoenixAppShell({ children, currentScreen, onNavigate, onLogout }: Props) {
+/**
+ * IG-2 — the surface provider must sit ABOVE both the screen and the guide
+ * host, so a screen can describe where the operator is and the guide can read
+ * that description. Splitting the shell in two keeps the provider outside the
+ * component that consumes it, which is what makes the context available to
+ * both children rather than to only one of them.
+ */
+export function PhoenixAppShell(props: Props) {
+  return (
+    <GuideSurfaceProvider>
+      <PhoenixAppShellInner {...props} />
+    </GuideSurfaceProvider>
+  );
+}
+
+function PhoenixAppShellInner({ children, currentScreen, onNavigate, onLogout }: Props) {
   const { lang, dir } = useApp();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const isMobile = useIsMobileViewport();

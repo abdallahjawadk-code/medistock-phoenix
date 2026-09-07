@@ -37,6 +37,33 @@ export const GUIDE_ANCHORS = {
   shellTopbarHelp:          'guide.shell.topbar.help',
   shellDrawerHelp:          'guide.shell.drawer.help',
 
+  /* ── Inventory Center — Quarantine (IG-2) ── */
+  inventoryTabQuarantine:   'guide.inventory.quarantine.tab',
+  quarantineList:           'guide.quarantine.list.region',
+  quarantineRowIdentity:    'guide.quarantine.row.identity',
+  quarantineRowQuantity:    'guide.quarantine.row.quantity',
+  quarantineReleaseAction:  'guide.quarantine.release.action',
+  quarantineDestroyAction:  'guide.quarantine.destroy.action',
+  /* The row's disposition area, present whether the two buttons or the form
+     the operator opened from them is showing. A release/destroy step keeps its
+     precise button-wrapper anchor first and falls back to HERE, so an operator
+     who already opened a form is still shown the right region instead of a
+     centred card that would hide a real anchoring defect. */
+  quarantineRowActions:     'guide.quarantine.row.actions',
+
+  /* ── Inventory Center — Suspended from Dispensing (IG-2) ── */
+  inventoryTabSuspensions:  'guide.inventory.suspension.tab',
+  suspensionList:           'guide.suspension.list.region',
+  suspensionSuspendAction:  'guide.suspension.create.action',
+  /* Same rule as the quarantine row actions: the create area is present
+     whether the button or the open composer is showing. */
+  suspensionCreateArea:     'guide.suspension.create.region',
+  suspensionRowActions:     'guide.suspension.row.actions',
+  suspensionRowBadge:       'guide.suspension.row.badge',
+  suspensionRowScope:       'guide.suspension.row.scope',
+  suspensionLiftAction:     'guide.suspension.lift.action',
+  suspensionHistory:        'guide.suspension.history.region',
+
   /* ── Command Center (Dashboard pilot) ── */
   dashboardContextHeader:   'guide.dashboard.context.header',
   dashboardOverviewKpis:    'guide.dashboard.overview.kpis',

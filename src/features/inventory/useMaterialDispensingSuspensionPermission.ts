@@ -24,16 +24,47 @@ export interface MaterialDispensingSuspensionPermissions {
  *
  * UI preflight ONLY: every RPC repeats this authorization server-side.
  */
+export interface ScopedMaterialDispensingSuspensionPermission
+  extends AsyncState<MaterialDispensingSuspensionPermissions> {
+  /**
+   * The scope `data` was computed for, or null when nothing has settled.
+   * See ScopedQuarantinePermission for why the answer carries its own subject
+   * instead of the caller inferring it from `loading`.
+   */
+  dataScopeKey: string | null;
+}
+
+/**
+ * Opaque, comparison-only identity of a suspension permission scope.
+ *
+ * Carries the asking PROFILE as well as the resource — see the identical
+ * reasoning in useQuarantinePermission.ts's own doc comment on
+ * `quarantinePermissionScopeKey`. Two profiles asking about the same
+ * organization/outlet must never produce the same key, or a switch of
+ * identity with the resource held constant lets the FORMER profile's settled
+ * answer outlive them.
+ */
+export function suspensionPermissionScopeKey(
+  organizationId: string | null,
+  distributionPointId: string | null,
+  profileId: string | null,
+): string {
+  return `${organizationId ?? '-'}/${distributionPointId ?? '-'}/${profileId ?? '-'}`;
+}
+
 export function useMaterialDispensingSuspensionPermission(
   organizationId: string | null,
   distributionPointId: string | null = null,
-): AsyncState<MaterialDispensingSuspensionPermissions> {
+): ScopedMaterialDispensingSuspensionPermission {
   const { profile } = useApp();
+  const scopeKey = suspensionPermissionScopeKey(organizationId, distributionPointId, profile?.id ?? null);
 
-  return useAsync(async () => {
+  const inner = useAsync<{ scopeKey: string; permissions: MaterialDispensingSuspensionPermissions }>(async () => {
     const deny: MaterialDispensingSuspensionPermissions = { canViewDetail: false, canSuspend: false, canLift: false };
-    if (!organizationId || !profile?.id) return deny;
-    if (profile.role === 'super_admin') return { canViewDetail: true, canSuspend: true, canLift: true };
+    if (!organizationId || !profile?.id) return { scopeKey, permissions: deny };
+    if (profile.role === 'super_admin') {
+      return { scopeKey, permissions: { canViewDetail: true, canSuspend: true, canLift: true } };
+    }
 
     const check = async (permissionKey: string) => {
       const result = await supabaseRbacTransport.hasScopedPermission({
@@ -51,6 +82,12 @@ export function useMaterialDispensingSuspensionPermission(
       check('material_dispensing_suspension.create'),
       check('material_dispensing_suspension.lift'),
     ]);
-    return { canViewDetail, canSuspend, canLift };
+    return { scopeKey, permissions: { canViewDetail, canSuspend, canLift } };
   }, [organizationId, distributionPointId, profile?.id, profile?.role]);
+
+  return {
+    ...inner,
+    data: inner.data === null ? null : inner.data.permissions,
+    dataScopeKey: inner.data?.scopeKey ?? null,
+  };
 }

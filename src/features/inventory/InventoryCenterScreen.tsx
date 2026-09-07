@@ -23,11 +23,13 @@ import { useInventoryScopes } from './useInventoryScopes';
 import { useWarehouseStockPermissions } from './useWarehouseStockPermissions';
 import { useReturnReceivePermission } from './useReturnReceivePermission';
 import { useOutletReturnExceptionResolvePermission } from './useOutletReturnExceptionResolvePermission';
-import { useQuarantinePermission } from './useQuarantinePermission';
+import { useQuarantinePermission, quarantinePermissionScopeKey } from './useQuarantinePermission';
 import { useInventoryReadAffordance } from './useInventoryReadAffordance';
 import { QuarantinePanel } from './QuarantinePanel';
 import { useMaterialDispensingSuspensionPermission } from './useMaterialDispensingSuspensionPermission';
 import { MaterialDispensingSuspensionPanel } from './MaterialDispensingSuspensionPanel';
+import { GUIDE_ANCHORS, guideAnchor } from '@/features/guide/guide.anchors';
+import { useGuideSurface, useGuideCapabilities, useScopedGuideCapabilities } from '@/features/guide/guide.surface';
 import { useApproveCorrectionPermission } from './useApproveCorrectionPermission';
 import { PendingCorrectionsPanel } from './PendingCorrectionsPanel';
 import { SUPPLY_TYPES, supplyTypeLabelKey } from '@/shared/lib/supply-types';
@@ -70,7 +72,7 @@ export function InventoryCenterScreen({
 }: {
   initialSuggestionDocument?: SuggestionDocumentTarget;
 } = {}) {
-  const { lang, dir, activeOrgId, role, myPermissions } = useApp();
+  const { lang, dir, activeOrgId, role, myPermissions, profile } = useApp();
 
   const scopes = useInventoryScopes(activeOrgId);
   const opensDispatch = initialSuggestionDocument?.documentKind === 'warehouse_dispatch';
@@ -166,6 +168,79 @@ export function InventoryCenterScreen({
   const canViewCorrections = canApproveAnyCorrection || hasInventoryReadAffordance;
 
   const [tab, setTab] = useState<Tab>(opensDispatch ? 'dispatch' : 'intake');
+
+  /**
+   * INTERACTIVE-GUIDE-IG2 — tell the guide which screen and tab are open.
+   *
+   * READ-ONLY in this direction: the guide learns where the operator is, and
+   * is given no way to move them. Switching tabs here unmounts the active
+   * panel, which would silently discard a half-filled release or suspension
+   * form, so IG-2's tours are offered only while their own tab is already
+   * open rather than navigating to it.
+   */
+  useGuideSurface(3, tab);
+
+  /**
+   * INTERACTIVE-GUIDE-IG2 — the quarantine answers are published FROM HERE,
+   * because this is where they exist.
+   *
+   * They used to be published by QuarantinePanel, out of the one boolean it is
+   * handed. That was wrong in two ways at once, and both mattered:
+   *
+   *   • the panel receives `canDispose` as a plain boolean, so it could only
+   *     ever declare the answer `ready` — it cannot see that the check is still
+   *     in flight, or that it failed; and
+   *   • `useAsync` KEEPS the previous result while the next one loads, and
+   *     turns `loading` back on from an effect. So on the first render after
+   *     the warehouse changes, warehouse A's "yes" is still in hand while the
+   *     scope already reads warehouse B. Published as `ready`, that is A's
+   *     answer attributed to B.
+   *
+   * Both are fixed by publishing the AsyncState itself through
+   * `useScopedGuideCapabilities`, which refuses to attribute an answer to a
+   * scope until the loader has acknowledged that scope.
+   *
+   * TWO SOURCES, NOT ONE — read authority and action authority are established
+   * independently and must fail independently. `hasInventoryReadAffordance` is
+   * a synchronous decision that owes nothing to the scoped RBAC round trip, so
+   * a quarantine permission check that is pending or FAILED must not cancel it:
+   * the operator can still be told what the list is. The converse never holds —
+   * a read affordance grants no disposition, and the action source is the only
+   * thing that can ever contribute `dispose`.
+   *
+   * `canDisposeQuarantine` (raw, permissive) still gates only tab VISIBILITY,
+   * exactly as before. The panel's disposal ACTIONS, below, are gated on the
+   * stricter `canDisposeQuarantineConfirmed` instead — a defect proven and
+   * fixed independently of this guide work (`quarantine-panel-stale-
+   * warehouse-race.test.tsx`, `use-quarantine-permission-first-commit.test.tsx`):
+   * `canDisposeQuarantine` could hold a stale `true` from a PREVIOUS warehouse
+   * for the entire window the CURRENT warehouse's own check was pending,
+   * errored, or had thrown, which would have let a confirm button light up
+   * using authorization never actually checked against the warehouse on
+   * screen. `confirmed` closes that — it is request-ownership bookkeeping
+   * inside the hook (see its own module doc comment for why a plain
+   * `dataScopeKey`-equality comparison alone is not enough on a revisit to a
+   * previously-seen warehouse), not the same comparison
+   * `useScopedGuideCapabilities` performs above. Both RPCs re-check
+   * server-side regardless.
+   */
+  const quarantineScopeKey = quarantinePermissionScopeKey(activeOrgId, activeWarehouseId || null, profile?.id ?? null);
+  useGuideCapabilities(
+    'inventory.quarantine.read',
+    { 'inventory.quarantine.view': hasInventoryReadAffordance && activeWarehouseId !== '' },
+    'ready',
+    quarantineScopeKey,
+  );
+  useScopedGuideCapabilities(
+    'inventory.quarantine.action',
+    {
+      'inventory.quarantine.view': quarantinePerm.data === true,
+      'inventory.quarantine.dispose': quarantinePerm.data === true,
+    },
+    quarantinePerm.loading ? 'loading' : (quarantinePerm.error ? 'error' : 'ready'),
+    quarantineScopeKey,
+    quarantinePerm.dataScopeKey,
+  );
   const [toast, setToast] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
 
@@ -342,6 +417,8 @@ export function InventoryCenterScreen({
             role="tab"
             aria-selected={tab === x.id}
             onClick={() => setTab(x.id)}
+            {...(x.id === 'quarantine' ? guideAnchor(GUIDE_ANCHORS.inventoryTabQuarantine) : {})}
+            {...(x.id === 'suspensions' ? guideAnchor(GUIDE_ANCHORS.inventoryTabSuspensions) : {})}
             className="nexus-it-tab"
             style={{
               padding: '8px 14px', minHeight: '44px', borderRadius: 'var(--r3)',

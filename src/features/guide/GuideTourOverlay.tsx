@@ -264,6 +264,12 @@ export function GuideTourOverlay({
       dir={dir}
       data-guide-tour={tour.id}
       data-guide-step={step.id}
+      /* IG-2 — which of the step's candidate anchors actually won, or 'none'.
+         A step that declares a precise anchor and a region fallback is
+         correct in either case, and this is what makes WHICH one it landed on
+         observable instead of inferred from placement. Inert: an id from the
+         guide's own vocabulary, carrying no data and no record identity. */
+      data-guide-anchor={resolvedAnchor}
       data-guide-placement={centred ? 'center' : card.placement}
     >
       {/* Covers the viewport INCLUDING the highlighted element, so the control
