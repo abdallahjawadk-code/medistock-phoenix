@@ -157,7 +157,7 @@ describe('Login screen: professional rights block, supervision credit login-side
   //   - WELCOME splash: renders the line (see the dedicated describe below).
   it('keeps the supervision line off the LOGIN screen, and still has NO MASAR seal', () => {
     expect(loginScreen).not.toContain("t('login_supervision_line'");
-    expect(loginScreen).not.toContain('بإشراف الصيدلاني باسم كاظم رمح');
+    expect(loginScreen).not.toContain('بإشراف الصيدلاني باسم رمح كاظم');
     expect(loginScreen).not.toContain('MasarCopyrightSeal');
     const welcome = readSrc('features/auth/PhoenixWelcomeExperience.tsx');
     expect(welcome).not.toContain('MasarCopyrightSeal');
@@ -171,7 +171,7 @@ describe('Login screen: professional rights block, supervision credit login-side
 
   it('login_supervision_line key no longer exists in strings.ts', () => {
     expect(strings).not.toMatch(/^\s*login_supervision_line:/m);
-    expect(strings).not.toContain('بإشراف الصيدلاني باسم كاظم رمح');
+    expect(strings).not.toContain('بإشراف الصيدلاني باسم رمح كاظم');
     expect(strings).not.toContain('Under the supervision of Pharmacist Basim Kazim Ramh');
   });
 

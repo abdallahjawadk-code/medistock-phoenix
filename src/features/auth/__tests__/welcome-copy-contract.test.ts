@@ -14,15 +14,15 @@ describe('Phoenix welcome copy contract', () => {
   // instruction reinstated it on the welcome/splash surface, so the assertion
   // is deliberately flipped back to guard its PRESENCE — verbatim.
   it('renders the exact supervision-credit line as live React text', () => {
-    expect(welcome).toContain('بإشراف الصيدلاني باسم كاظم رمح');
+    expect(welcome).toContain('بإشراف الصيدلاني باسم رمح كاظم');
     expect(welcome).toContain('nexus-welcome__credits-sup');
     const credits = welcome.slice(welcome.indexOf('nexus-welcome__credits'));
-    expect(credits).toMatch(/>\s*بإشراف الصيدلاني باسم كاظم رمح\s*</);
+    expect(credits).toMatch(/>\s*بإشراف الصيدلاني باسم رمح كاظم\s*</);
   });
 
   it('places the supervision line immediately BELOW the issuance line', () => {
     const issuance = welcome.indexOf('تم إصدار هذا النظام بواسطة الصيدلاني عبدالله جواد كاظم');
-    const supervision = welcome.indexOf('بإشراف الصيدلاني باسم كاظم رمح');
+    const supervision = welcome.indexOf('بإشراف الصيدلاني باسم رمح كاظم');
     expect(issuance).toBeGreaterThan(-1);
     expect(supervision).toBeGreaterThan(issuance);
     // Nothing but the divider rule may sit between the two lines.
@@ -36,7 +36,7 @@ describe('Phoenix welcome copy contract', () => {
     // renders right-to-left regardless of the active UI language.
     expect(welcome).toMatch(/className="nexus-welcome__credits"\s+dir="rtl"/);
     // Subordinate styling is carried by credits-sup, NOT by credits-name.
-    expect(welcome).toMatch(/nexus-welcome__credits-sup">بإشراف الصيدلاني باسم كاظم رمح</);
+    expect(welcome).toMatch(/nexus-welcome__credits-sup">بإشراف الصيدلاني باسم رمح كاظم</);
     expect(welcome).not.toMatch(/nexus-welcome__credits-name">بإشراف/);
   });
 
@@ -47,7 +47,7 @@ describe('Phoenix welcome copy contract', () => {
   });
 
   it('renders the supervision line exactly once', () => {
-    expect(welcome.split('بإشراف الصيدلاني باسم كاظم رمح').length - 1).toBe(1);
+    expect(welcome.split('بإشراف الصيدلاني باسم رمح كاظم').length - 1).toBe(1);
   });
 
   it('does not bake the remaining issuer credit into an image or canvas', () => {

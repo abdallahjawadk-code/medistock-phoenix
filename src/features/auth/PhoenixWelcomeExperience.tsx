@@ -111,7 +111,7 @@ export function PhoenixWelcomeExperience({ onComplete }: Props) {
       <div className="nexus-welcome__credits" dir="rtl">
         <div className="nexus-welcome__credits-name">تم إصدار هذا النظام بواسطة الصيدلاني عبدالله جواد كاظم</div>
         <div className="nexus-welcome__credits-rule" aria-hidden="true" />
-        <div className="nexus-welcome__credits-sup">بإشراف الصيدلاني باسم كاظم رمح</div>
+        <div className="nexus-welcome__credits-sup">بإشراف الصيدلاني باسم رمح كاظم</div>
         {/* RIGHTS-SEAL-SCOPE: no MASAR seal on the welcome experience — the
             single seal lives in the authenticated shell footer. */}
       </div>
