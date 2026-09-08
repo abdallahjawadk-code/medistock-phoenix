@@ -29,7 +29,17 @@ const TABLES = [
   'central_needs_plan_revisions',
   'central_needs_source_files',
   'central_needs_import_sessions',
+  'central_needs_source_records',
   'central_needs_field_overrides',
+];
+
+const COMPOSITE_FKS = [
+  'central_needs_plan_revisions_plan_org_fk',
+  'central_needs_source_files_revision_org_fk',
+  'central_needs_import_sessions_revision_org_fk',
+  'central_needs_import_sessions_source_revision_org_fk',
+  'central_needs_source_records_session_org_fk',
+  'central_needs_field_overrides_revision_org_fk',
 ];
 
 describe('CN-1A/209 static — registration and file hygiene', () => {
@@ -65,7 +75,7 @@ describe('CN-1A/209 static — registration and file hygiene', () => {
 });
 
 describe('CN-1A/209 static — schema shape', () => {
-  it('creates exactly the five Central Needs tables, no others', () => {
+  it('creates exactly the six Central Needs tables, no others', () => {
     const created = [...BODY.matchAll(/CREATE TABLE public\.(\w+)/g)].map((m) => m[1]);
     expect(created.sort()).toEqual([...TABLES].sort());
   });
@@ -94,16 +104,64 @@ describe('CN-1A/209 static — schema shape', () => {
     expect(BODY).not.toMatch(/\bALTER\s+TABLE\s+public\.(?!central_needs_)/i);
   });
 
-  it('central_needs_source_files is immutable: a locked-down trigger function blocks every UPDATE', () => {
+  it('central_needs_source_files and central_needs_source_records are both immutable: the same locked-down trigger function blocks every UPDATE on both', () => {
     expect(BODY).toMatch(/CREATE OR REPLACE FUNCTION public\._phoenix_central_needs_source_immutability_v1\(\)/);
     expect(BODY).toMatch(/RAISE EXCEPTION 'central_needs_source_file_immutable'/);
     expect(BODY).toMatch(/REVOKE ALL ON FUNCTION public\._phoenix_central_needs_source_immutability_v1\(\) FROM PUBLIC, anon, authenticated;/);
     expect(BODY).toMatch(/CREATE TRIGGER central_needs_source_files_immutable\s+BEFORE UPDATE ON public\.central_needs_source_files/);
+    expect(BODY).toMatch(/CREATE TRIGGER central_needs_source_records_immutable\s+BEFORE UPDATE ON public\.central_needs_source_records/);
+    // Exactly one trigger function is defined in this migration; both triggers
+    // reference the same one (no duplicated immutability logic).
+    const functions = [...BODY.matchAll(/CREATE OR REPLACE FUNCTION public\._phoenix_\w+\(\)/g)];
+    expect(functions).toHaveLength(1);
   });
 
   it('the plan_revisions approval-pair CHECK requires an approver whenever status is approved', () => {
     expect(BODY).toMatch(/central_needs_plan_revisions_approval_pair_chk/);
     expect(BODY).toMatch(/status <> 'approved' OR approved_by IS NOT NULL/);
+  });
+
+  it('central_needs_source_records carries source_values (NOT NULL jsonb) and source_provenance (nullable jsonb, no shape CHECK, no normalized/final value column)', () => {
+    const start = BODY.indexOf('CREATE TABLE public.central_needs_source_records');
+    const end = BODY.indexOf(');', start);
+    const tableBody = BODY.slice(start, end);
+    expect(tableBody).toMatch(/source_values\s+jsonb NOT NULL/);
+    expect(tableBody).toMatch(/source_provenance\s+jsonb,/);
+    expect(tableBody).not.toMatch(/normalized_value/i);
+    expect(tableBody).not.toMatch(/final_value/i);
+    expect(tableBody).not.toMatch(/source_provenance[^,]*CHECK/i);
+  });
+
+  it('every named composite parent/organization_id FK constraint is present', () => {
+    for (const fk of COMPOSITE_FKS) {
+      expect(BODY, fk).toMatch(new RegExp(`CONSTRAINT ${fk}\\s+FOREIGN KEY`));
+    }
+  });
+
+  it('central_needs_import_sessions proves BOTH its revision-org match and its source-file revision+org match, each via one composite FK', () => {
+    const start = BODY.indexOf('CREATE TABLE public.central_needs_import_sessions');
+    const end = BODY.indexOf('CREATE INDEX central_needs_import_sessions', start);
+    const tableBody = BODY.slice(start, end);
+    expect(tableBody).toMatch(
+      /FOREIGN KEY \(plan_revision_id, organization_id\)\s+REFERENCES public\.central_needs_plan_revisions \(id, organization_id\)/,
+    );
+    expect(tableBody).toMatch(
+      /FOREIGN KEY \(source_file_id, plan_revision_id, organization_id\)\s+REFERENCES public\.central_needs_source_files \(id, plan_revision_id, organization_id\)/,
+    );
+  });
+
+  it('every parent table exposes exactly the UNIQUE key its children need for composite FKs', () => {
+    const plansBody = BODY.slice(BODY.indexOf('CREATE TABLE public.central_needs_plans'), BODY.indexOf('CREATE INDEX central_needs_plans'));
+    expect(plansBody).toMatch(/UNIQUE \(id, organization_id\)/);
+
+    const revisionsBody = BODY.slice(BODY.indexOf('CREATE TABLE public.central_needs_plan_revisions'), BODY.indexOf('CREATE INDEX central_needs_plan_revisions'));
+    expect(revisionsBody).toMatch(/UNIQUE \(id, organization_id\)/);
+
+    const sourceFilesBody = BODY.slice(BODY.indexOf('CREATE TABLE public.central_needs_source_files'), BODY.indexOf('CREATE INDEX central_needs_source_files'));
+    expect(sourceFilesBody).toMatch(/UNIQUE \(id, plan_revision_id, organization_id\)/);
+
+    const sessionsBody = BODY.slice(BODY.indexOf('CREATE TABLE public.central_needs_import_sessions'), BODY.indexOf('CREATE INDEX central_needs_import_sessions'));
+    expect(sessionsBody).toMatch(/UNIQUE \(id, organization_id\)/);
   });
 });
 
@@ -168,9 +226,13 @@ describe('CN-1A/209 static — permission keys, no default grants', () => {
 });
 
 describe('CN-1A/209 static — self-verification', () => {
-  it('ends with a DO $verify$ block asserting tables, RLS, permission-key count and the immutability trigger', () => {
+  it('ends with a DO $verify$ block asserting tables, RLS, permission-key count, both immutability triggers, and every composite FK', () => {
     expect(SQL).toMatch(/DO \$verify\$/);
     expect(SQL).toMatch(/VERIFY FAILED \(209\)/);
     expect(SQL).toMatch(/central_needs\.%.*must have zero default role grants|zero default role grants/);
+    expect(SQL).toMatch(/source-record immutability trigger is not attached/);
+    for (const fk of COMPOSITE_FKS) {
+      expect(SQL, fk).toContain(`'${fk}'`);
+    }
   });
 });
