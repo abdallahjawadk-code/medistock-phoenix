@@ -297,14 +297,13 @@ describe('194 · static · historical immutability and rig coupling', () => {
     expect(dirty).toBe('');
   });
 
-  // I-3 advances this successor ceiling by exactly one: 196 (SECDEF relation
-  // schema qualification) is now the reviewed successor to 195. This relaxes
-  // ONLY which future migration numbers may exist; every M194 assertion in
-  // this file is unchanged.
-  it('no migration numbered 209 or higher exists', () => {
+  // CN-1A (209, Central Needs core registry) is now the reviewed successor.
+  // This relaxes ONLY which future migration numbers may exist; every M194
+  // assertion in this file is unchanged.
+  it('no migration numbered 210 or higher exists', () => {
     const above = readdirSync(MIGRATIONS_DIR)
       .filter((f) => /^\d{3}_.*\.sql$/.test(f))
-      .filter((f) => Number(f.slice(0, 3)) >= 209);
+      .filter((f) => Number(f.slice(0, 3)) >= 210);
     expect(above).toEqual([]);
   });
 

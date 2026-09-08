@@ -214,6 +214,7 @@ export const REVIEWED_MIGRATION_FILES: readonly string[] = Object.freeze([
   '206_phoenix_dispensing_suspension_enforcement_suggestions.sql',
   '207_phoenix_dispensing_suspension_enforcement_warehouse_send.sql',
   '208_phoenix_dispensing_suspension_enforcement_replenishment_and_drafts.sql',
+  '209_phoenix_central_needs_registry.sql',
 ]);
 
 const REVIEWED_SET: ReadonlySet<string> = new Set(REVIEWED_MIGRATION_FILES);

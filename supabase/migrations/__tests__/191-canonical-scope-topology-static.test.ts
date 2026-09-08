@@ -77,10 +77,11 @@ describe('191 · registration and file hygiene', () => {
     const NEXT_15 = '206_phoenix_dispensing_suspension_enforcement_suggestions.sql';
     const NEXT_16 = '207_phoenix_dispensing_suspension_enforcement_warehouse_send.sql';
     const NEXT_17 = '208_phoenix_dispensing_suspension_enforcement_replenishment_and_drafts.sql';
+    const NEXT_18 = '209_phoenix_central_needs_registry.sql';
     const numbers = REVIEWED_MIGRATION_FILES.map(f => Number(f.slice(0, 3))).filter(Number.isFinite);
-    expect(Math.max(...numbers)).toBe(208);
-    expect(REVIEWED_MIGRATION_FILES.slice(REVIEWED_MIGRATION_FILES.indexOf(NAME) + 1)).toEqual([NEXT, NEXT_2, NEXT_3, NEXT_4, NEXT_5, NEXT_6, NEXT_7, NEXT_8, NEXT_9, NEXT_10, NEXT_11, NEXT_12, NEXT_13, NEXT_14, NEXT_15, NEXT_16, NEXT_17]);
-    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1]).toBe(NEXT_17);
+    expect(Math.max(...numbers)).toBe(209);
+    expect(REVIEWED_MIGRATION_FILES.slice(REVIEWED_MIGRATION_FILES.indexOf(NAME) + 1)).toEqual([NEXT, NEXT_2, NEXT_3, NEXT_4, NEXT_5, NEXT_6, NEXT_7, NEXT_8, NEXT_9, NEXT_10, NEXT_11, NEXT_12, NEXT_13, NEXT_14, NEXT_15, NEXT_16, NEXT_17, NEXT_18]);
+    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1]).toBe(NEXT_18);
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^192_/.test(f))).toEqual([NEXT]);
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^193_/.test(f))).toEqual([NEXT_2]);
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^194_/.test(f))).toEqual([NEXT_3]);
@@ -91,7 +92,8 @@ describe('191 · registration and file hygiene', () => {
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^203_/.test(f))).toEqual([NEXT_12]);
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^207_/.test(f))).toEqual([NEXT_16]);
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^208_/.test(f))).toEqual([NEXT_17]);
-    expect(REVIEWED_MIGRATION_FILES.filter(f => /^209_/.test(f))).toHaveLength(0);
+    expect(REVIEWED_MIGRATION_FILES.filter(f => /^209_/.test(f))).toEqual([NEXT_18]);
+    expect(REVIEWED_MIGRATION_FILES.filter(f => /^210_/.test(f))).toHaveLength(0);
   });
 
   it('carries no CR bytes', () => {
