@@ -29,6 +29,15 @@
  *      declarative composite FK, and the structured source_values/
  *      source_provenance contract on central_needs_source_records is
  *      proven to persist arbitrary JSONB and stay immutable.
+ *  L-N. Pre-PR test-coverage closure round (independent remote review
+ *      Findings 1-3, all three previously verified by hand against a live
+ *      rig, now permanent regression tests): an identity-changing UPDATE
+ *      that would leave a child disagreeing with its parent is rejected by
+ *      the composite FK exactly as an INSERT would be (L); an authenticated
+ *      subject with no profiles row at all sees zero rows on every Central
+ *      Needs table (M); a suspended profile explicitly granted
+ *      central_needs.view still sees zero rows — status denial precedes an
+ *      explicit grant (N).
  *
  * Gated on PHOENIX_RIG_PG; skipped in CI when no database is configured to
  * exercise it (mirrors every other *.dynamic.test.ts in this directory).
@@ -47,9 +56,20 @@ const CWM_A_NOPERM = '00000000-0000-0000-0000-000000209402'; // central_warehous
 const CWM_B_GRANTED = '00000000-0000-0000-0000-000000209403'; // central_warehouse_manager, org B, granted — cross-org denial
 const IA_A = '00000000-0000-0000-0000-000000209404'; // institution_admin, org A
 const OO_A = '00000000-0000-0000-0000-000000209405'; // outlet_officer, org A
+const SUSPENDED_GRANTED = '00000000-0000-0000-0000-000000209407'; // central_warehouse_manager, org A, status='suspended', WITH central_needs.view granted — proves status denial precedes an explicit grant
+const GHOST_USER = '00000000-0000-0000-0000-000000209406'; // authenticated JWT sub with NO auth.users row and NO profiles row at all — never inserted anywhere
 
 const SOURCE_HASH = 'a'.repeat(64);
 const SOURCE_HASH_B = 'b'.repeat(64);
+
+const CENTRAL_NEEDS_TABLES = [
+  'central_needs_plans',
+  'central_needs_plan_revisions',
+  'central_needs_source_files',
+  'central_needs_import_sessions',
+  'central_needs_source_records',
+  'central_needs_field_overrides',
+] as const;
 
 run('CN-1A/209 central-needs-registry domain — dynamic', () => {
   let rig: Awaited<ReturnType<typeof buildRig>>;
@@ -76,20 +96,29 @@ run('CN-1A/209 central-needs-registry domain — dynamic', () => {
 
       await c.query(`INSERT INTO auth.users (id,email) VALUES
         ('${CWM_A_GRANTED}','p209-cwma-g@rig'),('${CWM_A_NOPERM}','p209-cwma-n@rig'),
-        ('${CWM_B_GRANTED}','p209-cwmb-g@rig'),('${IA_A}','p209-iaa@rig'),('${OO_A}','p209-ooa@rig')
+        ('${CWM_B_GRANTED}','p209-cwmb-g@rig'),('${IA_A}','p209-iaa@rig'),('${OO_A}','p209-ooa@rig'),
+        ('${SUSPENDED_GRANTED}','p209-susp-g@rig')
         ON CONFLICT (id) DO NOTHING;`);
       await c.query(`UPDATE profiles SET role='central_warehouse_manager',status='active',organization_id='${ORG_A}' WHERE id='${CWM_A_GRANTED}';`);
       await c.query(`UPDATE profiles SET role='central_warehouse_manager',status='active',organization_id='${ORG_A}' WHERE id='${CWM_A_NOPERM}';`);
       await c.query(`UPDATE profiles SET role='central_warehouse_manager',status='active',organization_id='${ORG_B}' WHERE id='${CWM_B_GRANTED}';`);
       await c.query(`UPDATE profiles SET role='institution_admin',status='active',organization_id='${ORG_A}' WHERE id='${IA_A}';`);
       await c.query(`UPDATE profiles SET role='outlet_officer',status='active',organization_id='${ORG_A}' WHERE id='${OO_A}';`);
+      // Suspended, not archived: 'suspended' is the repository's canonical
+      // non-active-but-real profile status (profiles.status CHECK, M001),
+      // and phoenix_status_center_authorized's own fail-closed branch is
+      // "status IS DISTINCT FROM 'active'" — suspended is the direct proof.
+      await c.query(`UPDATE profiles SET role='central_warehouse_manager',status='suspended',organization_id='${ORG_A}' WHERE id='${SUSPENDED_GRANTED}';`);
 
-      // The ONLY two grants that exist anywhere in this fixture — proving
+      // The ONLY three grants that exist anywhere in this fixture — proving
       // access is genuinely opt-in, not role-default (209 seeds no
-      // role_permission_defaults row for any central_needs.* key).
+      // role_permission_defaults row for any central_needs.* key). The third
+      // (SUSPENDED_GRANTED) is deliberate: test N proves the grant alone is
+      // not enough — status denial takes precedence.
       await c.query(`INSERT INTO profile_permission_overrides (profile_id, permission_key, allowed) VALUES
         ('${CWM_A_GRANTED}','central_needs.view',true),
-        ('${CWM_B_GRANTED}','central_needs.view',true)
+        ('${CWM_B_GRANTED}','central_needs.view',true),
+        ('${SUSPENDED_GRANTED}','central_needs.view',true)
         ON CONFLICT (profile_id, permission_key) DO UPDATE SET allowed = true;`);
 
       const plan = await c.query(
@@ -130,6 +159,16 @@ run('CN-1A/209 central-needs-registry domain — dynamic', () => {
       );
       sourceRecordId = sourceRecord.rows[0].id;
 
+      // A baseline central_needs_field_overrides row — distinct from the one
+      // test K inserts later — so the table-driven closure tests (M, N) have
+      // a real row on this table too, not merely an already-empty one.
+      await c.query(
+        `INSERT INTO central_needs_field_overrides
+           (plan_revision_id, organization_id, target_entity, field_name, override_reason, actor_id)
+         VALUES ($1,$2,'line-baseline','quantity','baseline fixture row for M/N closure tests',$3)`,
+        [revisionId, ORG_A, CWM_A_GRANTED],
+      );
+
       // A fully legitimate, parallel org-B chain (plan/revision/source file),
       // used ONLY as the wrong-org side of the A-D adversarial tests below.
       const planB = await c.query(
@@ -155,6 +194,11 @@ run('CN-1A/209 central-needs-registry domain — dynamic', () => {
 
   const visiblePlans = async (userId: string | null, role = 'authenticated') =>
     rig.asUser(userId, (c: any) => c.query('SELECT id FROM central_needs_plans').then((r: any) => r.rows), { role });
+
+  // Table-driven variant used by the M/N closure tests — same shape as
+  // visiblePlans above, generalized over all six Central Needs tables.
+  const visibleRows = async (table: (typeof CENTRAL_NEEDS_TABLES)[number], userId: string | null, role = 'authenticated') =>
+    rig.asUser(userId, (c: any) => c.query(`SELECT id FROM ${table}`).then((r: any) => r.rows), { role });
 
   it('super_admin sees the plan in any organization', async () => {
     const rows = await visiblePlans(rig.superAdminId);
@@ -443,5 +487,56 @@ run('CN-1A/209 central-needs-registry domain — dynamic', () => {
       );
       expect(row.rows[0].source_provenance).toEqual(provenance);
     });
+  });
+
+  // ==========================================================================
+  // PRE-PR TEST-COVERAGE CLOSURE (independent remote review Findings 1-3) —
+  // three behaviors confirmed correct by hand against a live rig during the
+  // remote review, now converted into permanent regression tests. No schema
+  // or product-code change accompanies this round.
+  // ==========================================================================
+
+  it('L: an identity-changing UPDATE that would leave a child disagreeing with its parent is rejected by the composite FK, exactly as an INSERT would be, and the original row is left untouched', async () => {
+    await rig.asAdmin(async (c: any) => {
+      // A fresh, standalone revision under (planId, ORG_A) with no children
+      // of its own yet — isolating the identity-changing-UPDATE analogue of
+      // adversarial test A (INSERT-only) to exactly one constraint. (Doing
+      // this same UPDATE on revisionId, which already has a source_files
+      // child, is ALSO rejected — but by central_needs_source_files_revision_
+      // org_fk on the child instead, since that child's own FK would
+      // otherwise be orphaned by the parent's identity change. Both are the
+      // same declarative protection firing from different sides; this test
+      // isolates the row's own outgoing composite FK specifically.)
+      const isolated = await c.query(
+        `INSERT INTO central_needs_plan_revisions (plan_id, organization_id, revision_number) VALUES ($1,$2,98) RETURNING id`,
+        [planId, ORG_A],
+      );
+      const isolatedRevisionId = isolated.rows[0].id;
+
+      await expect(c.query(
+        `UPDATE central_needs_plan_revisions SET organization_id = $1 WHERE id = $2`,
+        [ORG_B, isolatedRevisionId],
+      )).rejects.toThrow(/violates foreign key constraint "central_needs_plan_revisions_plan_org_fk"/);
+
+      const row = (await c.query(
+        `SELECT organization_id, plan_id FROM central_needs_plan_revisions WHERE id = $1`, [isolatedRevisionId],
+      )).rows[0];
+      expect(row.organization_id).toBe(ORG_A);
+      expect(row.plan_id).toBe(planId);
+    });
+  });
+
+  it('M: an authenticated JWT subject with no profiles row at all sees zero rows on every Central Needs table — RLS filters silently, it does not error, and there is no authorization bypass', async () => {
+    for (const table of CENTRAL_NEEDS_TABLES) {
+      const rows = await visibleRows(table, GHOST_USER);
+      expect(rows, table).toEqual([]);
+    }
+  });
+
+  it('N: a suspended profile explicitly granted central_needs.view still sees zero rows on every Central Needs table — profile status denial takes precedence over an explicit permission grant', async () => {
+    for (const table of CENTRAL_NEEDS_TABLES) {
+      const rows = await visibleRows(table, SUSPENDED_GRANTED);
+      expect(rows, table).toEqual([]);
+    }
   });
 });
