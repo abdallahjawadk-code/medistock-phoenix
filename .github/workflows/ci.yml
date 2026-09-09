@@ -117,10 +117,12 @@ jobs:
       # Every dynamic suite calls buildRig(), which drops and recreates the
       # SAME 'phoenix_rig' database name (tools/pg-rig/rig.mjs) — running two
       # suites at once would race on that drop/recreate. --fileParallelism=false
-      # keeps suite files strictly serial; --pool=forks --poolOptions.forks.singleFork
-      # additionally pins everything to one worker process, matching how this
-      # rig has only ever been exercised locally (see the dynamic tests' own
-      # PHOENIX_RIG_PG usage comments).
+      # keeps suite files strictly serial; --pool=forks --maxWorkers=1 pins
+      # everything to a single forked worker process, and --isolate=false runs
+      # every test file in that one worker without a fresh module/context reset
+      # between them. Vitest 4 removed --poolOptions.forks.singleFork; this is
+      # its replacement, matching how this rig has only ever been exercised
+      # locally (see the dynamic tests' own PHOENIX_RIG_PG usage comments).
       # vitest's CLI filter argument is a plain substring/regex match against
       # normalized file paths, NOT a glob — a quoted "**/*.dynamic.test.ts"
       # pattern matches nothing ("No test files found", exit 1) and this step
@@ -130,7 +132,7 @@ jobs:
       - name: Run *.dynamic.test.ts suites against the disposable rig (serial)
         run: >-
           npx vitest run "dynamic.test.ts"
-          --fileParallelism=false --pool=forks --poolOptions.forks.singleFork
+          --fileParallelism=false --pool=forks --maxWorkers=1 --isolate=false
         env:
           PHOENIX_RIG_PG: postgres://postgres@localhost:55432/postgres
           TZ: Asia/Baghdad
