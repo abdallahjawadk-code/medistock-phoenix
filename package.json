@@ -32,7 +32,7 @@
     "react-dom": "^18.3.1",
     "tesseract.js": "^7.0.0",
     "three": "^0.169.0",
-    "xlsx": "file:../sheetjs-vendor/xlsx-0.20.3.tgz"
+    "xlsx": "file:vendor/sheetjs/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.6.2",

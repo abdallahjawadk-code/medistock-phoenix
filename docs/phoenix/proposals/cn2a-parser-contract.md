@@ -273,11 +273,27 @@ follow-up CN-2A increment, not silently left unstated.
 ## 11. SheetJS identity (pinned, never the npm registry's stale 0.18.5)
 
 - Version: `0.20.3`
-- Source: `https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz`
+- Source: `https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz` (authoritative
+  upstream origin of the pinned tarball).
 - SHA-256: `8dc73fc3b00203e72d176e85b50938627c7b086e607c682e8d3c22c02bb99fe8`
-- Installed as `"xlsx": "file:../sheetjs-vendor/xlsx-0.20.3.tgz"`, reusing the
-  exact tarball CN-0C already downloaded and verified (re-verified by hash
-  again in this task before use).
+- **Vendored inside this repository** at `vendor/sheetjs/xlsx-0.20.3.tgz`,
+  installed as `"xlsx": "file:vendor/sheetjs/xlsx-0.20.3.tgz"`. This is a
+  repository-relative path with no dependency on any sibling or parent
+  directory outside the checkout — a fresh clone/CI checkout/Vercel build is
+  self-contained for this dependency. (An earlier revision of this repair
+  referenced `file:../sheetjs-vendor/xlsx-0.20.3.tgz`, a path one level above
+  the repo root that exists only inside the specific local disposable
+  workspace this feature was developed in; that reference could never resolve
+  on a fresh checkout — confirmed as the exact cause of PR #194's GitHub
+  Actions and Vercel install failures — `ENOENT` opening
+  `/home/runner/work/medistock-phoenix/sheetjs-vendor/xlsx-0.20.3.tgz`, one
+  directory above the checked-out repo. Fixed by vendoring the byte-identical
+  artifact into the repository itself.) The bytes are unchanged: the SHA-256
+  above was independently re-verified against both the original CN-0C source
+  cache (`D:\cn0c-work\sheetjs-vendor\xlsx-0.20.3.tgz`, read-only, historical
+  evidence) and the copy now committed at `vendor/sheetjs/xlsx-0.20.3.tgz`,
+  and both matched the pin exactly before the copy was trusted.
 - License: Apache-2.0. Obligations unchanged from CN-0C's assessment (LICENSE
   present, attribution headers untouched, package vendored unmodified, no
-  NOTICE file ships upstream for this version).
+  NOTICE file ships upstream for this version). This artifact is a public
+  third-party npm package tarball, not workbook corpus data.
