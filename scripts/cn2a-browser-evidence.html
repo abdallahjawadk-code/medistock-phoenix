@@ -1,0 +1,65 @@
+<!doctype html>
+<html>
+  <head><meta charset="utf-8" /><title>CN-2A browser evidence</title></head>
+  <body>
+    <pre id="out">running...</pre>
+    <script type="module">
+      import { browserInflate } from '/src/features/central-needs/import/browser-inflate.ts';
+      import { InflateOutputLimitExceeded } from '/src/features/central-needs/import/zip-reader.ts';
+
+      const results = {};
+
+      // ---- (1) Bounded-inflate evidence -------------------------------------
+      // A DEFLATE stream produced by Node (committed alongside as base64 by the
+      // generator) would be ideal, but we can build one here: compress 8 MiB of
+      // zeros using CompressionStream, then feed it back through browserInflate
+      // with a small ceiling and prove it aborts on ACTUAL output.
+      async function makeDeflateBomb(sizeBytes) {
+        const payload = new Uint8Array(sizeBytes);
+        const cs = new Blob([payload]).stream().pipeThrough(new CompressionStream('deflate-raw'));
+        return new Uint8Array(await new Response(cs).arrayBuffer());
+      }
+
+      try {
+        const BOMB = 8 * 1024 * 1024;
+        const compressed = await makeDeflateBomb(BOMB);
+        results.bombCompressedBytes = compressed.byteLength;
+
+        let aborted = false;
+        let errName = null;
+        try {
+          await browserInflate(compressed, { maxOutputBytes: 64 * 1024 });
+        } catch (err) {
+          aborted = true;
+          errName = err instanceof InflateOutputLimitExceeded ? 'InflateOutputLimitExceeded' : String(err && err.name);
+        }
+        results.bombAbortedAtCeiling = aborted;
+        results.bombErrorName = errName;
+
+        // Positive control: the same stream inflates fully when allowed.
+        const full = await browserInflate(compressed, { maxOutputBytes: 16 * 1024 * 1024 });
+        results.positiveControlInflatedBytes = full.byteLength;
+      } catch (err) {
+        results.bombHarnessError = String(err);
+      }
+
+      // ---- (2) Real ZIP archive parse through the Worker --------------------
+      const zipBytes = new Uint8Array(
+        await (await fetch('/src/features/central-needs/import/__tests__/fixtures/synthetic-archive.zip')).arrayBuffer(),
+      );
+      results.fixtureBytes = zipBytes.byteLength;
+
+      const worker = new Worker(new URL('/src/features/central-needs/import/worker.ts', import.meta.url), { type: 'module' });
+      const archiveResult = await new Promise((resolve, reject) => {
+        worker.onmessage = (e) => (e.data.type === 'result' ? resolve(e.data.result) : reject(new Error(e.data.message)));
+        worker.onerror = (e) => reject(new Error('worker error: ' + e.message));
+        const buf = zipBytes.buffer;
+        worker.postMessage({ type: 'parseArchive', requestId: 'zip-1', bytes: buf, filename: 'synthetic-archive.zip' }, [buf]);
+      });
+
+      results.archive = archiveResult;
+      window.__cn2aEvidence = results;
+      document.getElementById('out').textContent = 'DONE';
+    </script>
+  </body>
+</html>
