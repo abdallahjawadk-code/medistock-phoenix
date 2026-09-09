@@ -105,7 +105,7 @@ describe('Phase A7 Phoenix Daylight visual convergence contract', () => {
     expect(deps).toEqual([
       '@fontsource-variable/dm-sans', '@fontsource-variable/inter', '@fontsource-variable/noto-sans-arabic',
       '@fontsource/ibm-plex-sans-arabic', '@react-three/fiber', '@supabase/supabase-js', 'exceljs',
-      'qrcode', 'react', 'react-dom', 'tesseract.js', 'three',
+      'qrcode', 'react', 'react-dom', 'tesseract.js', 'three', 'xlsx',
     ]);
     expect(devDeps).toEqual([
       '@testing-library/jest-dom', '@testing-library/react', '@types/node', '@types/pg', '@types/qrcode',

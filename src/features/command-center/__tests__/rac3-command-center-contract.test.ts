@@ -407,26 +407,33 @@ describe('RAC-3 · I) no backend or migration change', () => {
    * version bump, which a filename check never could.
    */
   it('changes no dependency — only the release version may differ', () => {
-    // SECURITY-AUDIT-VITEST4-SHARP: the audited dependency baseline advances
-    // from d4bd65d2 to d70b24a9, the reviewed security commit that bumps
-    // sharp 0.35.3 -> 0.35.4 and vitest 3.2.6 -> 4.1.11 (with @vitest/mocker
-    // resolving transitively to 4.1.11) to clear the flagged advisories on
-    // the previously pinned versions. That commit changes package.json (the
-    // two devDependency ranges) and package-lock.json (their full transitive
-    // graphs) ONLY — no dependency added, removed or moved outside the sharp
-    // and vitest subtrees — and is evidenced by the fix/security-audit-vitest4-
-    // sharp branch history.
+    // CN-2A-SHEETJS: the audited dependency baseline advances from d70b24a9
+    // to 6ce98332, the reviewed CN-2A commit that adds exactly one runtime
+    // dependency — `xlsx` (SheetJS Community Edition 0.20.3, vendored
+    // in-repo at vendor/sheetjs/xlsx-0.20.3.tgz, never the npm registry's
+    // stale 0.18.5, tarball SHA-256
+    // 8dc73fc3b00203e72d176e85b50938627c7b086e607c682e8d3c22c02bb99fe8) — for
+    // the Central Needs legacy-XLS/XLSX/CSV import parser core. Nothing else
+    // in `dependencies` changed (no addition, removal or move outside
+    // `xlsx`), and `devDependencies`/`overrides`/`scripts`/`name` are
+    // byte-identical to d70b24a9 — independently diffed field-by-field, not
+    // merely asserted. Evidenced by this branch's own two commits: 3eaa1e3a
+    // (adds the parser contract and engine, and the dependency itself) and
+    // 6ce98332 (repairs the dependency's install path from a workspace-local
+    // sibling directory to the in-repository vendored path — the earlier
+    // 3eaa1e3a is deliberately NOT used as this pin, because its `xlsx`
+    // value differs byte-for-byte from the final, portable one this baseline
+    // must recognize).
     //
-    // Registering the new baseline by EXACT commit, exactly as d4bd65d2 was
-    // registered before it. The assertion itself is untouched and stays
-    // byte-exact: nothing is normalised or exempted beyond the pre-existing
-    // release-version allowance, no range or allowlist is introduced, and any
-    // dependency drift away from d70b24a9 still fails closed. The five
-    // package.json fields asserted below are byte-identical between d4bd65d2
-    // and d70b24a9 except for the sharp/vitest devDependency entries this
-    // baseline advance intentionally carries, so advancing the pin changes
+    // Registering the new baseline by EXACT commit, exactly as d4bd65d2 and
+    // d70b24a9 were registered before it. The assertion itself is untouched
+    // and stays byte-exact: nothing is normalised or exempted beyond the
+    // pre-existing release-version allowance, no range or allowlist is
+    // introduced, and any dependency drift away from 6ce98332 — including a
+    // different `xlsx` version, a different install source, or any other
+    // unapproved package — still fails closed. Advancing the pin changes
     // what the approved graph IS, never how strictly it is enforced.
-    const BASE = 'd70b24a9839a34741c9a0cee7bdc42b74d0f7da0';
+    const BASE = '6ce9833269536b5e5745d4139a648c6bf7d545ca';
     const jsonAt = (ref: string, file: string) => JSON.parse(
       execSync(`git show ${ref}:${file}`, { cwd: process.cwd(), encoding: 'utf8' }),
     );
