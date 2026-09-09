@@ -378,7 +378,12 @@ describe('RAC-3 · I) no backend or migration change', () => {
     const M206 = 'supabase/migrations/206_phoenix_dispensing_suspension_enforcement_suggestions.sql';
     const M207 = 'supabase/migrations/207_phoenix_dispensing_suspension_enforcement_warehouse_send.sql';
     const M208 = 'supabase/migrations/208_phoenix_dispensing_suspension_enforcement_replenishment_and_drafts.sql';
-    const ALLOWED_SQL = [M200, M201, M202, M203, M204, M205, M206, M207, M208];
+    // CN-1A: migration 209 is the Central Needs core registry — five new
+    // organization-scoped tables, RLS, and four permission keys. Registered
+    // by EXACT filename, exactly as M200-M208 were. RAC-3's own subject (the
+    // command centre) is untouched by it.
+    const M209 = 'supabase/migrations/209_phoenix_central_needs_registry.sql';
+    const ALLOWED_SQL = [M200, M201, M202, M203, M204, M205, M206, M207, M208, M209];
     const changed = execSync(
       'git diff --name-only b707f073d60b4cc61205c35003ab491f3aed7468',
       { cwd: process.cwd(), encoding: 'utf8' },

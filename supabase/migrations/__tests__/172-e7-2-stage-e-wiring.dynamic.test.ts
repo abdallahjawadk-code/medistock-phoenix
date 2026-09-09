@@ -258,6 +258,12 @@ run('E7-2 · Stage-E application wiring (dynamic)',()=>{
       // RPC) — no Stage-E SQL, so the "Stage E still ends at 171" assertion
       // above is unaffected. Listed here so this guard stays exhaustive.
       '208_phoenix_dispensing_suspension_enforcement_replenishment_and_drafts.sql',
+      // CN-1A (209): the Central Needs core registry — five new
+      // organization-scoped tables, RLS, and four permission keys. No RPC,
+      // no movement/stock/corridor SQL at all — so the "Stage E still ends
+      // at 171" assertion above is unaffected. Listed here so this guard
+      // stays exhaustive.
+      '209_phoenix_central_needs_registry.sql',
     ];
     it('Stage E still ends at 171 — E7-2 introduced no new SQL',()=>{
       const files=readdirSync(join(__dirname,'..')).filter(f=>/^\d{3}_.*\.sql$/.test(f));
