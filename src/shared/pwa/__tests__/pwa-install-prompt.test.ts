@@ -395,6 +395,12 @@ describe('No forbidden content or scope creep', () => {
       // WASM and trained data are self-hosted under /assets/ocr (no CDN), and
       // no image or extracted text ever leaves the device.
       'tesseract.js',
+      // CN-2A: SheetJS Community Edition 0.20.3, vendored in-repo at
+      // vendor/sheetjs/xlsx-0.20.3.tgz (never the npm registry's stale
+      // 0.18.5), for the Central Needs legacy-XLS/XLSX/CSV import parser
+      // core. Not yet imported by any reachable UI code path — confirmed
+      // zero production-bundle impact (src/features/central-needs/import/).
+      'xlsx',
     ].sort());
   });
 
