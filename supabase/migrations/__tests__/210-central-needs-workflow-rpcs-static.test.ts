@@ -46,7 +46,7 @@ const RPCS: ReadonlyArray<readonly [string, string]> = [
   ['phoenix_central_needs_open_plan_revision', 'uuid, integer, boolean'],
   ['phoenix_central_needs_start_import_session', 'uuid, text, text, text, jsonb, bigint, text'],
   ['phoenix_central_needs_set_record_mapping', 'uuid, text, uuid'],
-  ['phoenix_central_needs_record_field_override', 'uuid, text, text, jsonb, text, text, text'],
+  ['phoenix_central_needs_record_field_override', 'uuid, jsonb, text, text, text'],
   ['phoenix_central_needs_submit_revision', 'uuid'],
   ['phoenix_central_needs_approve_revision', 'uuid'],
   ['phoenix_central_needs_reject_revision', 'uuid, text'],
@@ -57,10 +57,13 @@ const TRUSTED_RPC = 'phoenix_central_needs_apply_authoritative_replay';
 const TRUSTED_RPC_ARGS = 'uuid, text, jsonb, jsonb';
 
 const INTERNAL_HELPERS = [
+  '_phoenix_central_needs_assert_org_live_v1',
   '_phoenix_central_needs_guard_v1',
   '_phoenix_central_needs_load_revision_v1',
   '_phoenix_central_needs_assert_draft_v1',
   '_phoenix_central_needs_semantic_digest_v1',
+  '_phoenix_central_needs_payload_digest_v1',
+  '_phoenix_central_needs_assert_payload_v1',
 ];
 
 describe('CN-1B/210 static — registration and file hygiene', () => {
@@ -198,7 +201,7 @@ describe('CN-1B/210 static — SECURITY DEFINER discipline', () => {
     const seg = IMPL.slice(start, IMPL.indexOf('$$;', start));
     expect(seg).toMatch(/FROM public\.central_needs_source_records/);
     expect(seg).toMatch(/sha256\(/);
-    expect(seg).toMatch(/ORDER BY r\.target_entity COLLATE "C", r\.field_name COLLATE "C"/);
+    expect(seg).toMatch(/ORDER BY r\.record_ordinal/);
   });
 
   it('binds the replay to the exact source file of the session', () => {
@@ -280,9 +283,16 @@ describe('CN-1B/210 static — source immutability is preserved', () => {
     expect(BODY).not.toMatch(/DELETE\s+FROM\s+public\.central_needs_source_files/i);
   });
 
-  it('inserts source records conflict-free rather than overwriting them', () => {
-    expect(BODY).toMatch(/ON CONFLICT \(import_session_id, target_entity, field_name\) DO NOTHING/);
-    expect(BODY).not.toMatch(/ON CONFLICT \(import_session_id, target_entity, field_name\) DO UPDATE/);
+  it('never silently discards an emitted source record', () => {
+    // The old (session, entity, field) ON CONFLICT DO NOTHING would drop a
+    // second same-header cell in one row — losing immutable evidence while
+    // reporting success. Ordinal identity replaced it, so the insert carries
+    // no conflict clause at all and a genuine collision would raise.
+    expect(IMPL).not.toMatch(/ON CONFLICT[\s\S]{0,120}central_needs_source_records/);
+    const start = IMPL.indexOf('INSERT INTO public.central_needs_source_records');
+    const seg = IMPL.slice(start, start + 700);
+    expect(seg).not.toMatch(/ON CONFLICT/);
+    expect(seg).toMatch(/WITH ORDINALITY/);
   });
 
   it('drops neither M209 immutability trigger', () => {
@@ -361,10 +371,16 @@ describe('CN-1B/210 static — forbidden invariants', () => {
     expect(created).toEqual(['central_needs_record_mappings']);
   });
 
-  it('alters only the Central Needs import session table', () => {
+  it('alters only Central Needs tables', () => {
     const altered = new Set([...BODY.matchAll(/ALTER TABLE public\.(\w+)/g)].map((m) => m[1]));
-    expect([...altered]).toEqual(['central_needs_import_sessions', 'central_needs_record_mappings']
-      .filter((t) => altered.has(t)));
+    // import_sessions (trust evidence), source_records (ordinal identity),
+    // field_overrides (lineage) and the new mappings table (RLS).
+    expect([...altered].sort()).toEqual([
+      'central_needs_field_overrides',
+      'central_needs_import_sessions',
+      'central_needs_record_mappings',
+      'central_needs_source_records',
+    ]);
     for (const t of altered) expect(t.startsWith('central_needs_')).toBe(true);
   });
 
@@ -395,10 +411,13 @@ describe('CN-1B/210 static — state machine uses only M209 labels', () => {
   });
 
   it('only ever supersedes an approved revision, preserving its approval record', () => {
-    expect(BODY).toMatch(/only_an_approved_revision_may_be_superseded/);
-    expect(BODY).toMatch(/SET status = 'superseded'/);
+    // A revision still under review cannot be closed out from under the reviewer.
+    expect(IMPL).toMatch(/plan_revision_still_in_review/);
+    expect(IMPL).toMatch(/SET status = 'superseded'/);
+    // Exactly one supersede site, and it is guarded on 'approved'.
+    expect([...IMPL.matchAll(/SET status = 'superseded'/g)]).toHaveLength(1);
     // The supersede UPDATE must not clear the approval pair.
-    expect(BODY).not.toMatch(/SET status = 'superseded'[\s\S]{0,120}approved_by\s*=\s*NULL/);
+    expect(IMPL).not.toMatch(/SET status = 'superseded'[\s\S]{0,120}approved_by\s*=\s*NULL/);
   });
 
   it('restricts content mutation to a draft revision', () => {
@@ -423,5 +442,134 @@ describe('CN-1B/210 static — state machine uses only M209 labels', () => {
 
   it('refuses to submit a revision with no authoritatively finalized import', () => {
     expect(BODY).toMatch(/plan_revision_has_no_finalized_import/);
+  });
+});
+
+describe('CN-1B/210 static — review-round repairs', () => {
+  it('B1: the trusted replay is subject to the archived-organization rule', () => {
+    // service_role bypasses RLS but is NOT exempt from the archive contract.
+    const start = IMPL.indexOf(`FUNCTION public.${TRUSTED_RPC}(`);
+    const seg = IMPL.slice(start, IMPL.indexOf('$$;', start));
+    expect(seg).toMatch(/_phoenix_central_needs_assert_org_live_v1\(v_session\.organization_id\)/);
+    // ...and the check runs BEFORE any source record is written.
+    expect(seg.indexOf('_phoenix_central_needs_assert_org_live_v1'))
+      .toBeLessThan(seg.indexOf('INSERT INTO public.central_needs_source_records'));
+    // The archive rule lives in one shared helper used by the client guard too.
+    expect(IMPL).toMatch(/central_needs_write_blocked_by_archived_organization/);
+    const guard = IMPL.slice(IMPL.indexOf('FUNCTION public._phoenix_central_needs_guard_v1('));
+    expect(guard.slice(0, guard.indexOf('$$;'))).toMatch(/_phoenix_central_needs_assert_org_live_v1/);
+  });
+
+  it('B2: source identity is a deterministic ordinal, not (entity, field)', () => {
+    expect(IMPL).toMatch(/ADD COLUMN record_ordinal integer NOT NULL/);
+    expect(IMPL).toMatch(/DROP CONSTRAINT central_needs_source_records_import_session_id_target_entit_key/);
+    expect(IMPL).toMatch(/central_needs_source_records_session_ordinal_key[\s\S]{0,40}UNIQUE \(import_session_id, record_ordinal\)/);
+    // Order comes from CN-2A's frozen array, captured relationally.
+    expect(IMPL).toMatch(/WITH ORDINALITY AS e\(r, ord\)/);
+    // Nothing may silently discard an emitted record any more.
+    expect(IMPL).not.toMatch(/ON CONFLICT[\s\S]{0,80}central_needs_source_records/);
+    expect(IMPL).not.toMatch(/ON CONFLICT \(import_session_id, target_entity, field_name\)/);
+    // Still parser-neutral: no sheet/row/column relational column appears.
+    expect(IMPL).not.toMatch(/ADD COLUMN\s+(sheet|row|column|cell)_/i);
+  });
+
+  it('B2: mappings are scoped to an import session, not merely a revision', () => {
+    expect(IMPL).toMatch(/CREATE TABLE public\.central_needs_record_mappings[\s\S]*?UNIQUE \(import_session_id, target_entity\)/);
+    expect(IMPL).toMatch(/central_needs_record_mappings_session_org_fk/);
+  });
+
+  it('B3: mapping and override are bound to real evidence', () => {
+    expect(IMPL).toMatch(/target_entity_not_in_import_session/);
+    expect(IMPL).toMatch(/source_record_not_found/);
+    expect(IMPL).toMatch(/ADD COLUMN source_record_id uuid NOT NULL/);
+    expect(IMPL).toMatch(/central_needs_field_overrides_source_record_org_fk/);
+    // previous_value is derived from lineage, never taken from the caller.
+    const start = IMPL.indexOf('FUNCTION public.phoenix_central_needs_record_field_override(');
+    const seg = IMPL.slice(start, IMPL.indexOf('$$;', start));
+    expect(seg).not.toMatch(/p_previous_value/);
+    expect(seg).toMatch(/v_previous := v_record\.source_values/);
+    expect(seg).toMatch(/'source_record_id', p_source_record_id/);
+  });
+
+  it('B4: the digest binds provenance, normalizing only extractedAt', () => {
+    const start = IMPL.indexOf('FUNCTION public._phoenix_central_needs_semantic_digest_v1(');
+    const seg = IMPL.slice(start, IMPL.indexOf('$$;', start));
+    expect(seg).toMatch(/r\.record_ordinal/);
+    expect(seg).toMatch(/r\.source_values/);
+    expect(seg).toMatch(/source_provenance - 'extractedAt'/);
+    expect(seg).toMatch(/ORDER BY r\.record_ordinal/);
+    // Provenance is mandatory and must fingerprint this session's file.
+    expect(IMPL).toMatch(/record_requires_source_provenance_object/);
+    expect(IMPL).toMatch(/record_provenance_file_fingerprint_mismatch/);
+  });
+
+  it('B5: the trusted replay is idempotent on exact retry and fails closed otherwise', () => {
+    expect(IMPL).toMatch(/import_session_already_finalized_with_different_evidence/);
+    const start = IMPL.indexOf(`FUNCTION public.${TRUSTED_RPC}(`);
+    const seg = IMPL.slice(start, IMPL.indexOf('$$;', start));
+    expect(seg).toMatch(/v_session\.status = 'completed'/);
+    expect(seg).toMatch(/'idempotent_replay', true/);
+    expect(seg).toMatch(/'records_inserted', 0/);
+  });
+
+  it('B6: a rejected revision does not dead-end the plan year', () => {
+    const start = IMPL.indexOf('FUNCTION public.phoenix_central_needs_open_plan_revision(');
+    const seg = IMPL.slice(start, IMPL.indexOf('$$;', start));
+    expect(seg).toMatch(/status NOT IN \('approved', 'rejected'\)/);
+    // Only an approved revision is superseded; a rejected one stays rejected.
+    expect(seg).toMatch(/IF v_current\.status = 'approved' THEN[\s\S]{0,160}SET status = 'superseded'/);
+    expect(seg).not.toMatch(/rejected'[\s\S]{0,80}SET status = 'superseded'/);
+    // The parameter name states what it does.
+    expect(IMPL).toMatch(/p_open_next_revision\s+boolean DEFAULT false/);
+    expect(IMPL).not.toMatch(/p_supersede/);
+  });
+});
+
+describe('CN-1B/210 static — payload validation precedes digesting', () => {
+  const trustedBody = () => {
+    const start = IMPL.indexOf(`FUNCTION public.${TRUSTED_RPC}(`);
+    return IMPL.slice(start, IMPL.indexOf('$$;', start));
+  };
+
+  it('validates the payload BEFORE the completed-session branch', () => {
+    const seg = trustedBody();
+    const validateAt = seg.indexOf('_phoenix_central_needs_assert_payload_v1(p_records, p_source_file_sha256)');
+    const completedAt = seg.indexOf("v_session.status = 'completed'");
+    const digestAt = seg.indexOf('_phoenix_central_needs_payload_digest_v1(p_records)');
+    expect(validateAt, 'the shared validator must be invoked').toBeGreaterThan(-1);
+    expect(completedAt, 'the completed branch must exist').toBeGreaterThan(-1);
+    expect(digestAt, 'the payload digest must be used for the retry comparison').toBeGreaterThan(-1);
+    // Digesting an unvalidated payload is exactly how a malformed appended
+    // element could hash as an identical retry.
+    expect(validateAt, 'validation must precede the completed branch').toBeLessThan(completedAt);
+    expect(validateAt, 'validation must precede payload digesting').toBeLessThan(digestAt);
+  });
+
+  it('uses ONE shared validator, not two drifting copies', () => {
+    // Exactly one call site, and the per-record rules live only in the helper.
+    expect([...trustedBody().matchAll(/_phoenix_central_needs_assert_payload_v1\(/g)]).toHaveLength(1);
+    const helperStart = IMPL.indexOf('FUNCTION public._phoenix_central_needs_assert_payload_v1(');
+    const helper = IMPL.slice(helperStart, IMPL.indexOf('$$;', helperStart));
+    for (const rule of [
+      /record_requires_target_entity_field_name_and_source_values/,
+      /record_requires_source_provenance_object/,
+      /record_provenance_file_fingerprint_mismatch/,
+      /authoritative_replay_produced_no_records/,
+    ]) {
+      expect(helper, String(rule)).toMatch(rule);
+      // ...and NOT re-implemented inline in the RPC body.
+      expect(trustedBody(), `${rule} must not be duplicated inline`).not.toMatch(rule);
+    }
+  });
+
+  it('the payload digest cannot silently drop a malformed member', () => {
+    const start = IMPL.indexOf('FUNCTION public._phoenix_central_needs_payload_digest_v1(');
+    const seg = IMPL.slice(start, IMPL.indexOf('$$;', start));
+    // Every concatenated member is COALESCE'd, so a NULL can never vanish
+    // inside string_agg and make two different payloads hash alike.
+    expect(seg).toMatch(/COALESCE\(btrim\(e\.r->>'targetEntity'\), ''\)/);
+    expect(seg).toMatch(/COALESCE\(btrim\(e\.r->>'fieldName'\), ''\)/);
+    expect(seg).toMatch(/COALESCE\(\(e\.r->'sourceValues'\)::text, ''\)/);
+    expect(seg).toMatch(/COALESCE\(\(\(e\.r->'sourceProvenance'\) - 'extractedAt'\)::text, ''\)/);
   });
 });

@@ -10,89 +10,104 @@
 --   1. Three columns on central_needs_import_sessions carrying the CN-2A
 --      dual-pass trust evidence, plus ONE declarative CHECK that makes
 --      finalization structurally impossible without authoritative agreement.
---   2. One table, central_needs_record_mappings — the canonical-link surface
---      (imported target_entity -> central_items), which M209 deliberately did
---      not model because no parser output contract existed yet.
---   3. Seven client-facing SECURITY DEFINER workflow RPCs, each enforcing
---      authorization, organization boundary, archived-organization denial,
---      legal state transition and an explicit in-transaction audit_logs write.
---   4. ONE trusted-backend RPC, reachable by service_role only, which is the
+--   2. A deterministic relational identity for source evidence
+--      (central_needs_source_records.record_ordinal) that replaces M209's
+--      (session, target_entity, field_name) uniqueness.
+--   3. Explicit override lineage (central_needs_field_overrides
+--      .source_record_id) so a correction always names the exact evidence it
+--      corrects.
+--   4. One table, central_needs_record_mappings — the canonical-link surface,
+--      scoped to an import session so multi-file intake cannot collide.
+--   5. Seven client-facing SECURITY DEFINER workflow RPCs.
+--   6. ONE trusted-backend RPC, reachable by service_role only, which is the
 --      sole path that may write authoritative import evidence or move a
 --      session to 'completed'.
+--
+-- WHY THE IDENTITY WORK (2) IS NECESSARY, NOT COSMETIC
+--   CN-2A's frozen contract emits targetEntity as "sheet:{index}:row:{row}"
+--   and fieldName as the workbook's own header text. Neither is unique inside
+--   a plan revision:
+--     * two source files under one revision (ZIP / multi-file intake) both
+--       legitimately contain sheet:0:row:5;
+--     * one row legitimately carries two columns with the SAME header text.
+--   M209's UNIQUE (import_session_id, target_entity, field_name) therefore
+--   cannot represent real workbooks: the second same-header cell in a row has
+--   nowhere to go, and an ON CONFLICT DO NOTHING writer would silently drop
+--   it — losing immutable evidence while reporting success.
+--
+--   The fix stays PARSER-NEUTRAL. It does not add sheet/row/column columns and
+--   does not reinterpret targetEntity or fieldName, both of which remain
+--   opaque text exactly as CN-2A froze them. It adds one integer, the
+--   position of the record inside CN-2A's already-deterministic sourceRecords
+--   array, captured with WITH ORDINALITY at insert time. Uniqueness becomes
+--   (import_session_id, record_ordinal): every emitted record is preserved,
+--   duplicates included, and each is independently addressable. Multi-file
+--   collision disappears because ordinals are per session, and a session is
+--   per source file.
 --
 -- WHAT THIS MIGRATION DELIBERATELY DOES NOT DO
 --   - No stock mutation, no movement ledger, no transfer request of any kind,
 --     no touch of inventory_transfer_suggestions. Central Needs planning and
 --     physical sending stay separate systems; physical sending remains
 --     governed by warehouse_transfer.send and is not referenced here.
---   - No new permission key. The four M209 keys (central_needs.view/import/
---     edit/approve) are the complete surface. There is deliberately NO
---     central_needs.send.
+--   - No new permission key. The four M209 keys are the complete surface.
+--     There is deliberately NO central_needs.send.
 --   - No new default role grant. central_needs.* keeps zero rows in
---     role_permission_defaults — access stays opt-in per profile via
---     profile_permission_overrides, exactly as M209 established.
---   - No parallel authorization framework. Every guard composes the existing
---     public.phoenix_status_center_authorized (M092), which M209's own header
---     names as mandatory for CN-1B so that "RLS and RPC authorization never
---     fork".
+--     role_permission_defaults.
+--   - No parallel authorization framework. Every client guard composes the
+--     existing public.phoenix_status_center_authorized (M092), which M209's
+--     own header names as mandatory for CN-1B.
 --   - No trigger-based audit framework. Every audit row is an explicit INSERT
---     inside an RPC body, matching every existing audit_logs writer in this
---     codebase.
+--     inside an RPC body.
 --   - No change to M201/M202. Central Needs objects are NOT added to the
---     organizations archive reciprocal dependency set (a historical Central
---     Needs plan must not, by itself, block archiving an organization).
---     Instead each mutating RPC below refuses NEW mutable activity under an
---     archived organization, which is the property that actually matters.
+--     organizations archive reciprocal dependency set; instead every mutating
+--     path refuses NEW activity under an archived organization.
 --
--- THE CN-2A TRUST BOUNDARY — WHY A CHECK CONSTRAINT AND NOT JUST RPC CODE
---   CN-2A's frozen contract produces a parse result in one of two runtimes:
---   a provisional browser Worker preview, and an authoritative Node 22 replay
---   keyed by the SHA-256 of the exact input bytes. A browser preview is
---   attacker-influenced and must never be sufficient to finalize an import.
+-- THE CN-2A TRUST BOUNDARY
+--   CN-2A produces a parse result in one of two runtimes: a provisional
+--   browser Worker preview, and an authoritative Node 22 replay keyed by the
+--   SHA-256 of the exact input bytes. A browser preview is attacker-influenced
+--   and must never be sufficient to finalize an import.
 --
---   The session therefore carries preview_digest and authoritative_digest —
---   opaque lowercase-hex SHA-256 digests of each pass's semantic output — and
---   parser_identity, CN-2A's ParserIdentity (contract version, SheetJS
---   version, pinned tarball hash, runtime). The CHECK below states the trust
---   rule declaratively:
---
---       status = 'completed'  =>  both digests present, EQUAL, identity
---                                 recorded, and completed_at stamped.
---
---   Expressing it as a constraint rather than only as RPC logic means a
---   finalized-looking session cannot exist even if reached by a service-role
---   connection, a future RPC, or a hand-written UPDATE — the same reasoning
---   M209 used when it chose composite foreign keys over triggers for its
---   cross-organization guarantees.
---
---   THE CONSTRAINT ALONE IS NOT THE TRUST BOUNDARY. Equality of two digests
---   proves nothing if the same principal supplies both. The boundary is
---   enforced by WHO may write these values, and by WHERE the authoritative
---   digest comes from:
+--   EQUALITY OF TWO DIGESTS IS NOT THE BOUNDARY. It proves nothing if the same
+--   principal supplies both. The boundary is WHO may write, and WHERE the
+--   authoritative digest comes from:
 --     * preview_digest is a PROVISIONAL client claim, written at session
---       start by a central_needs.import holder. It is never sufficient.
+--       start by a central_needs.import holder. Never sufficient.
 --     * authoritative_digest is never accepted from any caller. It is
---       RECOMPUTED by the database (section 7) over the source records
+--       RECOMPUTED by the database (section 5) over the source records
 --       actually persisted, inside the trusted replay transaction.
---     * Only service_role can reach that transaction (section 8), and only
+--     * Only service_role can reach that transaction (section 7), and only
 --       that transaction inserts source records or sets status='completed'.
---   An authenticated client — even holding central_needs.import — therefore
---   cannot manufacture authoritative evidence: it cannot insert source
---   records, cannot set authoritative_digest, and cannot finalize.
 --
---   The columns stay parser-NEUTRAL: two opaque hex digests and a shape-free
---   jsonb. No sheet/row/column/workbook-family assumption enters the schema,
---   preserving M209's contract. The canonical digest form is defined in
---   section 7 over generic (target_entity, field_name, source_values) triples
---   only — it reads no parser-specific structure.
+--   WHAT THE DIGEST BINDS
+--   The digest covers the whole persisted evidence surface, not just values:
+--   record_ordinal, target_entity, field_name, source_values AND
+--   source_provenance. Provenance is immutable source evidence and part of
+--   CN-2A's frozen SourceValueRecordDraft, so a replay with identical values
+--   but a different sheet, coordinate or origin file is a DIFFERENT import and
+--   fails agreement. Exactly one field is normalized away before hashing:
+--   SourceProvenance.extractedAt, the documented runtime-parity exception —
+--   it records when the parse ran, so browser and Node necessarily differ.
+--   Every other provenance field is preserved and hashed.
+--
+--   SCOPE OF THIS EQUALITY — stated honestly. The database can only compare
+--   what it persists. CN-2A's FileParseResult / ArchiveParseResult also carry
+--   workbook totals, diagnostics, family detection and reconciliation
+--   summaries, none of which M209 stores. Whole-result equality therefore
+--   remains the trusted worker's responsibility, performed before it calls
+--   this RPC. What the database proves is narrower and precisely stated:
+--   the PERSISTED evidence is byte-equal to what the browser previewed, and
+--   nothing else was written. That is the property finalization depends on.
 --
 -- IDEMPOTENCY / REPLAY SAFETY
---   Import identity is deterministic and comes from the frozen contract, not
---   from a client-invented key: a source file is identified by its SHA-256
---   within a revision (M209 already declares UNIQUE (plan_revision_id,
---   file_hash)). Re-running an import for the same revision + same file hash
---   returns the existing session instead of creating a second one, so a
---   retried upload after a dropped connection cannot fork the evidence.
+--   Import identity is deterministic and contract-derived: a source file is
+--   identified by its SHA-256 within a revision (M209 already declares
+--   UNIQUE (plan_revision_id, file_hash)). The trusted replay is safe to
+--   retry after a lost response: an exact retry of an already-completed
+--   session (same file hash, same recomputed digest) returns
+--   idempotent_replay = true and writes nothing, while a retry carrying
+--   different evidence fails closed.
 -- ============================================================================
 
 BEGIN;
@@ -103,6 +118,7 @@ BEGIN;
 DO $precondition$
 DECLARE
   t text;
+  n bigint;
 BEGIN
   FOREACH t IN ARRAY ARRAY[
     'central_needs_plans', 'central_needs_plan_revisions', 'central_needs_source_files',
@@ -116,18 +132,14 @@ BEGIN
   IF to_regprocedure('public.phoenix_status_center_authorized(uuid, text)') IS NULL THEN
     RAISE EXCEPTION '210_precondition_failed: the canonical authorization helper is absent';
   END IF;
-
   IF to_regclass('public.central_items') IS NULL THEN
     RAISE EXCEPTION '210_precondition_failed: public.central_items is absent';
   END IF;
-
   IF to_regclass('public.audit_logs') IS NULL THEN
     RAISE EXCEPTION '210_precondition_failed: public.audit_logs is absent';
   END IF;
 
-  -- organizations.archived_at is M202's archive marker; every guard below
-  -- reads it. If it is missing the archived-organization contract cannot be
-  -- honoured and this migration must not proceed.
+  -- organizations.archived_at is M202's archive marker; every guard reads it.
   IF NOT EXISTS (
     SELECT 1 FROM information_schema.columns
     WHERE table_schema = 'public' AND table_name = 'organizations' AND column_name = 'archived_at'
@@ -147,6 +159,21 @@ BEGIN
       RAISE EXCEPTION '210_precondition_failed: central_needs_import_sessions.% already exists', t;
     END IF;
   END LOOP;
+
+  -- FAIL CLOSED ON UNEXPECTED PRE-M210 DATA.
+  -- Sections 2 and 3 give source evidence and overrides a NOT NULL relational
+  -- identity that did not exist before. M209 shipped no writer at all, so
+  -- these tables must be empty; if they are not, some unknown path wrote rows
+  -- whose lineage this migration cannot derive. Guessing an ordinal or a
+  -- source_record_id would fabricate evidence lineage, so refuse instead.
+  SELECT count(*) INTO n FROM public.central_needs_source_records;
+  IF n > 0 THEN
+    RAISE EXCEPTION '210_precondition_failed: central_needs_source_records holds % pre-M210 row(s); record_ordinal lineage cannot be derived deterministically', n;
+  END IF;
+  SELECT count(*) INTO n FROM public.central_needs_field_overrides;
+  IF n > 0 THEN
+    RAISE EXCEPTION '210_precondition_failed: central_needs_field_overrides holds % pre-M210 row(s); source_record_id lineage cannot be derived deterministically', n;
+  END IF;
 END;
 $precondition$;
 
@@ -163,9 +190,6 @@ ALTER TABLE public.central_needs_import_sessions
     CHECK (preview_digest IS NULL OR preview_digest ~ '^[0-9a-f]{64}$'),
   ADD CONSTRAINT central_needs_import_sessions_authoritative_digest_chk
     CHECK (authoritative_digest IS NULL OR authoritative_digest ~ '^[0-9a-f]{64}$'),
-  -- THE trust gate. See the header: a 'completed' session cannot exist unless
-  -- an authoritative Node replay independently produced the same semantic
-  -- digest as the provisional browser preview.
   ADD CONSTRAINT central_needs_import_sessions_authoritative_finalization_chk
     CHECK (
       status <> 'completed'
@@ -181,49 +205,82 @@ ALTER TABLE public.central_needs_import_sessions
 COMMENT ON COLUMN public.central_needs_import_sessions.preview_digest IS
   'CN-1B: lowercase-hex SHA-256 of the PROVISIONAL (browser Worker) parse pass''s semantic output. Attacker-influenced on its own — never sufficient to finalize.';
 COMMENT ON COLUMN public.central_needs_import_sessions.authoritative_digest IS
-  'CN-1B: lowercase-hex SHA-256 of the AUTHORITATIVE Node replay''s semantic output. Must equal preview_digest before the session may reach status=''completed''.';
+  'CN-1B: lowercase-hex SHA-256 recomputed BY THE DATABASE over the persisted source records. Never accepted from a caller. Must equal preview_digest before status may become ''completed''.';
 COMMENT ON COLUMN public.central_needs_import_sessions.parser_identity IS
   'CN-1B: the upstream parser identity record of the authoritative pass (contract version, parser version, pinned artifact hash, runtime). Shape-free jsonb — the database asserts presence and the runtime field, never parser shape.';
 
 -- ----------------------------------------------------------------------------
--- 2. central_needs_record_mappings — the canonical-link surface.
+-- 2. Deterministic relational identity for source evidence.
+--    See the header for why (session, target_entity, field_name) cannot work.
+-- ----------------------------------------------------------------------------
+ALTER TABLE public.central_needs_source_records
+  ADD COLUMN record_ordinal integer NOT NULL,
+  ADD CONSTRAINT central_needs_source_records_ordinal_positive_chk
+    CHECK (record_ordinal > 0);
+
+-- M209's uniqueness cannot represent two same-header cells in one row.
+ALTER TABLE public.central_needs_source_records
+  DROP CONSTRAINT central_needs_source_records_import_session_id_target_entit_key;
+
+ALTER TABLE public.central_needs_source_records
+  ADD CONSTRAINT central_needs_source_records_session_ordinal_key
+    UNIQUE (import_session_id, record_ordinal),
+  -- Exposed so central_needs_field_overrides can prove, in one composite FK,
+  -- that the record it corrects belongs to the same organization it claims.
+  ADD CONSTRAINT central_needs_source_records_id_org_key
+    UNIQUE (id, organization_id);
+
+COMMENT ON COLUMN public.central_needs_source_records.record_ordinal IS
+  'CN-1B: 1-based position of this record inside CN-2A''s deterministic sourceRecords array for the session, captured WITH ORDINALITY. Parser-neutral relational identity — it encodes order only, never sheet/row/column structure.';
+
+-- ----------------------------------------------------------------------------
+-- 3. Override lineage — a correction always names the evidence it corrects.
+-- ----------------------------------------------------------------------------
+ALTER TABLE public.central_needs_field_overrides
+  ADD COLUMN source_record_id uuid NOT NULL,
+  ADD CONSTRAINT central_needs_field_overrides_source_record_org_fk
+    FOREIGN KEY (source_record_id, organization_id)
+    REFERENCES public.central_needs_source_records (id, organization_id)
+    ON DELETE RESTRICT;
+
+CREATE INDEX central_needs_field_overrides_source_record_idx
+  ON public.central_needs_field_overrides(source_record_id);
+
+COMMENT ON COLUMN public.central_needs_field_overrides.source_record_id IS
+  'CN-1B: the exact authoritative source record this override corrects. NOT NULL, so no phantom field can be overridden and previous_value always has a real lineage to derive from.';
+
+-- ----------------------------------------------------------------------------
+-- 4. central_needs_record_mappings — the canonical-link surface.
 --
---    One row per (plan revision, imported target_entity), naming the
---    central_items row that entity resolves to. Follows M209's structural
---    conventions exactly: organization_id carries its own FK to organizations
---    AND a composite FK proving it agrees with the parent revision, RLS is
---    enabled and forced, and no client write grant exists at all.
---
---    Unlike source evidence this table is deliberately MUTABLE: a mapping is
---    a human correction, not imported evidence, and re-pointing a mis-mapped
---    line is the whole purpose of the review step. Source evidence remains
---    untouched by every mapping write.
+--    Scoped to an IMPORT SESSION, not merely a plan revision: two source files
+--    under one revision both legitimately contain sheet:0:row:1, and each must
+--    stay independently mappable.
 -- ----------------------------------------------------------------------------
 CREATE TABLE public.central_needs_record_mappings (
-  id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  plan_revision_id uuid NOT NULL,
-  organization_id  uuid NOT NULL REFERENCES public.organizations(id) ON DELETE RESTRICT,
-  target_entity    text NOT NULL CHECK (length(target_entity) > 0),
-  central_item_id  uuid NOT NULL REFERENCES public.central_items(id) ON DELETE RESTRICT,
-  mapped_by        uuid REFERENCES auth.users(id) ON DELETE SET NULL,
-  created_at       timestamptz NOT NULL DEFAULT now(),
-  updated_at       timestamptz NOT NULL DEFAULT now(),
-  UNIQUE (plan_revision_id, target_entity),
-  CONSTRAINT central_needs_record_mappings_revision_org_fk
-    FOREIGN KEY (plan_revision_id, organization_id)
-    REFERENCES public.central_needs_plan_revisions (id, organization_id)
+  id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  import_session_id uuid NOT NULL,
+  organization_id   uuid NOT NULL REFERENCES public.organizations(id) ON DELETE RESTRICT,
+  target_entity     text NOT NULL CHECK (length(target_entity) > 0),
+  central_item_id   uuid NOT NULL REFERENCES public.central_items(id) ON DELETE RESTRICT,
+  mapped_by         uuid REFERENCES auth.users(id) ON DELETE SET NULL,
+  created_at        timestamptz NOT NULL DEFAULT now(),
+  updated_at        timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (import_session_id, target_entity),
+  CONSTRAINT central_needs_record_mappings_session_org_fk
+    FOREIGN KEY (import_session_id, organization_id)
+    REFERENCES public.central_needs_import_sessions (id, organization_id)
     ON DELETE RESTRICT
 );
 
-CREATE INDEX central_needs_record_mappings_revision_idx ON public.central_needs_record_mappings(plan_revision_id);
-CREATE INDEX central_needs_record_mappings_org_idx      ON public.central_needs_record_mappings(organization_id);
-CREATE INDEX central_needs_record_mappings_item_idx     ON public.central_needs_record_mappings(central_item_id);
+CREATE INDEX central_needs_record_mappings_session_idx ON public.central_needs_record_mappings(import_session_id);
+CREATE INDEX central_needs_record_mappings_org_idx     ON public.central_needs_record_mappings(organization_id);
+CREATE INDEX central_needs_record_mappings_item_idx    ON public.central_needs_record_mappings(central_item_id);
 
 CREATE TRIGGER set_updated_at BEFORE UPDATE ON public.central_needs_record_mappings
   FOR EACH ROW EXECUTE FUNCTION public.phoenix_set_updated_at();
 
 COMMENT ON TABLE public.central_needs_record_mappings IS
-  'CN-1B: canonical link from an imported Central Needs target_entity to a central_items row, per plan revision. Mutable by design (a mapping is a correction, not source evidence). No client write path; mutated only by phoenix_central_needs_set_record_mapping.';
+  'CN-1B: canonical link from an imported target_entity to a central_items row, scoped to one import session so multi-file intake cannot collide. Mutable by design (a mapping is a correction, not source evidence). No client write path.';
 
 ALTER TABLE public.central_needs_record_mappings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.central_needs_record_mappings FORCE ROW LEVEL SECURITY;
@@ -236,18 +293,52 @@ CREATE POLICY central_needs_record_mappings_select_authorized
   USING (public.phoenix_status_center_authorized(organization_id, 'central_needs.view'));
 
 -- ----------------------------------------------------------------------------
--- 3. Shared internal guard.
---
---    This is a COMPOSITION of the existing canonical helper, not a second
---    authorization system: it calls public.phoenix_status_center_authorized
---    (which already enforces authenticated + active profile + organization
---    match + permission key, and grants super_admin org-wide access) and adds
---    only the two checks that helper cannot know about — that the target
---    organization exists, and that it is not archived.
---
---    Returning the actor's role keeps every audit row's actor_role consistent
---    with the rest of the codebase without each RPC repeating the lookup.
+-- 5. Internal helpers.
 -- ----------------------------------------------------------------------------
+
+-- 5a. Archived-organization denial, shared by the client guard AND the trusted
+--     replay. It is deliberately SEPARATE from the authorization guard: the
+--     trusted backend has no auth.uid() and must not be forced through a
+--     client authorization check, but it is still absolutely subject to the
+--     archived-organization rule. FOR KEY SHARE is the same concurrency fence
+--     M202's reciprocal guard uses, so an archive cannot commit underneath an
+--     in-flight mutation.
+CREATE OR REPLACE FUNCTION public._phoenix_central_needs_assert_org_live_v1(
+  p_organization_id uuid
+)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_archived_at timestamptz;
+BEGIN
+  IF p_organization_id IS NULL THEN
+    RAISE EXCEPTION 'organization_id_required' USING ERRCODE = '23514';
+  END IF;
+
+  SELECT archived_at INTO v_archived_at
+    FROM public.organizations
+   WHERE id = p_organization_id
+   FOR KEY SHARE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'organization_not_found' USING ERRCODE = 'P0002';
+  END IF;
+
+  IF v_archived_at IS NOT NULL THEN
+    RAISE EXCEPTION 'central_needs_write_blocked_by_archived_organization'
+      USING ERRCODE = '23514',
+      DETAIL = format('organization=%s archived_at=%s', p_organization_id, v_archived_at),
+      HINT = 'Restore the organization before creating or changing Central Needs data under it.';
+  END IF;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public._phoenix_central_needs_assert_org_live_v1(uuid) FROM PUBLIC, anon, authenticated;
+
+-- 5b. Client authorization guard: composes the canonical helper, then applies
+--     the shared archive rule. Not a second authorization system.
 CREATE OR REPLACE FUNCTION public._phoenix_central_needs_guard_v1(
   p_organization_id uuid,
   p_permission_key  text
@@ -258,9 +349,8 @@ SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
 DECLARE
-  v_actor       uuid := auth.uid();
-  v_actor_role  text;
-  v_archived_at timestamptz;
+  v_actor      uuid := auth.uid();
+  v_actor_role text;
 BEGIN
   IF v_actor IS NULL THEN
     RAISE EXCEPTION 'not_authenticated' USING ERRCODE = '28000';
@@ -269,31 +359,19 @@ BEGIN
     RAISE EXCEPTION 'organization_id_required' USING ERRCODE = '23514';
   END IF;
 
-  -- Organization must exist. FOR KEY SHARE is the same concurrency fence
-  -- M202's reciprocal guard uses: it conflicts with the FOR UPDATE an archive
-  -- takes, so an archive cannot commit underneath an in-flight mutation.
-  SELECT archived_at INTO v_archived_at
-    FROM public.organizations
-   WHERE id = p_organization_id
-   FOR KEY SHARE;
+  -- Organization existence (and the FOR KEY SHARE fence) comes first so a
+  -- nonexistent organization is reported as such rather than as forbidden.
+  PERFORM 1 FROM public.organizations WHERE id = p_organization_id FOR KEY SHARE;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'organization_not_found' USING ERRCODE = 'P0002';
   END IF;
 
-  -- Authorization: the canonical helper, never a reimplementation of it.
   IF NOT public.phoenix_status_center_authorized(p_organization_id, p_permission_key) THEN
     RAISE EXCEPTION 'forbidden_central_needs' USING ERRCODE = '42501',
       DETAIL = format('permission=%s organization=%s', p_permission_key, p_organization_id);
   END IF;
 
-  -- Archived organizations accept no NEW mutable Central Needs activity.
-  -- Historical rows stay readable and stay put; only mutation is refused.
-  IF v_archived_at IS NOT NULL THEN
-    RAISE EXCEPTION 'central_needs_write_blocked_by_archived_organization'
-      USING ERRCODE = '23514',
-      DETAIL = format('organization=%s archived_at=%s', p_organization_id, v_archived_at),
-      HINT = 'Restore the organization before creating or changing Central Needs data under it.';
-  END IF;
+  PERFORM public._phoenix_central_needs_assert_org_live_v1(p_organization_id);
 
   SELECT p.role INTO v_actor_role FROM public.profiles p WHERE p.id = v_actor;
   RETURN v_actor_role;
@@ -303,23 +381,12 @@ $$;
 REVOKE ALL ON FUNCTION public._phoenix_central_needs_guard_v1(uuid, text) FROM PUBLIC, anon, authenticated;
 
 COMMENT ON FUNCTION public._phoenix_central_needs_guard_v1(uuid, text) IS
-  'CN-1B internal: composes public.phoenix_status_center_authorized with organization existence and archived-organization denial. Not a parallel authorization system and not client-callable.';
+  'CN-1B internal: composes public.phoenix_status_center_authorized with organization existence and the shared archived-organization rule. Not a parallel authorization system and not client-callable.';
 
--- ----------------------------------------------------------------------------
--- 4. Internal: resolve a revision, and (separately) assert it is editable.
---
---    These are deliberately TWO steps, not one. Every RPC below runs them in
---    the order load -> authorize -> assert-editable, so an unauthorized
---    caller is refused on authorization grounds BEFORE the workflow state of
---    a revision they may not see is disclosed to them. Collapsing them into a
---    single "fetch an editable revision" helper would leak state to a caller
---    who has no right to it.
---
---    'draft' is the only state in which imported content, mappings and
---    overrides may change. 'submitted' is under review, and 'approved' /
---    'superseded' / 'rejected' are historical. Every state name here is one
---    M209 already defined — CN-1B invents none.
--- ----------------------------------------------------------------------------
+-- 5c. Resolve a revision, and (separately) assert it is editable. Two steps so
+--     every RPC can run load -> authorize -> assert-editable, refusing an
+--     unauthorized caller BEFORE disclosing the workflow state of a revision
+--     they may not see.
 CREATE OR REPLACE FUNCTION public._phoenix_central_needs_load_revision_v1(
   p_plan_revision_id uuid
 )
@@ -334,10 +401,6 @@ BEGIN
   IF p_plan_revision_id IS NULL THEN
     RAISE EXCEPTION 'plan_revision_id_required' USING ERRCODE = '23514';
   END IF;
-
-  -- FOR UPDATE serializes concurrent workflow writes against the same
-  -- revision, so a state transition and a content mutation cannot interleave
-  -- and leave content attached to an already-approved revision.
   SELECT * INTO v_revision
     FROM public.central_needs_plan_revisions
    WHERE id = p_plan_revision_id
@@ -345,7 +408,6 @@ BEGIN
   IF NOT FOUND THEN
     RAISE EXCEPTION 'plan_revision_not_found' USING ERRCODE = 'P0002';
   END IF;
-
   RETURN v_revision;
 END;
 $$;
@@ -365,27 +427,219 @@ BEGIN
   IF p_status <> 'draft' THEN
     RAISE EXCEPTION 'plan_revision_not_editable' USING ERRCODE = '23514',
       DETAIL = format('revision=%s status=%s', p_plan_revision_id, p_status),
-      HINT = 'Only a draft revision accepts imported content, mappings and overrides. Create a new revision to change approved history.';
+      HINT = 'Only a draft revision accepts imported content, mappings and overrides. Open a new revision to change closed history.';
   END IF;
 END;
 $$;
 
 REVOKE ALL ON FUNCTION public._phoenix_central_needs_assert_draft_v1(uuid, text) FROM PUBLIC, anon, authenticated;
 
--- ============================================================================
--- 5. RPC — open a plan revision (revision workflow).
+-- 5d. THE canonical semantic digest, computed BY THE DATABASE over the rows
+--     actually persisted for a session. Never a caller-supplied value.
 --
---    Creates the annual plan on first use and opens revision 1, or opens the
---    next revision when the caller explicitly supersedes the current approved
---    one. An approved revision is never mutated in place: it transitions to
---    'superseded' and KEEPS its approved_by/approved_at record, which M209's
---    approval-pair CHECK explicitly permits, so approved history stays
---    traceable.
+--     CANONICAL FORM (stable contract — a client whose provisional preview
+--     digest must agree has to reproduce exactly this):
+--       * rows for the session ordered by record_ordinal (deterministic, and
+--         independent of any collation);
+--       * each row rendered as
+--           ordinal U+001F target_entity U+001F field_name U+001F
+--           <source_values> U+001F <source_provenance minus extractedAt>
+--         where <...> is PostgreSQL's canonical jsonb text (`jsonb::text`:
+--         object keys ordered, duplicates removed, one space after each colon);
+--       * rows joined with U+001E;
+--       * SHA-256 over the UTF-8 bytes, lowercase hex.
+--
+--     extractedAt is the ONE documented runtime-parity exception: it records
+--     when the parse ran, so the browser and Node passes necessarily differ.
+--     Every other provenance field is preserved and hashed, so a replay with
+--     identical values but a different sheet, coordinate or origin file fails
+--     agreement.
+CREATE OR REPLACE FUNCTION public._phoenix_central_needs_semantic_digest_v1(
+  p_import_session_id uuid
+)
+RETURNS text
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+  SELECT encode(
+    sha256(
+      convert_to(
+        COALESCE(
+          string_agg(
+            r.record_ordinal::text || E'\x1F' ||
+            r.target_entity        || E'\x1F' ||
+            r.field_name           || E'\x1F' ||
+            r.source_values::text  || E'\x1F' ||
+            COALESCE((r.source_provenance - 'extractedAt')::text, ''),
+            E'\x1E' ORDER BY r.record_ordinal
+          ),
+          ''
+        ),
+        'UTF8'
+      )
+    ),
+    'hex'
+  )
+  FROM public.central_needs_source_records r
+  WHERE r.import_session_id = p_import_session_id;
+$$;
+
+REVOKE ALL ON FUNCTION public._phoenix_central_needs_semantic_digest_v1(uuid)
+  FROM PUBLIC, anon, authenticated;
+
+-- 5e. Payload validation — the SINGLE structural/provenance gate, shared by
+--     every path through the trusted replay.
+--
+--     It is one function precisely so the completed-session retry comparison
+--     and the first-persistence path can never drift apart. An earlier revision
+--     validated only on the persistence path and digested the payload BEFORE
+--     validating on the retry path, which was exploitable: the canonical
+--     expression concatenates fields, a malformed element yields NULL, and
+--     string_agg silently DROPS a NULL member. Appending `{}` — or any element
+--     missing a required field — therefore produced a digest identical to the
+--     original payload's, and the retry was wrongly accepted as an exact
+--     idempotent replay. Validation now runs before EITHER branch, so a
+--     malformed payload is refused before it is ever hashed.
+CREATE OR REPLACE FUNCTION public._phoenix_central_needs_assert_payload_v1(
+  p_records            jsonb,
+  p_source_file_sha256 text
+)
+RETURNS void
+LANGUAGE plpgsql
+IMMUTABLE
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+  IF p_records IS NULL OR jsonb_typeof(p_records) <> 'array' THEN
+    RAISE EXCEPTION 'records_array_required' USING ERRCODE = '23514';
+  END IF;
+
+  IF jsonb_array_length(p_records) = 0 THEN
+    RAISE EXCEPTION 'authoritative_replay_produced_no_records' USING ERRCODE = '23514';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM jsonb_array_elements(p_records) AS r
+    WHERE jsonb_typeof(r) <> 'object'
+       OR NOT (r ? 'targetEntity')
+       OR COALESCE(btrim(r->>'targetEntity'), '') = ''
+       OR NOT (r ? 'fieldName')
+       OR COALESCE(btrim(r->>'fieldName'), '') = ''
+       OR NOT (r ? 'sourceValues')
+  ) THEN
+    RAISE EXCEPTION 'record_requires_target_entity_field_name_and_source_values' USING ERRCODE = '23514';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM jsonb_array_elements(p_records) AS r
+    WHERE NOT (r ? 'sourceProvenance')
+       OR jsonb_typeof(r->'sourceProvenance') <> 'object'
+  ) THEN
+    RAISE EXCEPTION 'record_requires_source_provenance_object' USING ERRCODE = '23514',
+      HINT = 'Provenance is immutable source evidence and is bound into the semantic digest; it may not be omitted or null.';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM jsonb_array_elements(p_records) AS r
+    WHERE COALESCE(r->'sourceProvenance'->>'fileFingerprintSha256', '') <> p_source_file_sha256
+  ) THEN
+    RAISE EXCEPTION 'record_provenance_file_fingerprint_mismatch' USING ERRCODE = '23514',
+      DETAIL = format('expected=%s', p_source_file_sha256),
+      HINT = 'Every record''s provenance must fingerprint the same source file as the session.';
+  END IF;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public._phoenix_central_needs_assert_payload_v1(jsonb, text)
+  FROM PUBLIC, anon, authenticated;
+
+COMMENT ON FUNCTION public._phoenix_central_needs_assert_payload_v1(jsonb, text) IS
+  'CN-1B internal: the single structural/provenance validation gate for a replay payload, run before BOTH the completed-session idempotency comparison and first persistence so the two paths cannot drift.';
+
+-- 5f. The SAME canonical form, computed over a replay PAYLOAD rather than over
+--     persisted rows. It exists for exactly one purpose: deciding whether a
+--     retry against an already-completed session carries the same evidence.
+--
+--     Recomputing the persisted digest cannot answer that question — the
+--     persisted rows do not change, so that digest always equals the stored
+--     authoritative_digest and every retry would look idempotent no matter
+--     what the caller sent. This function hashes what the caller actually
+--     supplied, so a retry carrying different evidence is detected and
+--     refused. It is never used for the agreement gate itself; that stays
+--     bound to what is really in the table.
+--
+--     Every concatenated member is COALESCE'd to a non-NULL sentinel as
+--     defence in depth. Section 5e already refuses a malformed payload before
+--     this function is reached, but a NULL member would otherwise vanish
+--     inside string_agg and make two different payloads hash alike. For a
+--     VALID payload every COALESCE is a no-op, so the canonical form — and
+--     therefore every digest this contract has ever produced — is unchanged.
+CREATE OR REPLACE FUNCTION public._phoenix_central_needs_payload_digest_v1(
+  p_records jsonb
+)
+RETURNS text
+LANGUAGE sql
+IMMUTABLE
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+  SELECT encode(
+    sha256(
+      convert_to(
+        COALESCE(
+          string_agg(
+            e.ord::text                                              || E'\x1F' ||
+            COALESCE(btrim(e.r->>'targetEntity'), '')                || E'\x1F' ||
+            COALESCE(btrim(e.r->>'fieldName'), '')                   || E'\x1F' ||
+            COALESCE((e.r->'sourceValues')::text, '')                || E'\x1F' ||
+            COALESCE(((e.r->'sourceProvenance') - 'extractedAt')::text, ''),
+            E'\x1E' ORDER BY e.ord
+          ),
+          ''
+        ),
+        'UTF8'
+      )
+    ),
+    'hex'
+  )
+  FROM jsonb_array_elements(p_records) WITH ORDINALITY AS e(r, ord);
+$$;
+
+REVOKE ALL ON FUNCTION public._phoenix_central_needs_payload_digest_v1(jsonb)
+  FROM PUBLIC, anon, authenticated;
+
+COMMENT ON FUNCTION public._phoenix_central_needs_payload_digest_v1(jsonb) IS
+  'CN-1B internal: the canonical semantic digest of a replay payload, used only to decide whether a retry against a completed session carries identical evidence. The agreement gate itself always hashes the persisted rows.';
+
+COMMENT ON FUNCTION public._phoenix_central_needs_semantic_digest_v1(uuid) IS
+  'CN-1B internal: recomputes the canonical semantic digest over the source records actually persisted for an import session, binding ordinal, entity, field, values and provenance (minus the extractedAt runtime-parity exception). Never accepts a caller-supplied digest.';
+
+-- ============================================================================
+-- 6. RPC — open a plan revision (revision workflow).
+--
+--    p_open_next_revision explains itself: FALSE (default) means "give me the
+--    revision I should be working in", which succeeds only when the newest
+--    revision is still a draft. TRUE means "the newest revision is CLOSED;
+--    open the next one after it".
+--
+--    A closed revision is either 'approved' or 'rejected', and the two behave
+--    differently on purpose:
+--      * approved -> becomes 'superseded', KEEPING approved_by/approved_at
+--        (M209's approval-pair CHECK explicitly permits that), so approved
+--        history stays traceable;
+--      * rejected -> stays 'rejected', untouched. A rejected revision is
+--        history too, and rewriting it to 'superseded' would erase the fact
+--        that it was refused. Without this branch a rejection would
+--        permanently dead-end the plan year, since no new revision could ever
+--        be opened.
 -- ============================================================================
 CREATE OR REPLACE FUNCTION public.phoenix_central_needs_open_plan_revision(
-  p_organization_id uuid,
-  p_plan_year       integer,
-  p_supersede       boolean DEFAULT false
+  p_organization_id    uuid,
+  p_plan_year          integer,
+  p_open_next_revision boolean DEFAULT false
 )
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -398,6 +652,7 @@ DECLARE
   v_plan       public.central_needs_plans%ROWTYPE;
   v_current    public.central_needs_plan_revisions%ROWTYPE;
   v_new        public.central_needs_plan_revisions%ROWTYPE;
+  v_closed     text;
 BEGIN
   v_actor_role := public._phoenix_central_needs_guard_v1(p_organization_id, 'central_needs.edit');
 
@@ -405,7 +660,6 @@ BEGIN
     RAISE EXCEPTION 'plan_year_required' USING ERRCODE = '23514';
   END IF;
 
-  -- Serialize concurrent openers of the same (organization, year).
   PERFORM pg_advisory_xact_lock(hashtextextended(p_organization_id::text || ':' || p_plan_year::text, 210001));
 
   SELECT * INTO v_plan
@@ -427,7 +681,6 @@ BEGIN
    FOR UPDATE;
 
   IF FOUND THEN
-    -- An existing draft is the revision to work in — opening is idempotent.
     IF v_current.status = 'draft' THEN
       RETURN jsonb_build_object(
         'ok', true, 'idempotent_replay', true,
@@ -436,22 +689,27 @@ BEGIN
       );
     END IF;
 
-    IF NOT p_supersede THEN
+    IF v_current.status NOT IN ('approved', 'rejected') THEN
+      RAISE EXCEPTION 'plan_revision_still_in_review' USING ERRCODE = '23514',
+        DETAIL = format('revision=%s status=%s', v_current.id, v_current.status),
+        HINT = 'Approve or reject the current revision before opening the next one.';
+    END IF;
+
+    IF NOT p_open_next_revision THEN
       RAISE EXCEPTION 'plan_revision_already_closed' USING ERRCODE = '23514',
         DETAIL = format('revision=%s status=%s', v_current.id, v_current.status),
-        HINT = 'Pass p_supersede => true to open a new revision superseding the current one.';
+        HINT = 'Pass p_open_next_revision => true to open the next revision after the closed one.';
     END IF;
 
-    IF v_current.status <> 'approved' THEN
-      RAISE EXCEPTION 'only_an_approved_revision_may_be_superseded' USING ERRCODE = '23514',
-        DETAIL = format('revision=%s status=%s', v_current.id, v_current.status);
-    END IF;
+    v_closed := v_current.status;
 
-    -- Supersede, preserving the approval record (M209 approval-pair CHECK
-    -- allows approved_by/approved_at to persist through 'superseded').
-    UPDATE public.central_needs_plan_revisions
-       SET status = 'superseded'
-     WHERE id = v_current.id;
+    -- Only an APPROVED revision is superseded. A rejected one keeps its
+    -- rejection: it is history, not a superseded plan.
+    IF v_current.status = 'approved' THEN
+      UPDATE public.central_needs_plan_revisions
+         SET status = 'superseded'
+       WHERE id = v_current.id;
+    END IF;
   END IF;
 
   INSERT INTO public.central_needs_plan_revisions (
@@ -471,7 +729,8 @@ BEGIN
       'plan_id', v_plan.id,
       'plan_year', p_plan_year,
       'revision_number', v_new.revision_number,
-      'superseded_revision_id', CASE WHEN v_current.id IS NOT NULL AND p_supersede THEN v_current.id END
+      'previous_revision_id', v_current.id,
+      'previous_revision_closed_as', v_closed
     )
   );
 
@@ -479,7 +738,8 @@ BEGIN
     'ok', true, 'idempotent_replay', false,
     'plan_id', v_plan.id, 'plan_revision_id', v_new.id,
     'revision_number', v_new.revision_number, 'status', v_new.status,
-    'superseded_revision_id', CASE WHEN v_current.id IS NOT NULL AND p_supersede THEN v_current.id END
+    'previous_revision_id', v_current.id,
+    'previous_revision_closed_as', v_closed
   );
 END;
 $$;
@@ -488,16 +748,7 @@ REVOKE ALL ON FUNCTION public.phoenix_central_needs_open_plan_revision(uuid, int
 GRANT EXECUTE ON FUNCTION public.phoenix_central_needs_open_plan_revision(uuid, integer, boolean) TO authenticated;
 
 -- ============================================================================
--- 6. RPC — start an import session (import-session persistence).
---
---    Registers the immutable source-file evidence and opens a 'processing'
---    session carrying the PROVISIONAL browser digest. Nothing here finalizes
---    anything: the session is explicitly not trusted until the authoritative
---    replay agrees (see the finalize RPC).
---
---    Identity is deterministic and contract-derived: (revision, file SHA-256).
---    A replayed call for the same file on the same revision returns the
---    existing session rather than forking the evidence.
+-- 7. RPC — start an import session (client-facing, provisional).
 -- ============================================================================
 CREATE OR REPLACE FUNCTION public.phoenix_central_needs_start_import_session(
   p_plan_revision_id  uuid,
@@ -610,103 +861,31 @@ REVOKE ALL ON FUNCTION public.phoenix_central_needs_start_import_session(uuid, t
 GRANT EXECUTE ON FUNCTION public.phoenix_central_needs_start_import_session(uuid, text, text, text, jsonb, bigint, text) TO authenticated;
 
 -- ============================================================================
--- 7. Internal: the canonical semantic digest, computed BY THE DATABASE over
---    the rows actually persisted for a session.
---
---    This is the heart of the trust boundary. It is deliberately NOT a value
---    any caller supplies: it is recomputed from `central_needs_source_records`
---    itself, so an authoritative digest can only ever describe evidence that
---    is really in the table.
---
---    CANONICAL FORM (stable contract — a client that wants its provisional
---    preview digest to match MUST reproduce exactly this):
---      * rows for the session, ordered by (target_entity, field_name) under
---        the bytewise "C" collation so ordering never depends on lc_collate;
---      * each row rendered as
---            target_entity || U+001F || field_name || U+001F || <source_values>
---        where <source_values> is PostgreSQL's own canonical jsonb text
---        (`jsonb::text`: object keys ordered, duplicate keys already removed,
---        one space after each colon);
---      * rows joined with U+001E;
---      * SHA-256 over the UTF-8 bytes, lowercase hex.
---    An empty record set digests the empty string, which is why finalization
---    separately refuses a session that persisted nothing.
--- ============================================================================
-CREATE OR REPLACE FUNCTION public._phoenix_central_needs_semantic_digest_v1(
-  p_import_session_id uuid
-)
-RETURNS text
-LANGUAGE sql
-STABLE
-SECURITY DEFINER
-SET search_path = public, pg_temp
-AS $$
-  SELECT encode(
-    sha256(
-      convert_to(
-        COALESCE(
-          string_agg(
-            r.target_entity || E'\x1F' || r.field_name || E'\x1F' || r.source_values::text,
-            E'\x1E' ORDER BY r.target_entity COLLATE "C", r.field_name COLLATE "C"
-          ),
-          ''
-        ),
-        'UTF8'
-      )
-    ),
-    'hex'
-  )
-  FROM public.central_needs_source_records r
-  WHERE r.import_session_id = p_import_session_id;
-$$;
-
-REVOKE ALL ON FUNCTION public._phoenix_central_needs_semantic_digest_v1(uuid)
-  FROM PUBLIC, anon, authenticated;
-
-COMMENT ON FUNCTION public._phoenix_central_needs_semantic_digest_v1(uuid) IS
-  'CN-1B internal: recomputes the canonical semantic digest over the source records actually persisted for an import session. Never accepts a caller-supplied digest.';
-
--- ============================================================================
 -- 8. TRUSTED RPC — authoritative Node replay.
 --
 --    THIS IS THE ONLY PATH THAT MAY WRITE AUTHORITATIVE IMPORT EVIDENCE, AND
 --    THE ONLY PATH TO status = 'completed'.
 --
 --    WHY service_role AND NOT A NEW DEDICATED ROLE
---      Migration 109 (`ALTER DEFAULT PRIVILEGES FOR ROLE postgres ... GRANT
---      EXECUTE ON FUNCTIONS TO service_role`, with EXECUTE revoked from
---      authenticated/anon/PUBLIC) already makes every function `postgres`
---      creates EXECUTE-able by service_role alone. service_role is this
---      repository's established trusted-backend identity — the same choice
---      migration 163 made for the outbox consumer's claim/complete/fail RPCs,
---      and for the same stated reason: it is the identity a server-side
---      worker holding the service-role key authenticates as. A dedicated
---      NOLOGIN role (as migration 141 invented for the demo purger) is
---      reserved for unusually dangerous one-off operations; an ordinary
---      trusted-backend RPC does not warrant one. The explicit REVOKE below is
---      belt-and-suspenders on top of 109's defaults, matching this
---      repository's universal convention.
+--      Migration 109 (`ALTER DEFAULT PRIVILEGES ... GRANT EXECUTE ON FUNCTIONS
+--      TO service_role`, with EXECUTE revoked from authenticated/anon/PUBLIC)
+--      already makes every function `postgres` creates EXECUTE-able by
+--      service_role alone. service_role is this repository's established
+--      trusted-backend identity — the same choice migration 163 made for the
+--      outbox consumer's claim/complete/fail RPCs, and for the same stated
+--      reason. A dedicated NOLOGIN role (as migration 141 invented for the
+--      demo purger) is reserved for unusually dangerous one-off operations.
+--      The explicit REVOKE below is belt-and-suspenders on top of 109.
 --
---    WHY THE CALLER'S DIGEST IS NOT TRUSTED
---      An earlier revision of this migration accepted `p_authoritative_digest`
---      and `p_parser_identity` from an ordinary authenticated caller and
---      merely checked that the digest equalled the preview digest and that the
---      identity said `runtime: 'node'`. Both are caller-controlled claims, so
---      that check proved nothing: any holder of central_needs.import could
---      assert both and finalize arbitrary evidence. It was replaced by this
---      design. Here the trusted worker supplies the RECORDS, the database
---      writes them itself, and the database then recomputes the digest over
---      exactly those rows. No caller ever supplies an authoritative digest.
+--    BEING TRUSTED IS NOT BEING EXEMPT. service_role bypasses RLS, but it does
+--    NOT bypass the archived-organization rule: an organization archived
+--    between session start and replay refuses the replay outright, before any
+--    source record is written.
 --
---    The provisional browser preview digest is still compared — that is
---    CN-2A's semantic-agreement requirement, and a divergence between what the
---    browser previewed and what Node actually produced must abort the import.
---    But it is a QUALITY gate, not the security boundary: the security
---    boundary is that only service_role reaches this function at all.
---
---    Finalization happens inside this same transaction rather than through a
---    separate public RPC, so there is no client-reachable surface that can
---    move a session to 'completed'.
+--    IDEMPOTENCY. A trusted worker whose response was lost may retry. An exact
+--    retry of an already-completed session — same source file, same recomputed
+--    digest — returns idempotent_replay = true and writes nothing at all. A
+--    retry carrying different evidence fails closed.
 -- ============================================================================
 CREATE OR REPLACE FUNCTION public.phoenix_central_needs_apply_authoritative_replay(
   p_import_session_id  uuid,
@@ -739,11 +918,6 @@ BEGIN
   IF p_parser_identity IS NULL OR jsonb_typeof(p_parser_identity) <> 'object' THEN
     RAISE EXCEPTION 'parser_identity_object_required' USING ERRCODE = '23514';
   END IF;
-
-  -- The authoritative pass must be the Node runtime. Unlike the previous
-  -- design this is not the security control — only service_role can be here
-  -- at all — but a trusted worker that mislabels its own runtime is a bug
-  -- worth failing closed on.
   IF COALESCE(p_parser_identity->>'runtime', '') <> 'node' THEN
     RAISE EXCEPTION 'authoritative_pass_must_be_node_runtime' USING ERRCODE = '23514',
       DETAIL = format('runtime=%s', COALESCE(p_parser_identity->>'runtime', '<absent>'));
@@ -757,16 +931,9 @@ BEGIN
     RAISE EXCEPTION 'import_session_not_found' USING ERRCODE = 'P0002';
   END IF;
 
-  IF v_session.status <> 'processing' THEN
-    RAISE EXCEPTION 'import_session_not_open' USING ERRCODE = '23514',
-      DETAIL = format('session=%s status=%s', p_import_session_id, v_session.status);
-  END IF;
+  -- Trusted, but never exempt from the archive rule.
+  PERFORM public._phoenix_central_needs_assert_org_live_v1(v_session.organization_id);
 
-  v_revision := public._phoenix_central_needs_load_revision_v1(v_session.plan_revision_id);
-  PERFORM public._phoenix_central_needs_assert_draft_v1(v_session.plan_revision_id, v_revision.status);
-
-  -- Bind the replay to the exact file the session was opened for. A replay of
-  -- a different workbook can never be applied to this session.
   SELECT file_hash INTO v_file_hash
     FROM public.central_needs_source_files
    WHERE id = v_session.source_file_id;
@@ -776,50 +943,65 @@ BEGIN
       HINT = 'The replay was produced from a different workbook than this session references.';
   END IF;
 
+  -- Validate the payload BEFORE either branch. This must precede the
+  -- completed-session comparison: digesting an unvalidated payload is exactly
+  -- how a malformed appended element could hash as an identical retry.
+  PERFORM public._phoenix_central_needs_assert_payload_v1(p_records, p_source_file_sha256);
+
+  -- Lost-response retry: an EXACT repeat of a completed session is a no-op.
+  -- The comparison hashes the SUPPLIED payload, not the persisted rows — the
+  -- persisted rows never change, so hashing them would make every retry look
+  -- identical regardless of what the caller actually sent.
+  IF v_session.status = 'completed' THEN
+    v_digest := public._phoenix_central_needs_payload_digest_v1(p_records);
+    IF v_session.authoritative_digest IS NOT DISTINCT FROM v_digest THEN
+      RETURN jsonb_build_object(
+        'ok', true, 'idempotent_replay', true,
+        'import_session_id', p_import_session_id, 'status', v_session.status,
+        'authoritative_digest', v_session.authoritative_digest,
+        'records_supplied', jsonb_array_length(p_records), 'records_inserted', 0
+      );
+    END IF;
+    RAISE EXCEPTION 'import_session_already_finalized_with_different_evidence' USING ERRCODE = '23514';
+  END IF;
+
+  IF v_session.status <> 'processing' THEN
+    RAISE EXCEPTION 'import_session_not_open' USING ERRCODE = '23514',
+      DETAIL = format('session=%s status=%s', p_import_session_id, v_session.status);
+  END IF;
+
+  v_revision := public._phoenix_central_needs_load_revision_v1(v_session.plan_revision_id);
+  PERFORM public._phoenix_central_needs_assert_draft_v1(v_session.plan_revision_id, v_revision.status);
+
   IF v_session.preview_digest IS NULL THEN
     RAISE EXCEPTION 'import_session_has_no_preview_digest' USING ERRCODE = '23514';
   END IF;
 
+  -- Payload already validated above by the shared gate (section 5e).
   v_supplied := jsonb_array_length(p_records);
-  IF v_supplied = 0 THEN
-    RAISE EXCEPTION 'authoritative_replay_produced_no_records' USING ERRCODE = '23514';
-  END IF;
 
-  IF EXISTS (
-    SELECT 1 FROM jsonb_array_elements(p_records) AS r
-    WHERE jsonb_typeof(r) <> 'object'
-       OR COALESCE(btrim(r->>'targetEntity'), '') = ''
-       OR COALESCE(btrim(r->>'fieldName'), '') = ''
-       OR NOT (r ? 'sourceValues')
-  ) THEN
-    RAISE EXCEPTION 'record_requires_target_entity_field_name_and_source_values' USING ERRCODE = '23514';
-  END IF;
-
-  -- The trusted replay writes the immutable evidence itself. There is no
-  -- client-facing path that inserts into central_needs_source_records.
+  -- The trusted replay writes the immutable evidence itself, preserving CN-2A's
+  -- deterministic array order as record_ordinal. WITH ORDINALITY means every
+  -- emitted record is kept — duplicate headers in one row included — instead of
+  -- being silently collapsed.
   WITH ins AS (
     INSERT INTO public.central_needs_source_records (
-      import_session_id, organization_id, target_entity, field_name,
+      import_session_id, organization_id, record_ordinal, target_entity, field_name,
       source_values, source_provenance, created_by
     )
     SELECT
-      p_import_session_id, v_session.organization_id,
-      btrim(r->>'targetEntity'), btrim(r->>'fieldName'),
-      r->'sourceValues',
-      CASE WHEN r ? 'sourceProvenance' THEN r->'sourceProvenance' END,
+      p_import_session_id, v_session.organization_id, e.ord,
+      btrim(e.r->>'targetEntity'), btrim(e.r->>'fieldName'),
+      e.r->'sourceValues', e.r->'sourceProvenance',
       v_session.started_by
-    FROM jsonb_array_elements(p_records) AS r
-    ON CONFLICT (import_session_id, target_entity, field_name) DO NOTHING
+    FROM jsonb_array_elements(p_records) WITH ORDINALITY AS e(r, ord)
     RETURNING 1
   )
   SELECT count(*) INTO v_inserted FROM ins;
 
-  -- Recompute the digest over exactly what is now persisted. This value is
-  -- the database's own, never the caller's.
+  -- Recompute over exactly what is now persisted. The database's own value.
   v_digest := public._phoenix_central_needs_semantic_digest_v1(p_import_session_id);
 
-  -- CN-2A semantic agreement: what the browser previewed must be what the
-  -- authoritative replay actually produced.
   IF v_digest <> v_session.preview_digest THEN
     RAISE EXCEPTION 'authoritative_replay_semantic_mismatch' USING ERRCODE = '23514',
       DETAIL = format('preview=%s recomputed=%s', v_session.preview_digest, v_digest),
@@ -852,32 +1034,31 @@ BEGIN
   );
 
   RETURN jsonb_build_object(
-    'ok', true,
-    'import_session_id', p_import_session_id,
-    'status', 'completed',
+    'ok', true, 'idempotent_replay', false,
+    'import_session_id', p_import_session_id, 'status', 'completed',
     'authoritative_digest', v_digest,
-    'records_supplied', v_supplied,
-    'records_inserted', v_inserted
+    'records_supplied', v_supplied, 'records_inserted', v_inserted
   );
 END;
 $$;
 
--- Trusted surface: EXECUTE for service_role only (109's default privilege),
--- explicitly revoked from every client role. Deliberately NOT granted to
--- authenticated.
 REVOKE ALL ON FUNCTION public.phoenix_central_needs_apply_authoritative_replay(uuid, text, jsonb, jsonb)
   FROM PUBLIC, anon, authenticated;
 
 COMMENT ON FUNCTION public.phoenix_central_needs_apply_authoritative_replay(uuid, text, jsonb, jsonb) IS
-  'CN-1B trusted backend RPC (service_role only): applies a Node 22 authoritative replay — writes the immutable source evidence, recomputes the canonical semantic digest over exactly those rows, enforces agreement with the provisional browser preview, and finalizes the session. Not executable by anon or authenticated.';
+  'CN-1B trusted backend RPC (service_role only): applies a Node 22 authoritative replay — writes the immutable source evidence with deterministic ordinals, recomputes the canonical semantic digest over exactly those rows, enforces agreement with the provisional browser preview, and finalizes the session. Refuses archived organizations. Idempotent on exact retry. Not executable by anon or authenticated.';
 
 -- ============================================================================
 -- 9. RPC — canonical-link (mapping) write.
+--
+--    Bound to one exact import-session entity: the target_entity must really
+--    exist in that session's authoritative evidence, so no phantom entity can
+--    be mapped.
 -- ============================================================================
 CREATE OR REPLACE FUNCTION public.phoenix_central_needs_set_record_mapping(
-  p_plan_revision_id uuid,
-  p_target_entity    text,
-  p_central_item_id  uuid
+  p_import_session_id uuid,
+  p_target_entity     text,
+  p_central_item_id   uuid
 )
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -885,16 +1066,20 @@ SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
 DECLARE
-  v_actor       uuid := auth.uid();
-  v_actor_role  text;
-  v_revision    public.central_needs_plan_revisions%ROWTYPE;
-  v_entity      text := NULLIF(btrim(p_target_entity), '');
-  v_existing    public.central_needs_record_mappings%ROWTYPE;
-  v_row         public.central_needs_record_mappings%ROWTYPE;
-  v_item_label  text;
+  v_actor      uuid := auth.uid();
+  v_actor_role text;
+  v_session    public.central_needs_import_sessions%ROWTYPE;
+  v_revision   public.central_needs_plan_revisions%ROWTYPE;
+  v_entity     text := NULLIF(btrim(p_target_entity), '');
+  v_existing   public.central_needs_record_mappings%ROWTYPE;
+  v_row        public.central_needs_record_mappings%ROWTYPE;
+  v_item_label text;
 BEGIN
   IF v_actor IS NULL THEN
     RAISE EXCEPTION 'not_authenticated' USING ERRCODE = '28000';
+  END IF;
+  IF p_import_session_id IS NULL THEN
+    RAISE EXCEPTION 'import_session_id_required' USING ERRCODE = '23514';
   END IF;
   IF v_entity IS NULL THEN
     RAISE EXCEPTION 'target_entity_required' USING ERRCODE = '23514';
@@ -903,9 +1088,27 @@ BEGIN
     RAISE EXCEPTION 'central_item_id_required' USING ERRCODE = '23514';
   END IF;
 
-  v_revision   := public._phoenix_central_needs_load_revision_v1(p_plan_revision_id);
-  v_actor_role := public._phoenix_central_needs_guard_v1(v_revision.organization_id, 'central_needs.edit');
-  PERFORM public._phoenix_central_needs_assert_draft_v1(p_plan_revision_id, v_revision.status);
+  SELECT * INTO v_session
+    FROM public.central_needs_import_sessions
+   WHERE id = p_import_session_id
+   FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'import_session_not_found' USING ERRCODE = 'P0002';
+  END IF;
+
+  v_actor_role := public._phoenix_central_needs_guard_v1(v_session.organization_id, 'central_needs.edit');
+  v_revision   := public._phoenix_central_needs_load_revision_v1(v_session.plan_revision_id);
+  PERFORM public._phoenix_central_needs_assert_draft_v1(v_session.plan_revision_id, v_revision.status);
+
+  -- No phantom entity: it must exist in this session's persisted evidence.
+  IF NOT EXISTS (
+    SELECT 1 FROM public.central_needs_source_records
+     WHERE import_session_id = p_import_session_id AND target_entity = v_entity
+  ) THEN
+    RAISE EXCEPTION 'target_entity_not_in_import_session' USING ERRCODE = 'P0002',
+      DETAIL = format('session=%s target_entity=%s', p_import_session_id, v_entity),
+      HINT = 'Only an entity present in this session''s authoritative source evidence can be mapped.';
+  END IF;
 
   SELECT name INTO v_item_label FROM public.central_items WHERE id = p_central_item_id;
   IF NOT FOUND THEN
@@ -914,22 +1117,23 @@ BEGIN
 
   SELECT * INTO v_existing
     FROM public.central_needs_record_mappings
-   WHERE plan_revision_id = p_plan_revision_id AND target_entity = v_entity
+   WHERE import_session_id = p_import_session_id AND target_entity = v_entity
    FOR UPDATE;
 
   IF FOUND AND v_existing.central_item_id = p_central_item_id THEN
     RETURN jsonb_build_object(
       'ok', true, 'idempotent_replay', true,
-      'mapping_id', v_existing.id, 'target_entity', v_entity, 'central_item_id', p_central_item_id
+      'mapping_id', v_existing.id, 'import_session_id', p_import_session_id,
+      'target_entity', v_entity, 'central_item_id', p_central_item_id
     );
   END IF;
 
   INSERT INTO public.central_needs_record_mappings (
-    plan_revision_id, organization_id, target_entity, central_item_id, mapped_by
+    import_session_id, organization_id, target_entity, central_item_id, mapped_by
   ) VALUES (
-    p_plan_revision_id, v_revision.organization_id, v_entity, p_central_item_id, v_actor
+    p_import_session_id, v_session.organization_id, v_entity, p_central_item_id, v_actor
   )
-  ON CONFLICT (plan_revision_id, target_entity) DO UPDATE
+  ON CONFLICT (import_session_id, target_entity) DO UPDATE
     SET central_item_id = EXCLUDED.central_item_id,
         mapped_by       = EXCLUDED.mapped_by
   RETURNING * INTO v_row;
@@ -937,11 +1141,13 @@ BEGIN
   INSERT INTO public.audit_logs (
     organization_id, actor_id, actor_role, action, entity_type, entity_id, entity_label, payload
   ) VALUES (
-    v_revision.organization_id, v_actor, v_actor_role,
+    v_session.organization_id, v_actor, v_actor_role,
     'central_needs.record_mapping.set', 'central_needs_record_mapping', v_row.id,
     v_item_label,
     jsonb_build_object(
-      'plan_revision_id', p_plan_revision_id,
+      'import_session_id', p_import_session_id,
+      'plan_revision_id', v_session.plan_revision_id,
+      'source_file_id', v_session.source_file_id,
       'target_entity', v_entity,
       'central_item_id', p_central_item_id,
       'previous_central_item_id', v_existing.central_item_id
@@ -950,8 +1156,8 @@ BEGIN
 
   RETURN jsonb_build_object(
     'ok', true, 'idempotent_replay', false,
-    'mapping_id', v_row.id, 'target_entity', v_entity,
-    'central_item_id', p_central_item_id,
+    'mapping_id', v_row.id, 'import_session_id', p_import_session_id,
+    'target_entity', v_entity, 'central_item_id', p_central_item_id,
     'previous_central_item_id', v_existing.central_item_id
   );
 END;
@@ -963,17 +1169,14 @@ GRANT EXECUTE ON FUNCTION public.phoenix_central_needs_set_record_mapping(uuid, 
 -- ============================================================================
 -- 10. RPC — reasoned field override.
 --
---     Records a business correction WITHOUT touching source evidence. The
---     previous value is captured from the override ledger's own most recent
---     entry when one exists, otherwise from the immutable source record, so
---     the ledger reads as a continuous chain. A reason is mandatory (M209's
---     own NOT NULL + length CHECK; re-asserted here to produce a precise
---     error rather than a raw constraint violation).
+--     Addressed by source_record_id, so a correction always names the exact
+--     authoritative evidence it corrects. previous_value is DERIVED from that
+--     lineage — the latest prior override of the same record if one exists,
+--     otherwise the record's own immutable source value — never supplied by
+--     the caller and never silently NULL.
 -- ============================================================================
 CREATE OR REPLACE FUNCTION public.phoenix_central_needs_record_field_override(
-  p_plan_revision_id   uuid,
-  p_target_entity      text,
-  p_field_name         text,
+  p_source_record_id   uuid,
   p_final_value        jsonb,
   p_override_reason    text,
   p_override_note      text DEFAULT NULL,
@@ -985,61 +1188,61 @@ SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
 DECLARE
-  v_actor       uuid := auth.uid();
-  v_actor_role  text;
-  v_revision    public.central_needs_plan_revisions%ROWTYPE;
-  v_entity      text := NULLIF(btrim(p_target_entity), '');
-  v_field       text := NULLIF(btrim(p_field_name), '');
-  v_reason      text := NULLIF(btrim(p_override_reason), '');
-  v_previous    jsonb;
-  v_row         public.central_needs_field_overrides%ROWTYPE;
+  v_actor      uuid := auth.uid();
+  v_actor_role text;
+  v_record     public.central_needs_source_records%ROWTYPE;
+  v_session    public.central_needs_import_sessions%ROWTYPE;
+  v_revision   public.central_needs_plan_revisions%ROWTYPE;
+  v_reason     text := NULLIF(btrim(p_override_reason), '');
+  v_previous   jsonb;
+  v_row        public.central_needs_field_overrides%ROWTYPE;
 BEGIN
   IF v_actor IS NULL THEN
     RAISE EXCEPTION 'not_authenticated' USING ERRCODE = '28000';
   END IF;
-  IF v_entity IS NULL THEN
-    RAISE EXCEPTION 'target_entity_required' USING ERRCODE = '23514';
-  END IF;
-  IF v_field IS NULL THEN
-    RAISE EXCEPTION 'field_name_required' USING ERRCODE = '23514';
+  IF p_source_record_id IS NULL THEN
+    RAISE EXCEPTION 'source_record_id_required' USING ERRCODE = '23514';
   END IF;
   IF v_reason IS NULL THEN
     RAISE EXCEPTION 'override_reason_required' USING ERRCODE = '23514',
       HINT = 'A business override must record why it was made.';
   END IF;
 
-  v_revision   := public._phoenix_central_needs_load_revision_v1(p_plan_revision_id);
-  v_actor_role := public._phoenix_central_needs_guard_v1(v_revision.organization_id, 'central_needs.edit');
-  PERFORM public._phoenix_central_needs_assert_draft_v1(p_plan_revision_id, v_revision.status);
+  -- No phantom field: the record must exist.
+  SELECT * INTO v_record
+    FROM public.central_needs_source_records
+   WHERE id = p_source_record_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'source_record_not_found' USING ERRCODE = 'P0002';
+  END IF;
 
-  -- Chain from the latest prior override for this field if one exists...
+  SELECT * INTO v_session
+    FROM public.central_needs_import_sessions
+   WHERE id = v_record.import_session_id;
+
+  v_actor_role := public._phoenix_central_needs_guard_v1(v_record.organization_id, 'central_needs.edit');
+  v_revision   := public._phoenix_central_needs_load_revision_v1(v_session.plan_revision_id);
+  PERFORM public._phoenix_central_needs_assert_draft_v1(v_session.plan_revision_id, v_revision.status);
+
+  -- Chain from the latest prior override of THIS record...
   SELECT o.final_value INTO v_previous
     FROM public.central_needs_field_overrides o
-   WHERE o.plan_revision_id = p_plan_revision_id
-     AND o.target_entity = v_entity
-     AND o.field_name = v_field
+   WHERE o.source_record_id = p_source_record_id
    ORDER BY o.created_at DESC
    LIMIT 1;
 
-  -- ...otherwise from the immutable source evidence, which is READ here and
-  -- never written. The source record keeps its original imported value
-  -- regardless of how many overrides accumulate on top of it.
-  IF v_previous IS NULL THEN
-    SELECT sr.source_values INTO v_previous
-      FROM public.central_needs_source_records sr
-      JOIN public.central_needs_import_sessions s ON s.id = sr.import_session_id
-     WHERE s.plan_revision_id = p_plan_revision_id
-       AND sr.target_entity = v_entity
-       AND sr.field_name = v_field
-     ORDER BY sr.created_at DESC
-     LIMIT 1;
+  -- ...otherwise from the record's own immutable evidence, which is READ here
+  -- and never written.
+  IF NOT FOUND THEN
+    v_previous := v_record.source_values;
   END IF;
 
   INSERT INTO public.central_needs_field_overrides (
-    plan_revision_id, organization_id, target_entity, field_name,
+    plan_revision_id, organization_id, source_record_id, target_entity, field_name,
     previous_value, final_value, override_reason, override_note, override_reference, actor_id
   ) VALUES (
-    p_plan_revision_id, v_revision.organization_id, v_entity, v_field,
+    v_session.plan_revision_id, v_record.organization_id, p_source_record_id,
+    v_record.target_entity, v_record.field_name,
     v_previous, p_final_value, v_reason,
     NULLIF(btrim(p_override_note), ''), NULLIF(btrim(p_override_reference), ''), v_actor
   )
@@ -1048,13 +1251,17 @@ BEGIN
   INSERT INTO public.audit_logs (
     organization_id, actor_id, actor_role, action, entity_type, entity_id, entity_label, payload
   ) VALUES (
-    v_revision.organization_id, v_actor, v_actor_role,
+    v_record.organization_id, v_actor, v_actor_role,
     'central_needs.field_override.record', 'central_needs_field_override', v_row.id,
-    v_entity,
+    v_record.target_entity,
     jsonb_build_object(
-      'plan_revision_id', p_plan_revision_id,
-      'target_entity', v_entity,
-      'field_name', v_field,
+      'plan_revision_id', v_session.plan_revision_id,
+      'import_session_id', v_record.import_session_id,
+      'source_file_id', v_session.source_file_id,
+      'source_record_id', p_source_record_id,
+      'record_ordinal', v_record.record_ordinal,
+      'target_entity', v_record.target_entity,
+      'field_name', v_record.field_name,
       'override_reason', v_reason,
       'override_reference', NULLIF(btrim(p_override_reference), '')
     )
@@ -1062,14 +1269,16 @@ BEGIN
 
   RETURN jsonb_build_object(
     'ok', true, 'override_id', v_row.id,
-    'target_entity', v_entity, 'field_name', v_field,
+    'source_record_id', p_source_record_id,
+    'record_ordinal', v_record.record_ordinal,
+    'target_entity', v_record.target_entity, 'field_name', v_record.field_name,
     'previous_value', v_previous, 'final_value', p_final_value
   );
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.phoenix_central_needs_record_field_override(uuid, text, text, jsonb, text, text, text) FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION public.phoenix_central_needs_record_field_override(uuid, text, text, jsonb, text, text, text) TO authenticated;
+REVOKE ALL ON FUNCTION public.phoenix_central_needs_record_field_override(uuid, jsonb, text, text, text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.phoenix_central_needs_record_field_override(uuid, jsonb, text, text, text) TO authenticated;
 
 -- ============================================================================
 -- 11. RPC — submit a revision for review (draft -> submitted).
@@ -1092,9 +1301,8 @@ BEGIN
   v_actor_role := public._phoenix_central_needs_guard_v1(v_revision.organization_id, 'central_needs.edit');
   PERFORM public._phoenix_central_needs_assert_draft_v1(p_plan_revision_id, v_revision.status);
 
-  -- A revision with no authoritatively finalized import has nothing to
-  -- review. This is what stops a provisional, browser-only result from
-  -- travelling any further through the workflow.
+  -- A revision with no authoritatively finalized import has nothing to review.
+  -- This is what stops a provisional, browser-only result travelling further.
   SELECT count(*) INTO v_completed
     FROM public.central_needs_import_sessions
    WHERE plan_revision_id = p_plan_revision_id AND status = 'completed';
@@ -1131,10 +1339,6 @@ GRANT EXECUTE ON FUNCTION public.phoenix_central_needs_submit_revision(uuid) TO 
 -- ============================================================================
 -- 12. RPC — approve a revision (submitted -> approved). Requires
 --     central_needs.approve specifically; central_needs.edit is NOT enough.
---
---     Atomic: the status flip and the approver stamp are one UPDATE, and
---     M209's approval-pair CHECK makes an 'approved' row without an approver
---     impossible, so a partially-applied approval cannot exist.
 -- ============================================================================
 CREATE OR REPLACE FUNCTION public.phoenix_central_needs_approve_revision(
   p_plan_revision_id uuid
@@ -1152,18 +1356,8 @@ BEGIN
   IF v_actor IS NULL THEN
     RAISE EXCEPTION 'not_authenticated' USING ERRCODE = '28000';
   END IF;
-  IF p_plan_revision_id IS NULL THEN
-    RAISE EXCEPTION 'plan_revision_id_required' USING ERRCODE = '23514';
-  END IF;
 
-  SELECT * INTO v_revision
-    FROM public.central_needs_plan_revisions
-   WHERE id = p_plan_revision_id
-   FOR UPDATE;
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'plan_revision_not_found' USING ERRCODE = 'P0002';
-  END IF;
-
+  v_revision   := public._phoenix_central_needs_load_revision_v1(p_plan_revision_id);
   v_actor_role := public._phoenix_central_needs_guard_v1(v_revision.organization_id, 'central_needs.approve');
 
   IF v_revision.status = 'approved' THEN
@@ -1209,7 +1403,10 @@ GRANT EXECUTE ON FUNCTION public.phoenix_central_needs_approve_revision(uuid) TO
 -- ============================================================================
 -- 13. RPC — reject a revision (submitted -> rejected). Rejecting is the other
 --     half of the same review decision as approving, so it requires the same
---     central_needs.approve authority; central_needs.edit is NOT enough.
+--     central_needs.approve authority.
+--
+--     A rejected revision is permanent history. Section 6's
+--     p_open_next_revision opens a corrected successor beside it.
 -- ============================================================================
 CREATE OR REPLACE FUNCTION public.phoenix_central_needs_reject_revision(
   p_plan_revision_id uuid,
@@ -1229,21 +1426,11 @@ BEGIN
   IF v_actor IS NULL THEN
     RAISE EXCEPTION 'not_authenticated' USING ERRCODE = '28000';
   END IF;
-  IF p_plan_revision_id IS NULL THEN
-    RAISE EXCEPTION 'plan_revision_id_required' USING ERRCODE = '23514';
-  END IF;
   IF v_reason IS NULL THEN
     RAISE EXCEPTION 'rejection_reason_required' USING ERRCODE = '23514';
   END IF;
 
-  SELECT * INTO v_revision
-    FROM public.central_needs_plan_revisions
-   WHERE id = p_plan_revision_id
-   FOR UPDATE;
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'plan_revision_not_found' USING ERRCODE = 'P0002';
-  END IF;
-
+  v_revision   := public._phoenix_central_needs_load_revision_v1(p_plan_revision_id);
   v_actor_role := public._phoenix_central_needs_guard_v1(v_revision.organization_id, 'central_needs.approve');
 
   IF v_revision.status <> 'submitted' THEN
@@ -1287,7 +1474,6 @@ DECLARE
   f text;
   v_sig text;
 BEGIN
-  -- 1. The mapping table exists with RLS enabled AND forced.
   IF to_regclass('public.central_needs_record_mappings') IS NULL THEN
     RAISE EXCEPTION 'VERIFY FAILED (210): central_needs_record_mappings is missing';
   END IF;
@@ -1298,26 +1484,48 @@ BEGIN
     RAISE EXCEPTION 'VERIFY FAILED (210): central_needs_record_mappings does not have RLS enabled+forced';
   END IF;
 
-  -- 2. The trust-gate constraint exists.
-  IF NOT EXISTS (
+  FOREACH f IN ARRAY ARRAY[
+    'central_needs_import_sessions_authoritative_finalization_chk',
+    'central_needs_record_mappings_session_org_fk',
+    'central_needs_source_records_session_ordinal_key',
+    'central_needs_source_records_id_org_key',
+    'central_needs_field_overrides_source_record_org_fk'
+  ] LOOP
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = f) THEN
+      RAISE EXCEPTION 'VERIFY FAILED (210): expected constraint % is missing', f;
+    END IF;
+  END LOOP;
+
+  -- M209's unrepresentable uniqueness must be gone.
+  IF EXISTS (
     SELECT 1 FROM pg_constraint
-    WHERE conname = 'central_needs_import_sessions_authoritative_finalization_chk'
+    WHERE conname = 'central_needs_source_records_import_session_id_target_entit_key'
   ) THEN
-    RAISE EXCEPTION 'VERIFY FAILED (210): the authoritative finalization CHECK is missing';
-  END IF;
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_constraint WHERE conname = 'central_needs_record_mappings_revision_org_fk'
-  ) THEN
-    RAISE EXCEPTION 'VERIFY FAILED (210): the mapping composite FK is missing';
+    RAISE EXCEPTION 'VERIFY FAILED (210): M209 source-record uniqueness still present; duplicate headers remain unrepresentable';
   END IF;
 
-  -- 3. Every client-facing RPC exists, is SECURITY DEFINER, has a hardened
-  --    search_path, and is executable by authenticated but not by PUBLIC/anon.
+  -- Lineage columns must be NOT NULL.
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema='public' AND table_name='central_needs_source_records'
+      AND column_name='record_ordinal' AND is_nullable='YES'
+  ) THEN
+    RAISE EXCEPTION 'VERIFY FAILED (210): record_ordinal must be NOT NULL';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema='public' AND table_name='central_needs_field_overrides'
+      AND column_name='source_record_id' AND is_nullable='YES'
+  ) THEN
+    RAISE EXCEPTION 'VERIFY FAILED (210): source_record_id must be NOT NULL';
+  END IF;
+
+  -- Client-facing RPCs.
   FOREACH f IN ARRAY ARRAY[
     'public.phoenix_central_needs_open_plan_revision(uuid, integer, boolean)',
     'public.phoenix_central_needs_start_import_session(uuid, text, text, text, jsonb, bigint, text)',
     'public.phoenix_central_needs_set_record_mapping(uuid, text, uuid)',
-    'public.phoenix_central_needs_record_field_override(uuid, text, text, jsonb, text, text, text)',
+    'public.phoenix_central_needs_record_field_override(uuid, jsonb, text, text, text)',
     'public.phoenix_central_needs_submit_revision(uuid)',
     'public.phoenix_central_needs_approve_revision(uuid)',
     'public.phoenix_central_needs_reject_revision(uuid, text)'
@@ -1354,9 +1562,7 @@ BEGIN
     END IF;
   END LOOP;
 
-  -- 3b. The TRUSTED replay RPC: reachable by service_role ONLY. This is the
-  --     security boundary of the whole import path, so it is asserted
-  --     positively (service_role can) and negatively (nobody else can).
+  -- The TRUSTED replay RPC: service_role ONLY.
   f := 'public.phoenix_central_needs_apply_authoritative_replay(uuid, text, jsonb, jsonb)';
   IF to_regprocedure(f) IS NULL THEN
     RAISE EXCEPTION 'VERIFY FAILED (210): the trusted authoritative-replay RPC is missing';
@@ -1384,9 +1590,12 @@ BEGIN
     RAISE EXCEPTION 'VERIFY FAILED (210): service_role cannot EXECUTE the trusted replay RPC';
   END IF;
 
-  -- 4. The internal helpers are NOT client-callable.
+  -- Internal helpers are NOT client-callable.
   FOREACH f IN ARRAY ARRAY[
+    'public._phoenix_central_needs_assert_org_live_v1(uuid)',
     'public._phoenix_central_needs_semantic_digest_v1(uuid)',
+    'public._phoenix_central_needs_payload_digest_v1(jsonb)',
+    'public._phoenix_central_needs_assert_payload_v1(jsonb, text)',
     'public._phoenix_central_needs_guard_v1(uuid, text)',
     'public._phoenix_central_needs_load_revision_v1(uuid)',
     'public._phoenix_central_needs_assert_draft_v1(uuid, text)'
@@ -1402,8 +1611,7 @@ BEGIN
     END IF;
   END LOOP;
 
-  -- 5. The permission surface is unchanged: still exactly four central_needs
-  --    keys, still zero default role grants, and still no send permission.
+  -- Permission surface unchanged.
   IF (SELECT count(*) FROM public.permission_keys WHERE module = 'central_needs') <> 4 THEN
     RAISE EXCEPTION 'VERIFY FAILED (210): the central_needs permission key count changed';
   END IF;
@@ -1414,7 +1622,7 @@ BEGIN
     RAISE EXCEPTION 'VERIFY FAILED (210): central_needs.* must keep zero default role grants';
   END IF;
 
-  -- 6. No client write grant leaked onto any Central Needs table.
+  -- No client write grant leaked onto any Central Needs table.
   FOREACH f IN ARRAY ARRAY[
     'central_needs_plans', 'central_needs_plan_revisions', 'central_needs_source_files',
     'central_needs_import_sessions', 'central_needs_source_records',
@@ -1441,16 +1649,29 @@ COMMIT;
 --   DROP FUNCTION IF EXISTS public.phoenix_central_needs_reject_revision(uuid, text);
 --   DROP FUNCTION IF EXISTS public.phoenix_central_needs_approve_revision(uuid);
 --   DROP FUNCTION IF EXISTS public.phoenix_central_needs_submit_revision(uuid);
---   DROP FUNCTION IF EXISTS public.phoenix_central_needs_record_field_override(uuid, text, text, jsonb, text, text, text);
+--   DROP FUNCTION IF EXISTS public.phoenix_central_needs_record_field_override(uuid, jsonb, text, text, text);
 --   DROP FUNCTION IF EXISTS public.phoenix_central_needs_set_record_mapping(uuid, text, uuid);
 --   DROP FUNCTION IF EXISTS public.phoenix_central_needs_apply_authoritative_replay(uuid, text, jsonb, jsonb);
---   DROP FUNCTION IF EXISTS public._phoenix_central_needs_semantic_digest_v1(uuid);
 --   DROP FUNCTION IF EXISTS public.phoenix_central_needs_start_import_session(uuid, text, text, text, jsonb, bigint, text);
 --   DROP FUNCTION IF EXISTS public.phoenix_central_needs_open_plan_revision(uuid, integer, boolean);
+--   DROP FUNCTION IF EXISTS public._phoenix_central_needs_assert_payload_v1(jsonb, text);
+--   DROP FUNCTION IF EXISTS public._phoenix_central_needs_payload_digest_v1(jsonb);
+--   DROP FUNCTION IF EXISTS public._phoenix_central_needs_semantic_digest_v1(uuid);
 --   DROP FUNCTION IF EXISTS public._phoenix_central_needs_assert_draft_v1(uuid, text);
 --   DROP FUNCTION IF EXISTS public._phoenix_central_needs_load_revision_v1(uuid);
 --   DROP FUNCTION IF EXISTS public._phoenix_central_needs_guard_v1(uuid, text);
+--   DROP FUNCTION IF EXISTS public._phoenix_central_needs_assert_org_live_v1(uuid);
 --   DROP TABLE IF EXISTS public.central_needs_record_mappings;
+--   ALTER TABLE public.central_needs_field_overrides
+--     DROP CONSTRAINT IF EXISTS central_needs_field_overrides_source_record_org_fk,
+--     DROP COLUMN IF EXISTS source_record_id;
+--   ALTER TABLE public.central_needs_source_records
+--     DROP CONSTRAINT IF EXISTS central_needs_source_records_id_org_key,
+--     DROP CONSTRAINT IF EXISTS central_needs_source_records_session_ordinal_key,
+--     DROP CONSTRAINT IF EXISTS central_needs_source_records_ordinal_positive_chk,
+--     DROP COLUMN IF EXISTS record_ordinal,
+--     ADD CONSTRAINT central_needs_source_records_import_session_id_target_entit_key
+--       UNIQUE (import_session_id, target_entity, field_name);
 --   ALTER TABLE public.central_needs_import_sessions
 --     DROP CONSTRAINT IF EXISTS central_needs_import_sessions_authoritative_finalization_chk,
 --     DROP CONSTRAINT IF EXISTS central_needs_import_sessions_authoritative_digest_chk,
