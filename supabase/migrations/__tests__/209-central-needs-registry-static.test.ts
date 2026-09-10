@@ -43,16 +43,19 @@ const COMPOSITE_FKS = [
 ];
 
 describe('CN-1A/209 static — registration and file hygiene', () => {
-  it('is registered at 209, the new ceiling, with 210 stays absent', () => {
+  it('is registered at 209, immediately below CN-1B/210 which is now the ceiling', () => {
     const files = readdirSync(MIGRATIONS).filter((f) => /^\d{3}_.*\.sql$/.test(f)).sort();
     expect(files).toContain(FILENAME);
     expect(files.indexOf(FILENAME)).toBe(208);
-    expect(files.filter((f) => Number(f.slice(0, 3)) > 209)).toEqual([]);
-    expect(files).toHaveLength(209);
+    expect(files.filter((f) => Number(f.slice(0, 3)) > 210)).toEqual([]);
+    expect(files).toHaveLength(210);
     expect(isReviewedMigrationFile(FILENAME)).toBe(true);
-    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1]).toBe(FILENAME);
-    expect(getMaximumReviewedMigrationNumber()).toBe(209);
-    expect(getNextUnreviewedMigrationNumber()).toBe(210);
+    // 209 is no longer last: CN-1B/210 sits directly after it, and 210's own
+    // static suite owns the ceiling assertions from here on.
+    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.indexOf(FILENAME) + 1])
+      .toBe('210_phoenix_central_needs_workflow_rpcs.sql');
+    expect(getMaximumReviewedMigrationNumber()).toBe(210);
+    expect(getNextUnreviewedMigrationNumber()).toBe(211);
   });
 
   it('carries no CR bytes — LF only', () => {
@@ -70,7 +73,8 @@ describe('CN-1A/209 static — registration and file hygiene', () => {
 
   it('touches no historical migration file — self-contained', () => {
     const others = readdirSync(MIGRATIONS).filter((f) => f.endsWith('.sql') && f !== FILENAME);
-    expect(others).toHaveLength(208);
+    // 208 historical migrations below 209, plus CN-1B/210 above it.
+    expect(others).toHaveLength(209);
   });
 });
 

@@ -264,6 +264,13 @@ run('E7-2 · Stage-E application wiring (dynamic)',()=>{
       // at 171" assertion above is unaffected. Listed here so this guard
       // stays exhaustive.
       '209_phoenix_central_needs_registry.sql',
+      // CN-1B (210): the Central Needs import/review workflow RPCs — nine
+      // SECURITY DEFINER functions, one canonical-link table and three
+      // dual-pass trust-evidence columns on the M209 import session. It moves
+      // no stock, creates no transfer and adds no corridor, route or dispatch
+      // SQL at all — so the "Stage E still ends at 171" assertion above is
+      // unaffected. Listed here so this guard stays exhaustive.
+      '210_phoenix_central_needs_workflow_rpcs.sql',
     ];
     it('Stage E still ends at 171 — E7-2 introduced no new SQL',()=>{
       const files=readdirSync(join(__dirname,'..')).filter(f=>/^\d{3}_.*\.sql$/.test(f));

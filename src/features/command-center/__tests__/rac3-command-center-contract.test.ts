@@ -383,7 +383,13 @@ describe('RAC-3 · I) no backend or migration change', () => {
     // by EXACT filename, exactly as M200-M208 were. RAC-3's own subject (the
     // command centre) is untouched by it.
     const M209 = 'supabase/migrations/209_phoenix_central_needs_registry.sql';
-    const ALLOWED_SQL = [M200, M201, M202, M203, M204, M205, M206, M207, M208, M209];
+    // CN-1B: migration 210 is the Central Needs import/review workflow layer —
+    // SECURITY DEFINER RPCs, one canonical-link table and the dual-pass trust
+    // evidence on M209's import session. Registered by EXACT filename, exactly
+    // as M200-M209 were. RAC-3's own subject (the command centre) is untouched
+    // by it.
+    const M210 = 'supabase/migrations/210_phoenix_central_needs_workflow_rpcs.sql';
+    const ALLOWED_SQL = [M200, M201, M202, M203, M204, M205, M206, M207, M208, M209, M210];
     const changed = execSync(
       'git diff --name-only b707f073d60b4cc61205c35003ab491f3aed7468',
       { cwd: process.cwd(), encoding: 'utf8' },
