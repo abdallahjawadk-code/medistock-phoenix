@@ -98,14 +98,15 @@ describe('183 registration and shape', () => {
       '207_phoenix_dispensing_suspension_enforcement_warehouse_send.sql',
       '208_phoenix_dispensing_suspension_enforcement_replenishment_and_drafts.sql',
       '209_phoenix_central_needs_registry.sql',
+      '210_phoenix_central_needs_workflow_rpcs.sql',
     ];
     const i = REVIEWED_MIGRATION_FILES.indexOf(NAME);
     expect(REVIEWED_MIGRATION_FILES.slice(i + 1)).toEqual(SUCCESSORS);
     expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1])
       .toBe(SUCCESSORS[SUCCESSORS.length - 1]);
-    // The ceiling is now 209; `[2-9]\d\d` would match it, so this asserts
+    // The ceiling is now 210; `[2-9]\d\d` would match it, so this asserts
     // numerically that nothing sits ABOVE the ceiling.
-    expect(REVIEWED_MIGRATION_FILES.filter(f => Number(f.slice(0, 3)) > 209)).toHaveLength(0);
+    expect(REVIEWED_MIGRATION_FILES.filter(f => Number(f.slice(0, 3)) > 210)).toHaveLength(0);
   });
 
   it('is a single transaction, manual-apply only', () => {

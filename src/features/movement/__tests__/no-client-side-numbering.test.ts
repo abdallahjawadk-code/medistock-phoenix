@@ -190,9 +190,15 @@ describe('no client-side document-number sequence exists',()=>{
     // and four permission keys. No sequence, no counter, no max()+1, no
     // generated numeric identity, no document number of any kind;
     // revision_number is a caller-supplied internal per-plan counter, not an
-    // authoritative document/reference number. Boundary moves to 209 so the
+    // authoritative document/reference number.
+    // CN-1B / M210: the Central Needs import/review workflow RPCs. Same
+    // finding — no sequence, no counter, no max()+1, no generated numeric
+    // identity and no document number of any kind: revision_number remains
+    // the caller-supplied internal per-plan counter M209 defined, and the
+    // only identifiers CN-1B introduces are gen_random_uuid() primary keys
+    // and externally-supplied SHA-256 digests. Boundary moves to 210 so the
     // next unknown migration still fails closed.
-    const beyond=migrations.filter(f=>/^(1[89]\d|[2-9]\d\d)_/.test(f)&&!/^(179|180|181|182|183|184|185|186|187|188|189|190|191|192|193|194|195|196|197|198|199|200|201|202|203|204|205|206|207|208|209)_/.test(f));
+    const beyond=migrations.filter(f=>/^(1[89]\d|[2-9]\d\d)_/.test(f)&&!/^(179|180|181|182|183|184|185|186|187|188|189|190|191|192|193|194|195|196|197|198|199|200|201|202|203|204|205|206|207|208|209|210)_/.test(f));
     expect(beyond).toEqual([]);
     for(const f of [
       '200_phoenix_demo_purge_auth_boundary_correction.sql',
