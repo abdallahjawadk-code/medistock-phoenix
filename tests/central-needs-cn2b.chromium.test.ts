@@ -97,6 +97,19 @@ beforeAll(async () => {
     root: ROOT,
     logLevel: 'error',
     server: { host: '127.0.0.1', port: 0, strictPort: false },
+    // The production Worker path (useCentralNeedsPreview -> import/worker.ts ->
+    // parser-core.ts) pulls in the bare `xlsx` dependency. Left to Vite's
+    // default lazy discovery, that dependency is first seen only once the
+    // worker actually runs — AFTER this suite has already navigated and
+    // selected a file — which triggers dependency re-optimization and a full
+    // page reload, silently dropping the just-selected file input state. Vite
+    // documents this exact "new dependency found after server start" reload
+    // behaviour. Pre-declaring the dependency here makes Vite optimize it
+    // during cold start instead, before any test interacts with the page, so
+    // no mid-test reload can occur. The Worker itself stays real and unmocked.
+    optimizeDeps: {
+      include: ['xlsx'],
+    },
     define: {
       // The harness is gated on DEV *and* this explicit opt-in (qaConfig.ts),
       // so a dev server that does not set it renders the ordinary app instead.
@@ -272,6 +285,16 @@ describe('CN-2B · upload selection and PROVISIONAL preview (real Web Worker)', 
         mimeType: 'application/zip',
         buffer: readFileSync(ARCHIVE_FIXTURE),
       });
+
+      // Prove the UI accepted the selection BEFORE waiting on the worker
+      // result. If a dependency-discovery reload ever drops this state again,
+      // this fails immediately with a clear "file selection was lost" signal
+      // instead of a 90-second timeout that only says PROVISIONAL never
+      // appeared.
+      await expect
+        .poll(async () => (await page.locator('.cn2b-panel').allInnerTexts()).join(' | '),
+          { timeout: 10000 })
+        .toContain('synthetic-archive.zip');
 
       // The real CN-2A worker runs here — no mock, no stub. Vite compiles the
       // worker module (and SheetJS with it) on first request, which is slow the
