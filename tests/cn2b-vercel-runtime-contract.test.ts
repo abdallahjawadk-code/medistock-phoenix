@@ -10,6 +10,14 @@ interface RootTsconfig {
   references?: Array<{ path?: string }>;
 }
 
+interface ApiTsconfig {
+  compilerOptions?: {
+    allowImportingTsExtensions?: boolean;
+    rewriteRelativeImportExtensions?: boolean;
+    noEmit?: boolean;
+  };
+}
+
 interface VercelConfig {
   rewrites?: Array<{ source?: string; destination?: string }>;
 }
@@ -36,14 +44,21 @@ const RUNTIME_ADAPTERS = [
 ] as const;
 
 describe('CN-2B Vercel TypeScript runtime contract', () => {
-  it('keeps the root tsconfig compatible with Vercel function compilation', () => {
+  it('keeps the root and API tsconfigs compatible with Vercel function compilation', () => {
     const config = JSON.parse(
       readFileSync(resolve(process.cwd(), 'tsconfig.json'), 'utf8'),
     ) as RootTsconfig;
+    const apiConfig = JSON.parse(
+      readFileSync(resolve(process.cwd(), 'tsconfig.api.json'), 'utf8'),
+    ) as ApiTsconfig;
 
     expect(config.compilerOptions?.allowImportingTsExtensions).toBe(true);
     expect(config.compilerOptions?.noEmit).toBe(true);
     expect(config.references?.map((reference) => reference.path)).toContain('./tsconfig.api.json');
+
+    expect(apiConfig.compilerOptions?.allowImportingTsExtensions).toBe(true);
+    expect(apiConfig.compilerOptions?.rewriteRelativeImportExtensions).toBe(true);
+    expect(apiConfig.compilerOptions?.noEmit).toBe(true);
   });
 
   it('routes every public CN-2B endpoint through a supported named POST adapter', () => {
