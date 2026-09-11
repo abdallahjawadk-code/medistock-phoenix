@@ -2,6 +2,7 @@
   "files": [],
   "compilerOptions": {
     "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true,
     "noEmit": true
   },
   "references": [
