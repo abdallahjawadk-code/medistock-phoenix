@@ -49,9 +49,10 @@ describe('M197 static — identity and placement', () => {
       '208_phoenix_dispensing_suspension_enforcement_replenishment_and_drafts.sql',
       '209_phoenix_central_needs_registry.sql',
       '210_phoenix_central_needs_workflow_rpcs.sql',
+      '211_phoenix_central_needs_batch_and_disposition.sql',
     ]);
-    expect(files.filter((f) => Number(f.slice(0, 3)) > 210)).toEqual([]);
-    expect(files).toHaveLength(210);
+    expect(files.filter((f) => Number(f.slice(0, 3)) > 211)).toEqual([]);
+    expect(files).toHaveLength(211);
   });
 
   it('carries no MANUAL APPLY ONLY banner, so the pinned executor will accept it', () => {

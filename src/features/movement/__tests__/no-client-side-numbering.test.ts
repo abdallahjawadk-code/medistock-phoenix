@@ -196,11 +196,19 @@ describe('no client-side document-number sequence exists',()=>{
     // identity and no document number of any kind: revision_number remains
     // the caller-supplied internal per-plan counter M209 defined, and the
     // only identifiers CN-1B introduces are gen_random_uuid() primary keys
-    // and externally-supplied SHA-256 digests. Boundary moves to 210 so the
+    // and externally-supplied SHA-256 digests.
+    // CN-2B / M211: the Central Needs trusted import-batch manifest and the
+    // explicit mapping-disposition layer. Same finding — no sequence, no
+    // counter, no max()+1, no generated numeric identity and no document
+    // number of any kind. `entry_ordinal` and `record_ordinal` are POSITIONS
+    // inside one parsed container, supplied by the trusted replay's own array
+    // order (WITH ORDINALITY), never allocated by a client and never an
+    // authoritative document/reference number. Boundary moves to 211 so the
     // next unknown migration still fails closed.
-    const beyond=migrations.filter(f=>/^(1[89]\d|[2-9]\d\d)_/.test(f)&&!/^(179|180|181|182|183|184|185|186|187|188|189|190|191|192|193|194|195|196|197|198|199|200|201|202|203|204|205|206|207|208|209|210)_/.test(f));
+    const beyond=migrations.filter(f=>/^(1[89]\d|[2-9]\d\d)_/.test(f)&&!/^(179|180|181|182|183|184|185|186|187|188|189|190|191|192|193|194|195|196|197|198|199|200|201|202|203|204|205|206|207|208|209|210|211)_/.test(f));
     expect(beyond).toEqual([]);
     for(const f of [
+      '211_phoenix_central_needs_batch_and_disposition.sql',
       '200_phoenix_demo_purge_auth_boundary_correction.sql',
       '199_phoenix_command_center_read_contract.sql',
       '198_phoenix_secdef_search_path_convergence.sql',

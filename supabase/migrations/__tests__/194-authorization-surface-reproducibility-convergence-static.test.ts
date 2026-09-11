@@ -303,7 +303,7 @@ describe('194 · static · historical immutability and rig coupling', () => {
   it('no migration numbered 211 or higher exists', () => {
     const above = readdirSync(MIGRATIONS_DIR)
       .filter((f) => /^\d{3}_.*\.sql$/.test(f))
-      .filter((f) => Number(f.slice(0, 3)) >= 211);
+      .filter((f) => Number(f.slice(0, 3)) >= 212);
     expect(above).toEqual([]);
   });
 

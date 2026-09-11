@@ -185,6 +185,22 @@ describe('C) historical roles keep their exact previous menus', () => {
      * role loses a menu item it previously had.
      */
     if (screen === 22) return perms.has('dashboard.view');
+    /**
+     * CN-2B restates the oracle once more, for exactly the reason RAC-3 did:
+     * screen 23 (Central Needs) is a NEW surface with its OWN gate, so leaving
+     * the catch-all `return true` to cover it would assert that every
+     * historical role may reach it — the opposite of the rule.
+     *
+     * The rule is `central_needs.view`, read from effective permissions,
+     * mirroring the RLS predicate on every Central Needs table. The key is
+     * added to PERM_SETS below so this branch is exercised in BOTH states,
+     * rather than passing because the key is never present.
+     *
+     * This is not a widening: 23 did not exist before CN-2B, so no historical
+     * role loses a menu item it previously had. Migration 209 ships the key
+     * with zero role defaults, so in practice no role holds it yet.
+     */
+    if (screen === 23) return perms.has('central_needs.view');
     return true;
   };
 
@@ -211,6 +227,13 @@ describe('C) historical roles keep their exact previous menus', () => {
     new Set(['dashboard.view']),
     new Set(['dashboard.view', 'users.view']),
     new Set(['dashboard.view', 'warehouse_transfer.send']),
+    // CN-2B — the Central Needs capability, alone and combined. Without these
+    // the screen-23 branch above would only ever be exercised in its FALSE
+    // state, and a regression that offered Central Needs to everyone would
+    // still pass this parity check.
+    new Set(['central_needs.view']),
+    new Set(['central_needs.view', 'users.view']),
+    new Set(['central_needs.view', 'dashboard.view']),
   ];
 
   it.each(HISTORICAL)('%s: identical to the pre-R1.1-P gates on every surface and permission set', (role) => {

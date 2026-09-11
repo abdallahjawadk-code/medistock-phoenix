@@ -28,9 +28,9 @@ import { QA_HARNESS_MARKER } from './qaConfig';
 import { QA_PERSONAS, qaPersona, type QaPersonaId } from './qaFixtures';
 import { createQaFixtureClient, QA_RPC_CALLS } from './qaFixtureClient';
 
-type SceneId = 'shell' | 'states' | 'institutions' | 'welcome' | 'dashboard' | 'twin' | 'inventory' | 'outlet' | 'procurement' | 'status' | 'monthly' | 'reports' | 'statistics';
+type SceneId = 'shell' | 'states' | 'institutions' | 'welcome' | 'dashboard' | 'twin' | 'inventory' | 'outlet' | 'procurement' | 'status' | 'monthly' | 'reports' | 'statistics' | 'central-needs';
 
-const SCENE_IDS: SceneId[] = ['shell', 'states', 'institutions', 'welcome', 'dashboard', 'twin', 'inventory', 'outlet', 'procurement', 'status', 'monthly', 'reports', 'statistics'];
+const SCENE_IDS: SceneId[] = ['shell', 'states', 'institutions', 'welcome', 'dashboard', 'twin', 'inventory', 'outlet', 'procurement', 'status', 'monthly', 'reports', 'statistics', 'central-needs'];
 
 function readParams() {
   const q = new URLSearchParams(window.location.search);
@@ -123,6 +123,9 @@ const ReportsScreen = lazy(() =>
  * same payload the real RPC returns, and the fixture client refuses every
  * write as usual.
  */
+const CentralNeedsScreen = lazy(() =>
+  import('@/features/central-needs/CentralNeedsScreen').then(m => ({ default: m.CentralNeedsScreen })),
+);
 const CommandCenterScreen = lazy(() =>
   import('@/features/command-center/CommandCenterScreen').then(m => ({ default: m.CommandCenterScreen })),
 );
@@ -198,13 +201,13 @@ export function QaHarness() {
     setScene(n === 17 ? 'twin' : n === 11 ? 'institutions' : n === 3 ? 'inventory'
       : n === 18 ? 'outlet' : n === 19 ? 'procurement' : n === 2 ? 'dashboard'
       : n === 12 ? 'status' : n === 20 ? 'monthly' : n === 9 ? 'reports'
-      : n === 22 ? 'statistics' : 'shell');
+      : n === 22 ? 'statistics' : n === 23 ? 'central-needs' : 'shell');
   // Reflect the active scene as the production screen number its nav item uses,
   // so the correct sidebar/drawer item reads as current (twin = 17 / network).
   const currentScreen = scene === 'twin' ? 17 : scene === 'institutions' ? 11
     : scene === 'inventory' ? 3 : scene === 'outlet' ? 18 : scene === 'procurement' ? 19
     : scene === 'dashboard' ? 2 : scene === 'status' ? 12 : scene === 'monthly' ? 20
-    : scene === 'reports' ? 9 : scene === 'statistics' ? 22 : 1;
+    : scene === 'reports' ? 9 : scene === 'statistics' ? 22 : scene === 'central-needs' ? 23 : 1;
 
   return (
     <QaAppProvider persona={active} lang={lang} theme={theme} orgId={org ?? undefined}>
@@ -258,6 +261,10 @@ export function QaHarness() {
             ) : scene === 'reports' ? (
               <Suspense fallback={<PhoenixLoadingState />}>
                 <ReportsScreen />
+              </Suspense>
+            ) : scene === 'central-needs' ? (
+              <Suspense fallback={<PhoenixLoadingState />}>
+                <CentralNeedsScreen />
               </Suspense>
             ) : scene === 'statistics' ? (
               <Suspense fallback={<PhoenixLoadingState />}>

@@ -201,6 +201,18 @@ const QA_EXTRA_PERMISSIONS: Partial<Record<QaPersonaId, readonly string[]>> = {
    * Help Center would offer no tour for either, for want of these two
    * literal keys. Additive only — no RPC, RLS, or migration touched.
    */
+  /**
+   * CN-2B: the four Central Needs keys (migration 209) are NOT overlaid here.
+   * They are in the frontend PERMISSION_KEYS catalog, so `roleDefaults(
+   * 'super_admin')` carries them through the same catalog-wide derivation the
+   * real app's super_admin top-up uses (AppContext) — the harness reaches
+   * screen 23 by the production path, not by a fixture. Migration 209 ships
+   * them with ZERO role defaults, and no other persona's `roleDefaults()`
+   * carries one: the `outlet_officer` persona is deliberately NOT given these
+   * keys, which is what makes the unauthorized-navigation scene meaningful.
+   * Every server-side check — RLS and every CN-1B / CN-2B RPC guard — is
+   * unchanged and still runs against the real database in production.
+   */
   super_admin: ['warehouse_transfer.receive', 'warehouse_dispatch.create'],
 };
 

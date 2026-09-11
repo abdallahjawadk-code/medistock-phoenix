@@ -37,16 +37,17 @@ const EXPECTED:readonly string[]=Object.freeze([
 '188_phoenix_public_qr_facility_context.sql','189_phoenix_inter_org_alert_canonical_identity.sql','190_phoenix_inter_org_alert_cqrs_boundary.sql','191_phoenix_canonical_scope_topology_read_contract.sql','192_phoenix_anonymous_read_surface_convergence.sql','193_phoenix_inter_org_alert_command_surface_hardening.sql','194_phoenix_authorization_surface_reproducibility_convergence.sql','195_phoenix_auth_helper_profile_schema_qualification.sql','196_phoenix_secdef_relation_schema_qualification.sql','197_phoenix_public_execute_convergence.sql','198_phoenix_secdef_search_path_convergence.sql','199_phoenix_command_center_read_contract.sql','200_phoenix_demo_purge_auth_boundary_correction.sql','201_phoenix_organization_archive_dependency_guard.sql',
 '202_phoenix_organization_archive_reciprocal_guard.sql','203_phoenix_material_dispensing_suspension.sql','204_phoenix_dispensing_suspension_enforcement_dispense.sql','205_phoenix_dispensing_suspension_enforcement_fefo.sql','206_phoenix_dispensing_suspension_enforcement_suggestions.sql','207_phoenix_dispensing_suspension_enforcement_warehouse_send.sql','208_phoenix_dispensing_suspension_enforcement_replenishment_and_drafts.sql',
 '209_phoenix_central_needs_registry.sql','210_phoenix_central_needs_workflow_rpcs.sql',
+'211_phoenix_central_needs_batch_and_disposition.sql',
 ]);
 
-// CN-1B/210: 210 is now the reviewed Central Needs workflow RPC layer; the
-// synthetic unknown boundary moves to 211 and must remain genuinely absent.
-const SYNTH_NEXT='211_unreviewed_test_migration.sql';
+// CN-2B/211: 211 is now the reviewed Central Needs batch + disposition layer;
+// the synthetic unknown boundary moves to 212 and must remain genuinely absent.
+const SYNTH_NEXT='212_unreviewed_test_migration.sql';
 const SYNTH_ALT='187_phoenix_some_other_name.sql';
 
-describe('reviewed migration manifest through 210',()=>{
+describe('reviewed migration manifest through 211',()=>{
   it('counter-gates registry and disk by exact filename',()=>{
-    expect(EXPECTED).toHaveLength(210);
+    expect(EXPECTED).toHaveLength(211);
     expect([...REVIEWED_MIGRATION_FILES]).toEqual([...EXPECTED]);
     expect(sortMigrationFiles(actualSqlFiles())).toEqual([...EXPECTED]);
     expect(findMissingReviewedMigrationFiles(actualSqlFiles())).toEqual([]);
@@ -60,9 +61,9 @@ describe('reviewed migration manifest through 210',()=>{
     expect([...REVIEWED_MIGRATION_FILES]).toEqual(sortMigrationFiles(REVIEWED_MIGRATION_FILES));
     for(const f of EXPECTED) expect(isNumberedMigrationFile(f),f).toBe(true);
   });
-  it('pins maximum 210 and next unreviewed 211',()=>{
-    expect(getMaximumReviewedMigrationNumber()).toBe(210);
-    expect(getNextUnreviewedMigrationNumber()).toBe(211);
+  it('pins maximum 211 and next unreviewed 212',()=>{
+    expect(getMaximumReviewedMigrationNumber()).toBe(211);
+    expect(getNextUnreviewedMigrationNumber()).toBe(212);
     expect(isReviewedMigrationFile('178_phoenix_distribution_point_owner_guard_privilege_fix.sql')).toBe(true);
     expect(isReviewedMigrationFile('179_phoenix_canonical_authenticated_availability_hardening.sql')).toBe(true);
     expect(isReviewedMigrationFile('180_phoenix_emergency_initial_provisioning_boundary.sql')).toBe(true);
@@ -96,13 +97,14 @@ describe('reviewed migration manifest through 210',()=>{
     expect(isReviewedMigrationFile('208_phoenix_dispensing_suspension_enforcement_replenishment_and_drafts.sql')).toBe(true);
     expect(isReviewedMigrationFile('209_phoenix_central_needs_registry.sql')).toBe(true);
     expect(isReviewedMigrationFile('210_phoenix_central_needs_workflow_rpcs.sql')).toBe(true);
+    expect(isReviewedMigrationFile('211_phoenix_central_needs_batch_and_disposition.sql')).toBe(true);
     expect(isReviewedMigrationFile(SYNTH_ALT)).toBe(false);
     expect(isReviewedMigrationFile(SYNTH_NEXT)).toBe(false);
   });
   it('derived above/between slices remain exact against the independent list',()=>{
     const num=(f:string)=>{const n=extractMigrationNumber(f);if(n===null)throw new Error(f);return n;};
-    for(let n=0;n<=210;n++) expect(reviewedMigrationFilesAbove(n),`above ${n}`).toEqual(EXPECTED.filter(f=>num(f)>n));
-    for(const [a,b] of [[1,181],[150,181],[170,181],[174,181],[175,181],[176,181],[177,181],[178,181],[179,181],[180,181],[181,181],[182,182],[183,183],[184,184],[185,185],[186,186],[187,187],[188,200],[198,200],[199,200],[200,200],[200,201],[201,201],[201,202],[202,202],[202,203],[203,203],[203,204],[204,204],[204,205],[205,205],[205,206],[206,206],[206,207],[207,207],[207,208],[208,208],[208,209],[209,209],[209,210],[210,210]] as const)
+    for(let n=0;n<=211;n++) expect(reviewedMigrationFilesAbove(n),`above ${n}`).toEqual(EXPECTED.filter(f=>num(f)>n));
+    for(const [a,b] of [[1,181],[150,181],[170,181],[174,181],[175,181],[176,181],[177,181],[178,181],[179,181],[180,181],[181,181],[182,182],[183,183],[184,184],[185,185],[186,186],[187,187],[188,200],[198,200],[199,200],[200,200],[200,201],[201,201],[201,202],[202,202],[202,203],[203,203],[203,204],[204,204],[204,205],[205,205],[205,206],[206,206],[206,207],[207,207],[207,208],[208,208],[208,209],[209,209],[209,210],[210,210],[210,211],[211,211]] as const)
       expect(reviewedMigrationFilesBetween(a,b),`${a}-${b}`).toEqual(EXPECTED.filter(f=>num(f)>=a&&num(f)<=b));
   });
   it('future and alternate names remain fail-closed',()=>{

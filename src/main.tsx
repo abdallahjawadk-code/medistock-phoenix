@@ -19,6 +19,7 @@ import '@/shared/lib/phase-a-command-center.css';
 // must remain the final CSS imports. Every selector here is `.rac3-`
 // prefixed and unique to the Command Center, so no later layer collides.
 import '@/shared/lib/rac3-command-center.css';
+import '@/shared/lib/central-needs.css';
 import '@/shared/lib/phase-a-inventory-transfers.css';
 import '@/shared/lib/phase-a-institutions-outlets.css';
 import '@/shared/lib/phase-a-alerts-admin-qr.css';

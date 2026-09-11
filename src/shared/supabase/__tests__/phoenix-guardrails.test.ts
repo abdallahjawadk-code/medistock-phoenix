@@ -459,10 +459,26 @@ describe('Deployment readiness: vercel.json', () => {
   });
 
   it('has an SPA rewrite so deep links / public QR refresh resolve', () => {
+    // CN-2B narrowed the catch-all by exactly one prefix so the trusted Node
+    // API can exist at all: `/(.*)` would swallow every /api/* request into
+    // index.html. The rewrite is now matched by BEHAVIOUR rather than by its
+    // literal source string, so this guard still fails closed if the SPA
+    // fallback is removed, retargeted, or narrowed any further.
     const rewrites = vercel.rewrites ?? [];
-    const spa = rewrites.find((r: { source: string }) => r.source === '/(.*)');
+    const spa = rewrites.find((r: { source: string; destination: string }) =>
+      /index\.html|\/$/.test(r.destination));
     expect(spa).toBeTruthy();
     expect(spa.destination).toMatch(/index\.html|\/$/);
+
+    const matches = new RegExp(`^${spa.source}$`);
+    // Every deep link a browser can land on still resolves to the SPA.
+    for (const path of ['/', '/login', '/qr/abc123', '/reports/monthly', '/a/b/c/d']) {
+      expect(matches.test(path), path).toBe(true);
+    }
+    // …and the trusted API is the ONE thing it must not swallow.
+    for (const path of ['/api/central-needs/upload-ticket', '/api/x']) {
+      expect(matches.test(path), path).toBe(false);
+    }
   });
 });
 

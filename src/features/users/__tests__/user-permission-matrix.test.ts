@@ -237,16 +237,17 @@ describe('Permission catalog', () => {
     'inter_institution_alerts.resolve', 'inter_institution_alerts.dismiss', // FINAL-POLISH-PERMISSIONS-QR-A (migration 038)
     'deletion_wizard.view', 'deletion_wizard.clear_port_items', 'deletion_wizard.archive_port', 'deletion_wizard.archive_organization',
     'users.recycle',
+    'central_needs.view', 'central_needs.import', 'central_needs.edit', 'central_needs.approve', // CN-2B (migration 209)
   ];
 
   it('contains exactly the required permission keys', () => {
     expect([...PERMISSION_KEY_SET].sort()).toEqual([...REQUIRED].sort());
   });
 
-  it('canonical permission count is exactly 48 (44 previous + 4 alert-lifecycle keys from FINAL-POLISH-PERMISSIONS-QR-A)', () => {
-    expect(REQUIRED).toHaveLength(48);
-    expect(PERMISSION_KEYS).toHaveLength(48);
-    expect(PERMISSION_KEY_SET.size).toBe(48);
+  it('canonical permission count is exactly 52 (48 previous + 4 Central Needs keys from migration 209, CN-2B)', () => {
+    expect(REQUIRED).toHaveLength(52);
+    expect(PERMISSION_KEYS).toHaveLength(52);
+    expect(PERMISSION_KEY_SET.size).toBe(52);
   });
 
   it('does NOT contain any dormant inter_org_exchange keys (Service-D paused)', () => {
