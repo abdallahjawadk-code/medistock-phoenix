@@ -46,7 +46,7 @@ describe('CN-2B Vercel TypeScript runtime contract', () => {
     expect(config.references?.map((reference) => reference.path)).toContain('./tsconfig.api.json');
   });
 
-  it('routes every public CN-2B endpoint through a supported Web fetch adapter', () => {
+  it('routes every public CN-2B endpoint through a supported named POST adapter', () => {
     const config = JSON.parse(
       readFileSync(resolve(process.cwd(), 'vercel.json'), 'utf8'),
     ) as VercelConfig;
@@ -59,7 +59,9 @@ describe('CN-2B Vercel TypeScript runtime contract', () => {
 
       const source = readFileSync(resolve(process.cwd(), adapter.file), 'utf8');
       expect(source).toContain(`import handler from '${adapter.canonical}';`);
-      expect(source).toContain('export default { fetch: handler };');
+      expect(source).toContain('export async function POST(request: Request): Promise<Response>');
+      expect(source).toContain('return handler(request);');
+      expect(source).not.toContain('export default { fetch: handler };');
       expect(source).not.toContain('export default async function');
     }
   });
