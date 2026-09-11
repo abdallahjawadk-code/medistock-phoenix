@@ -389,7 +389,12 @@ describe('RAC-3 · I) no backend or migration change', () => {
     // as M200-M209 were. RAC-3's own subject (the command centre) is untouched
     // by it.
     const M210 = 'supabase/migrations/210_phoenix_central_needs_workflow_rpcs.sql';
-    const ALLOWED_SQL = [M200, M201, M202, M203, M204, M205, M206, M207, M208, M209, M210];
+    // CN-2B: migration 211 is the Central Needs import review workflow's
+    // batch-and-disposition layer — reviewed and forward-only. Registered by
+    // EXACT filename, exactly as M200-M210 were. RAC-3's own subject (the
+    // command centre) remains untouched by it.
+    const M211 = 'supabase/migrations/211_phoenix_central_needs_batch_and_disposition.sql';
+    const ALLOWED_SQL = [M200, M201, M202, M203, M204, M205, M206, M207, M208, M209, M210, M211];
     const changed = execSync(
       'git diff --name-only b707f073d60b4cc61205c35003ab491f3aed7468',
       { cwd: process.cwd(), encoding: 'utf8' },
@@ -449,7 +454,13 @@ describe('RAC-3 · I) no backend or migration change', () => {
     expect(head.dependencies).toEqual(base.dependencies);
     expect(head.devDependencies).toEqual(base.devDependencies);
     expect(head.overrides).toEqual(base.overrides);
-    expect(head.scripts).toEqual(base.scripts);
+    // CN-2B: the lint script gains the `api` root alongside `src`, reviewed as
+    // the one approved scripts delta. Every other script stays byte-identical
+    // to the baseline — this is not a broad exemption, only this exact line.
+    expect(head.scripts).toEqual({
+      ...base.scripts,
+      lint: 'eslint src api --report-unused-disable-directives --max-warnings 0',
+    });
     expect(head.name).toBe(base.name);
 
     // The lockfile's whole graph must be identical too — only the two root

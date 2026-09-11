@@ -117,7 +117,155 @@ export const QA_DISPATCH_1 = '0ff88888-0000-4000-8000-000000000001';
  * array OR an object — matching each RPC's actual response schema so screens
  * render their POPULATED state, not an error. Values are obviously synthetic.
  */
+/**
+ * CN-2B — Central Needs review fixtures.
+ *
+ * One AUTHORITATIVELY VERIFIED import session inside one registered trusted
+ * batch, with four row entities in three deliberately different states: one
+ * already mapped, one already marked not-applicable with a reason, and two
+ * still undecided. That mix is what makes the review surface's INCOMPLETE
+ * state — and the disposition controls — reachable without a live session.
+ *
+ * The readiness RPC answer is the SERVER's, reproduced verbatim in shape: the
+ * harness never computes completeness itself, exactly as the real screen never
+ * does. Two undecided entities means `ready: false` with two blockers, which is
+ * the honest projection of these rows.
+ */
+const CN2B_SESSION = 'qa-cn2b-session-1';
+const CN2B_REVISION = 'qa-cn2b-revision-1';
+const CN2B_BATCH = 'qa-cn2b-batch-1';
+const CN2B_ENTITIES = ['sheet:0:row:5', 'sheet:0:row:6', 'sheet:0:row:7', 'sheet:0:row:8'];
+
+function cn2bProvenance(row: number, col: number, a1: string) {
+  return {
+    fileFingerprintSha256: 'a'.repeat(64),
+    originalFilename: 'qa-annual-needs.xls',
+    parserVersion: '1.0.0/0.20.3',
+    sheetIndex: 0,
+    sheetName: 'Needs',
+    sheetHidden: 'visible',
+    coordinate: { row, col, a1 },
+    extractedAt: '2026-09-01T08:00:00.000Z',
+  };
+}
+
+const CN2B_SOURCE_RECORDS = CN2B_ENTITIES.flatMap((entity, i) => [
+  {
+    id: `qa-cn2b-rec-${i}-name`,
+    import_session_id: CN2B_SESSION,
+    record_ordinal: i * 2 + 1,
+    target_entity: entity,
+    field_name: 'item_name',
+    // Deliberately includes a markup-looking string and an Arabic name: the
+    // review table must render both as TEXT.
+    source_values: {
+      value: i === 3 ? '<b>Ibuprofen 400mg</b>' : ['Paracetamol 500mg', 'المجموع الفرعي', 'Amoxicillin 250mg', 'x'][i],
+      valueType: 'string', isFormula: false, formula: null,
+    },
+    source_provenance: cn2bProvenance(4 + i, 1, `B${5 + i}`),
+  },
+  {
+    id: `qa-cn2b-rec-${i}-qty`,
+    import_session_id: CN2B_SESSION,
+    record_ordinal: i * 2 + 2,
+    target_entity: entity,
+    field_name: 'quantity',
+    // Row 2 is a cached formula: its verbatim text is shown, never evaluated.
+    source_values: i === 1
+      ? { value: 1200, valueType: 'number', isFormula: true, formula: '=SUM(C5:C5)' }
+      : { value: [120, 0, 0, 40][i], valueType: 'number', isFormula: false, formula: null },
+    source_provenance: cn2bProvenance(4 + i, 2, `C${5 + i}`),
+  },
+]);
+
 export const QA_FIXTURES: Record<string, unknown> = {
+  central_needs_plans: [
+    { id: 'qa-cn2b-plan-1', organization_id: ORG_A, plan_year: 2026, status: 'active' },
+    { id: 'qa-cn2b-plan-0', organization_id: ORG_A, plan_year: 2025, status: 'active' },
+  ],
+  central_needs_plan_revisions: [
+    {
+      id: CN2B_REVISION, plan_id: 'qa-cn2b-plan-1', organization_id: ORG_A,
+      revision_number: 1, status: 'draft',
+      central_needs_plans: { plan_year: 2026 },
+    },
+    // A CLOSED revision from an earlier year. Two revisions both numbered 1
+    // are exactly why a label must carry its plan year.
+    {
+      id: 'qa-cn2b-revision-0', plan_id: 'qa-cn2b-plan-0', organization_id: ORG_A,
+      revision_number: 1, status: 'approved',
+      central_needs_plans: { plan_year: 2025 },
+    },
+  ],
+  central_needs_source_files: [
+    {
+      id: 'qa-cn2b-file-1', plan_revision_id: CN2B_REVISION,
+      original_filename: 'qa-annual-needs.xls', file_hash: 'a'.repeat(64),
+      byte_size: 20480, storage_locator: 'permanent/qa', uploaded_at: '2026-09-01T08:00:00.000Z',
+    },
+    {
+      id: 'qa-cn2b-file-2', plan_revision_id: CN2B_REVISION,
+      original_filename: 'qa-south-district.xls', file_hash: 'c'.repeat(64),
+      byte_size: 10240, storage_locator: 'permanent/qa2', uploaded_at: '2026-09-01T08:05:00.000Z',
+    },
+  ],
+  central_needs_import_sessions: [
+    {
+      id: CN2B_SESSION, plan_revision_id: CN2B_REVISION, source_file_id: 'qa-cn2b-file-1',
+      status: 'completed', preview_digest: 'b'.repeat(64), authoritative_digest: 'b'.repeat(64),
+      parser_identity: { contractVersion: '1.0.0', sheetjsVersion: '0.20.3', runtime: 'node' },
+      started_at: '2026-09-01T08:00:00.000Z', completed_at: '2026-09-01T08:00:09.000Z', notes: null,
+    },
+  ],
+  central_needs_import_batches: [
+    {
+      id: CN2B_BATCH, plan_revision_id: CN2B_REVISION, organization_id: ORG_A,
+      container_kind: 'file', container_filename: 'qa-annual-needs.xls',
+      container_sha256: 'a'.repeat(64), accepted_entry_count: 1, excluded_entry_count: 0,
+      registered_at: '2026-09-01T08:00:10.000Z',
+    },
+  ],
+  central_needs_import_batch_entries: [
+    {
+      id: 'qa-cn2b-entry-1', batch_id: CN2B_BATCH, plan_revision_id: CN2B_REVISION,
+      entry_ordinal: 1, archive_entry_path: 'north/qa-annual-needs.xls',
+      entry_sha256: 'a'.repeat(64), import_session_id: CN2B_SESSION,
+      central_needs_import_batches: { container_filename: 'qa-annual-needs.zip' },
+    },
+  ],
+  central_needs_source_records: CN2B_SOURCE_RECORDS,
+  central_needs_record_mappings: [
+    {
+      id: 'qa-cn2b-map-1', import_session_id: CN2B_SESSION, target_entity: CN2B_ENTITIES[0],
+      decision: 'mapped', central_item_id: 'qa-ci-para-500', decision_reason: null,
+      decided_at: '2026-09-01T09:00:00.000Z',
+    },
+    {
+      id: 'qa-cn2b-map-2', import_session_id: CN2B_SESSION, target_entity: CN2B_ENTITIES[1],
+      decision: 'not_applicable', central_item_id: null,
+      decision_reason: 'Subtotal line, not a dispensable material.',
+      decided_at: '2026-09-01T09:01:00.000Z',
+    },
+  ],
+  central_needs_field_overrides: [
+    {
+      id: 'qa-cn2b-ovr-1', plan_revision_id: CN2B_REVISION, source_record_id: 'qa-cn2b-rec-0-qty',
+      target_entity: CN2B_ENTITIES[0], field_name: 'quantity',
+      previous_value: 120, final_value: 150,
+      override_reason: 'Corrected against the signed institution request.',
+      override_note: null, created_at: '2026-09-01T09:05:00.000Z',
+    },
+  ],
+  'rpc:phoenix_central_needs_review_readiness': {
+    ok: true,
+    plan_revision_id: CN2B_REVISION,
+    status: 'draft',
+    ready: false,
+    blockers: [
+      { blocker: 'target_entity_without_disposition', detail: `session=${CN2B_SESSION} target_entity=${CN2B_ENTITIES[2]}` },
+      { blocker: 'target_entity_without_disposition', detail: `session=${CN2B_SESSION} target_entity=${CN2B_ENTITIES[3]}` },
+    ],
+  },
   organizations: [
     { id: ORG_A, name: 'QA · Al-Hilla Teaching Hospital', name_ar: 'QA · مستشفى الحلة التعليمي', code: 'QA-A', city: 'Al-Hilla', status: 'active', kind: 'institution' },
     { id: ORG_B, name: 'QA · Al-Imam Al-Sadiq Hospital', name_ar: 'QA · مستشفى الإمام الصادق', code: 'QA-B', city: 'Al-Hilla', status: 'active', kind: 'institution' },

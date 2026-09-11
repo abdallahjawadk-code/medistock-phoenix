@@ -87,11 +87,12 @@ describe('189 · registration and file hygiene', () => {
     const NEXT_19 = '208_phoenix_dispensing_suspension_enforcement_replenishment_and_drafts.sql';
     const NEXT_20 = '209_phoenix_central_needs_registry.sql';
     const NEXT_21 = '210_phoenix_central_needs_workflow_rpcs.sql';
+    const NEXT_22 = '211_phoenix_central_needs_batch_and_disposition.sql';
     const numbers = REVIEWED_MIGRATION_FILES.map(f => Number(f.slice(0, 3))).filter(Number.isFinite);
-    expect(Math.max(...numbers)).toBe(210);
+    expect(Math.max(...numbers)).toBe(211);
     const i = REVIEWED_MIGRATION_FILES.indexOf(NAME);
-    expect(REVIEWED_MIGRATION_FILES.slice(i + 1)).toEqual([NEXT, NEXT_2, NEXT_3, NEXT_4, NEXT_5, NEXT_6, NEXT_7, NEXT_8, NEXT_9, NEXT_10, NEXT_11, NEXT_12, NEXT_13, NEXT_14, NEXT_15, NEXT_16, NEXT_17, NEXT_18, NEXT_19, NEXT_20, NEXT_21]);
-    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1]).toBe(NEXT_21);
+    expect(REVIEWED_MIGRATION_FILES.slice(i + 1)).toEqual([NEXT, NEXT_2, NEXT_3, NEXT_4, NEXT_5, NEXT_6, NEXT_7, NEXT_8, NEXT_9, NEXT_10, NEXT_11, NEXT_12, NEXT_13, NEXT_14, NEXT_15, NEXT_16, NEXT_17, NEXT_18, NEXT_19, NEXT_20, NEXT_21, NEXT_22]);
+    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1]).toBe(NEXT_22);
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^190_/.test(f))).toEqual([NEXT]);
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^191_/.test(f))).toEqual([NEXT_2]);
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^192_/.test(f))).toEqual([NEXT_3]);
@@ -109,7 +110,8 @@ describe('189 · registration and file hygiene', () => {
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^208_/.test(f))).toEqual([NEXT_19]);
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^209_/.test(f))).toEqual([NEXT_20]);
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^210_/.test(f))).toEqual([NEXT_21]);
-    expect(REVIEWED_MIGRATION_FILES.filter(f => /^211_/.test(f))).toHaveLength(0);
+    expect(REVIEWED_MIGRATION_FILES.filter(f => /^211_/.test(f))).toEqual([NEXT_22]);
+    expect(REVIEWED_MIGRATION_FILES.filter(f => /^212_/.test(f))).toHaveLength(0);
   });
 });
 

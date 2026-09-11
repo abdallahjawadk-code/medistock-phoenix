@@ -6,7 +6,8 @@ export default [
     ignores: ['dist/', 'node_modules/', '*.cjs'],
   },
   {
-    files: ['src/**/*.ts', 'src/**/*.tsx'],
+    // CN-2B: the trusted Vercel Node API is held to the same rules as src.
+    files: ['src/**/*.ts', 'src/**/*.tsx', 'api/**/*.ts'],
     languageOptions: {
       parser: tsParser,
       parserOptions: {

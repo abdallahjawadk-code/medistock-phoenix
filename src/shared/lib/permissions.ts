@@ -77,6 +77,19 @@ export const PERMISSION_KEYS: readonly PermissionKeyDef[] = [
   { key: 'deletion_wizard.clear_port_items',     module: 'deletion_wizard',    action: 'clear_port_items',  labelKey: 'perm_deletion_wizard_clear_port_items',   dangerous: true },
   { key: 'deletion_wizard.archive_port',         module: 'deletion_wizard',    action: 'archive_port',      labelKey: 'perm_deletion_wizard_archive_port',       dangerous: true },
   { key: 'deletion_wizard.archive_organization', module: 'deletion_wizard',    action: 'archive_organization', labelKey: 'perm_deletion_wizard_archive_organization', dangerous: true },
+  // CN-2B: the four Central Needs keys migration 209 seeded into
+  // permission_keys (dangerous flags mirror permission_keys.is_dangerous
+  // there — only `approve` is dangerous). Listing them here lets the
+  // permission-matrix UI render and manage them; it grants NOTHING. Migration
+  // 209 ships every one of them with ZERO role defaults, and no explicit role
+  // fallback below names any of them, so a person must grant each key
+  // per profile. The server stays the authority: every Central Needs table's
+  // RLS and every 210/211 RPC guard re-derives the actor from auth.uid().
+  // There is deliberately NO central_needs.send.
+  { key: 'central_needs.view',                   module: 'central_needs',      action: 'view',              labelKey: 'perm_central_needs_view',        dangerous: false },
+  { key: 'central_needs.import',                 module: 'central_needs',      action: 'import',            labelKey: 'perm_central_needs_import',      dangerous: false },
+  { key: 'central_needs.edit',                   module: 'central_needs',      action: 'edit',              labelKey: 'perm_central_needs_edit',        dangerous: false },
+  { key: 'central_needs.approve',                module: 'central_needs',      action: 'approve',           labelKey: 'perm_central_needs_approve',     dangerous: true  },
 ];
 
 export const PERMISSION_KEY_SET: ReadonlySet<string> = new Set(PERMISSION_KEYS.map(p => p.key));

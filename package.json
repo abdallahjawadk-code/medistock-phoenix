@@ -4,12 +4,15 @@
   "version": "2.1.0",
   "description": "MediStock-Babil Phoenix V2 — Clean rebuild",
   "type": "module",
+  "engines": {
+    "node": "22.x"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "typecheck": "tsc -b",
-    "lint": "eslint src --report-unused-disable-directives --max-warnings 0",
+    "lint": "eslint src api --report-unused-disable-directives --max-warnings 0",
     "test": "vitest run",
     "test:watch": "vitest",
     "assets:phoenix": "node scripts/phoenix-assets.mjs",

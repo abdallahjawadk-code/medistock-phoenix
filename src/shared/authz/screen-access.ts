@@ -142,6 +142,42 @@ export function isScreenAuthorized(
   if (screen === COMMAND_CENTER_SCREEN) return permissions.has(DASHBOARD_VIEW_PERMISSION);
 
   /**
+   * CN-2B — Central Needs is CAPABILITY-gated on `central_needs.view`.
+   *
+   * This mirrors, in the UX layer, the boundary migrations 209/210/211 already
+   * enforce server-side: every Central Needs table's RLS policy reads
+   * phoenix_status_center_authorized(organization_id, 'central_needs.view'),
+   * and every write RPC re-derives the actor from auth.uid(). The gate here is
+   * NOT the security boundary — the database is, and stays so. It exists so an
+   * actor holding no Central Needs authority keeps the landing it already has
+   * instead of being routed to a screen that can only render zero rows.
+   *
+   * The key is read from EFFECTIVE permissions, never from a role name, so a
+   * per-profile override is honoured here exactly as the database honours it.
+   * Note that `central_needs.*` ships with zero role defaults by design (209),
+   * so this screen is unreachable until someone is explicitly granted the key.
+   *
+   * WHAT KEEPS INSTITUTION AND OUTLET USERS OUT, precisely. Two different
+   * mechanisms, and it is worth not confusing them:
+   *   * `health_center_manager` is the only FACILITY-SCOPED role, so it
+   *     returned above and 23 is deliberately absent from
+   *     FACILITY_SAFE_SCREENS. It cannot reach this line at all.
+   *   * `outlet_officer`, `warehouse_officer` and `institution_admin` are NOT
+   *     facility-scoped, so they DO reach this line — and are refused here for
+   *     the same reason the database refuses them: they hold no
+   *     `central_needs.view`. Migration 209 ships all four Central Needs keys
+   *     with ZERO role defaults and zero overrides, so no such actor holds one
+   *     unless a person explicitly grants it for their own organization.
+   *
+   * That distinction matters because this gate is not what protects source
+   * workbooks. RLS is: every Central Needs table's policy re-evaluates
+   * `central_needs.view` for the row's own organization, so cross-institution
+   * annual quantities, override reasons and mapping rationale are unreachable
+   * regardless of which screen someone manages to open.
+   */
+  if (screen === CENTRAL_NEEDS_SCREEN) return permissions.has(CENTRAL_NEEDS_VIEW_PERMISSION);
+
+  /**
    * R1.3 - screen 17 is CAPABILITY-gated, not scope-admin-gated.
    *
    * Screen 17 hosts two unrelated sub-surfaces: warehouse/network structural
@@ -177,6 +213,16 @@ export function isScreenAuthorized(
  * navigation surfaces and the landing preference all name one constant.
  */
 export const COMMAND_CENTER_SCREEN = 22;
+
+/**
+ * CN-2B — the Central Needs screen id, declared next to the predicate that
+ * gates it so the route, the navigation surfaces and the guard name one
+ * constant.
+ */
+export const CENTRAL_NEEDS_SCREEN = 23;
+
+/** The capability that admits an actor to the Central Needs surface. */
+export const CENTRAL_NEEDS_VIEW_PERMISSION = 'central_needs.view';
 
 /** The single permission key the Command Center is gated on, server and client. */
 export const DASHBOARD_VIEW_PERMISSION = 'dashboard.view';

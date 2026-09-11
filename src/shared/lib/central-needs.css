@@ -1,0 +1,332 @@
+/* ─── CN-2B — CENTRAL NEEDS: UPLOAD / PREVIEW / MAPPING / REVIEW ───────────
+   Presentation only. No data, no authorization, no routing lives here.
+
+   Palette comes entirely from tokens.css — this file introduces no new colour
+   system and no parallel shell. Every inline-direction value is a LOGICAL
+   property (inline-start/inline-end, margin-inline, padding-inline, text-align
+   start/end), so Arabic RTL and English LTR are one layout mirrored rather
+   than two hand-tuned stylesheets.
+
+   Trust states never rely on hue alone (WCAG 1.4.1): each carries a distinct
+   border weight and a text label as well as a colour.
+   ────────────────────────────────────────────────────────────────────────── */
+
+.cn2b {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(12px, 1.6vw, 18px);
+  max-inline-size: 1500px;
+  inline-size: 100%;
+  /* The shell owns page scrolling; nothing here may widen the document. */
+  min-inline-size: 0;
+}
+
+/* ── Header ──────────────────────────────────────────────────────────────── */
+.cn2b-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.cn2b-title {
+  margin: 0;
+  font-size: clamp(1.15rem, 2.2vw, 1.5rem);
+  font-weight: 700;
+  color: var(--fg);
+}
+
+.cn2b-subtitle {
+  margin: 4px 0 0;
+  font-size: 0.85rem;
+  color: var(--fg-muted, var(--fg));
+  opacity: 0.78;
+}
+
+/* ── Panels ──────────────────────────────────────────────────────────────── */
+.cn2b-panel {
+  background: var(--surface2, var(--surface));
+  border: 1px solid var(--brd);
+  border-radius: 14px;
+  overflow: hidden;
+  min-inline-size: 0;
+}
+
+.cn2b-panel__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 12px 16px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--fg);
+  border-block-end: 1px solid var(--brd);
+}
+
+.cn2b-panel__title-icon { display: inline-flex; opacity: 0.75; }
+.cn2b-panel__body { padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
+
+/* ── Trust-state badges ──────────────────────────────────────────────────── */
+.cn2b-badge {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  border: 1px solid var(--brd);
+  white-space: nowrap;
+}
+
+/* Provisional: dashed edge — visibly not yet settled. */
+.cn2b-badge[data-state='provisional'] {
+  border-style: dashed;
+  border-width: 1px;
+  color: var(--amber, var(--fg));
+  background: color-mix(in srgb, var(--amber, var(--fg)) 10%, transparent);
+}
+
+/* Verified: solid, heavier edge. */
+.cn2b-badge[data-state='verified'] {
+  border-width: 2px;
+  color: var(--green, var(--cyan));
+  background: color-mix(in srgb, var(--green, var(--cyan)) 12%, transparent);
+}
+
+.cn2b-badge[data-state='incomplete'] {
+  border-style: dotted;
+  color: var(--red, var(--fg));
+  background: color-mix(in srgb, var(--red, var(--fg)) 10%, transparent);
+}
+
+.cn2b-badge[data-state='ready'] {
+  border-width: 2px;
+  color: var(--cyan);
+  background: color-mix(in srgb, var(--cyan) 12%, transparent);
+}
+
+/* ── Form controls ───────────────────────────────────────────────────────── */
+.cn2b-field { display: flex; flex-direction: column; gap: 5px; min-inline-size: 0; }
+.cn2b-field__label { font-size: 0.78rem; font-weight: 600; opacity: 0.82; }
+
+.cn2b-select,
+.cn2b-input,
+.cn2b-file {
+  padding: 8px 10px;
+  border: 1px solid var(--brd);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--fg);
+  font: inherit;
+  inline-size: 100%;
+  max-inline-size: 34rem;
+  min-inline-size: 0;
+}
+
+.cn2b-btn {
+  padding: 7px 14px;
+  border: 1px solid var(--brd);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--fg);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  min-block-size: 38px;
+}
+
+.cn2b-btn--sm { padding: 4px 9px; font-size: 0.76rem; min-block-size: 30px; }
+.cn2b-btn--primary { border-color: var(--cyan); color: var(--cyan); }
+.cn2b-btn[disabled] { opacity: 0.5; cursor: not-allowed; }
+
+/* A visible keyboard focus ring on every interactive element. */
+.cn2b-btn:focus-visible,
+.cn2b-select:focus-visible,
+.cn2b-input:focus-visible,
+.cn2b-file:focus-visible,
+.cn2b-session:focus-visible,
+.cn2b input[type='checkbox']:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+}
+
+.cn2b-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.cn2b-inline { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.cn2b-hint { margin: 0; font-size: 0.82rem; opacity: 0.8; }
+.cn2b-notice { margin: 0; font-size: 0.85rem; color: var(--cyan); }
+.cn2b-error { margin: 0; font-size: 0.85rem; color: var(--red, var(--fg)); }
+
+.cn2b-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.76rem;
+  opacity: 0.85;
+  /* Digests and entity ids are long: let them wrap instead of widening the page. */
+  overflow-wrap: anywhere;
+}
+
+/* ── Tables: always scroll INSIDE their own container ────────────────────── */
+.cn2b-scroll {
+  overflow-x: auto;
+  max-inline-size: 100%;
+  min-inline-size: 0;
+  -webkit-overflow-scrolling: touch;
+}
+
+.cn2b-table {
+  inline-size: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.cn2b-table th,
+.cn2b-table td {
+  padding: 7px 10px;
+  border-block-end: 1px solid var(--brd);
+  text-align: start;
+  vertical-align: top;
+}
+
+.cn2b-table thead th {
+  font-weight: 700;
+  white-space: nowrap;
+  position: sticky;
+  inset-block-start: 0;
+  background: var(--surface2, var(--surface));
+}
+
+.cn2b-table--review { min-inline-size: 46rem; }
+.cn2b-table tr[data-undecided='true'] td { background: color-mix(in srgb, var(--amber, var(--fg)) 6%, transparent); }
+
+/* ── Source vs effective value ───────────────────────────────────────────── */
+.cn2b-value { display: flex; flex-direction: column; gap: 2px; }
+.cn2b-value__raw { font-weight: 600; overflow-wrap: anywhere; }
+.cn2b-value__type { font-size: 0.7rem; opacity: 0.6; }
+.cn2b-value__formula {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.7rem;
+  opacity: 0.7;
+  overflow-wrap: anywhere;
+}
+
+.cn2b-effective { display: flex; flex-direction: column; gap: 2px; }
+.cn2b-effective__value { font-weight: 600; color: var(--cyan); overflow-wrap: anywhere; }
+.cn2b-effective__reason { font-size: 0.7rem; opacity: 0.75; }
+.cn2b-effective--same { opacity: 0.5; font-style: italic; }
+.cn2b-provenance { font-size: 0.76rem; opacity: 0.78; }
+
+/* ── Decisions ───────────────────────────────────────────────────────────── */
+.cn2b-decision { display: flex; flex-direction: column; gap: 2px; font-size: 0.78rem; font-weight: 600; }
+.cn2b-decision[data-decision='mapped'] { color: var(--green, var(--cyan)); }
+.cn2b-decision[data-decision='not_applicable'] { color: var(--fg); opacity: 0.75; }
+.cn2b-decision[data-decision='none'] { color: var(--amber, var(--fg)); }
+.cn2b-decision__reason { font-weight: 400; font-size: 0.72rem; opacity: 0.8; }
+.cn2b-decision__actions { display: flex; gap: 6px; margin-block-start: 6px; flex-wrap: wrap; }
+
+/* ── Field override editor ───────────────────────────────────────────────── */
+/* Opens BESIDE the source cell, never over it: the immutable value stays
+   readable the whole time a correction is being written. */
+.cn2b-override {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-block-start: 8px;
+  padding: 9px;
+  border: 1px dashed var(--brd);
+  border-radius: 9px;
+  min-inline-size: 0;
+  max-inline-size: 22rem;
+}
+
+.cn2b-override .cn2b-input,
+.cn2b-override .cn2b-select { max-inline-size: 100%; }
+
+/* ── Bulk ────────────────────────────────────────────────────────────────── */
+.cn2b-bulk {
+  border: 1px dashed var(--brd);
+  border-radius: 11px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  min-inline-size: 0;
+}
+
+.cn2b-bulk legend { font-size: 0.8rem; font-weight: 700; padding-inline: 6px; }
+.cn2b-bulk__count { font-weight: 700; color: var(--amber, var(--fg)); }
+
+/* ── Sessions, diagnostics, misc ─────────────────────────────────────────── */
+.cn2b-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.cn2b-list__row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+.cn2b-session {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 7px 11px;
+  border: 1px solid var(--brd);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+  text-align: start;
+  min-block-size: 38px;
+}
+
+.cn2b-session[data-active='true'] { border-color: var(--cyan); border-width: 2px; }
+.cn2b-session[disabled] { opacity: 0.55; cursor: not-allowed; }
+.cn2b-session__status { font-size: 0.76rem; font-weight: 700; }
+
+.cn2b-kv { display: flex; flex-wrap: wrap; gap: 10px 20px; margin: 0; }
+.cn2b-kv > div { display: flex; flex-direction: column; }
+.cn2b-kv dt { font-size: 0.7rem; opacity: 0.7; }
+.cn2b-kv dd { margin: 0; font-size: 0.95rem; font-weight: 700; }
+
+.cn2b-diagnostics { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 0.78rem; }
+.cn2b-diagnostics li { padding-inline-start: 9px; border-inline-start: 3px solid var(--brd); overflow-wrap: anywhere; }
+.cn2b-diagnostics li[data-severity='warning'] { border-inline-start-color: var(--amber, var(--brd)); }
+.cn2b-diagnostics li[data-severity='error'],
+.cn2b-diagnostics li[data-severity='fatal'] { border-inline-start-color: var(--red, var(--brd)); }
+
+.cn2b-blockers { margin: 0; padding-inline-start: 18px; font-size: 0.8rem; display: flex; flex-direction: column; gap: 4px; }
+
+.cn2b-preview { display: flex; flex-direction: column; gap: 12px; min-inline-size: 0; }
+.cn2b-file-summary { display: flex; flex-direction: column; gap: 7px; }
+.cn2b-file-summary__name { margin: 0; font-size: 0.84rem; font-weight: 700; display: flex; gap: 8px; flex-wrap: wrap; align-items: baseline; }
+
+/* Advisory only — deliberately quiet, never presented as a decision. */
+.cn2b-advisory { margin: 0; font-size: 0.78rem; display: flex; gap: 7px; flex-wrap: wrap; align-items: baseline; opacity: 0.85; }
+.cn2b-advisory__tag {
+  font-size: 0.66rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 6px;
+  border: 1px dashed var(--brd);
+  border-radius: 999px;
+}
+.cn2b-advisory__why { opacity: 0.7; font-size: 0.72rem; }
+
+.cn2b-visually-hidden {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ── Mobile ──────────────────────────────────────────────────────────────── */
+@media (max-width: 720px) {
+  .cn2b-panel__body { padding: 11px 12px; }
+  .cn2b-table { font-size: 0.76rem; }
+  .cn2b-table th, .cn2b-table td { padding: 6px 7px; }
+  .cn2b-header { flex-direction: column; align-items: stretch; }
+  .cn2b-actions .cn2b-btn { flex: 1 1 auto; }
+}

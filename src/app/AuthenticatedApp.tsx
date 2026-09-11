@@ -26,6 +26,7 @@ import { OutletOperationsScreen } from '@/features/outlet/OutletOperationsScreen
 import { LocalProcurementScreen } from '@/features/procurement/LocalProcurementScreen';
 import { DecisionIntelligenceReportsScreen } from '@/features/reports/DecisionIntelligenceReportsScreen';
 import { CommandCenterScreen } from '@/features/command-center/CommandCenterScreen';
+import { CentralNeedsScreen } from '@/features/central-needs/CentralNeedsScreen';
 import { ScreenAuthzGuard } from '@/shared/authz/ScreenAuthzGuard';
 import {
   suggestionDocumentScreen,
@@ -304,6 +305,13 @@ export function AuthenticatedApp() {
       // that authority server-side on every read, so this route is a UX gate
       // over a boundary the database already enforces.
       case 22: return <CommandCenterScreen onNavigate={setScreen} />;
+      // CN-2B: Central Needs — upload, provisional browser preview,
+      // authoritative Node 22 verify, source review, explicit mapping /
+      // not-applicable dispositions and the review workflow. Reached only by
+      // an actor holding central_needs.view; migrations 209/210/211 re-prove
+      // that authority on every read and every write, so this route is a UX
+      // gate over a boundary the database already enforces.
+      case 23: return <CentralNeedsScreen />;
       // Central dashboard (former screen 2) and any unknown screen number
       // safely redirect to the unified shell — the real-data landing screen.
       default: return <DecisionIntelligenceReportsScreen onNavigate={setScreen} onOpenSuggestionDocument={openSuggestionDocument} />;

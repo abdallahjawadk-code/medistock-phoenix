@@ -271,6 +271,14 @@ run('E7-2 · Stage-E application wiring (dynamic)',()=>{
       // SQL at all — so the "Stage E still ends at 171" assertion above is
       // unaffected. Listed here so this guard stays exhaustive.
       '210_phoenix_central_needs_workflow_rpcs.sql',
+      // CN-2B (211): the Central Needs trusted import-batch manifest and the
+      // explicit mapping-disposition layer, plus the server-enforced review
+      // completeness gate. Two new organization-scoped tables, one disposition
+      // column set, and RPCs that read and write ONLY Central Needs rows. It
+      // moves no stock, creates no transfer and adds no corridor, route or
+      // dispatch SQL at all — so the "Stage E still ends at 171" assertion
+      // above is unaffected. Listed here so this guard stays exhaustive.
+      '211_phoenix_central_needs_batch_and_disposition.sql',
     ];
     it('Stage E still ends at 171 — E7-2 introduced no new SQL',()=>{
       const files=readdirSync(join(__dirname,'..')).filter(f=>/^\d{3}_.*\.sql$/.test(f));

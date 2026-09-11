@@ -592,6 +592,16 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
       'supabase/migrations/210_phoenix_central_needs_workflow_rpcs.sql',
       'supabase/migrations/__tests__/210-central-needs-workflow-rpcs-static.test.ts',
       'supabase/migrations/__tests__/210-central-needs-workflow-rpcs.dynamic.test.ts',
+      // CN-2B (211): the Central Needs import review workflow's batch-and-
+      // disposition layer — one reviewed, forward-only migration plus its
+      // static and dynamic proofs. It adds no UI, no branding asset, no RLS
+      // policy on an A7.2.4 surface and no authorization decision — A7.2.4's
+      // own subject is untouched by it. Registered by EXACT filename, exactly
+      // as M209/M210 were. No wildcard and no directory exemption, so every
+      // other file under supabase/ still fails this guard closed.
+      'supabase/migrations/211_phoenix_central_needs_batch_and_disposition.sql',
+      'supabase/migrations/__tests__/211-central-needs-batch-and-disposition-static.test.ts',
+      'supabase/migrations/__tests__/211-central-needs-batch-and-disposition.dynamic.test.ts',
       // INTERACTIVE-GUIDE-IG1: one new file under the watched `src/app`
       // prefix, registered by EXACT filename like every entry above.
       //
