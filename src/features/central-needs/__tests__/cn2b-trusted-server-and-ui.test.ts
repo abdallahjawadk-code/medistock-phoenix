@@ -23,6 +23,15 @@ import { isScreenAuthorized, CENTRAL_NEEDS_SCREEN, CENTRAL_NEEDS_VIEW_PERMISSION
 const ROOT = join(__dirname, '../../../..');
 const read = (p: string) => readFileSync(join(ROOT, p), 'utf8');
 
+// Public Vercel entrypoints are intentionally thin named-POST wrappers. Static
+// business/security assertions must inspect the trusted handler modules they
+// delegate to, while the separate runtime-contract suite verifies the wrappers.
+const CN2B_CORE = {
+  uploadTicket: 'api/_cn2b-core/upload-ticket.ts',
+  finalizeImport: 'api/_cn2b-core/finalize-import.ts',
+  sourceDownload: 'api/_cn2b-core/source-download.ts',
+} as const;
+
 /**
  * Source with comments removed. These guards assert about CODE: this
  * feature's own documentation says things like "never trusts formattedText",
@@ -97,8 +106,13 @@ describe('CN-2B — service-role secret boundary', () => {
     expect(supa).toContain('Authorization: `Bearer ${accessToken}`');
   });
 
-  it('no endpoint returns the caller a service-role credential', () => {
-    for (const f of ['api/central-needs/upload-ticket.ts', 'api/central-needs/finalize-import.ts', 'api/central-needs/source-download.ts']) {
+  it('no endpoint or trusted handler returns the caller a service-role credential', () => {
+    for (const f of [
+      'api/central-needs/upload-ticket.ts',
+      'api/central-needs/finalize-import.ts',
+      'api/central-needs/source-download.ts',
+      ...Object.values(CN2B_CORE),
+    ]) {
       const body = read(f);
       expect(body, f).not.toMatch(/jsonResponse\([^)]*serviceRole/i);
       expect(body, f).not.toContain('supabaseServiceRoleKey');
@@ -179,7 +193,7 @@ describe('CN-2B — object keys are never user-controlled', () => {
 describe('CN-2B — signed-URL TTL truth', () => {
   it('download TTL is ours to set and is actually passed to the provider', () => {
     expect(TRANSPORT_LIMITS.signedDownloadTtlSeconds).toBe(300);
-    const dl = read('api/central-needs/source-download.ts');
+    const dl = read(CN2B_CORE.sourceDownload);
     // The value is an ARGUMENT to createSignedUrl, so it is really enforced.
     expect(dl).toContain('createSignedUrl(objectKey, TRANSPORT_LIMITS.signedDownloadTtlSeconds');
     expect(dl).toContain('expiresInSeconds: TRANSPORT_LIMITS.signedDownloadTtlSeconds');
@@ -191,13 +205,13 @@ describe('CN-2B — signed-URL TTL truth', () => {
     expect(TRANSPORT_LIMITS.signedUploadTtlSeconds).toBe(7200);
     expect(TRANSPORT_LIMITS.signedUploadTtlSource).toBe('supabase-storage-provider-default');
 
-    const ticket = read('api/central-needs/upload-ticket.ts');
+    const ticket = read(CN2B_CORE.uploadTicket);
     expect(ticket).toContain('expiresInSeconds: TRANSPORT_LIMITS.signedUploadTtlSeconds');
     // The upload path must not borrow the download TTL…
-    expect(code('api/central-needs/upload-ticket.ts')).not.toContain('signedDownloadTtlSeconds');
+    expect(code(CN2B_CORE.uploadTicket)).not.toContain('signedDownloadTtlSeconds');
     // …and must not hand createSignedUploadUrl an expiry it cannot honour.
     expect(ticket).toMatch(/createSignedUploadUrl\(\s*\w+\s*\)/);
-    expect(code('api/central-needs/upload-ticket.ts')).not.toMatch(/createSignedUploadUrl\([^)]*,[^)]*\)/);
+    expect(code(CN2B_CORE.uploadTicket)).not.toMatch(/createSignedUploadUrl\([^)]*,[^)]*\)/);
   });
 
   it('the two TTLs are distinct values with distinct names', () => {
@@ -314,7 +328,7 @@ describe('CN-2B — browser/Node parity', () => {
   });
 
   it('the finalize endpoint aborts the whole import on any parity difference', () => {
-    const body = read('api/central-needs/finalize-import.ts');
+    const body = read(CN2B_CORE.finalizeImport);
     const parityAt = body.indexOf('compareParsedResults');
     const persistAt = body.indexOf('phoenix_central_needs_apply_authoritative_replay');
     const batchAt = body.indexOf('phoenix_central_needs_register_import_batch');
@@ -326,10 +340,10 @@ describe('CN-2B — browser/Node parity', () => {
   });
 
   it('the preview digest is computed by PostgreSQL, never in TypeScript', () => {
-    const body = read('api/central-needs/finalize-import.ts');
+    const body = read(CN2B_CORE.finalizeImport);
     expect(body).toContain('_phoenix_central_needs_payload_digest_v1');
     // No hand-rolled canonicalizer anywhere in the API tree.
-    for (const f of ['api/_lib/parity.ts', 'api/_lib/storage-paths.ts', 'api/central-needs/finalize-import.ts']) {
+    for (const f of ['api/_lib/parity.ts', 'api/_lib/storage-paths.ts', CN2B_CORE.finalizeImport]) {
       // No STANDALONE unit/record separator literal — the canonical form joins
       // with U+001F and U+001E, so a lone one of those would be the signature
       // of a hand-rolled digest. (A separator appearing INSIDE a character
@@ -347,8 +361,8 @@ describe('CN-2B — browser/Node parity', () => {
 });
 
 describe('CN-2B — corrective-pass invariants in the trusted finalizer', () => {
-  const finalize = read('api/central-needs/finalize-import.ts');
-  const finalizeCode = code('api/central-needs/finalize-import.ts');
+  const finalize = read(CN2B_CORE.finalizeImport);
+  const finalizeCode = code(CN2B_CORE.finalizeImport);
 
   it('A · the authoritative replay is called for EVERY session, completed included', () => {
     // The old shape skipped the RPC when the session came back 'completed',
