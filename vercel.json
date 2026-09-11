@@ -35,9 +35,6 @@
     }
   ],
   "rewrites": [
-    { "source": "/api/central-needs/upload-ticket", "destination": "/api/cn2b-runtime/upload-ticket" },
-    { "source": "/api/central-needs/finalize-import", "destination": "/api/cn2b-runtime/finalize-import" },
-    { "source": "/api/central-needs/source-download", "destination": "/api/cn2b-runtime/source-download" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]
 }
