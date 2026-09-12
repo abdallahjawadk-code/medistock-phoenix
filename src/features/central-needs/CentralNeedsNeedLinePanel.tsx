@@ -1,30 +1,36 @@
 /**
  * CN-2B CONFORMANCE (M212) — the operational need-line mapping surface.
  *
- * This is where an imported row stops being evidence and becomes an operational
- * requirement: beneficiary institution, canonical material, canonical unit and
- * approved annual quantity, persisted relationally by
+ * This is where an imported cell stops being evidence and becomes part of an
+ * operational requirement: beneficiary institution, canonical material,
+ * canonical unit and approved annual quantity, persisted relationally by
  * `phoenix_central_needs_set_need_line`.
  *
- * FOUR RULES THIS COMPONENT EXISTS TO HONOUR
+ * SIX RULES THIS COMPONENT EXISTS TO HONOUR
  *
  *  1. MAPPING IS HUMAN-AUTHORITATIVE. Nothing is inferred from workbook family,
  *     sheet name, header text, sheet index, filename or row position. The
- *     beneficiary is chosen by a person, every time.
+ *     beneficiary is chosen by a person, every time — including for each
+ *     institution column of a multi-institution row.
  *  2. THE APPROVED QUANTITY IS ITS OWN PROVENANCE. A need line is built by
- *     designating the exact imported source records it comes from and what each
+ *     designating the exact imported cells it comes from and what each
  *     contributes; the approved total is their sum, computed here in EXACT
  *     decimal arithmetic (never a JavaScript float) and re-derived server-side.
  *     There is no way to save a line with no source: the action is disabled, and
  *     the RPC refuses it regardless.
- *  3. A BULK ACTION IS STILL AN EXPLICIT ACT. Designating records across several
- *     canonical materials creates one need line per material — previewed with
- *     the exact counts, and written only after a second, separate confirmation.
- *  4. THE SERVER DECIDES. Every check here is for a fast answer, never the
- *     authority: the RPC re-validates beneficiary eligibility, warehouse
- *     ownership, unit vocabulary, conversion state, quantity finiteness, source
- *     lineage, material agreement and the provenance sum. A disabled button is a
- *     courtesy, not a control.
+ *  3. PROVENANCE IS REVISION-WIDE. A line may already hold cells from other
+ *     import sessions. The panel shows that lineage, and saving into a scope
+ *     that already has a line ADDS to it — sending the lineage it saw, so a
+ *     stale view is refused by the server instead of erasing anything.
+ *  4. REMOVAL IS AN EXPLICIT CORRECTION. The only way to take provenance off a
+ *     line is to delete the line, after a confirmation, with a reason. Saving
+ *     never removes a link.
+ *  5. A BULK ACTION IS STILL AN EXPLICIT ACT. Designating records across several
+ *     canonical materials creates or extends one need line per material —
+ *     previewed with the exact counts, and written only after a second, separate
+ *     confirmation.
+ *  6. THE SERVER DECIDES. Every check here is for a fast answer, never the
+ *     authority. A disabled button is a courtesy, not a control.
  *
  * The canonical material is never chosen here. It is READ from each row's
  * existing `central_needs_record_mappings` decision, so this surface cannot
@@ -39,7 +45,7 @@ import { PhoenixButton } from '@/shared/ui/PhoenixButton';
 import { getOrganizations, type OrgRow } from '@/shared/supabase/services/organizations.service';
 import { getWarehouses, type Warehouse } from '@/shared/supabase/services/warehouses.service';
 import {
-  NEED_LINE_UNITS, setNeedLine,
+  NEED_LINE_UNITS, deleteNeedLine, setNeedLine,
   type FieldOverride, type NeedLine, type NeedLineQuantitySource, type NeedLineSourceLink,
   type NeedLineUnit, type RecordDisposition, type SourceRecord,
 } from './central-needs.service';
@@ -56,14 +62,19 @@ interface Props {
   records: SourceRecord[];
   /** Field overrides of this revision, so a normalized value can be pinned. */
   overrides: FieldOverride[];
+  /** Every need line of the REVISION, not just of the active session. */
   needLines: NeedLine[];
-  /** Which source records a need line already claims. */
+  /** Every source link of the REVISION, each with its own cell identity. */
   claimedSources: NeedLineSourceLink[];
-  onSaved: () => void;
+  /** Reload the revision after anything changed, or after a stale refusal. */
+  onChanged: () => void;
 }
 
 /** A plain non-negative decimal. No exponent, no sign, no thousands separator. */
 const DECIMAL = /^\d+(\.\d+)?$/;
+
+/** The server refusals after which the panel's view is known to be out of date. */
+const RELOAD_ON = new Set(['need_line_lineage_stale', 'need_line_scope_conflict', 'need_line_not_found']);
 
 /**
  * Exact decimal addition.
@@ -103,6 +114,16 @@ function overrideDecimal(o: FieldOverride): string | null {
   return null;
 }
 
+/** The server's stable refusal code, whichever shape the error arrived in. */
+function refusalCode(e: unknown): string {
+  if (e instanceof Error && 'code' in e) return String((e as { code?: unknown }).code ?? e.message);
+  return e instanceof Error ? e.message : String(e);
+}
+
+/** A need line's accounting scope, exactly as M212's scope key defines it. */
+const scopeKey = (beneficiaryId: string, itemId: string, warehouseId: string | null) =>
+  `${beneficiaryId}|${itemId}|${warehouseId ?? ''}`;
+
 interface Designation {
   /** The reviewer's contribution for this record — a suggestion until edited. */
   quantity: string;
@@ -110,8 +131,20 @@ interface Designation {
   overrideId: string | null;
 }
 
+interface Group {
+  recordIds: string[];
+  /** Exact sum of the contributions designated now. */
+  added: string;
+  /** The line's total after saving: the existing line's quantity plus `added`. */
+  total: string;
+  /** The line this scope already has, when there is one. */
+  existing: NeedLine | undefined;
+  /** What that line holds right now — the lineage this save asserts it saw. */
+  expectedIds: string[];
+}
+
 export function CentralNeedsNeedLinePanel({
-  lang, planRevisionId, editable, dispositions, records, overrides, needLines, claimedSources, onSaved,
+  lang, planRevisionId, editable, dispositions, records, overrides, needLines, claimedSources, onChanged,
 }: Props) {
   const [institutions, setInstitutions] = useState<OrgRow[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
@@ -129,6 +162,9 @@ export function CentralNeedsNeedLinePanel({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
+  const [deletingLineId, setDeletingLineId] = useState<string | null>(null);
+  const [deleteReason, setDeleteReason] = useState('');
+
   // Only a live care institution may be a beneficiary — the same rule the
   // server enforces, surfaced early so the list never offers an invalid choice.
   useEffect(() => {
@@ -142,14 +178,14 @@ export function CentralNeedsNeedLinePanel({
     return () => { alive = false; };
   }, []);
 
-  // A target warehouse must belong to the chosen beneficiary, so the list is
-  // scoped to it and cleared whenever the beneficiary changes.
+  // A target warehouse must belong to the chosen beneficiary AND be active, so
+  // the list is scoped to it and cleared whenever the beneficiary changes.
   useEffect(() => {
     setTargetWarehouseId('');
     if (!beneficiary) { setWarehouses([]); return; }
     let alive = true;
     getWarehouses(beneficiary)
-      .then((rows) => { if (alive) setWarehouses(rows); })
+      .then((rows) => { if (alive) setWarehouses(rows.filter((w) => w.status === 'active')); })
       .catch(() => { if (alive) setWarehouses([]); });
     return () => { alive = false; };
   }, [beneficiary]);
@@ -168,6 +204,19 @@ export function CentralNeedsNeedLinePanel({
     [claimedSources],
   );
 
+  const sourcesByLine = useMemo(() => {
+    const m = new Map<string, NeedLineSourceLink[]>();
+    for (const s of claimedSources) m.set(s.needLineId, [...(m.get(s.needLineId) ?? []), s]);
+    return m;
+  }, [claimedSources]);
+
+  const lineByScope = useMemo(
+    () => new Map(needLines.map((n) => [scopeKey(n.beneficiaryOrganizationId, n.centralItemId, n.targetWarehouseId), n])),
+    [needLines],
+  );
+
+  const activeSessionIds = useMemo(() => new Set(records.map((r) => r.importSessionId)), [records]);
+
   const overrideByRecord = useMemo(() => {
     const m = new Map<string, FieldOverride>();
     // Overrides are an append-only chain; the latest one for a (row, field) is
@@ -180,7 +229,8 @@ export function CentralNeedsNeedLinePanel({
 
   /**
    * Designatable evidence: a source record of a row a human already mapped to a
-   * canonical material, that no other need line has claimed.
+   * canonical material, that no need line anywhere in the revision has claimed.
+   * One cell feeds at most one line; one row may feed several.
    */
   const candidates = useMemo(
     () => records
@@ -193,37 +243,51 @@ export function CentralNeedsNeedLinePanel({
 
   /** One need line per distinct canonical material among the designations. */
   const groups = useMemo(() => {
-    const byItem = new Map<string, { recordIds: string[]; total: string }>();
+    const byItem = new Map<string, Group>();
     for (const id of selectedIds) {
       const record = records.find((r) => r.id === id);
       const item = record ? mappedItemByEntity.get(record.targetEntity) : undefined;
       if (!record || !item) continue;
-      const g = byItem.get(item) ?? { recordIds: [], total: '0' };
+      const g = byItem.get(item) ?? { recordIds: [], added: '0', total: '0', existing: undefined, expectedIds: [] };
       g.recordIds.push(id);
       byItem.set(item, g);
     }
     for (const [item, g] of byItem) {
-      byItem.set(item, { ...g, total: sumExactDecimals(g.recordIds.map((id) => designated[id]?.quantity ?? '')) });
+      const added = sumExactDecimals(g.recordIds.map((id) => designated[id]?.quantity ?? ''));
+      const existing = beneficiary
+        ? lineByScope.get(scopeKey(beneficiary, item, targetWarehouseId || null))
+        : undefined;
+      const expectedIds = existing ? (sourcesByLine.get(existing.id) ?? []).map((s) => s.sourceRecordId) : [];
+      const total = existing && added !== '' ? sumExactDecimals([existing.approvedQuantity, added]) : added;
+      byItem.set(item, { ...g, added, total, existing, expectedIds });
     }
     return byItem;
-  }, [selectedIds, designated, records, mappedItemByEntity]);
+  }, [selectedIds, designated, records, mappedItemByEntity, beneficiary, targetWarehouseId, lineByScope, sourcesByLine]);
+
+  const anyExisting = [...groups.values()].some((g) => g.existing);
 
   const everyQuantityValid = selectedIds.length > 0
     && selectedIds.every((id) => DECIMAL.test((designated[id]?.quantity ?? '').trim()));
   const canSave = editable && Boolean(beneficiary) && selectedIds.length > 0
-    && everyQuantityValid && reason.trim().length > 0 && groups.size > 0;
+    && everyQuantityValid && reason.trim().length > 0 && groups.size > 0
+    && [...groups.values()].every((g) => g.total !== '');
 
-  /** Mapping completeness, mirroring M212's own review blocker. */
+  /** Mapping completeness of the active session, mirroring M212's own review blocker. */
   const mappedRows = useMemo(
     () => dispositions.filter((d) => d.decision === 'mapped'),
     [dispositions],
   );
-  const claimedEntities = useMemo(() => {
-    const byId = new Map(records.map((r) => [r.id, r.targetEntity]));
-    return new Set(claimedSources.map((s) => byId.get(s.sourceRecordId)).filter(Boolean) as string[]);
-  }, [records, claimedSources]);
+  const claimedEntities = useMemo(
+    () => new Set(claimedSources.filter((s) => activeSessionIds.has(s.importSessionId)).map((s) => s.targetEntity)),
+    [claimedSources, activeSessionIds],
+  );
   const complete = mappedRows.length > 0
     && mappedRows.every((d) => claimedEntities.has(d.targetEntity));
+
+  const institutionName = (id: string) => {
+    const o = institutions.find((x) => x.id === id);
+    return o ? (lang === 'ar' ? o.name_ar : o.name) : id;
+  };
 
   function toggle(record: SourceRecord, on: boolean) {
     setDesignated((prev) => {
@@ -258,6 +322,7 @@ export function CentralNeedsNeedLinePanel({
 
   async function commit() {
     setBusy(true); setError(null); setNotice(null);
+    let written = 0;
     try {
       // One RPC call per canonical material, each independently audited.
       for (const [centralItemId, group] of groups) {
@@ -266,6 +331,7 @@ export function CentralNeedsNeedLinePanel({
           designatedQuantity: (designated[id]?.quantity ?? '').trim(),
           appliedOverrideId: designated[id]?.overrideId ?? null,
         }));
+        const existing = group.existing;
         await setNeedLine({
           planRevisionId,
           beneficiaryOrganizationId: beneficiary,
@@ -273,23 +339,50 @@ export function CentralNeedsNeedLinePanel({
           approvedQuantity: group.total,
           mappingReason: reason.trim(),
           quantitySources,
-          approvedUnit: conversionRequired ? null : unit,
-          unitConversionState: conversionRequired ? 'conversion_required' : 'canonical',
+          expectedSourceRecordIds: group.expectedIds,
+          // An existing line keeps its unit: its designations are quantities in it.
+          approvedUnit: existing ? existing.approvedUnit : (conversionRequired ? null : unit),
+          unitConversionState: existing
+            ? existing.unitConversionState
+            : (conversionRequired ? 'conversion_required' : 'canonical'),
           targetWarehouseId: targetWarehouseId || null,
-          sourceUnitText: sourceUnitText.trim() || null,
+          sourceUnitText: existing ? existing.sourceUnitText : (sourceUnitText.trim() || null),
         });
+        written += 1;
       }
       setNotice(t('cn2b_nl_saved', lang));
       setDesignated({});
       setPreviewing(false);
       setReason('');
-      onSaved();
+      onChanged();
     } catch (e) {
       // A server refusal is shown by its stable code, translated where known —
-      // never flattened into a generic failure.
-      setError(centralNeedsErrorText(
-        e instanceof Error && 'code' in e ? String((e as { code?: unknown }).code ?? e.message) : String(e),
-        lang));
+      // never flattened into a generic failure, never a raw database message.
+      const code = refusalCode(e);
+      setError(centralNeedsErrorText(code, lang));
+      setPreviewing(false);
+      if (written > 0 || RELOAD_ON.has(code)) onChanged();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function confirmDelete(line: NeedLine) {
+    setBusy(true); setError(null); setNotice(null);
+    try {
+      await deleteNeedLine({
+        needLineId: line.id,
+        reason: deleteReason.trim(),
+        expectedSourceRecordIds: (sourcesByLine.get(line.id) ?? []).map((s) => s.sourceRecordId),
+      });
+      setNotice(t('cn2b_nl_deleted', lang));
+      setDeletingLineId(null);
+      setDeleteReason('');
+      onChanged();
+    } catch (e) {
+      const code = refusalCode(e);
+      setError(centralNeedsErrorText(code, lang));
+      if (RELOAD_ON.has(code)) { setDeletingLineId(null); onChanged(); }
     } finally {
       setBusy(false);
     }
@@ -428,7 +521,8 @@ export function CentralNeedsNeedLinePanel({
             error={reason.trim() === '' ? t('cn2b_nl_reason_required', lang) : undefined}
           />
 
-          {/* The approved total is never typed: it IS the designated sum. */}
+          {/* The approved total is never typed: it IS the designated sum, plus
+              whatever the line already holds when it exists. */}
           <p data-testid="cn2b-nl-total">
             {t('cn2b_nl_total', lang)}:{' '}
             {[...groups.entries()].map(([item, g]) => `${item}=${g.total}`).join(' · ') || '—'}
@@ -454,6 +548,17 @@ export function CentralNeedsNeedLinePanel({
                 {t('cn2b_nl_lines_to_create', lang)}:{' '}
                 <strong data-testid="cn2b-nl-lines">{groups.size}</strong>
               </p>
+              <ul>
+                {[...groups.entries()].map(([item, g]) => (
+                  <li key={item} data-testid="cn2b-nl-preview-group" data-existing={g.existing ? 'true' : 'false'}>
+                    {item}:{' '}
+                    {g.existing
+                      ? <>{t('cn2b_nl_adds_to_existing', lang)} ({g.expectedIds.length} · {t('cn2b_nl_current_total', lang)} {g.existing.approvedQuantity}) → {t('cn2b_nl_new_total', lang)} {g.total}</>
+                      : <>{t('cn2b_nl_creates_new', lang)} → {g.total}</>}
+                  </li>
+                ))}
+              </ul>
+              {anyExisting && <p data-testid="cn2b-nl-unit-locked">{t('cn2b_nl_existing_unit_locked', lang)}</p>}
               <PhoenixButton type="button" disabled={busy} loading={busy} onClick={commit}>
                 {t('cn2b_nl_bulk_confirm', lang)}
               </PhoenixButton>
@@ -476,17 +581,69 @@ export function CentralNeedsNeedLinePanel({
       <ul data-testid="cn2b-nl-list">
         {needLines.length === 0 && <li>{t('cn2b_nl_none_yet', lang)}</li>}
         {needLines.map((n) => {
-          const sources = claimedSources.filter((s) => s.needLineId === n.id);
+          const sources = sourcesByLine.get(n.id) ?? [];
           return (
-            <li key={n.id}>
-              {n.approvedQuantity}{' '}
-              {n.unitConversionState === 'conversion_required'
-                ? t('cn2b_nl_unit_conversion_required', lang)
-                : n.approvedUnit}
-              {' — '}
-              {n.targetWarehouseId ? n.targetWarehouseId : t('cn2b_nl_warehouse_none', lang)}
-              {' — '}
-              {t('cn2b_nl_from_sources', lang)}: {sources.length}
+            <li key={n.id} data-testid="cn2b-nl-line">
+              <div>
+                {institutionName(n.beneficiaryOrganizationId)}
+                {' — '}
+                {n.approvedQuantity}{' '}
+                {n.unitConversionState === 'conversion_required'
+                  ? t('cn2b_nl_unit_conversion_required', lang)
+                  : n.approvedUnit}
+                {' — '}
+                {n.targetWarehouseId ? n.targetWarehouseId : t('cn2b_nl_warehouse_none', lang)}
+                {' — '}
+                {t('cn2b_nl_from_sources', lang)}: {sources.length}
+              </div>
+              {/* The line's whole lineage, revision-wide: an operator adding to or
+                  deleting this line sees what it already contains. */}
+              <ul aria-label={t('cn2b_nl_lineage', lang)} data-testid="cn2b-nl-lineage">
+                {sources.map((s) => (
+                  <li key={s.sourceRecordId}>
+                    {s.targetEntity} · {s.fieldName} = {s.designatedQuantity}
+                    {!activeSessionIds.has(s.importSessionId) && <> ({t('cn2b_nl_other_session', lang)})</>}
+                  </li>
+                ))}
+              </ul>
+              {editable && deletingLineId !== n.id && (
+                <PhoenixButton
+                  type="button"
+                  variant="ghost"
+                  disabled={busy}
+                  onClick={() => { setDeletingLineId(n.id); setDeleteReason(''); setError(null); }}
+                >
+                  {t('cn2b_nl_delete', lang)}
+                </PhoenixButton>
+              )}
+              {editable && deletingLineId === n.id && (
+                <div data-testid="cn2b-nl-delete-confirm">
+                  <p>{t('cn2b_nl_delete_title', lang)}</p>
+                  <p>{t('cn2b_nl_delete_explainer', lang)}</p>
+                  <PhoenixInput
+                    label={t('cn2b_nl_delete_reason', lang)}
+                    value={deleteReason}
+                    onChange={(e) => setDeleteReason(e.target.value)}
+                    error={deleteReason.trim() === '' ? t('cn2b_nl_delete_reason_required', lang) : undefined}
+                  />
+                  <PhoenixButton
+                    type="button"
+                    disabled={busy || deleteReason.trim() === ''}
+                    loading={busy}
+                    onClick={() => confirmDelete(n)}
+                  >
+                    {t('cn2b_nl_delete_confirm', lang)}
+                  </PhoenixButton>
+                  <PhoenixButton
+                    type="button"
+                    variant="ghost"
+                    disabled={busy}
+                    onClick={() => { setDeletingLineId(null); setDeleteReason(''); }}
+                  >
+                    {t('cn2b_nl_bulk_cancel', lang)}
+                  </PhoenixButton>
+                </div>
+              )}
             </li>
           );
         })}

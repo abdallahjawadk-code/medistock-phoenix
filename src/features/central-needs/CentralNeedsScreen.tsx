@@ -42,8 +42,7 @@ import {
   fetchReviewReadiness,
   finalizeImport,
   listDispositions,
-  listNeedLines,
-  listNeedLineSources,
+  listNeedLineLineage,
   listImportBatches,
   listImportSessions,
   listOverrides,
@@ -173,21 +172,22 @@ export function CentralNeedsScreen() {
   }, [organizationId]);
 
   const reloadRevision = useCallback(async (id: string) => {
-    const [nextSessions, nextBatches, nextOverrides, nextReadiness, nextNeedLines, nextClaimed] =
+    const [nextSessions, nextBatches, nextOverrides, nextReadiness, nextLineage] =
       await Promise.all([
         listImportSessions(id),
         listImportBatches(id),
         listOverrides(id),
         fetchReviewReadiness(id),
-        listNeedLines(id),
-        listNeedLineSources(id),
+        // Revision-wide, through the exact-decimal read: a line's provenance may
+        // span every import session of the revision.
+        listNeedLineLineage(id),
       ]);
     setSessions(nextSessions);
     setBatches(nextBatches);
     setOverrides(nextOverrides);
     setReadiness(nextReadiness);
-    setNeedLines(nextNeedLines);
-    setClaimedSources(nextClaimed);
+    setNeedLines(nextLineage.needLines);
+    setClaimedSources(nextLineage.sources);
     const completed = nextSessions.filter((s) => s.status === 'completed');
     setActiveSessionId((current) => (current && completed.some((s) => s.id === current) ? current : completed[0]?.id ?? null));
   }, []);
@@ -617,7 +617,7 @@ export function CentralNeedsScreen() {
             overrides={overrides}
             needLines={needLines}
             claimedSources={claimedSources}
-            onSaved={() => void reloadRevision(revision.id)}
+            onChanged={() => void reloadRevision(revision.id)}
           />
         </Panel>
       )}

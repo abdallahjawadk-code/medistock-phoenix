@@ -394,12 +394,15 @@ async function main() {
       })],
     )).rows[0].id;
 
-    // Three rows: one for the exact-decimal proof, two for the float-drift proof.
+    // Four rows: one for the exact-decimal proof, two for the float-drift proof,
+    // and one carrying a value no JavaScript number can hold exactly — kept as
+    // a JSON STRING here so the evidence itself is not rounded by this seed.
     const cnRecords = {};
     const cnRows = [
       { entity: 'sheet:0:row:1', fields: [['requested', 900], ['final', 120.1239]] },
       { entity: 'sheet:0:row:2', fields: [['final', 0.1]] },
       { entity: 'sheet:0:row:3', fields: [['final', 0.2]] },
+      { entity: 'sheet:0:row:4', fields: [['final', '12345678901234567.891']] },
     ];
     let cnOrdinal = 0;
     for (const row of cnRows) {
@@ -442,6 +445,8 @@ async function main() {
       centralNeeds: {
         owningOrganization: ORG_C_AUTHORITY,
         beneficiaryOrganization: ORG_A,
+        // Also a live care_institution: a second, independent accounting scope.
+        secondBeneficiaryOrganization: ORG_B,
         planRevisionId: cnRevision,
         importSessionId: cnSession,
         centralItemId: CN_ITEM,

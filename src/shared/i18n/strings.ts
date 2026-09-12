@@ -1878,6 +1878,8 @@ export const T: Dict = {
   cn2b_blocker_need_line_unit_conversion_required: { ar: 'سطر احتياج ينتظر تحويل الوحدة', en: 'A need line awaits unit conversion' },
   cn2b_blocker_need_line_warehouse_org_mismatch: { ar: 'مخزن الهدف لا يتبع المؤسسة المنتفعة', en: 'Target warehouse does not belong to the beneficiary' },
   cn2b_blocker_need_line_beneficiary_ineligible: { ar: 'المؤسسة المنتفعة غير مؤهلة', en: 'Beneficiary organization is not eligible' },
+  cn2b_blocker_need_line_target_warehouse_not_active: { ar: 'مخزن الهدف لم يعد فعّالًا — احذف السطر وأعد توجيهه', en: 'Target warehouse is no longer active — delete the line and re-route it' },
+  cn2b_blocker_need_line_material_mapping_divergent: { ar: 'تغيّر ربط المادة بعد إنشاء سطر الاحتياج — احذف السطر وأعد ربطه', en: 'A row was re-mapped after its need line was created — delete the line and map it again' },
 
   /* ── CN-2B conformance (M212) — operational need-line mapping ──────────────
      The official annual requirement becomes relational here: beneficiary
@@ -1926,6 +1928,22 @@ export const T: Dict = {
   cn2b_nl_incomplete: { ar: 'الربط غير مكتمل', en: 'Mapping incomplete' },
   cn2b_nl_none_yet: { ar: 'لا توجد سطور احتياج تشغيلية بعد.', en: 'No operational need lines yet.' },
   cn2b_nl_readonly: { ar: 'المراجعة مغلقة — لا يمكن تعديل الربط.', en: 'Review is closed — mapping cannot be changed.' },
+  /* M212 targeted correction: provenance is revision-wide, a save only ADDS to
+     an existing line, and removing a line is an explicit, reasoned correction. */
+  cn2b_nl_lineage: { ar: 'مصادر السطر في جميع جلسات المراجعة', en: 'Sources across every import session of this revision' },
+  cn2b_nl_other_session: { ar: 'من جلسة استيراد أخرى', en: 'from another import session' },
+  cn2b_nl_adds_to_existing: { ar: 'يُضاف إلى سطر قائم', en: 'Adds to an existing line' },
+  cn2b_nl_creates_new: { ar: 'ينشئ سطرًا جديدًا', en: 'Creates a new line' },
+  cn2b_nl_current_total: { ar: 'الكمية الحالية', en: 'Current quantity' },
+  cn2b_nl_new_total: { ar: 'الكمية بعد الحفظ', en: 'Quantity after saving' },
+  cn2b_nl_existing_unit_locked: { ar: 'الإضافة إلى سطر قائم تستخدم وحدته. لتغيير الوحدة احذف السطر وأعد ربطه.', en: 'Adding to an existing line keeps its unit. To change the unit, delete the line and map it again.' },
+  cn2b_nl_delete: { ar: 'حذف السطر', en: 'Delete line' },
+  cn2b_nl_delete_title: { ar: 'تصحيح: حذف سطر الاحتياج', en: 'Correction: delete this need line' },
+  cn2b_nl_delete_explainer: { ar: 'يُحذف السطر وروابط مصادره فقط؛ تبقى الأدلة المصدرية كما هي، ويُسجَّل الحذف مع سببه. بعدها يمكن ربط المصادر من جديد.', en: 'Removes the line and its source links only; the source evidence stays untouched and the deletion is audited with its reason. The sources can then be mapped again.' },
+  cn2b_nl_delete_reason: { ar: 'سبب حذف السطر (إلزامي)', en: 'Why is this line being deleted? (required)' },
+  cn2b_nl_delete_reason_required: { ar: 'سبب حذف السطر إلزامي.', en: 'A reason for deleting the line is required.' },
+  cn2b_nl_delete_confirm: { ar: 'تأكيد الحذف', en: 'Confirm deletion' },
+  cn2b_nl_deleted: { ar: 'تم حذف سطر الاحتياج.', en: 'Need line deleted.' },
   cn2b_submit: { ar: 'تقديم للمراجعة', en: 'Submit for review' },
   cn2b_approve: { ar: 'اعتماد', en: 'Approve' },
   cn2b_reject: { ar: 'رفض', en: 'Reject' },
@@ -1948,6 +1966,17 @@ export const T: Dict = {
   cn2b_err_reject_failed: { ar: 'تعذّر الرفض.', en: 'Could not reject.' },
   cn2b_err_abandon_failed: { ar: 'تعذّر إنهاء المحاولة.', en: 'Could not abandon the attempt.' },
   cn2b_err_download_failed: { ar: 'تعذّر تنزيل المصدر.', en: 'Could not download the source.' },
+  /* M212: the need-line domain refusals, so a server conflict is never shown
+     as a raw database identifier. */
+  cn2b_err_source_record_already_linked: { ar: 'هذه الخلية المصدرية تغذّي سطر احتياج آخر. إن كان ذلك خطأً فاحذف ذلك السطر أولًا.', en: 'This source cell already feeds another need line. If that was a mistake, delete that line first.' },
+  cn2b_err_need_line_scope_conflict: { ar: 'أُنشئ هذا الاحتياج للتو في جلسة أخرى. أُعيد التحميل — أضف إليه الآن.', en: 'This requirement was just created elsewhere. It has been reloaded — add to it now.' },
+  cn2b_err_need_line_lineage_stale: { ar: 'تغيّرت مصادر هذا السطر منذ تحميله. أُعيد التحميل — راجع ثم أعد المحاولة.', en: 'This line’s sources changed since it was loaded. It has been reloaded — review and try again.' },
+  cn2b_err_need_line_attributes_conflict: { ar: 'السطر القائم بوحدة مختلفة. لتغيير الوحدة احذف السطر وأعد ربطه.', en: 'The existing line uses a different unit. To change it, delete the line and map it again.' },
+  cn2b_err_need_line_deletion_reason_required: { ar: 'سبب حذف السطر إلزامي.', en: 'A reason for deleting the line is required.' },
+  cn2b_err_need_line_not_found: { ar: 'سطر الاحتياج لم يعد موجودًا.', en: 'The need line no longer exists.' },
+  cn2b_err_target_warehouse_not_active: { ar: 'مخزن الهدف غير فعّال.', en: 'The target warehouse is not active.' },
+  cn2b_err_need_line_quantity_provenance_mismatch: { ar: 'الكمية المعتمدة لا تساوي مجموع المساهمات المصدرية.', en: 'The approved quantity does not equal the sum of its source contributions.' },
+  cn2b_err_need_line_quantity_not_exact: { ar: 'وصلت كمية بصيغة غير دقيقة فلم تُعرض.', en: 'A quantity arrived in a non-exact form and was not shown.' },
 
   /* CN-2B corrective pass: the annual-plan workflow, the field-override
      editor and the bounded source-evidence search. */

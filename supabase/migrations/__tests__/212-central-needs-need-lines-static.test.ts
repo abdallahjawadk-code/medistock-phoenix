@@ -26,7 +26,15 @@ const IMPL = CODE.slice(0, VERIFY_AT);
 const VERIFY = CODE.slice(VERIFY_AT);
 
 const WRITE_RPC = 'phoenix_central_needs_set_need_line';
-const WRITE_SIG = 'uuid, uuid, uuid, numeric, text, jsonb, text, text, uuid, text';
+const WRITE_SIG = 'uuid, uuid, uuid, numeric, text, jsonb, uuid[], text, text, uuid, text';
+
+/** One function's executable text, from its CREATE to the end of its body. */
+function fnBody(name: string): string {
+  const start = IMPL.indexOf(`CREATE OR REPLACE FUNCTION public.${name}(`);
+  if (start < 0) throw new Error(`function ${name} not found`);
+  const end = IMPL.indexOf('$$;', IMPL.indexOf('AS $$', start));
+  return IMPL.slice(start, end);
+}
 
 describe('CN-2B/212 static — registration and file hygiene', () => {
   it('is registered at 212 and is now the ceiling', () => {
@@ -145,7 +153,8 @@ describe('CN-2B/212 static — the relational contract v7.3 section 8.1 requires
     expect(IMPL).not.toMatch(/p_quantity_sources\s+jsonb\s+DEFAULT/);
     expect(IMPL).toContain("RAISE EXCEPTION 'need_line_requires_source_lineage'");
     expect(IMPL).toContain("RAISE EXCEPTION 'need_line_quantity_provenance_mismatch'");
-    expect(IMPL).toContain('v_sum <> p_approved_quantity');
+    // The line's total is everything it already held plus what is added.
+    expect(IMPL).toContain('v_existing_sum + v_added_sum <> p_approved_quantity');
     // And the same two invariants are re-asserted at COMMIT, on both tables, so
     // they do not rest on one RPC remembering them.
     expect(IMPL).toContain('CREATE CONSTRAINT TRIGGER assert_need_line_integrity');
@@ -172,8 +181,14 @@ describe('CN-2B/212 static — the relational contract v7.3 section 8.1 requires
     // The key is a decision with evidence behind it, and the evidence is written
     // down where the next reader of this migration will find it.
     expect(SQL).toContain('b00208ca019c8735790c5401dee26d986234a12279d04e0a057f278bd99eaca2');
-    expect(SQL).toContain('57 workbooks, 71 sheets');
-    expect(SQL).toContain('0 sheets carry ANY warehouse/store/pharmacy-section column');
+    expect(SQL).toContain('57 workbooks, 71 sheets, 113950 source records');
+    expect(SQL).toContain('58 sheets carry TWO OR MORE quantity columns');
+    expect(SQL).toContain('3861 material rows carry TWO OR MORE non-zero quantity cells');
+    expect(SQL).toContain('ONE ROW -> ONE LINE IS FALSE FOR THIS CORPUS');
+    expect(SQL).toContain('ONE SOURCE RECORD -> AT MOST ONE NEED');
+    // The claims the corrected measurement does NOT support are gone.
+    expect(SQL).not.toContain('0 sheets carry ANY warehouse/store/pharmacy-section column');
+    expect(SQL).not.toContain('ONE ROW -> ONE LINE         —');
   });
 
   it('reuses the canonical central_items unit vocabulary and invents no second catalog', () => {
@@ -196,8 +211,84 @@ describe('CN-2B/212 static — the relational contract v7.3 section 8.1 requires
     // Record-level, because one row legitimately carries several quantity cells.
     expect(IMPL).toContain('source_record_id    uuid NOT NULL');
     expect(IMPL).toContain('REFERENCES public.central_needs_source_records (id, organization_id)');
-    // The row-level form of the same rule lives in the deferred assertion.
-    expect(IMPL).toContain("RAISE EXCEPTION 'source_row_split_across_need_lines'");
+    // And there is NO row-level rule: one row may feed several lines (C1).
+    expect(IMPL).not.toContain("RAISE EXCEPTION 'source_row_split_across_need_lines'");
+    expect(fnBody('_phoenix_central_needs_assert_need_line_integrity_v1'))
+      .not.toContain('GROUP BY r.import_session_id, r.target_entity');
+  });
+});
+
+describe('CN-2B/212 static — independent-review corrections', () => {
+  it('Q1: saving never removes provenance and never upserts over an existing scope', () => {
+    const set = fnBody(WRITE_RPC);
+    expect(set).not.toContain('DELETE FROM public.central_needs_need_line_sources');
+    expect(set).not.toMatch(/ON CONFLICT[\s\S]*DO UPDATE/);
+    expect(set).toContain("RAISE EXCEPTION 'need_line_lineage_stale'");
+    expect(set).toContain("RAISE EXCEPTION 'need_line_attributes_conflict'");
+    // Only the explicit correction RPC deletes a link.
+    expect((IMPL.match(/DELETE FROM public\.central_needs_need_line_sources/g) ?? []).length).toBe(1);
+    expect(fnBody('phoenix_central_needs_delete_need_line'))
+      .toContain('DELETE FROM public.central_needs_need_line_sources');
+  });
+
+  it('Q1: both writes take a mandatory expected lineage, with no default', () => {
+    expect((IMPL.match(/p_expected_source_record_ids\s+uuid\[\]/g) ?? []).length).toBe(2);
+    expect(IMPL).not.toMatch(/p_expected_source_record_ids\s+uuid\[\]\s+DEFAULT/);
+    expect(IMPL).toContain("RAISE EXCEPTION 'expected_source_record_ids_required'");
+  });
+
+  it('Q3: the delete RPC authorizes, requires draft and a reason, deletes links before the line, and audits', () => {
+    const del = fnBody('phoenix_central_needs_delete_need_line');
+    expect(del).toContain("_phoenix_central_needs_guard_v1(v_revision.organization_id, 'central_needs.edit')");
+    expect(del).toContain('_phoenix_central_needs_assert_draft_v1(v_revision.id, v_revision.status)');
+    expect(del).toContain("RAISE EXCEPTION 'need_line_deletion_reason_required'");
+    const links = del.indexOf('DELETE FROM public.central_needs_need_line_sources');
+    const line = del.indexOf('DELETE FROM public.central_needs_need_lines ');
+    expect(links).toBeGreaterThan(0);
+    expect(line).toBeGreaterThan(links);
+    expect(del).toContain("'central_needs.need_line.delete'");
+    expect(del).toContain("'deletion_reason', v_reason");
+    // Evidence is never touched.
+    expect(del).not.toMatch(/(UPDATE|DELETE FROM) public\.central_needs_(source_records|field_overrides)/);
+    expect(IMPL).toContain(
+      'GRANT EXECUTE ON FUNCTION public.phoenix_central_needs_delete_need_line(uuid, text, uuid[])');
+  });
+
+  it('Q2: a new routing requires an ACTIVE warehouse, and a later lifecycle change blocks review', () => {
+    const bene = fnBody('_phoenix_central_needs_assert_beneficiary_v1');
+    expect(bene).toContain("v_wh_status IS DISTINCT FROM 'active'");
+    expect(bene).toContain("RAISE EXCEPTION 'target_warehouse_not_active'");
+    const blockers = fnBody('_phoenix_central_needs_review_blockers_v1');
+    expect(blockers).toContain("'need_line_target_warehouse_not_active'");
+    expect(blockers).toContain("w.status IS DISTINCT FROM 'active'");
+  });
+
+  it('F4: a re-pointed link asserts BOTH the line it joins and the line it leaves', () => {
+    const trg = fnBody('_phoenix_central_needs_assert_need_line_integrity_v1');
+    expect(trg).toContain('OLD.need_line_id IS DISTINCT FROM NEW.need_line_id');
+    expect(trg).toContain('ARRAY[NEW.need_line_id, OLD.need_line_id]');
+    expect(trg).toContain('FOREACH v_line_id IN ARRAY v_line_ids');
+    // A missing line skips to the next one rather than ending the assertion.
+    expect(trg).not.toMatch(/IF NOT FOUND THEN\s+RETURN NULL/);
+  });
+
+  it('F5: the read emits both quantities as TEXT and is SECURITY INVOKER', () => {
+    const list = fnBody('phoenix_central_needs_list_need_lines');
+    expect(list).toMatch(/approved_quantity\s+text,/);
+    expect(list).toContain('n.approved_quantity::text');
+    expect(list).toContain("'designated_quantity', ls.designated_quantity::text");
+    expect(list).toContain('SECURITY INVOKER');
+    expect(list).not.toContain('SECURITY DEFINER');
+  });
+
+  it('Q4: expected uniqueness conflicts become stable domain errors; anything else re-raises', () => {
+    const set = fnBody(WRITE_RPC);
+    expect((set.match(/EXCEPTION WHEN unique_violation THEN/g) ?? []).length).toBe(2);
+    expect(set).toContain("v_constraint = 'central_needs_need_lines_scope_key'");
+    expect(set).toContain("v_constraint = 'central_needs_need_line_sources_record_key'");
+    expect(set).toContain("RAISE EXCEPTION 'need_line_scope_conflict'");
+    expect(set).toContain("RAISE EXCEPTION 'source_record_already_linked'");
+    expect((set.match(/^\s+RAISE;$/gm) ?? []).length).toBe(2);
   });
 });
 
@@ -221,6 +312,12 @@ describe('CN-2B/212 static — security posture', () => {
       expect(p[2]).toBe('central_needs.view');
     }
     expect(IMPL).not.toContain("phoenix_status_center_authorized(beneficiary_organization_id");
+    // M211's role-class restriction covers both new relations too.
+    for (const t of ['central_needs_need_lines', 'central_needs_need_line_sources']) {
+      expect(IMPL).toContain(`CREATE POLICY ${t}_role_eligible_restrictive`);
+      expect(IMPL).toContain(`ON public.${t} AS RESTRICTIVE FOR ALL TO authenticated`);
+    }
+    expect((IMPL.match(/USING \(public\._phoenix_central_needs_role_eligible_v1\(\)\)/g) ?? []).length).toBe(2);
   });
 
   it('uses the canonical org authorization helper, never the scoped-permission one', () => {
@@ -231,6 +328,8 @@ describe('CN-2B/212 static — security posture', () => {
   it('pins search_path on every function it defines and keeps internals off the client', () => {
     const defs = [...EXEC.matchAll(/CREATE OR REPLACE FUNCTION public\.([a-z_0-9]+)\(/g)].map((m) => m[1]);
     expect(defs).toContain(WRITE_RPC);
+    expect(defs).toContain('phoenix_central_needs_delete_need_line');
+    expect(defs).toContain('phoenix_central_needs_list_need_lines');
     expect(defs).toContain('_phoenix_central_needs_assert_beneficiary_v1');
     expect(defs).toContain('_phoenix_central_needs_review_blockers_v1');
     expect((EXEC.match(/SET search_path = public, pg_temp/g) ?? []).length).toBeGreaterThanOrEqual(defs.length);
@@ -258,6 +357,8 @@ describe('CN-2B/212 static — security posture', () => {
       'conversion_required_must_not_carry_unit',
       'source_link_requires_mapped_disposition', 'source_link_session_not_in_revision',
       'beneficiary_must_be_care_institution', 'target_warehouse_not_owned_by_beneficiary',
+      'target_warehouse_not_active', 'expected_source_record_ids_required', 'need_line_lineage_stale',
+      'source_record_already_linked', 'need_line_scope_conflict', 'need_line_deletion_reason_required',
     ]) {
       expect(IMPL, check).toContain(check);
     }
@@ -281,6 +382,7 @@ describe('CN-2B/212 static — blockers extended, never weakened', () => {
     for (const added of [
       'mapped_target_entity_without_need_line', 'need_line_unit_conversion_required',
       'need_line_warehouse_org_mismatch', 'need_line_beneficiary_ineligible',
+      'need_line_target_warehouse_not_active',
     ]) {
       expect(fn, added).toContain(added);
     }

@@ -13,7 +13,8 @@
  *
  * Reads are plain selects governed by RLS (`central_needs.view`). A caller
  * without the permission sees nothing — that is the boundary, not a filter
- * applied here.
+ * applied here. The one exception is the need-line read, a SECURITY INVOKER RPC
+ * (still RLS-governed) so its exact decimals arrive as text.
  */
 import { supabase } from '@/shared/supabase/client';
 
@@ -124,8 +125,9 @@ export type UnitConversionState = 'canonical' | 'conversion_required';
 
 /**
  * The operational Annual Needs projection (M212). One approved requirement per
- * (plan revision, beneficiary organization, central item). `organizationId` is
- * the OWNING central organization — the beneficiary is its own dimension.
+ * (plan revision, beneficiary organization, central item, warehouse scope).
+ * `organizationId` is the OWNING central organization — the beneficiary is its
+ * own dimension.
  */
 export interface NeedLine {
   id: string;
@@ -138,7 +140,9 @@ export interface NeedLine {
    * Exact decimal, carried as TEXT in both directions. The column is an
    * unconstrained PostgreSQL `numeric` (M212: a typmod would silently round),
    * and a JavaScript number cannot represent every such value — so the string
-   * is the value here, never a display formatting of one.
+   * is the value here, never a display formatting of one. It is read through
+   * `phoenix_central_needs_list_need_lines`, which emits it as TEXT; a table
+   * read would hand PostgREST's JSON number to JSON.parse and round it.
    */
   approvedQuantity: string;
   approvedUnit: NeedLineUnit | null;
@@ -165,6 +169,13 @@ export interface NeedLineQuantitySource {
 export interface NeedLineSourceLink extends NeedLineQuantitySource {
   needLineId: string;
   appliedOverrideId: string | null;
+  /**
+   * The linked cell's own identity. Provenance is REVISION-wide, so a line may
+   * hold cells from import sessions other than the one on screen.
+   */
+  importSessionId: string;
+  targetEntity: string;
+  fieldName: string;
 }
 
 export interface ReviewBlocker {
@@ -404,68 +415,75 @@ export async function listOverrides(planRevisionId: string): Promise<FieldOverri
   }));
 }
 
+/** A plain decimal exactly as PostgreSQL prints `numeric::text` — never an exponent. */
+const EXACT_DECIMAL_TEXT = /^-?\d+(\.\d+)?$/;
+
 /**
- * The operational need lines of one revision, plus which imported rows each one
- * consolidates. RLS governs visibility on the OWNING organization, so a caller
- * without `central_needs.view` sees nothing rather than a filtered subset.
+ * An exact quantity from the need-line read RPC. It MUST arrive as a string:
+ * a JSON number has already been through JSON.parse, which rounds a large
+ * unconstrained numeric before any code here runs. A value that is not an exact
+ * decimal string is refused rather than shown as if it were the approved one.
  */
-export async function listNeedLines(planRevisionId: string): Promise<NeedLine[]> {
-  const { data, error } = await supabase
-    .from('central_needs_need_lines')
-    .select('id, plan_revision_id, organization_id, beneficiary_organization_id, target_warehouse_id, central_item_id, approved_quantity, approved_unit, unit_conversion_state, source_unit_text, mapping_reason, updated_at')
-    .eq('plan_revision_id', planRevisionId)
-    // `id` breaks ties so the listed order is total, not merely chronological.
-    .order('updated_at', { ascending: true })
-    .order('id', { ascending: true });
-  if (error) fail(error);
-  return (data ?? []).map((r) => ({
-    id: r.id as string,
-    planRevisionId: r.plan_revision_id as string,
-    organizationId: r.organization_id as string,
-    beneficiaryOrganizationId: r.beneficiary_organization_id as string,
-    targetWarehouseId: (r.target_warehouse_id as string | null) ?? null,
-    centralItemId: r.central_item_id as string,
-    // numeric(20,3) arrives as text from PostgREST; keep it as text so an exact
-    // decimal is never silently coerced through a JavaScript float.
-    approvedQuantity: String(r.approved_quantity),
-    approvedUnit: (r.approved_unit as NeedLineUnit | null) ?? null,
-    unitConversionState: r.unit_conversion_state as UnitConversionState,
-    sourceUnitText: (r.source_unit_text as string | null) ?? null,
-    mappingReason: r.mapping_reason as string,
-    updatedAt: r.updated_at as string,
-  }));
+function exactQuantity(value: unknown): string {
+  if (typeof value !== 'string' || !EXACT_DECIMAL_TEXT.test(value)) {
+    throw new CentralNeedsError(
+      'need_line_quantity_not_exact', `expected an exact decimal string, received ${typeof value}`);
+  }
+  return value;
 }
 
 /**
- * Two plain reads rather than one embedded filter: the `need_line_id` set is
- * resolved first, then its links. A PostgREST embedded filter would express the
- * same intent in one round trip, but this form is obvious, and RLS governs both
- * halves identically — a caller who cannot see the lines gets no links either.
+ * The operational need lines of one revision with their REVISION-wide
+ * provenance, through the exact-decimal read RPC (M212 section 4c).
+ *
+ * Deliberately NOT a table read. PostgREST serializes a `numeric` column as a
+ * JSON number, and supabase-js decodes it with JSON.parse, so an unconstrained
+ * value such as 12345678901234567.891 would reach this module as
+ * 12345678901234568 — already rounded, whatever this code did next. The RPC
+ * emits both quantities as TEXT. It is SECURITY INVOKER, so RLS still answers
+ * for the caller: without `central_needs.view` there are no rows.
+ *
+ * Each link carries its cell's own identity (session, row, field), so a line's
+ * lineage can be shown in full even for cells outside the session on screen.
  */
-export async function listNeedLineSources(
+export async function listNeedLineLineage(
   planRevisionId: string,
-): Promise<NeedLineSourceLink[]> {
-  const lines = await supabase
-    .from('central_needs_need_lines')
-    .select('id')
-    .eq('plan_revision_id', planRevisionId);
-  if (lines.error) fail(lines.error);
-  const ids = (lines.data ?? []).map((r) => r.id as string);
-  if (ids.length === 0) return [];
-
-  const { data, error } = await supabase
-    .from('central_needs_need_line_sources')
-    .select('need_line_id, source_record_id, designated_quantity, applied_override_id')
-    .in('need_line_id', ids)
-    .order('source_record_id', { ascending: true });
+): Promise<{ needLines: NeedLine[]; sources: NeedLineSourceLink[] }> {
+  const { data, error } = await supabase.rpc('phoenix_central_needs_list_need_lines', {
+    p_plan_revision_id: planRevisionId,
+  });
   if (error) fail(error);
-  return (data ?? []).map((r) => ({
-    needLineId: r.need_line_id as string,
-    sourceRecordId: r.source_record_id as string,
-    // Exact decimal as text — never through a JavaScript number.
-    designatedQuantity: String(r.designated_quantity),
-    appliedOverrideId: (r.applied_override_id as string | null) ?? null,
-  }));
+  const needLines: NeedLine[] = [];
+  const sources: NeedLineSourceLink[] = [];
+  for (const r of (data ?? []) as Array<Record<string, unknown>>) {
+    const id = r.id as string;
+    needLines.push({
+      id,
+      planRevisionId: r.plan_revision_id as string,
+      organizationId: r.organization_id as string,
+      beneficiaryOrganizationId: r.beneficiary_organization_id as string,
+      targetWarehouseId: (r.target_warehouse_id as string | null) ?? null,
+      centralItemId: r.central_item_id as string,
+      approvedQuantity: exactQuantity(r.approved_quantity),
+      approvedUnit: (r.approved_unit as NeedLineUnit | null) ?? null,
+      unitConversionState: r.unit_conversion_state as UnitConversionState,
+      sourceUnitText: (r.source_unit_text as string | null) ?? null,
+      mappingReason: r.mapping_reason as string,
+      updatedAt: r.updated_at as string,
+    });
+    for (const s of (r.sources ?? []) as Array<Record<string, unknown>>) {
+      sources.push({
+        needLineId: id,
+        sourceRecordId: s.source_record_id as string,
+        designatedQuantity: exactQuantity(s.designated_quantity),
+        appliedOverrideId: (s.applied_override_id as string | null) ?? null,
+        importSessionId: s.import_session_id as string,
+        targetEntity: s.target_entity as string,
+        fieldName: s.field_name as string,
+      });
+    }
+  }
+  return { needLines, sources };
 }
 
 // ---------------------------------------------------------------------------
@@ -520,15 +538,19 @@ export async function setRecordDisposition(input: {
 }
 
 /**
- * Persist one operational need line (M212).
+ * Create one operational need line, or ADD provenance to the existing line of
+ * the same scope (M212 section 4a). It never removes a link: removal is only
+ * `deleteNeedLine`, with a reason.
  *
  * Everything here is re-validated server-side — beneficiary eligibility,
- * warehouse ownership, unit vocabulary, conversion state, quantity sign,
- * revision editability and source lineage. The UI's own checks exist to give a
- * fast answer, never to be the authority.
+ * warehouse ownership and active status, unit vocabulary, conversion state,
+ * quantity sign, revision editability, source lineage and the caller's expected
+ * lineage. The UI's own checks exist to give a fast answer, never to be the
+ * authority.
  *
- * `approvedQuantity` is passed as a string so an exact decimal reaches
- * PostgreSQL's `numeric` without a JavaScript float in the middle.
+ * `approvedQuantity` is the line's total AFTER this call (what it held plus
+ * what is added), passed as a string so an exact decimal reaches PostgreSQL's
+ * `numeric` without a JavaScript float in the middle.
  */
 export async function setNeedLine(input: {
   planRevisionId: string;
@@ -543,11 +565,20 @@ export async function setNeedLine(input: {
    * array on its way to the server.
    */
   quantitySources: NeedLineQuantitySource[];
+  /**
+   * MANDATORY. The source records this scope's line holds as the caller last
+   * loaded it — an empty array when it expects no line yet. The server refuses
+   * a view that no longer matches (`need_line_lineage_stale`) instead of letting
+   * a session-limited save act on provenance it never saw.
+   */
+  expectedSourceRecordIds: string[];
   approvedUnit?: NeedLineUnit | null;
   unitConversionState?: UnitConversionState;
   targetWarehouseId?: string | null;
   sourceUnitText?: string | null;
-}): Promise<{ needLineId: string; sourceLinkCount: number; approvedQuantity: string }> {
+}): Promise<{
+  needLineId: string; created: boolean; sourceLinkCount: number; addedLinkCount: number; approvedQuantity: string;
+}> {
   const state = input.unitConversionState ?? 'canonical';
   const { data, error } = await supabase.rpc('phoenix_central_needs_set_need_line', {
     p_plan_revision_id: input.planRevisionId,
@@ -561,6 +592,7 @@ export async function setNeedLine(input: {
       designatedQuantity: s.designatedQuantity,
       appliedOverrideId: s.appliedOverrideId ?? null,
     })),
+    p_expected_source_record_ids: input.expectedSourceRecordIds,
     // A conversion-required line carries no canonical unit, by contract.
     p_approved_unit: state === 'conversion_required' ? null : input.approvedUnit ?? null,
     p_unit_conversion_state: state,
@@ -571,8 +603,34 @@ export async function setNeedLine(input: {
   const row = data as Record<string, unknown>;
   return {
     needLineId: row.need_line_id as string,
+    created: row.created === true,
     sourceLinkCount: Number(row.source_link_count ?? 0),
+    addedLinkCount: Number(row.added_link_count ?? 0),
     approvedQuantity: String(row.approved_quantity ?? ''),
+  };
+}
+
+/**
+ * The explicit correction path (M212 section 4b): delete one DRAFT need line
+ * and its source links, with a mandatory reason, audited server-side. Source
+ * evidence is never touched. The caller states the links it saw, so a line that
+ * gained provenance since is refused rather than removed unseen.
+ */
+export async function deleteNeedLine(input: {
+  needLineId: string;
+  reason: string;
+  expectedSourceRecordIds: string[];
+}): Promise<{ needLineId: string; deletedSourceCount: number }> {
+  const { data, error } = await supabase.rpc('phoenix_central_needs_delete_need_line', {
+    p_need_line_id: input.needLineId,
+    p_reason: input.reason,
+    p_expected_source_record_ids: input.expectedSourceRecordIds,
+  });
+  if (error) fail(error);
+  const row = data as Record<string, unknown>;
+  return {
+    needLineId: row.need_line_id as string,
+    deletedSourceCount: Number(row.deleted_source_count ?? 0),
   };
 }
 
