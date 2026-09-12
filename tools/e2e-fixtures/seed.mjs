@@ -322,6 +322,109 @@ async function main() {
     });
     console.log(`  replenishment source lot at DP_A: ${replSourceOutletStockId} (30 received, FEFO-eligible)`);
 
+    // ------------------------------------------------------------------------
+    // CN-2B CONFORMANCE (M212): the fixture the PostgREST numeric-transport
+    // proof needs. It exists so the acceptance run can call
+    // phoenix_central_needs_set_need_line through the REAL supabase-js ->
+    // PostgREST path with an exact decimal string and then read back what
+    // PostgreSQL actually stored.
+    //
+    // Shape mirrors 212's own dynamic suite: a central (authority) organization
+    // owns the plan, a care_institution is the beneficiary, and a completed
+    // import session carries several source records per row — because one row
+    // legitimately has several quantity-bearing cells and the approved quantity
+    // must name the exact one.
+    // ------------------------------------------------------------------------
+    console.log('Seeding Central Needs (M212) fixture for the PostgREST numeric proof...');
+    const CN_ITEM = randomUUID();
+    await client.query(
+      `INSERT INTO central_items (id, name, name_ar, unit, status)
+       VALUES ($1, 'E2E Central Needs Item', 'مادة احتياج للاختبار', 'box', 'active')
+       ON CONFLICT (id) DO NOTHING`,
+      [CN_ITEM],
+    );
+
+    const { data: cnUser, error: cnUserError } = await admin.auth.admin.createUser({
+      email: 'e2e-central-needs-editor@phoenix.local',
+      password: FIXED_PASSWORD,
+      email_confirm: true,
+      user_metadata: { full_name: 'E2E Central Needs Editor', role: 'central_warehouse_manager' },
+    });
+    if (cnUserError && !/already been registered/i.test(cnUserError.message)) throw cnUserError;
+    let cnUserId = cnUser?.user?.id;
+    if (!cnUserId) {
+      const { data: list } = await admin.auth.admin.listUsers();
+      cnUserId = list.users.find(x => x.email === 'e2e-central-needs-editor@phoenix.local')?.id;
+    }
+    if (!cnUserId) throw new Error('could not resolve the Central Needs editor user id');
+    await client.query(
+      `UPDATE profiles SET role='central_warehouse_manager', status='active', organization_id=$2 WHERE id=$1`,
+      [cnUserId, ORG_C_AUTHORITY],
+    );
+    for (const key of ['view', 'import', 'edit', 'approve']) {
+      await client.query(
+        `INSERT INTO profile_permission_overrides (profile_id, permission_key, allowed) VALUES ($1,$2,true)
+           ON CONFLICT (profile_id, permission_key) DO UPDATE SET allowed = true`,
+        [cnUserId, `central_needs.${key}`],
+      );
+    }
+
+    const cnPlan = (await client.query(
+      `INSERT INTO central_needs_plans (organization_id, plan_year) VALUES ($1, 2099) RETURNING id`,
+      [ORG_C_AUTHORITY],
+    )).rows[0].id;
+    const cnRevision = (await client.query(
+      `INSERT INTO central_needs_plan_revisions (plan_id, organization_id, revision_number, status)
+       VALUES ($1,$2,1,'draft') RETURNING id`,
+      [cnPlan, ORG_C_AUTHORITY],
+    )).rows[0].id;
+    const cnFile = (await client.query(
+      `INSERT INTO central_needs_source_files
+         (plan_revision_id, organization_id, original_filename, file_hash, byte_size)
+       VALUES ($1,$2,'e2e-annual-needs.xls',$3,2048) RETURNING id`,
+      [cnRevision, ORG_C_AUTHORITY, 'e'.repeat(64)],
+    )).rows[0].id;
+    const cnSession = (await client.query(
+      `INSERT INTO central_needs_import_sessions
+         (plan_revision_id, organization_id, source_file_id, status,
+          preview_digest, authoritative_digest, parser_identity, completed_at)
+       VALUES ($1,$2,$3,'completed',$4,$4,$5::jsonb, now()) RETURNING id`,
+      [cnRevision, ORG_C_AUTHORITY, cnFile, 'f'.repeat(64), JSON.stringify({
+        contractVersion: '1.0.0', sheetjsVersion: '0.20.3', runtime: 'node',
+      })],
+    )).rows[0].id;
+
+    // Four rows: one for the exact-decimal proof, two for the float-drift proof,
+    // and one carrying a value no JavaScript number can hold exactly — kept as
+    // a JSON STRING here so the evidence itself is not rounded by this seed.
+    const cnRecords = {};
+    const cnRows = [
+      { entity: 'sheet:0:row:1', fields: [['requested', 900], ['final', 120.1239]] },
+      { entity: 'sheet:0:row:2', fields: [['final', 0.1]] },
+      { entity: 'sheet:0:row:3', fields: [['final', 0.2]] },
+      { entity: 'sheet:0:row:4', fields: [['final', '12345678901234567.891']] },
+    ];
+    let cnOrdinal = 0;
+    for (const row of cnRows) {
+      for (const [field, value] of row.fields) {
+        cnOrdinal += 1;
+        const id = (await client.query(
+          `INSERT INTO central_needs_source_records
+             (import_session_id, organization_id, record_ordinal, target_entity, field_name, source_values)
+           VALUES ($1,$2,$3,$4,$5,$6::jsonb) RETURNING id`,
+          [cnSession, ORG_C_AUTHORITY, cnOrdinal, row.entity, field, JSON.stringify({ value })],
+        )).rows[0].id;
+        cnRecords[`${row.entity}::${field}`] = id;
+      }
+      await client.query(
+        `INSERT INTO central_needs_record_mappings
+           (import_session_id, organization_id, target_entity, central_item_id, decision)
+         VALUES ($1,$2,$3,$4,'mapped')`,
+        [cnSession, ORG_C_AUTHORITY, row.entity, CN_ITEM],
+      );
+    }
+    console.log(`  Central Needs: revision=${cnRevision} session=${cnSession} records=${cnOrdinal}`);
+
     const summary = {
       orgA: ORG_A, orgB: ORG_B, dpA: DP_A, dpB: DP_B,
       users: Object.fromEntries(Object.entries(USERS).map(([k, u]) => [k, { email: u.email, id: u.id, role: u.role }])),
@@ -334,7 +437,22 @@ async function main() {
       // workflow env var, so no additional repository permission is needed to
       // wire this up.
       databaseUrl: DATABASE_URL,
+      // The local API origin (never a secret — it is always 127.0.0.1 here, and
+      // the guard above has already refused anything else). The acceptance run
+      // needs it to build a REAL supabase-js client for the PostgREST proof.
+      supabaseUrl: SUPABASE_URL,
       lots: lotIds,
+      centralNeeds: {
+        owningOrganization: ORG_C_AUTHORITY,
+        beneficiaryOrganization: ORG_A,
+        // Also a live care_institution: a second, independent accounting scope.
+        secondBeneficiaryOrganization: ORG_B,
+        planRevisionId: cnRevision,
+        importSessionId: cnSession,
+        centralItemId: CN_ITEM,
+        editor: { email: 'e2e-central-needs-editor@phoenix.local', id: cnUserId },
+        records: cnRecords,
+      },
       phase8: {
         suggestionId,
         material: suggestionMaterial,

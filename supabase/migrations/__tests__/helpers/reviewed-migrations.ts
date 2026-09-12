@@ -220,6 +220,7 @@ export const REVIEWED_MIGRATION_FILES: readonly string[] = Object.freeze([
   // disposition layer — the server-enforced review-completeness gate that
   // M210 deliberately deferred.
   '211_phoenix_central_needs_batch_and_disposition.sql',
+  '212_phoenix_central_needs_need_lines.sql',
 ]);
 
 const REVIEWED_SET: ReadonlySet<string> = new Set(REVIEWED_MIGRATION_FILES);

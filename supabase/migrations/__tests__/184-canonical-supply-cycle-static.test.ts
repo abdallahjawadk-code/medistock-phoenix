@@ -97,10 +97,11 @@ describe('184 · registration and file hygiene', () => {
     const NEXT_25 = '209_phoenix_central_needs_registry.sql';
     const NEXT_26 = '210_phoenix_central_needs_workflow_rpcs.sql';
     const NEXT_27 = '211_phoenix_central_needs_batch_and_disposition.sql';
+    const NEXT_28 = '212_phoenix_central_needs_need_lines.sql';
     const numbers = REVIEWED_MIGRATION_FILES
       .map(f => Number(f.slice(0, 3)))
       .filter(n => Number.isFinite(n));
-    expect(Math.max(...numbers)).toBe(211);
+    expect(Math.max(...numbers)).toBe(212);
     expect(REVIEWED_MIGRATION_FILES.filter(f => f.startsWith('184_'))).toHaveLength(1);
     expect(REVIEWED_MIGRATION_FILES.filter(f => f.startsWith('185_'))).toEqual([NEXT]);
     expect(REVIEWED_MIGRATION_FILES.filter(f => f.startsWith('186_'))).toEqual([NEXT_2]);
@@ -129,10 +130,12 @@ describe('184 · registration and file hygiene', () => {
     expect(REVIEWED_MIGRATION_FILES.filter(f => f.startsWith('209_'))).toEqual([NEXT_25]);
     expect(REVIEWED_MIGRATION_FILES.filter(f => f.startsWith('210_'))).toEqual([NEXT_26]);
     expect(REVIEWED_MIGRATION_FILES.filter(f => f.startsWith('211_'))).toEqual([NEXT_27]);
+    expect(REVIEWED_MIGRATION_FILES.filter(f => f.startsWith('212_'))).toEqual([NEXT_28]);
     const i = REVIEWED_MIGRATION_FILES.indexOf(NAME);
-    expect(REVIEWED_MIGRATION_FILES.slice(i + 1)).toEqual([NEXT, NEXT_2, NEXT_3, NEXT_4, NEXT_5, NEXT_6, NEXT_7, NEXT_8, NEXT_9, NEXT_10, NEXT_11, NEXT_12, NEXT_13, NEXT_14, NEXT_15, NEXT_16, NEXT_17, NEXT_18, NEXT_19, NEXT_20, NEXT_21, NEXT_22, NEXT_23, NEXT_24, NEXT_25, NEXT_26, NEXT_27]);
-    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1]).toBe(NEXT_27);
-    expect(REVIEWED_MIGRATION_FILES.filter(f => /^212_/.test(f))).toHaveLength(0);
+    expect(REVIEWED_MIGRATION_FILES.slice(i + 1)).toEqual([NEXT, NEXT_2, NEXT_3, NEXT_4, NEXT_5, NEXT_6, NEXT_7, NEXT_8, NEXT_9, NEXT_10, NEXT_11, NEXT_12, NEXT_13, NEXT_14, NEXT_15, NEXT_16, NEXT_17, NEXT_18, NEXT_19, NEXT_20, NEXT_21, NEXT_22, NEXT_23, NEXT_24, NEXT_25, NEXT_26, NEXT_27, NEXT_28]);
+    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1]).toBe(NEXT_28);
+    expect(REVIEWED_MIGRATION_FILES.filter(f => /^212_/.test(f))).toEqual([NEXT_28]);
+    expect(REVIEWED_MIGRATION_FILES.filter(f => /^213_/.test(f))).toHaveLength(0);
   });
 
   it('carries no CR bytes', () => {

@@ -25,6 +25,7 @@ import pg from 'pg';
 import { readFileSync, mkdirSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { createExpectedRefusalRegistry } from './expected-refusals.mjs';
+import { proveM212NumericTransport } from './m212-postgrest-proof.mjs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -1937,6 +1938,12 @@ async function main() {
   }
 
   await browser.close();
+
+  // CN-2B CONFORMANCE (M212) — the PostgREST exact-decimal transport proof. Its
+  // own module, so the identical code can also be run directly against a
+  // disposable local stack without a browser; see that file's header.
+  await proveM212NumericTransport({ seed, record, dbQuery, root: ROOT });
+
   if (dbPool) await dbPool.end();
 
   const failed = results.filter(r => !r.ok);

@@ -84,12 +84,13 @@ describe('181 registration and shape', () => {
       '209_phoenix_central_needs_registry.sql',
       '210_phoenix_central_needs_workflow_rpcs.sql',
       '211_phoenix_central_needs_batch_and_disposition.sql',
+      '212_phoenix_central_needs_need_lines.sql',
     ];
     const i = REVIEWED_MIGRATION_FILES.indexOf(NAME);
     expect(REVIEWED_MIGRATION_FILES.slice(i + 1)).toEqual(SUCCESSORS);
     // The ceiling is now 210; `[2-9]\d\d` would match it, so this asserts
     // numerically that nothing sits ABOVE the ceiling.
-    expect(REVIEWED_MIGRATION_FILES.filter(f => Number(f.slice(0, 3)) > 211)).toHaveLength(0);
+    expect(REVIEWED_MIGRATION_FILES.filter(f => Number(f.slice(0, 3)) > 212)).toHaveLength(0);
   });
 
   it('is a single transaction, manual-apply only, through Supabase.apply_migration', () => {

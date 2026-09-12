@@ -50,9 +50,10 @@ describe('M197 static — identity and placement', () => {
       '209_phoenix_central_needs_registry.sql',
       '210_phoenix_central_needs_workflow_rpcs.sql',
       '211_phoenix_central_needs_batch_and_disposition.sql',
+      '212_phoenix_central_needs_need_lines.sql',
     ]);
-    expect(files.filter((f) => Number(f.slice(0, 3)) > 211)).toEqual([]);
-    expect(files).toHaveLength(211);
+    expect(files.filter((f) => Number(f.slice(0, 3)) > 212)).toEqual([]);
+    expect(files).toHaveLength(212);
   });
 
   it('carries no MANUAL APPLY ONLY banner, so the pinned executor will accept it', () => {

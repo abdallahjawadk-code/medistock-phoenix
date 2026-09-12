@@ -266,6 +266,11 @@ export const QA_FIXTURES: Record<string, unknown> = {
       { blocker: 'target_entity_without_disposition', detail: `session=${CN2B_SESSION} target_entity=${CN2B_ENTITIES[3]}` },
     ],
   },
+  // M212: need lines are read through the exact-decimal RPC, not the table (a
+  // table read would round a large numeric in JSON.parse). The fixture client
+  // fails closed on an unregistered RPC, so the harness answers this read with
+  // the same empty set the table fixture used to give — no operational line yet.
+  'rpc:phoenix_central_needs_list_need_lines': [],
   organizations: [
     { id: ORG_A, name: 'QA · Al-Hilla Teaching Hospital', name_ar: 'QA · مستشفى الحلة التعليمي', code: 'QA-A', city: 'Al-Hilla', status: 'active', kind: 'institution' },
     { id: ORG_B, name: 'QA · Al-Imam Al-Sadiq Hospital', name_ar: 'QA · مستشفى الإمام الصادق', code: 'QA-B', city: 'Al-Hilla', status: 'active', kind: 'institution' },

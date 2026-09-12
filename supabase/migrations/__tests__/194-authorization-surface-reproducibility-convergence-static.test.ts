@@ -300,10 +300,10 @@ describe('194 · static · historical immutability and rig coupling', () => {
   // CN-1B (210, Central Needs workflow RPCs) is now the reviewed successor.
   // This relaxes ONLY which future migration numbers may exist; every M194
   // assertion in this file is unchanged.
-  it('no migration numbered 211 or higher exists', () => {
+  it('no migration numbered 213 or higher exists', () => {
     const above = readdirSync(MIGRATIONS_DIR)
       .filter((f) => /^\d{3}_.*\.sql$/.test(f))
-      .filter((f) => Number(f.slice(0, 3)) >= 212);
+      .filter((f) => Number(f.slice(0, 3)) >= 213);
     expect(above).toEqual([]);
   });
 

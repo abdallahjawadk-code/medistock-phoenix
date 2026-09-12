@@ -1795,6 +1795,7 @@ export const T: Dict = {
   cn2b_panel_sessions: { ar: 'جلسات الاستيراد', en: 'Import sessions' },
   cn2b_panel_review: { ar: 'مراجعة المصدر والقرارات', en: 'Source review and decisions' },
   cn2b_panel_readiness: { ar: 'اكتمال المراجعة', en: 'Review completeness' },
+  cn2b_panel_need_lines: { ar: 'سطور الاحتياج التشغيلية', en: 'Operational need lines' },
   cn2b_revision: { ar: 'المراجعة', en: 'Revision' },
   cn2b_no_revisions: { ar: 'لا توجد مراجعات', en: 'No revisions' },
   cn2b_revstatus_draft: { ar: 'مسودة', en: 'Draft' },
@@ -1872,6 +1873,77 @@ export const T: Dict = {
   cn2b_blocker_completed_session_not_in_trusted_batch: { ar: 'جلسة مكتملة خارج أي دفعة موثّقة', en: 'A completed session belongs to no trusted batch' },
   cn2b_blocker_incomplete_trusted_batch: { ar: 'دفعة موثّقة ناقصة', en: 'A trusted batch is incomplete' },
   cn2b_blocker_target_entity_without_disposition: { ar: 'سطر بلا قرار صريح', en: 'A row has no explicit decision' },
+  /* CN-2B conformance (M212): the operational need-line blockers. */
+  cn2b_blocker_mapped_target_entity_without_need_line: { ar: 'سطر مرتبط بمادة بلا سطر احتياج تشغيلي', en: 'A mapped row has no operational need line' },
+  cn2b_blocker_need_line_unit_conversion_required: { ar: 'سطر احتياج ينتظر تحويل الوحدة', en: 'A need line awaits unit conversion' },
+  cn2b_blocker_need_line_warehouse_org_mismatch: { ar: 'مخزن الهدف لا يتبع المؤسسة المنتفعة', en: 'Target warehouse does not belong to the beneficiary' },
+  cn2b_blocker_need_line_beneficiary_ineligible: { ar: 'المؤسسة المنتفعة غير مؤهلة', en: 'Beneficiary organization is not eligible' },
+  cn2b_blocker_need_line_target_warehouse_not_active: { ar: 'مخزن الهدف لم يعد فعّالًا — احذف السطر وأعد توجيهه', en: 'Target warehouse is no longer active — delete the line and re-route it' },
+  cn2b_blocker_need_line_material_mapping_divergent: { ar: 'تغيّر ربط المادة بعد إنشاء سطر الاحتياج — احذف السطر وأعد ربطه', en: 'A row was re-mapped after its need line was created — delete the line and map it again' },
+
+  /* ── CN-2B conformance (M212) — operational need-line mapping ──────────────
+     The official annual requirement becomes relational here: beneficiary
+     institution, canonical material, canonical unit and approved quantity.
+     Mapping is always a human act; nothing is inferred from workbook shape. */
+  cn2b_nl_title: { ar: 'سطور الاحتياج التشغيلية', en: 'Operational need lines' },
+  cn2b_nl_subtitle: { ar: 'اربط كل سطر معتمد بالمؤسسة المنتفعة والمادة والوحدة والكمية المعتمدة. لا يُستنتج أي ربط تلقائيًا.', en: 'Link each approved row to its beneficiary institution, material, unit and approved quantity. No mapping is ever inferred.' },
+  cn2b_nl_beneficiary: { ar: 'المؤسسة المنتفعة', en: 'Beneficiary institution' },
+  cn2b_nl_beneficiary_hint: { ar: 'المؤسسة التي يتبعها هذا الاحتياج — وليست المؤسسة المالكة للخطة.', en: 'The institution this requirement belongs to — not the organization that owns the plan.' },
+  /* The canonical material is READ from each row's existing mapping decision —
+     this surface never offers a material picker of its own, so there is no
+     second source of material truth and no way to point a line at a material the
+     source was not reviewed as. */
+  cn2b_nl_candidates: { ar: 'الأسطر المصدرية المعتمدة للكمية', en: 'Designated source records' },
+  cn2b_nl_candidates_hint: { ar: 'اختر السطور المصدرية التي تُشتق منها الكمية المعتمدة، وحدّد مساهمة كل سطر. المجموع هو الكمية المعتمدة.', en: 'Pick the source records the approved quantity comes from and designate what each contributes. Their sum is the approved quantity.' },
+  cn2b_nl_no_candidates: { ar: 'لا توجد سطور مصدرية مرتبطة بمادة ولم تُستخدم بعد.', en: 'No mapped, unclaimed source records are available.' },
+  cn2b_nl_suggested: { ar: 'القيمة المستوردة:', en: 'imported value:' },
+  cn2b_nl_contribution: { ar: 'المساهمة المعتمدة', en: 'Designated contribution' },
+  cn2b_nl_contribution_invalid: { ar: 'أدخل رقمًا عشريًا غير سالب.', en: 'Enter a non-negative decimal number.' },
+  cn2b_nl_use_override: { ar: 'اعتمد القيمة المعدّلة المسجّلة', en: 'Base it on the recorded override' },
+  cn2b_nl_total: { ar: 'الكمية المعتمدة (مجموع المساهمات)', en: 'Approved quantity (sum of contributions)' },
+  cn2b_nl_lines_to_create: { ar: 'سطور الاحتياج التي ستُنشأ', en: 'Need lines to create' },
+  cn2b_nl_from_sources: { ar: 'عدد السطور المصدرية', en: 'source records' },
+  cn2b_nl_session_scope: { ar: '— لجلسة الاستيراد المحددة؛ اكتمال المراجعة الكامل يظهر في لوحة الاكتمال', en: '— for the selected import session; revision-wide completeness is in the readiness panel' },
+  cn2b_nl_quantity_hint: { ar: 'الصفر قيمة صحيحة. الفراغ ليس صفرًا. لا يُجرى أي تدوير.', en: 'Zero is a valid value. Blank is not zero. Nothing is ever rounded.' },
+  cn2b_nl_unit: { ar: 'الوحدة المعتمدة', en: 'Canonical unit' },
+  cn2b_nl_unit_conversion_required: { ar: 'الوحدة تحتاج تحويلًا — لا تُخمَّن', en: 'Unit needs conversion — never guessed' },
+  cn2b_nl_source_unit: { ar: 'وحدة المصدر (دليل فقط)', en: 'Source unit (evidence only)' },
+  cn2b_nl_warehouse: { ar: 'مخزن الهدف (اختياري)', en: 'Target warehouse (optional)' },
+  cn2b_nl_warehouse_hint: { ar: 'اتركه فارغًا إذا كان الاحتياج على مستوى المؤسسة.', en: 'Leave empty when the requirement is institution-level.' },
+  cn2b_nl_warehouse_none: { ar: 'على مستوى المؤسسة', en: 'Institution-level' },
+  /* Deliberately NOT "...reason (required)": Playwright's getByLabel is a
+     case-insensitive substring match, and the field-override editor already owns
+     the label "Reason (required)". A colliding label would make that existing
+     locator ambiguous, so this control is named distinctly instead. */
+  cn2b_nl_reason: { ar: 'مبرر الربط (إلزامي)', en: 'Mapping justification (required)' },
+  cn2b_nl_reason_required: { ar: 'مبرر الربط إلزامي.', en: 'A mapping justification is required.' },
+  cn2b_nl_save: { ar: 'حفظ سطر الاحتياج', en: 'Save need line' },
+  cn2b_nl_saved: { ar: 'تم حفظ سطر الاحتياج.', en: 'Need line saved.' },
+  cn2b_nl_bulk_title: { ar: 'تطبيق جماعي', en: 'Bulk apply' },
+  cn2b_nl_bulk_preview: { ar: 'معاينة قبل التطبيق', en: 'Preview before applying' },
+  cn2b_nl_bulk_affected: { ar: 'عدد الأسطر المتأثرة', en: 'Rows affected' },
+  cn2b_nl_bulk_confirm: { ar: 'تأكيد التطبيق', en: 'Confirm apply' },
+  cn2b_nl_bulk_cancel: { ar: 'إلغاء', en: 'Cancel' },
+  cn2b_nl_complete: { ar: 'الربط مكتمل', en: 'Mapping complete' },
+  cn2b_nl_incomplete: { ar: 'الربط غير مكتمل', en: 'Mapping incomplete' },
+  cn2b_nl_none_yet: { ar: 'لا توجد سطور احتياج تشغيلية بعد.', en: 'No operational need lines yet.' },
+  cn2b_nl_readonly: { ar: 'المراجعة مغلقة — لا يمكن تعديل الربط.', en: 'Review is closed — mapping cannot be changed.' },
+  /* M212 targeted correction: provenance is revision-wide, a save only ADDS to
+     an existing line, and removing a line is an explicit, reasoned correction. */
+  cn2b_nl_lineage: { ar: 'مصادر السطر في جميع جلسات المراجعة', en: 'Sources across every import session of this revision' },
+  cn2b_nl_other_session: { ar: 'من جلسة استيراد أخرى', en: 'from another import session' },
+  cn2b_nl_adds_to_existing: { ar: 'يُضاف إلى سطر قائم', en: 'Adds to an existing line' },
+  cn2b_nl_creates_new: { ar: 'ينشئ سطرًا جديدًا', en: 'Creates a new line' },
+  cn2b_nl_current_total: { ar: 'الكمية الحالية', en: 'Current quantity' },
+  cn2b_nl_new_total: { ar: 'الكمية بعد الحفظ', en: 'Quantity after saving' },
+  cn2b_nl_existing_unit_locked: { ar: 'الإضافة إلى سطر قائم تستخدم وحدته. لتغيير الوحدة احذف السطر وأعد ربطه.', en: 'Adding to an existing line keeps its unit. To change the unit, delete the line and map it again.' },
+  cn2b_nl_delete: { ar: 'حذف السطر', en: 'Delete line' },
+  cn2b_nl_delete_title: { ar: 'تصحيح: حذف سطر الاحتياج', en: 'Correction: delete this need line' },
+  cn2b_nl_delete_explainer: { ar: 'يُحذف السطر وروابط مصادره فقط؛ تبقى الأدلة المصدرية كما هي، ويُسجَّل الحذف مع سببه. بعدها يمكن ربط المصادر من جديد.', en: 'Removes the line and its source links only; the source evidence stays untouched and the deletion is audited with its reason. The sources can then be mapped again.' },
+  cn2b_nl_delete_reason: { ar: 'سبب حذف السطر (إلزامي)', en: 'Why is this line being deleted? (required)' },
+  cn2b_nl_delete_reason_required: { ar: 'سبب حذف السطر إلزامي.', en: 'A reason for deleting the line is required.' },
+  cn2b_nl_delete_confirm: { ar: 'تأكيد الحذف', en: 'Confirm deletion' },
+  cn2b_nl_deleted: { ar: 'تم حذف سطر الاحتياج.', en: 'Need line deleted.' },
   cn2b_submit: { ar: 'تقديم للمراجعة', en: 'Submit for review' },
   cn2b_approve: { ar: 'اعتماد', en: 'Approve' },
   cn2b_reject: { ar: 'رفض', en: 'Reject' },
@@ -1894,6 +1966,17 @@ export const T: Dict = {
   cn2b_err_reject_failed: { ar: 'تعذّر الرفض.', en: 'Could not reject.' },
   cn2b_err_abandon_failed: { ar: 'تعذّر إنهاء المحاولة.', en: 'Could not abandon the attempt.' },
   cn2b_err_download_failed: { ar: 'تعذّر تنزيل المصدر.', en: 'Could not download the source.' },
+  /* M212: the need-line domain refusals, so a server conflict is never shown
+     as a raw database identifier. */
+  cn2b_err_source_record_already_linked: { ar: 'هذه الخلية المصدرية تغذّي سطر احتياج آخر. إن كان ذلك خطأً فاحذف ذلك السطر أولًا.', en: 'This source cell already feeds another need line. If that was a mistake, delete that line first.' },
+  cn2b_err_need_line_scope_conflict: { ar: 'أُنشئ هذا الاحتياج للتو في جلسة أخرى. أُعيد التحميل — أضف إليه الآن.', en: 'This requirement was just created elsewhere. It has been reloaded — add to it now.' },
+  cn2b_err_need_line_lineage_stale: { ar: 'تغيّرت مصادر هذا السطر منذ تحميله. أُعيد التحميل — راجع ثم أعد المحاولة.', en: 'This line’s sources changed since it was loaded. It has been reloaded — review and try again.' },
+  cn2b_err_need_line_attributes_conflict: { ar: 'السطر القائم بوحدة مختلفة. لتغيير الوحدة احذف السطر وأعد ربطه.', en: 'The existing line uses a different unit. To change it, delete the line and map it again.' },
+  cn2b_err_need_line_deletion_reason_required: { ar: 'سبب حذف السطر إلزامي.', en: 'A reason for deleting the line is required.' },
+  cn2b_err_need_line_not_found: { ar: 'سطر الاحتياج لم يعد موجودًا.', en: 'The need line no longer exists.' },
+  cn2b_err_target_warehouse_not_active: { ar: 'مخزن الهدف غير فعّال.', en: 'The target warehouse is not active.' },
+  cn2b_err_need_line_quantity_provenance_mismatch: { ar: 'الكمية المعتمدة لا تساوي مجموع المساهمات المصدرية.', en: 'The approved quantity does not equal the sum of its source contributions.' },
+  cn2b_err_need_line_quantity_not_exact: { ar: 'وصلت كمية بصيغة غير دقيقة فلم تُعرض.', en: 'A quantity arrived in a non-exact form and was not shown.' },
 
   /* CN-2B corrective pass: the annual-plan workflow, the field-override
      editor and the bounded source-evidence search. */
