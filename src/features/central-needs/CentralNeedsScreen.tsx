@@ -613,6 +613,8 @@ export function CentralNeedsScreen() {
             planRevisionId={revision.id}
             editable={canEdit && isDraft}
             dispositions={dispositions}
+            records={records}
+            overrides={overrides}
             needLines={needLines}
             claimedSources={claimedSources}
             onSaved={() => void reloadRevision(revision.id)}

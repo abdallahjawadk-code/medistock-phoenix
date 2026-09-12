@@ -134,7 +134,12 @@ export interface NeedLine {
   beneficiaryOrganizationId: string;
   targetWarehouseId: string | null;
   centralItemId: string;
-  /** Exact decimal, carried as text so no precision is lost in JavaScript. */
+  /**
+   * Exact decimal, carried as TEXT in both directions. The column is an
+   * unconstrained PostgreSQL `numeric` (M212: a typmod would silently round),
+   * and a JavaScript number cannot represent every such value — so the string
+   * is the value here, never a display formatting of one.
+   */
   approvedQuantity: string;
   approvedUnit: NeedLineUnit | null;
   unitConversionState: UnitConversionState;
@@ -143,9 +148,23 @@ export interface NeedLine {
   updatedAt: string;
 }
 
-export interface NeedLineSourceLink {
-  importSessionId: string;
-  targetEntity: string;
+/**
+ * One designated quantity contribution: the exact immutable source record the
+ * reviewer chose, what it contributes, and the override they relied on if any.
+ * M212 requires at least one per need line and enforces
+ * SUM(designatedQuantity) = approvedQuantity, so this is the provenance of the
+ * approved number rather than a loose cross-reference.
+ */
+export interface NeedLineQuantitySource {
+  sourceRecordId: string;
+  /** Exact decimal as text, for the same reason as `approvedQuantity`. */
+  designatedQuantity: string;
+  appliedOverrideId?: string | null;
+}
+
+export interface NeedLineSourceLink extends NeedLineQuantitySource {
+  needLineId: string;
+  appliedOverrideId: string | null;
 }
 
 export interface ReviewBlocker {
@@ -434,16 +453,18 @@ export async function listNeedLineSources(
   const ids = (lines.data ?? []).map((r) => r.id as string);
   if (ids.length === 0) return [];
 
-  // M212's UNIQUE (import_session_id, target_entity) means a pair identifies
-  // the claim by itself, so the owning line's id is not part of the answer.
   const { data, error } = await supabase
     .from('central_needs_need_line_sources')
-    .select('import_session_id, target_entity')
-    .in('need_line_id', ids);
+    .select('need_line_id, source_record_id, designated_quantity, applied_override_id')
+    .in('need_line_id', ids)
+    .order('source_record_id', { ascending: true });
   if (error) fail(error);
   return (data ?? []).map((r) => ({
-    importSessionId: r.import_session_id as string,
-    targetEntity: r.target_entity as string,
+    needLineId: r.need_line_id as string,
+    sourceRecordId: r.source_record_id as string,
+    // Exact decimal as text — never through a JavaScript number.
+    designatedQuantity: String(r.designated_quantity),
+    appliedOverrideId: (r.applied_override_id as string | null) ?? null,
   }));
 }
 
@@ -515,12 +536,18 @@ export async function setNeedLine(input: {
   centralItemId: string;
   approvedQuantity: string;
   mappingReason: string;
+  /**
+   * MANDATORY. M212 gives the RPC parameter no default, so there is no shape of
+   * this call that persists a need line with no provenance — and deliberately no
+   * `?? []` here either: an omitted lineage must fail, never become an empty
+   * array on its way to the server.
+   */
+  quantitySources: NeedLineQuantitySource[];
   approvedUnit?: NeedLineUnit | null;
   unitConversionState?: UnitConversionState;
   targetWarehouseId?: string | null;
   sourceUnitText?: string | null;
-  sourceTargetEntities?: NeedLineSourceLink[];
-}): Promise<{ needLineId: string; sourceLinkCount: number }> {
+}): Promise<{ needLineId: string; sourceLinkCount: number; approvedQuantity: string }> {
   const state = input.unitConversionState ?? 'canonical';
   const { data, error } = await supabase.rpc('phoenix_central_needs_set_need_line', {
     p_plan_revision_id: input.planRevisionId,
@@ -528,21 +555,24 @@ export async function setNeedLine(input: {
     p_central_item_id: input.centralItemId,
     p_approved_quantity: input.approvedQuantity,
     p_mapping_reason: input.mappingReason,
+    p_quantity_sources: input.quantitySources.map((s) => ({
+      sourceRecordId: s.sourceRecordId,
+      // Strings, so PostgreSQL casts the exact decimal itself.
+      designatedQuantity: s.designatedQuantity,
+      appliedOverrideId: s.appliedOverrideId ?? null,
+    })),
     // A conversion-required line carries no canonical unit, by contract.
     p_approved_unit: state === 'conversion_required' ? null : input.approvedUnit ?? null,
     p_unit_conversion_state: state,
     p_target_warehouse_id: input.targetWarehouseId ?? null,
     p_source_unit_text: input.sourceUnitText ?? null,
-    p_source_target_entities: (input.sourceTargetEntities ?? []).map((l) => ({
-      importSessionId: l.importSessionId,
-      targetEntity: l.targetEntity,
-    })),
   });
   if (error) fail(error);
   const row = data as Record<string, unknown>;
   return {
     needLineId: row.need_line_id as string,
     sourceLinkCount: Number(row.source_link_count ?? 0),
+    approvedQuantity: String(row.approved_quantity ?? ''),
   };
 }
 

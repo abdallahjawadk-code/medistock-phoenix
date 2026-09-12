@@ -6,6 +6,7 @@
  * inside a RAISE message can never masquerade as the thing it forbids.
  */
 import { describe, it, expect } from 'vitest';
+import { execSync } from 'node:child_process';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { activeSql, executableSql } from './helpers/sql-source';
@@ -25,7 +26,7 @@ const IMPL = CODE.slice(0, VERIFY_AT);
 const VERIFY = CODE.slice(VERIFY_AT);
 
 const WRITE_RPC = 'phoenix_central_needs_set_need_line';
-const WRITE_SIG = 'uuid, uuid, uuid, numeric, text, text, text, uuid, text, jsonb';
+const WRITE_SIG = 'uuid, uuid, uuid, numeric, text, jsonb, text, text, uuid, text';
 
 describe('CN-2B/212 static — registration and file hygiene', () => {
   it('is registered at 212 and is now the ceiling', () => {
@@ -60,6 +61,24 @@ describe('CN-2B/212 static — registration and file hygiene', () => {
     }
   });
 
+  it('leaves M209, M210 and M211 byte-identical on disk', () => {
+    // The same mechanism migration 062's own guard uses: if any of the three
+    // reviewed Central Needs migrations had been edited rather than extended,
+    // it would appear in a tracked-file diff.
+    for (const f of [
+      '209_phoenix_central_needs_registry.sql',
+      '210_phoenix_central_needs_workflow_rpcs.sql',
+      '211_phoenix_central_needs_batch_and_disposition.sql',
+    ]) {
+      let diff = '';
+      try {
+        diff = execSync(`git diff -- supabase/migrations/${f}`,
+          { cwd: join(MIGRATIONS, '..', '..'), encoding: 'utf8' });
+      } catch { /* a git failure must not be read as "unmodified" */ }
+      expect(diff.trim(), f).toBe('');
+    }
+  });
+
   it('touches no stock, movement, suggestion or audit table definition', () => {
     for (const forbidden of [
       'ALTER TABLE public.warehouse_stock',
@@ -90,20 +109,71 @@ describe('CN-2B/212 static — the relational contract v7.3 section 8.1 requires
     expect(IMPL).toContain('organization_id             uuid NOT NULL REFERENCES public.organizations(id)');
   });
 
-  it('keeps target_warehouse_id optional and out of the accounting key', () => {
+  it('keeps target_warehouse_id optional, and makes the scope key NULLS NOT DISTINCT', () => {
     expect(IMPL).toMatch(/target_warehouse_id\s+uuid REFERENCES public\.warehouses\(id\)/);
     expect(IMPL).not.toMatch(/target_warehouse_id\s+uuid NOT NULL/);
-    expect(IMPL).toContain('UNIQUE (plan_revision_id, beneficiary_organization_id, central_item_id)');
-    const key = IMPL.slice(IMPL.indexOf('central_needs_need_lines_scope_key'));
-    expect(key.slice(0, 160)).not.toContain('target_warehouse_id');
+    // The warehouse IS part of the key, so an explicitly warehouse-targeted
+    // requirement can exist — and NULLS NOT DISTINCT is what stops two
+    // institution-level lines for one material from both being accepted.
+    expect(IMPL).toContain(
+      'UNIQUE NULLS NOT DISTINCT\n      (plan_revision_id, beneficiary_organization_id, central_item_id, target_warehouse_id)');
+    // A plain UNIQUE over the same columns would double count; it must not appear.
+    expect(IMPL).not.toContain(
+      'UNIQUE (plan_revision_id, beneficiary_organization_id, central_item_id, target_warehouse_id)');
+    expect(IMPL).not.toContain('UNIQUE (plan_revision_id, beneficiary_organization_id, central_item_id)');
   });
 
-  it('stores the approved quantity as exact numeric, never float, and never negative', () => {
-    expect(IMPL).toContain('approved_quantity           numeric(20,3) NOT NULL');
+  it('stores both quantities as UNCONSTRAINED numeric — a typmod would silently round', () => {
+    expect(IMPL).toContain('approved_quantity           numeric NOT NULL');
+    expect(IMPL).toContain('designated_quantity numeric NOT NULL');
+    // The rejected earlier design, named so a future edit cannot reintroduce it.
+    expect(IMPL).not.toContain('numeric(20,3)');
+    expect(IMPL).not.toMatch(/numeric\(\d+\s*,\s*\d+\)/);
     expect(IMPL).toContain('CHECK (approved_quantity >= 0)');
+    expect(IMPL).toContain('CHECK (designated_quantity >= 0)');
+    // >= 0 does not exclude NaN, and an unconstrained numeric admits Infinity.
+    expect(IMPL).toContain("CHECK (approved_quantity <> 'NaN'::numeric AND approved_quantity < 'Infinity'::numeric)");
+    expect(IMPL).toContain("CHECK (designated_quantity <> 'NaN'::numeric AND designated_quantity < 'Infinity'::numeric)");
     for (const bad of ['double precision', 'real', 'float']) {
       expect(EXEC, bad).not.toContain(bad);
     }
+  });
+
+  it('makes source-record provenance mandatory and sums it to the approved quantity', () => {
+    // The RPC parameter has NO default, so no call shape omits the provenance.
+    expect(IMPL).toMatch(/p_quantity_sources\s+jsonb,/);
+    expect(IMPL).not.toMatch(/p_quantity_sources\s+jsonb\s+DEFAULT/);
+    expect(IMPL).toContain("RAISE EXCEPTION 'need_line_requires_source_lineage'");
+    expect(IMPL).toContain("RAISE EXCEPTION 'need_line_quantity_provenance_mismatch'");
+    expect(IMPL).toContain('v_sum <> p_approved_quantity');
+    // And the same two invariants are re-asserted at COMMIT, on both tables, so
+    // they do not rest on one RPC remembering them.
+    expect(IMPL).toContain('CREATE CONSTRAINT TRIGGER assert_need_line_integrity');
+    expect(IMPL).toContain('DEFERRABLE INITIALLY DEFERRED');
+    expect(IMPL).toContain('AFTER INSERT OR UPDATE ON public.central_needs_need_lines');
+    expect(IMPL).toContain('AFTER INSERT OR UPDATE OR DELETE ON public.central_needs_need_line_sources');
+  });
+
+  it('forbids a source reviewed as one material from feeding a line for another', () => {
+    expect(IMPL).toContain("RAISE EXCEPTION 'source_link_material_mismatch'");
+    expect(IMPL).toContain("RAISE EXCEPTION 'need_line_material_mapping_conflict'");
+    // The canonical item comes from the row's existing mapping decision.
+    expect(IMPL).toContain('AND central_item_id   = p_central_item_id');
+    expect(IMPL).toContain('m.central_item_id IS DISTINCT FROM v_line.central_item_id');
+  });
+
+  it('keeps a triple either institution-level or warehouse-split, never both', () => {
+    expect(IMPL).toContain("RAISE EXCEPTION 'need_line_scope_mixes_institution_and_warehouse'");
+    expect(IMPL).toContain('a.target_warehouse_id IS NULL');
+    expect(IMPL).toContain('b.target_warehouse_id IS NOT NULL');
+  });
+
+  it('records the measured corpus evidence the cardinality was frozen from', () => {
+    // The key is a decision with evidence behind it, and the evidence is written
+    // down where the next reader of this migration will find it.
+    expect(SQL).toContain('b00208ca019c8735790c5401dee26d986234a12279d04e0a057f278bd99eaca2');
+    expect(SQL).toContain('57 workbooks, 71 sheets');
+    expect(SQL).toContain('0 sheets carry ANY warehouse/store/pharmacy-section column');
   });
 
   it('reuses the canonical central_items unit vocabulary and invents no second catalog', () => {
@@ -121,8 +191,13 @@ describe('CN-2B/212 static — the relational contract v7.3 section 8.1 requires
     expect(IMPL).toContain('CHECK (btrim(mapping_reason) <> \'\')');
   });
 
-  it('lets one source row feed at most one need line', () => {
-    expect(IMPL).toContain('UNIQUE (import_session_id, target_entity)');
+  it('lets one source RECORD feed at most one need line, and pins provenance at cell level', () => {
+    expect(IMPL).toContain('UNIQUE (source_record_id)');
+    // Record-level, because one row legitimately carries several quantity cells.
+    expect(IMPL).toContain('source_record_id    uuid NOT NULL');
+    expect(IMPL).toContain('REFERENCES public.central_needs_source_records (id, organization_id)');
+    // The row-level form of the same rule lives in the deferred assertion.
+    expect(IMPL).toContain("RAISE EXCEPTION 'source_row_split_across_need_lines'");
   });
 });
 
