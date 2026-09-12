@@ -432,7 +432,14 @@ function buildSourceRecords(
     for (const cell of sheet.cells) {
       if (cell.coordinate.row === headerRow) continue; // header row itself is not a data record
       if (cell.presence !== 'value') continue;
-      const fieldName = headerByCol.get(cell.coordinate.col) ?? `col:${cell.coordinate.col}`;
+      const headerText = headerByCol.get(cell.coordinate.col);
+      // A whitespace-only header carries no usable field name. Preserve every
+      // non-blank header byte-for-byte, but use the contract's stable fallback
+      // when the header is missing or becomes empty under the same btrim-style
+      // predicate enforced by M210.
+      const fieldName = headerText !== undefined && headerText.trim().length > 0
+        ? headerText
+        : `col:${cell.coordinate.col}`;
       const targetEntity = `sheet:${sheet.index}:row:${cell.coordinate.row}`;
       const provenance: SourceProvenance = {
         fileFingerprintSha256: input.sha256,
