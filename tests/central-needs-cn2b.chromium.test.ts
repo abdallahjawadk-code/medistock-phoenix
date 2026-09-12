@@ -143,7 +143,7 @@ describe('CN-2B · navigation authorization (real browser)', () => {
     try {
       // Rendered by projectNavigation -> isScreenAuthorized, the production predicate.
       await expect
-        .poll(() => page.locator('nav, aside').getByText('Central Needs', { exact: true }).count(), { timeout: 15000 })
+        .poll(() => page.locator('nav, aside').getByText('Annual Needs', { exact: true }).count(), { timeout: 15000 })
         .toBeGreaterThan(0);
     } finally {
       await context.close();
@@ -156,8 +156,8 @@ describe('CN-2B · navigation authorization (real browser)', () => {
     const { context, page } = await open({ scene: 'shell', persona: 'outlet_officer', org: null });
     try {
       await page.waitForTimeout(1500);
-      expect(await page.getByText('Central Needs', { exact: true }).count()).toBe(0);
-      expect(await page.getByText('الاحتياجات المركزية', { exact: true }).count()).toBe(0);
+      expect(await page.getByText('Annual Needs', { exact: true }).count()).toBe(0);
+      expect(await page.getByText('الاحتياج السنوي', { exact: true }).count()).toBe(0);
     } finally {
       await context.close();
     }
@@ -497,7 +497,7 @@ describe('CN-2B · Arabic RTL, English LTR, mobile and keyboard', () => {
       await expect.poll(() => page.locator('.cn2b').count(), { timeout: 20000 }).toBeGreaterThan(0);
       const direction = await page.locator('.cn2b').first().evaluate(el => getComputedStyle(el).direction);
       expect(direction).toBe('rtl');
-      expect(await page.getByText('الاحتياجات المركزية').count()).toBeGreaterThan(0);
+      expect(await page.getByText('الاحتياج السنوي').count()).toBeGreaterThan(0);
       expect(await page.getByText('موثّق رسميًا').count()).toBeGreaterThan(0);
     } finally {
       await context.close();
@@ -510,7 +510,7 @@ describe('CN-2B · Arabic RTL, English LTR, mobile and keyboard', () => {
       await expect.poll(() => page.locator('.cn2b').count(), { timeout: 20000 }).toBeGreaterThan(0);
       const direction = await page.locator('.cn2b').first().evaluate(el => getComputedStyle(el).direction);
       expect(direction).toBe('ltr');
-      expect(await page.getByText('Central Needs').first().isVisible()).toBe(true);
+      expect(await page.getByText('Annual Needs').first().isVisible()).toBe(true);
     } finally {
       await context.close();
     }

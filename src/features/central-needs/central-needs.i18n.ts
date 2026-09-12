@@ -11,24 +11,25 @@
  * -------------------
  * The product-facing name of this module is "Annual Needs" / "الاحتياج السنوي".
  * The technical identifiers remain `central_needs.*`, and the already-applied
- * M209 permission-catalog labels remain historical database evidence.  We
- * therefore override display copy only, at the feature i18n boundary, without
- * renaming permissions, tables, RPCs, migrations, or stored evidence.
+ * M209 permission-catalog labels remain historical database evidence. So the
+ * rename changes translation VALUES only — never a key, a permission, a table,
+ * an RPC, a migration, or stored evidence.
+ *
+ * Those values live where every other string lives: `src/shared/i18n/strings.ts`.
+ * They are deliberately NOT patched over `T` from here.
+ *
+ * An earlier revision of this file did exactly that — a module-scope assign over
+ * the shared dictionary — and it made the displayed name depend on whether
+ * anything had imported this module yet. That is not a theoretical concern: CI
+ * proved it.
+ * On the same commit, the Arabic Central Needs screen rendered the NEW name
+ * (this module was in its import graph) while the English sidebar still
+ * rendered the OLD one (it was not), so one chromium assertion failed and its
+ * sibling passed. A canonical value in the dictionary has no import order to
+ * get wrong.
  */
-import { T, t } from '@/shared/i18n/strings';
+import { t } from '@/shared/i18n/strings';
 import type { Lang } from '@/shared/i18n/strings';
-
-const ANNUAL_NEEDS_DISPLAY_LABELS = {
-  cn2b_nav: { ar: 'الاحتياج السنوي', en: 'Annual Needs' },
-  cn2b_title: { ar: 'الاحتياج السنوي', en: 'Annual Needs' },
-  permmod_central_needs: { ar: 'الاحتياج السنوي', en: 'Annual Needs' },
-  perm_central_needs_view: { ar: 'عرض خطط الاحتياج السنوي', en: 'View Annual Needs plans' },
-  perm_central_needs_import: { ar: 'استيراد بيانات الاحتياج السنوي', en: 'Import Annual Needs data' },
-  perm_central_needs_edit: { ar: 'تعديل بيانات الاحتياج السنوي', en: 'Edit Annual Needs data' },
-  perm_central_needs_approve: { ar: 'اعتماد مراجعة خطة الاحتياج السنوي', en: 'Approve Annual Needs plan revision' },
-} satisfies Partial<typeof T>;
-
-Object.assign(T, ANNUAL_NEEDS_DISPLAY_LABELS);
 
 export function centralNeedsErrorText(code: string, lang: Lang): string {
   const key = `cn2b_err_${code}`;

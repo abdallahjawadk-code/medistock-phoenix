@@ -1482,7 +1482,7 @@ export const T: Dict = {
   permmod_status_contacts:          { ar: 'جهات الاتصال',        en: 'Status Contacts' },
   permmod_deletion_wizard:          { ar: 'معالج الحذف',         en: 'Deletion Wizard' },
   /* CN-2B: same wording as the cn2b_nav entry, so the matrix header and the sidebar agree. */
-  permmod_central_needs:            { ar: 'الاحتياجات المركزية', en: 'Central Needs' },
+  permmod_central_needs:            { ar: 'الاحتياج السنوي', en: 'Annual Needs' },
 
   /* Permission labels */
   perm_dashboard_view:                    { ar: 'عرض لوحة التحكم',        en: 'View dashboard' },
@@ -1531,11 +1531,15 @@ export const T: Dict = {
   perm_deletion_wizard_clear_port_items:  { ar: 'حذف مواد المنفذ',       en: 'Clear port items' },
   perm_deletion_wizard_archive_port:      { ar: 'أرشفة المنفذ',          en: 'Archive port' },
   perm_deletion_wizard_archive_organization: { ar: 'أرشفة المؤسسة',     en: 'Archive institution' },
-  /* CN-2B: labels mirror permission_keys.label_ar/label_en (migration 209) verbatim. */
-  perm_central_needs_view:                { ar: 'عرض خطط الاحتياجات المركزية',            en: 'View Central Needs plans' },
-  perm_central_needs_import:              { ar: 'استيراد بيانات الاحتياجات المركزية',      en: 'Import Central Needs data' },
-  perm_central_needs_edit:                { ar: 'تعديل بيانات الاحتياجات المركزية',        en: 'Edit Central Needs data' },
-  perm_central_needs_approve:             { ar: 'اعتماد مراجعة خطة الاحتياجات المركزية',  en: 'Approve Central Needs plan revision' },
+  /* CN-2B: display copy is "Annual Needs" / "الاحتياج السنوي". It deliberately no
+     longer mirrors permission_keys.label_ar/label_en (migration 209) verbatim:
+     the KEYS are shared, but M209's seeded rows are applied, immutable evidence
+     and keep their original wording. Both sides are pinned in
+     src/shared/lib/__tests__/central-needs-permission-catalog.test.ts. */
+  perm_central_needs_view:                { ar: 'عرض خطط الاحتياج السنوي',            en: 'View Annual Needs plans' },
+  perm_central_needs_import:              { ar: 'استيراد بيانات الاحتياج السنوي',      en: 'Import Annual Needs data' },
+  perm_central_needs_edit:                { ar: 'تعديل بيانات الاحتياج السنوي',        en: 'Edit Annual Needs data' },
+  perm_central_needs_approve:             { ar: 'اعتماد مراجعة خطة الاحتياج السنوي',  en: 'Approve Annual Needs plan revision' },
 
   /* ── Deletion Wizard ── */
   dw_title:           { ar: 'معالج الحذف الآمن',                 en: 'Safe Deletion Wizard' },
@@ -1776,8 +1780,8 @@ export const T: Dict = {
      Node 22 reproduced the browser preview and the database recomputed an
      agreeing digest. Everything a reviewer reads about completeness comes
      from the server's own predicate, never from a client-side opinion. */
-  cn2b_nav: { ar: 'الاحتياجات المركزية', en: 'Central Needs' },
-  cn2b_title: { ar: 'الاحتياجات المركزية', en: 'Central Needs' },
+  cn2b_nav: { ar: 'الاحتياج السنوي', en: 'Annual Needs' },
+  cn2b_title: { ar: 'الاحتياج السنوي', en: 'Annual Needs' },
   cn2b_subtitle: { ar: 'استيراد ومراجعة خطط الاحتياجات السنوية مع حفظ الأدلة الأصلية.', en: 'Import and review annual needs plans with original evidence preserved.' },
   cn2b_no_organization: { ar: 'لا توجد مؤسسة مرتبطة بحسابك.', en: 'No organization is linked to your account.' },
   cn2b_state_provisional: { ar: 'مبدئي', en: 'PROVISIONAL' },
