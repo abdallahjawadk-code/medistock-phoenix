@@ -21,6 +21,16 @@ function buildSyntheticWorkbook(): Uint8Array {
   return new Uint8Array(XLSX.write(wb, { type: 'array', bookType: 'xlsx' }));
 }
 
+function buildWhitespaceHeaderWorkbook(): Uint8Array {
+  const ws = XLSX.utils.aoa_to_sheet([
+    ['Item', ' ', '  Qty  '],
+    ['Paracetamol', 10, 20],
+  ]);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
+  return new Uint8Array(XLSX.write(wb, { type: 'array', bookType: 'xlsx' }));
+}
+
 describe('CN-2A parser core — determinism, provenance, and identity', () => {
   it('stamps the pinned SheetJS/contract identity', async () => {
     const bytes = buildSyntheticWorkbook();
@@ -81,6 +91,22 @@ describe('CN-2A parser core — determinism, provenance, and identity', () => {
     expect(record?.fieldName).toBe('Qty');
     expect(record?.sourceProvenance.fileFingerprintSha256).toBe(result.input.sha256);
     expect(record?.sourceProvenance.extractedAt).toBe('2026-01-01T00:00:00.000Z');
+  });
+
+  it('uses the stable col:n fallback for whitespace-only headers without trimming real header text', async () => {
+    const bytes = buildWhitespaceHeaderWorkbook();
+    const result = await parseWorkbookBytes(bytes, 'whitespace-header.xlsx', {
+      runtime: 'node',
+      now: () => '2026-01-01T00:00:00.000Z',
+    });
+    expect(result.outcome).toBe('accepted');
+
+    const blankHeaderRecord = result.sourceRecords.find((r) => r.sourceProvenance.coordinate.a1 === 'B2');
+    const paddedHeaderRecord = result.sourceRecords.find((r) => r.sourceProvenance.coordinate.a1 === 'C2');
+
+    expect(blankHeaderRecord?.fieldName).toBe('col:1');
+    expect(paddedHeaderRecord?.fieldName).toBe('  Qty  ');
+    expect(result.sourceRecords.every((r) => r.fieldName.trim().length > 0)).toBe(true);
   });
 
   it('produces byte-identical JSON across two parses of the same bytes (determinism)', async () => {
