@@ -237,11 +237,36 @@ describe('D. bilingual labels exist and mirror permission_keys.label_en / label_
     }
   });
 
-  it('labels are byte-identical to migration 209 label_en / label_ar', () => {
+  /**
+   * DISPLAY COPY INTENTIONALLY DIVERGES FROM MIGRATION 209 — and both sides are
+   * pinned here so the divergence can only ever be deliberate.
+   *
+   * This assertion used to require `T[labelKey]` to be byte-identical to the
+   * label migration 209 seeded. The product name is now "Annual Needs" /
+   * "الاحتياج السنوي", while M209's seeded rows are APPLIED, IMMUTABLE database
+   * evidence that is never rewritten. So equality is no longer the invariant:
+   * the invariant is that the KEY is shared and each SIDE holds its own known
+   * value. Replacing the equality with nothing would have left the renamed copy
+   * unguarded, so both sides are asserted explicitly instead.
+   */
+  it('pins UI display copy and migration 209 evidence separately, sharing one key', () => {
+    const EXPECTED_DISPLAY: Record<string, { en: string; ar: string }> = {
+      'central_needs.view':    { en: 'View Annual Needs plans',           ar: 'عرض خطط الاحتياج السنوي' },
+      'central_needs.import':  { en: 'Import Annual Needs data',          ar: 'استيراد بيانات الاحتياج السنوي' },
+      'central_needs.edit':    { en: 'Edit Annual Needs data',            ar: 'تعديل بيانات الاحتياج السنوي' },
+      'central_needs.approve': { en: 'Approve Annual Needs plan revision', ar: 'اعتماد مراجعة خطة الاحتياج السنوي' },
+    };
     for (const seeded of SEEDED) {
       const def = PERMISSION_KEYS.find(p => p.key === seeded.key)!;
-      expect(T[def.labelKey].en, `${seeded.key} en`).toBe(seeded.labelEn);
-      expect(T[def.labelKey].ar, `${seeded.key} ar`).toBe(seeded.labelAr);
+      // The permission key itself is untouched by the rename — the only thing
+      // the database, RLS and every RPC actually use.
+      expect(def.key, 'technical key').toBe(seeded.key);
+      // UI side: the approved Annual Needs copy.
+      expect(T[def.labelKey].en, `${seeded.key} display en`).toBe(EXPECTED_DISPLAY[seeded.key].en);
+      expect(T[def.labelKey].ar, `${seeded.key} display ar`).toBe(EXPECTED_DISPLAY[seeded.key].ar);
+      // Database side: M209's own historical wording, unchanged and unrewritten.
+      expect(seeded.labelEn, `${seeded.key} seeded en`).toMatch(/Central Needs/);
+      expect(seeded.labelAr, `${seeded.key} seeded ar`).toMatch(/الاحتياجات المركزية/);
     }
   });
 
