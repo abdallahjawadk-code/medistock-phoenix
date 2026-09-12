@@ -132,16 +132,37 @@ function extractCell(ws: XLSX.WorkSheet, row: number, col: number): CellEvidence
   const hasComment = Array.isArray(cell.c) && cell.c.length > 0;
   const commentText = hasComment ? cell.c!.map((c) => c.t ?? '').join('\n') : undefined;
 
+  // ABSENT OPTIONAL FIELDS ARE OMITTED, NEVER SET TO `undefined`.
+  //
+  // Every optional property below is added only when it has a value. Writing
+  // `formula: cell.f` unconditionally would instead create an OWN PROPERTY
+  // whose value is `undefined`, and that is not a cosmetic difference:
+  //
+  //   * `JSON.stringify` DROPS such a key. The browser preview reaches the
+  //     trusted server as JSON (hook -> signed staging upload -> JSON.parse),
+  //     so on that side the key does not exist.
+  //   * The Node authoritative result is compared IN MEMORY, where the key
+  //     does exist.
+  //   * `api/_lib/parity.ts` deliberately distinguishes an absent key from a
+  //     key holding `undefined` — by design, and that strictness is kept.
+  //
+  // The result was that `finalize-import`'s parity gate could never pass for
+  // any workbook containing a single cell: it failed on the first one with
+  // `extra_key` at `cells[0].commentText`. Earlier parity verifications
+  // compared JSON against JSON, which is symmetric and therefore blind to it.
+  // The fix belongs here, at construction time, because the contract's own
+  // determinism clause is about the VALUES this parser reports — and a field
+  // that has no value is one this parser should not report at all.
   if (cell.t === 'z') {
     const presence: CellPresence = 'blank';
     return {
       coordinate,
       presence,
       rawValue: null,
-      formula: cell.f,
+      ...(cell.f !== undefined ? { formula: cell.f } : {}),
       isFormula,
       hasComment,
-      commentText,
+      ...(commentText !== undefined ? { commentText } : {}),
     };
   }
 
@@ -176,17 +197,21 @@ function extractCell(ws: XLSX.WorkSheet, row: number, col: number): CellEvidence
       rawValue = cell.v === undefined || cell.v === null ? null : String(cell.v);
   }
 
+  // Same omission rule as the blank branch above. Each conditional spread sits
+  // at the position its key already occupied, so a present value serializes in
+  // exactly the order it did before — the only change to the JSON is that keys
+  // which never had a value no longer appear.
   return {
     coordinate,
     presence: 'value',
     valueType,
     rawValue,
-    errorCode,
-    formattedText: cell.w,
-    formula: cell.f,
+    ...(errorCode !== undefined ? { errorCode } : {}),
+    ...(cell.w !== undefined ? { formattedText: cell.w } : {}),
+    ...(cell.f !== undefined ? { formula: cell.f } : {}),
     isFormula,
     hasComment,
-    commentText,
+    ...(commentText !== undefined ? { commentText } : {}),
   };
 }
 
@@ -413,7 +438,8 @@ function buildSourceRecords(
         fileFingerprintSha256: input.sha256,
         originalFilename: input.originalFilename,
         parserVersion,
-        archiveEntryPath: input.archiveEntryPath,
+        // Omitted, not `undefined`, for a standalone workbook — see extractCell.
+        ...(input.archiveEntryPath !== undefined ? { archiveEntryPath: input.archiveEntryPath } : {}),
         sheetIndex: sheet.index,
         sheetName: sheet.name,
         sheetHidden: sheet.hidden,
@@ -465,7 +491,16 @@ export async function parseWorkbookBytes(
   const limits = options.limits ?? DEFAULT_PARSER_LIMITS;
   const now = options.now ?? (() => new Date().toISOString());
   const sha256 = await sha256Hex(bytes);
-  const input: InputFingerprint = { originalFilename, sha256, byteSize: bytes.byteLength, archiveEntryPath };
+  // `archiveEntryPath` is omitted entirely for a standalone (non-archive)
+  // input rather than set to `undefined` — see extractCell's note. Without
+  // this, `containerKind: 'file'` fails parity on `input.archiveEntryPath`
+  // exactly as an archive failed on its first cell.
+  const input: InputFingerprint = {
+    originalFilename,
+    sha256,
+    byteSize: bytes.byteLength,
+    ...(archiveEntryPath !== undefined ? { archiveEntryPath } : {}),
+  };
 
   // Raw-input ceiling FIRST, before magic sniffing and before SheetJS is
   // handed anything. The row/column/cell ceilings enforced later are
