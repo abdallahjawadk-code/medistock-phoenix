@@ -34,6 +34,7 @@ import { PhoenixErrorState } from '@/shared/ui/PhoenixErrorState';
 import { useCentralNeedsPreview, detectContainerKind } from './useCentralNeedsPreview';
 import { centralNeedsErrorText } from './central-needs.i18n';
 import { CentralNeedsDispositionTable } from './CentralNeedsDispositionTable';
+import { CentralNeedsNeedLinePanel } from './CentralNeedsNeedLinePanel';
 import {
   CentralNeedsError,
   abandonImportSession,
@@ -41,6 +42,8 @@ import {
   fetchReviewReadiness,
   finalizeImport,
   listDispositions,
+  listNeedLines,
+  listNeedLineSources,
   listImportBatches,
   listImportSessions,
   listOverrides,
@@ -55,6 +58,8 @@ import {
   submitRevision,
   uploadToStaging,
   type FieldOverride,
+  type NeedLine,
+  type NeedLineSourceLink,
   type ImportBatch,
   type ImportSession,
   type PlanRevision,
@@ -131,6 +136,8 @@ export function CentralNeedsScreen() {
   const [records, setRecords] = useState<SourceRecord[]>([]);
   const [dispositions, setDispositions] = useState<RecordDisposition[]>([]);
   const [overrides, setOverrides] = useState<FieldOverride[]>([]);
+  const [needLines, setNeedLines] = useState<NeedLine[]>([]);
+  const [claimedSources, setClaimedSources] = useState<NeedLineSourceLink[]>([]);
   const [readiness, setReadiness] = useState<ReviewReadiness | null>(null);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [busy, setBusy] = useState<Busy>(null);
@@ -166,16 +173,21 @@ export function CentralNeedsScreen() {
   }, [organizationId]);
 
   const reloadRevision = useCallback(async (id: string) => {
-    const [nextSessions, nextBatches, nextOverrides, nextReadiness] = await Promise.all([
-      listImportSessions(id),
-      listImportBatches(id),
-      listOverrides(id),
-      fetchReviewReadiness(id),
-    ]);
+    const [nextSessions, nextBatches, nextOverrides, nextReadiness, nextNeedLines, nextClaimed] =
+      await Promise.all([
+        listImportSessions(id),
+        listImportBatches(id),
+        listOverrides(id),
+        fetchReviewReadiness(id),
+        listNeedLines(id),
+        listNeedLineSources(id),
+      ]);
     setSessions(nextSessions);
     setBatches(nextBatches);
     setOverrides(nextOverrides);
     setReadiness(nextReadiness);
+    setNeedLines(nextNeedLines);
+    setClaimedSources(nextClaimed);
     const completed = nextSessions.filter((s) => s.status === 'completed');
     setActiveSessionId((current) => (current && completed.some((s) => s.id === current) ? current : completed[0]?.id ?? null));
   }, []);
@@ -590,6 +602,20 @@ export function CentralNeedsScreen() {
             organizationId={organizationId}
             canEdit={canEdit && isDraft}
             onChanged={() => void onDispositionsChanged()}
+          />
+        </Panel>
+      )}
+
+      {revision && (
+        <Panel titleKey="cn2b_panel_need_lines" icon="editor">
+          <CentralNeedsNeedLinePanel
+            lang={lang}
+            planRevisionId={revision.id}
+            editable={canEdit && isDraft}
+            dispositions={dispositions}
+            needLines={needLines}
+            claimedSources={claimedSources}
+            onSaved={() => void reloadRevision(revision.id)}
           />
         </Panel>
       )}

@@ -279,6 +279,7 @@ run('E7-2 · Stage-E application wiring (dynamic)',()=>{
       // dispatch SQL at all — so the "Stage E still ends at 171" assertion
       // above is unaffected. Listed here so this guard stays exhaustive.
       '211_phoenix_central_needs_batch_and_disposition.sql',
+      '212_phoenix_central_needs_need_lines.sql',
     ];
     it('Stage E still ends at 171 — E7-2 introduced no new SQL',()=>{
       const files=readdirSync(join(__dirname,'..')).filter(f=>/^\d{3}_.*\.sql$/.test(f));

@@ -109,6 +109,45 @@ export interface FieldOverride {
   createdAt: string;
 }
 
+/** The canonical unit vocabulary, mirroring `central_items.unit`'s own CHECK. */
+export const NEED_LINE_UNITS = [
+  'box', 'vial', 'ampoule', 'tablet', 'bottle', 'tube', 'sachet', 'other',
+] as const;
+export type NeedLineUnit = (typeof NEED_LINE_UNITS)[number];
+
+/**
+ * Set when the source unit could not be safely expressed in the canonical
+ * vocabulary. The conversion is never guessed, and such a line blocks approval
+ * until a human resolves it (M212).
+ */
+export type UnitConversionState = 'canonical' | 'conversion_required';
+
+/**
+ * The operational Annual Needs projection (M212). One approved requirement per
+ * (plan revision, beneficiary organization, central item). `organizationId` is
+ * the OWNING central organization — the beneficiary is its own dimension.
+ */
+export interface NeedLine {
+  id: string;
+  planRevisionId: string;
+  organizationId: string;
+  beneficiaryOrganizationId: string;
+  targetWarehouseId: string | null;
+  centralItemId: string;
+  /** Exact decimal, carried as text so no precision is lost in JavaScript. */
+  approvedQuantity: string;
+  approvedUnit: NeedLineUnit | null;
+  unitConversionState: UnitConversionState;
+  sourceUnitText: string | null;
+  mappingReason: string;
+  updatedAt: string;
+}
+
+export interface NeedLineSourceLink {
+  importSessionId: string;
+  targetEntity: string;
+}
+
 export interface ReviewBlocker {
   blocker: string;
   detail: string | null;
@@ -346,6 +385,68 @@ export async function listOverrides(planRevisionId: string): Promise<FieldOverri
   }));
 }
 
+/**
+ * The operational need lines of one revision, plus which imported rows each one
+ * consolidates. RLS governs visibility on the OWNING organization, so a caller
+ * without `central_needs.view` sees nothing rather than a filtered subset.
+ */
+export async function listNeedLines(planRevisionId: string): Promise<NeedLine[]> {
+  const { data, error } = await supabase
+    .from('central_needs_need_lines')
+    .select('id, plan_revision_id, organization_id, beneficiary_organization_id, target_warehouse_id, central_item_id, approved_quantity, approved_unit, unit_conversion_state, source_unit_text, mapping_reason, updated_at')
+    .eq('plan_revision_id', planRevisionId)
+    // `id` breaks ties so the listed order is total, not merely chronological.
+    .order('updated_at', { ascending: true })
+    .order('id', { ascending: true });
+  if (error) fail(error);
+  return (data ?? []).map((r) => ({
+    id: r.id as string,
+    planRevisionId: r.plan_revision_id as string,
+    organizationId: r.organization_id as string,
+    beneficiaryOrganizationId: r.beneficiary_organization_id as string,
+    targetWarehouseId: (r.target_warehouse_id as string | null) ?? null,
+    centralItemId: r.central_item_id as string,
+    // numeric(20,3) arrives as text from PostgREST; keep it as text so an exact
+    // decimal is never silently coerced through a JavaScript float.
+    approvedQuantity: String(r.approved_quantity),
+    approvedUnit: (r.approved_unit as NeedLineUnit | null) ?? null,
+    unitConversionState: r.unit_conversion_state as UnitConversionState,
+    sourceUnitText: (r.source_unit_text as string | null) ?? null,
+    mappingReason: r.mapping_reason as string,
+    updatedAt: r.updated_at as string,
+  }));
+}
+
+/**
+ * Two plain reads rather than one embedded filter: the `need_line_id` set is
+ * resolved first, then its links. A PostgREST embedded filter would express the
+ * same intent in one round trip, but this form is obvious, and RLS governs both
+ * halves identically — a caller who cannot see the lines gets no links either.
+ */
+export async function listNeedLineSources(
+  planRevisionId: string,
+): Promise<NeedLineSourceLink[]> {
+  const lines = await supabase
+    .from('central_needs_need_lines')
+    .select('id')
+    .eq('plan_revision_id', planRevisionId);
+  if (lines.error) fail(lines.error);
+  const ids = (lines.data ?? []).map((r) => r.id as string);
+  if (ids.length === 0) return [];
+
+  // M212's UNIQUE (import_session_id, target_entity) means a pair identifies
+  // the claim by itself, so the owning line's id is not part of the answer.
+  const { data, error } = await supabase
+    .from('central_needs_need_line_sources')
+    .select('import_session_id, target_entity')
+    .in('need_line_id', ids);
+  if (error) fail(error);
+  return (data ?? []).map((r) => ({
+    importSessionId: r.import_session_id as string,
+    targetEntity: r.target_entity as string,
+  }));
+}
+
 // ---------------------------------------------------------------------------
 // Canonical RPC writes — every one of these is a CN-1B/CN-2B RPC.
 // ---------------------------------------------------------------------------
@@ -395,6 +496,54 @@ export async function setRecordDisposition(input: {
     p_decision_reason: input.decision === 'not_applicable' ? input.decisionReason ?? null : null,
   });
   if (error) fail(error);
+}
+
+/**
+ * Persist one operational need line (M212).
+ *
+ * Everything here is re-validated server-side — beneficiary eligibility,
+ * warehouse ownership, unit vocabulary, conversion state, quantity sign,
+ * revision editability and source lineage. The UI's own checks exist to give a
+ * fast answer, never to be the authority.
+ *
+ * `approvedQuantity` is passed as a string so an exact decimal reaches
+ * PostgreSQL's `numeric` without a JavaScript float in the middle.
+ */
+export async function setNeedLine(input: {
+  planRevisionId: string;
+  beneficiaryOrganizationId: string;
+  centralItemId: string;
+  approvedQuantity: string;
+  mappingReason: string;
+  approvedUnit?: NeedLineUnit | null;
+  unitConversionState?: UnitConversionState;
+  targetWarehouseId?: string | null;
+  sourceUnitText?: string | null;
+  sourceTargetEntities?: NeedLineSourceLink[];
+}): Promise<{ needLineId: string; sourceLinkCount: number }> {
+  const state = input.unitConversionState ?? 'canonical';
+  const { data, error } = await supabase.rpc('phoenix_central_needs_set_need_line', {
+    p_plan_revision_id: input.planRevisionId,
+    p_beneficiary_organization_id: input.beneficiaryOrganizationId,
+    p_central_item_id: input.centralItemId,
+    p_approved_quantity: input.approvedQuantity,
+    p_mapping_reason: input.mappingReason,
+    // A conversion-required line carries no canonical unit, by contract.
+    p_approved_unit: state === 'conversion_required' ? null : input.approvedUnit ?? null,
+    p_unit_conversion_state: state,
+    p_target_warehouse_id: input.targetWarehouseId ?? null,
+    p_source_unit_text: input.sourceUnitText ?? null,
+    p_source_target_entities: (input.sourceTargetEntities ?? []).map((l) => ({
+      importSessionId: l.importSessionId,
+      targetEntity: l.targetEntity,
+    })),
+  });
+  if (error) fail(error);
+  const row = data as Record<string, unknown>;
+  return {
+    needLineId: row.need_line_id as string,
+    sourceLinkCount: Number(row.source_link_count ?? 0),
+  };
 }
 
 export async function recordFieldOverride(input: {

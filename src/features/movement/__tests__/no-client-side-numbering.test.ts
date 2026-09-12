@@ -203,12 +203,13 @@ describe('no client-side document-number sequence exists',()=>{
     // number of any kind. `entry_ordinal` and `record_ordinal` are POSITIONS
     // inside one parsed container, supplied by the trusted replay's own array
     // order (WITH ORDINALITY), never allocated by a client and never an
-    // authoritative document/reference number. Boundary moves to 211 so the
+    // authoritative document/reference number. Boundary moves to 212 so the
     // next unknown migration still fails closed.
-    const beyond=migrations.filter(f=>/^(1[89]\d|[2-9]\d\d)_/.test(f)&&!/^(179|180|181|182|183|184|185|186|187|188|189|190|191|192|193|194|195|196|197|198|199|200|201|202|203|204|205|206|207|208|209|210|211)_/.test(f));
+    const beyond=migrations.filter(f=>/^(1[89]\d|[2-9]\d\d)_/.test(f)&&!/^(179|180|181|182|183|184|185|186|187|188|189|190|191|192|193|194|195|196|197|198|199|200|201|202|203|204|205|206|207|208|209|210|211|212)_/.test(f));
     expect(beyond).toEqual([]);
     for(const f of [
       '211_phoenix_central_needs_batch_and_disposition.sql',
+      '212_phoenix_central_needs_need_lines.sql',
       '200_phoenix_demo_purge_auth_boundary_correction.sql',
       '199_phoenix_command_center_read_contract.sql',
       '198_phoenix_secdef_search_path_convergence.sql',

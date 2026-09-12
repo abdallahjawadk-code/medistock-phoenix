@@ -1795,6 +1795,7 @@ export const T: Dict = {
   cn2b_panel_sessions: { ar: 'جلسات الاستيراد', en: 'Import sessions' },
   cn2b_panel_review: { ar: 'مراجعة المصدر والقرارات', en: 'Source review and decisions' },
   cn2b_panel_readiness: { ar: 'اكتمال المراجعة', en: 'Review completeness' },
+  cn2b_panel_need_lines: { ar: 'سطور الاحتياج التشغيلية', en: 'Operational need lines' },
   cn2b_revision: { ar: 'المراجعة', en: 'Revision' },
   cn2b_no_revisions: { ar: 'لا توجد مراجعات', en: 'No revisions' },
   cn2b_revstatus_draft: { ar: 'مسودة', en: 'Draft' },
@@ -1872,6 +1873,49 @@ export const T: Dict = {
   cn2b_blocker_completed_session_not_in_trusted_batch: { ar: 'جلسة مكتملة خارج أي دفعة موثّقة', en: 'A completed session belongs to no trusted batch' },
   cn2b_blocker_incomplete_trusted_batch: { ar: 'دفعة موثّقة ناقصة', en: 'A trusted batch is incomplete' },
   cn2b_blocker_target_entity_without_disposition: { ar: 'سطر بلا قرار صريح', en: 'A row has no explicit decision' },
+  /* CN-2B conformance (M212): the operational need-line blockers. */
+  cn2b_blocker_mapped_target_entity_without_need_line: { ar: 'سطر مرتبط بمادة بلا سطر احتياج تشغيلي', en: 'A mapped row has no operational need line' },
+  cn2b_blocker_need_line_unit_conversion_required: { ar: 'سطر احتياج ينتظر تحويل الوحدة', en: 'A need line awaits unit conversion' },
+  cn2b_blocker_need_line_warehouse_org_mismatch: { ar: 'مخزن الهدف لا يتبع المؤسسة المنتفعة', en: 'Target warehouse does not belong to the beneficiary' },
+  cn2b_blocker_need_line_beneficiary_ineligible: { ar: 'المؤسسة المنتفعة غير مؤهلة', en: 'Beneficiary organization is not eligible' },
+
+  /* ── CN-2B conformance (M212) — operational need-line mapping ──────────────
+     The official annual requirement becomes relational here: beneficiary
+     institution, canonical material, canonical unit and approved quantity.
+     Mapping is always a human act; nothing is inferred from workbook shape. */
+  cn2b_nl_title: { ar: 'سطور الاحتياج التشغيلية', en: 'Operational need lines' },
+  cn2b_nl_subtitle: { ar: 'اربط كل سطر معتمد بالمؤسسة المنتفعة والمادة والوحدة والكمية المعتمدة. لا يُستنتج أي ربط تلقائيًا.', en: 'Link each approved row to its beneficiary institution, material, unit and approved quantity. No mapping is ever inferred.' },
+  cn2b_nl_beneficiary: { ar: 'المؤسسة المنتفعة', en: 'Beneficiary institution' },
+  cn2b_nl_beneficiary_hint: { ar: 'المؤسسة التي يتبعها هذا الاحتياج — وليست المؤسسة المالكة للخطة.', en: 'The institution this requirement belongs to — not the organization that owns the plan.' },
+  cn2b_nl_item: { ar: 'المادة المعتمدة', en: 'Canonical material' },
+  cn2b_nl_item_search: { ar: 'بحث عن المادة', en: 'Search material' },
+  cn2b_nl_quantity: { ar: 'الكمية السنوية المعتمدة', en: 'Approved annual quantity' },
+  cn2b_nl_quantity_hint: { ar: 'الصفر قيمة صحيحة. الفراغ ليس صفرًا.', en: 'Zero is a valid value. Blank is not zero.' },
+  cn2b_nl_unit: { ar: 'الوحدة المعتمدة', en: 'Canonical unit' },
+  cn2b_nl_unit_conversion_required: { ar: 'الوحدة تحتاج تحويلًا — لا تُخمَّن', en: 'Unit needs conversion — never guessed' },
+  cn2b_nl_source_unit: { ar: 'وحدة المصدر (دليل فقط)', en: 'Source unit (evidence only)' },
+  cn2b_nl_warehouse: { ar: 'مخزن الهدف (اختياري)', en: 'Target warehouse (optional)' },
+  cn2b_nl_warehouse_hint: { ar: 'اتركه فارغًا إذا كان الاحتياج على مستوى المؤسسة.', en: 'Leave empty when the requirement is institution-level.' },
+  cn2b_nl_warehouse_none: { ar: 'على مستوى المؤسسة', en: 'Institution-level' },
+  /* Deliberately NOT "...reason (required)": Playwright's getByLabel is a
+     case-insensitive substring match, and the field-override editor already owns
+     the label "Reason (required)". A colliding label would make that existing
+     locator ambiguous, so this control is named distinctly instead. */
+  cn2b_nl_reason: { ar: 'مبرر الربط (إلزامي)', en: 'Mapping justification (required)' },
+  cn2b_nl_reason_required: { ar: 'مبرر الربط إلزامي.', en: 'A mapping justification is required.' },
+  cn2b_nl_save: { ar: 'حفظ سطر الاحتياج', en: 'Save need line' },
+  cn2b_nl_saved: { ar: 'تم حفظ سطر الاحتياج.', en: 'Need line saved.' },
+  cn2b_nl_selected_rows: { ar: 'الأسطر المحدّدة', en: 'Selected rows' },
+  cn2b_nl_bulk_title: { ar: 'تطبيق جماعي', en: 'Bulk apply' },
+  cn2b_nl_bulk_preview: { ar: 'معاينة قبل التطبيق', en: 'Preview before applying' },
+  cn2b_nl_bulk_affected: { ar: 'عدد الأسطر المتأثرة', en: 'Rows affected' },
+  cn2b_nl_bulk_confirm: { ar: 'تأكيد التطبيق', en: 'Confirm apply' },
+  cn2b_nl_bulk_cancel: { ar: 'إلغاء', en: 'Cancel' },
+  cn2b_nl_bulk_no_selection: { ar: 'لم يتم تحديد أي سطر.', en: 'No rows selected.' },
+  cn2b_nl_complete: { ar: 'الربط مكتمل', en: 'Mapping complete' },
+  cn2b_nl_incomplete: { ar: 'الربط غير مكتمل', en: 'Mapping incomplete' },
+  cn2b_nl_none_yet: { ar: 'لا توجد سطور احتياج تشغيلية بعد.', en: 'No operational need lines yet.' },
+  cn2b_nl_readonly: { ar: 'المراجعة مغلقة — لا يمكن تعديل الربط.', en: 'Review is closed — mapping cannot be changed.' },
   cn2b_submit: { ar: 'تقديم للمراجعة', en: 'Submit for review' },
   cn2b_approve: { ar: 'اعتماد', en: 'Approve' },
   cn2b_reject: { ar: 'رفض', en: 'Reject' },
