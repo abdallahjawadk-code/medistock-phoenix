@@ -31,7 +31,10 @@ function emit(event: AuthChangeEvent, session: Session | null) {
 
 describe('auth tab-refocus continuity', () => {
   beforeEach(() => {
-    vi.resetAllMocks();
+    // Preserve the onAuthStateChange implementation declared above. resetAllMocks()
+    // would erase that implementation and make the test fail before exercising
+    // Phoenix auth behavior at all.
+    vi.clearAllMocks();
     authHandler = null;
   });
 
