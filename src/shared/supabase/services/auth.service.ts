@@ -119,41 +119,12 @@ export async function getSessionResult(): Promise<SessionLoad> {
   }
 }
 
-/**
- * Subscribe to auth changes. Returns an unsubscribe function.
- *
- * Supabase may emit `TOKEN_REFRESHED` and even repeated `SIGNED_IN` events when
- * an already-authenticated browser tab becomes active again. AppContext treats
- * an auth callback as an identity event and reloads the profile/permissions;
- * doing that for a passive same-user refresh temporarily moves the whole app to
- * `profile_loading`, which looks like a full page reload to the operator.
- *
- * The Supabase client itself already owns the freshly-refreshed token. Phoenix
- * only needs an auth callback when the identity/lifecycle meaningfully changes.
- * Therefore repeated TOKEN_REFRESHED/SIGNED_IN events for the same non-null
- * user are coalesced here. First sight of the user, sign-out, sign-in after
- * sign-out, PASSWORD_RECOVERY, USER_UPDATED, and any different-user event are
- * still forwarded unchanged.
- */
+/** Subscribe to auth changes. Returns an unsubscribe function. */
 export function onAuthChange(
   cb: (event: AuthChangeEvent, session: Session | null) => void,
 ): () => void {
   if (!supabaseConfigured) return () => undefined;
-
-  let lastUserId: string | null | undefined;
-  const { data } = supabase.auth.onAuthStateChange((event, session) => {
-    const nextUserId = session?.user?.id ?? null;
-    const passiveSameUserRefresh =
-      lastUserId !== undefined &&
-      nextUserId !== null &&
-      nextUserId === lastUserId &&
-      (event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN');
-
-    lastUserId = nextUserId;
-    if (passiveSameUserRefresh) return;
-    cb(event, session);
-  });
-
+  const { data } = supabase.auth.onAuthStateChange((event, session) => cb(event, session));
   return () => data.subscription.unsubscribe();
 }
 

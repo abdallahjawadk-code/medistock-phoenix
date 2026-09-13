@@ -538,9 +538,25 @@ export function AppProvider({ children, skipAuthBootstrap = false }: AppProvider
       // A live auth event is proof the auth layer is reachable, so it clears a
       // previously failed bootstrap.
       setBootstrapFailed(false);
+      // PR-205 TAB-REFOCUS: Supabase emits SIGNED_IN whenever a hidden tab
+      // becomes visible again, and TOKEN_REFRESHED on every access-token
+      // rotation. For the user whose profile is already applied, neither
+      // changes who is signed in: the refreshed session is still adopted
+      // below, but the profile/permission pipeline is not restarted, because
+      // restarting it drops the shell to profile_loading — which reads as a
+      // full page reload. This is decided here, against the identity actually
+      // applied, and not by filtering events in the auth adapter: sign-out
+      // clears profileUserIdRef, so a later sign-in of the same user still
+      // loads, and a different user, USER_UPDATED, or an event arriving before
+      // any profile is applied still reloads exactly as before.
+      const passiveSameUserRefresh =
+        (event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN') &&
+        s !== null &&
+        s.user.id === sessionUserIdRef.current &&
+        s.user.id === profileUserIdRef.current;
       setSessionTracked(s);
       // Skip profile loading during recovery — ResetPasswordScreen is standalone
-      if (!passwordRecoveryRef.current) {
+      if (!passwordRecoveryRef.current && !passiveSameUserRefresh) {
         await loadProfile(s);
       }
       if (!authReadyRef.current) {
