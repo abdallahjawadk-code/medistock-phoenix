@@ -253,8 +253,9 @@ describe('BLOCKER 2 — a profile may only be applied to the session that asked 
     mount();
     await waitFor(() => expect(status()).toBe('authenticated'));
 
-    // A token refresh starts a second profile read for the same user…
-    await emitAuthEvent('TOKEN_REFRESHED', SESSION_A);
+    // A USER_UPDATED starts a second profile read for the same user…
+    // (a passive same-user TOKEN_REFRESHED no longer does — see PR-205 below)
+    await emitAuthEvent('USER_UPDATED', SESSION_A);
     expect(status()).toBe('profile_loading');
 
     // …and the operator signs out while it is still in flight.
@@ -341,8 +342,8 @@ describe('LOGOUT — local invalidation happens before the remote sign-out', () 
     getMyProfileResult.mockReturnValueOnce(pendingProfile.promise);
     signOut.mockReturnValue(remoteSignOut.promise);
 
-    // A refresh starts a profile read that will not settle yet.
-    await emitAuthEvent('TOKEN_REFRESHED', SESSION_A);
+    // A same-user USER_UPDATED starts a profile read that will not settle yet.
+    await emitAuthEvent('USER_UPDATED', SESSION_A);
     expect(status()).toBe('profile_loading');
 
     // The operator signs out. The network call hangs — and must not matter.
@@ -452,7 +453,7 @@ describe('LOGOUT — local invalidation happens before the remote sign-out', () 
     getMyProfileResult.mockReturnValueOnce(pendingProfile.promise);
     signOut.mockReturnValue(remoteSignOut.promise);
 
-    await emitAuthEvent('TOKEN_REFRESHED', SESSION_A);
+    await emitAuthEvent('USER_UPDATED', SESSION_A);
     expect(status()).toBe('profile_loading');
 
     await act(async () => { screen.getByText('clear-recovery').click(); });
@@ -584,5 +585,211 @@ describe('AUTH SESSION MISSING — stale profile reads stay silent', () => {
     expect(getMyProfileResult).not.toHaveBeenCalled();
     expect(errorLog).not.toHaveBeenCalled();
     errorLog.mockRestore();
+  });
+});
+
+// ── PR-205 — passive same-user refresh (browser tab refocus) ────────────────
+//
+// Supabase emits SIGNED_IN every time a hidden tab becomes visible again, and
+// TOKEN_REFRESHED on every access-token rotation. For the user whose profile is
+// already applied neither is an identity change: the fresh session must be
+// adopted, but profile and permissions must not reload — a reload drops the
+// shell to profile_loading, which reads as a full page reload. A real identity
+// change, a sign-out, and a later sign-in (even of the same user) still behave
+// exactly as the suites above require.
+
+const tokenSession = (id: string, token: string) =>
+  ({ user: { id }, access_token: token }) as unknown as Session;
+
+function TokenProbe() {
+  const { session } = useApp();
+  const token = (session as unknown as { access_token?: string } | null)?.access_token;
+  return <span data-testid="token">{token ?? 'null'}</span>;
+}
+
+const mountWithToken = () => render(<AppProvider><Probe /><TokenProbe /></AppProvider>);
+
+describe('PR-205 — a passive same-user refresh adopts the session without reloading identity', () => {
+  it('INITIAL_SESSION → TOKEN_REFRESHED → TOKEN_REFRESHED → SIGNED_OUT keeps the newest token, reloads nothing, then clears', async () => {
+    const boot = deferred<SessionLoad>();
+    getSessionResult.mockReturnValue(boot.promise);
+    // Any reload after the first read would hang in profile_loading.
+    getMyProfileResult
+      .mockResolvedValueOnce({ status: 'ok', profile: PROFILE_A })
+      .mockReturnValue(deferred<ProfileLoad>().promise);
+
+    mountWithToken();
+    await emitAuthEvent('INITIAL_SESSION', tokenSession('user-A', 'token-1'));
+    await waitFor(() => expect(status()).toBe('authenticated'));
+    expect(getMyProfileResult).toHaveBeenCalledTimes(1);
+    expect(getEffectivePermissions).toHaveBeenCalledTimes(1);
+
+    await emitAuthEvent('TOKEN_REFRESHED', tokenSession('user-A', 'token-2'));
+    expect(status()).toBe('authenticated');
+    expect(val('token')).toBe('token-2');
+
+    await emitAuthEvent('TOKEN_REFRESHED', tokenSession('user-A', 'token-3'));
+    expect(status()).toBe('authenticated');
+    expect(val('token')).toBe('token-3');
+
+    // The boot read began before every event above; it cannot roll the token back.
+    await act(async () => {
+      boot.resolve({ status: 'ok', session: tokenSession('user-A', 'token-1') });
+      await boot.promise;
+    });
+    expect(val('token')).toBe('token-3');
+
+    expect(getMyProfileResult).toHaveBeenCalledTimes(1);
+    expect(getEffectivePermissions).toHaveBeenCalledTimes(1);
+    expect(val('profile')).toBe('user-A');
+    expect(val('org')).toBe('org-user-A');
+    expect(val('perms')).toBe('1');
+
+    await emitAuthEvent('SIGNED_OUT', null);
+    expect(status()).toBe('no_session');
+    expect(val('session')).toBe('null');
+    expect(val('token')).toBe('null');
+    expectNoIdentityResidue();
+  });
+
+  it('a tab-refocus SIGNED_IN for the applied user keeps the shell authenticated without reloading profile or permissions', async () => {
+    getSessionResult.mockResolvedValue({ status: 'ok', session: tokenSession('user-A', 'token-1') });
+    getMyProfileResult
+      .mockResolvedValueOnce({ status: 'ok', profile: PROFILE_A })
+      .mockReturnValue(deferred<ProfileLoad>().promise);
+
+    mountWithToken();
+    await waitFor(() => expect(status()).toBe('authenticated'));
+
+    await emitAuthEvent('SIGNED_IN', tokenSession('user-A', 'token-1'));
+    await emitAuthEvent('SIGNED_IN', tokenSession('user-A', 'token-1'));
+
+    expect(status()).toBe('authenticated');
+    expect(getMyProfileResult).toHaveBeenCalledTimes(1);
+    expect(getEffectivePermissions).toHaveBeenCalledTimes(1);
+    expect(val('perms')).toBe('1');
+  });
+
+  it('SIGNED_IN(A) → SIGNED_IN(A) → TOKEN_REFRESHED(B): a real identity change still drops A and loads B', async () => {
+    const boot = deferred<SessionLoad>();
+    const profileB = deferred<ProfileLoad>();
+    getSessionResult.mockReturnValue(boot.promise);
+    getMyProfileResult
+      .mockResolvedValueOnce({ status: 'ok', profile: PROFILE_A })
+      .mockReturnValueOnce(profileB.promise);
+
+    mountWithToken();
+    await emitAuthEvent('SIGNED_IN', tokenSession('user-A', 'token-a'));
+    await waitFor(() => expect(status()).toBe('authenticated'));
+    await emitAuthEvent('SIGNED_IN', tokenSession('user-A', 'token-a'));
+    expect(getMyProfileResult).toHaveBeenCalledTimes(1);
+
+    await emitAuthEvent('TOKEN_REFRESHED', tokenSession('user-B', 'token-b'));
+    expect(getMyProfileResult).toHaveBeenCalledTimes(2);
+    expect(status()).toBe('profile_loading');
+    expect(val('session')).toBe('user-B');
+    expectNoIdentityResidue();
+
+    await act(async () => { profileB.resolve({ status: 'ok', profile: PROFILE_B }); await profileB.promise; });
+    await waitFor(() => expect(status()).toBe('authenticated'));
+    expect(val('profile')).toBe('user-B');
+    expect(val('org')).toBe('org-user-B');
+    expect(val('token')).toBe('token-b');
+  });
+
+  it('after a sign-out whose remote call failed, the SAME user signing in again is loaded, not stranded on the login screen', async () => {
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    getSessionResult.mockResolvedValue({ status: 'ok', session: tokenSession('user-A', 'token-1') });
+    getMyProfileResult.mockResolvedValue({ status: 'ok', profile: PROFILE_A });
+
+    mountWithToken();
+    await waitFor(() => expect(status()).toBe('authenticated'));
+
+    // Supabase emits no SIGNED_OUT when the remote sign-out fails, so the client
+    // still holds A's session…
+    signOut.mockRejectedValueOnce(new Error('Failed to fetch'));
+    await act(async () => { screen.getByText('sign-out').click(); });
+    expect(status()).toBe('no_session');
+    expectNoIdentityResidue();
+
+    // …and a tab refocus replays it. The logout barrier still refuses it.
+    await emitAuthEvent('SIGNED_IN', tokenSession('user-A', 'token-1'));
+    expect(status()).toBe('no_session');
+    const readsBeforeSignIn = getMyProfileResult.mock.calls.length;
+
+    // An explicit sign-in as the same user must load that user again.
+    await act(async () => { screen.getByText('sign-in').click(); });
+    await emitAuthEvent('SIGNED_IN', tokenSession('user-A', 'token-4'));
+    await waitFor(() => expect(status()).toBe('authenticated'));
+    expect(getMyProfileResult).toHaveBeenCalledTimes(readsBeforeSignIn + 1);
+    expect(val('token')).toBe('token-4');
+    errorLog.mockRestore();
+  });
+
+  it('a passive refresh during an in-flight same-user reload neither duplicates nor cancels that reload', async () => {
+    const pendingReload = deferred<ProfileLoad>();
+    getSessionResult.mockResolvedValue({ status: 'ok', session: tokenSession('user-A', 'token-1') });
+    getMyProfileResult
+      .mockResolvedValueOnce({ status: 'ok', profile: PROFILE_A })
+      .mockReturnValueOnce(pendingReload.promise);
+
+    mountWithToken();
+    await waitFor(() => expect(status()).toBe('authenticated'));
+
+    await emitAuthEvent('USER_UPDATED', tokenSession('user-A', 'token-1'));
+    expect(status()).toBe('profile_loading');
+
+    await emitAuthEvent('TOKEN_REFRESHED', tokenSession('user-A', 'token-2'));
+    await emitAuthEvent('SIGNED_IN', tokenSession('user-A', 'token-2'));
+    expect(getMyProfileResult).toHaveBeenCalledTimes(2);
+
+    await act(async () => { pendingReload.resolve({ status: 'ok', profile: PROFILE_A }); await pendingReload.promise; });
+    await waitFor(() => expect(status()).toBe('authenticated'));
+    expect(val('profile')).toBe('user-A');
+    expect(val('token')).toBe('token-2');
+    expect(getMyProfileResult).toHaveBeenCalledTimes(2);
+  });
+
+  it('rapid passive refreshes delivered in one tick issue no reads and settle on the newest session', async () => {
+    getSessionResult.mockResolvedValue({ status: 'ok', session: tokenSession('user-A', 'token-1') });
+    getMyProfileResult
+      .mockResolvedValueOnce({ status: 'ok', profile: PROFILE_A })
+      .mockReturnValue(deferred<ProfileLoad>().promise);
+
+    mountWithToken();
+    await waitFor(() => expect(status()).toBe('authenticated'));
+
+    await act(async () => {
+      void authCallback('TOKEN_REFRESHED', tokenSession('user-A', 'token-2'));
+      void authCallback('SIGNED_IN', tokenSession('user-A', 'token-2'));
+      void authCallback('TOKEN_REFRESHED', tokenSession('user-A', 'token-3'));
+    });
+
+    expect(status()).toBe('authenticated');
+    expect(getMyProfileResult).toHaveBeenCalledTimes(1);
+    expect(getEffectivePermissions).toHaveBeenCalledTimes(1);
+    expect(val('token')).toBe('token-3');
+  });
+
+  it('subscribes once per mount and unsubscribes on unmount; an event after unmount starts nothing', async () => {
+    const unsubscribe = vi.fn();
+    onAuthChange.mockImplementation((cb) => {
+      authCallback = cb as AuthCallback;
+      return unsubscribe;
+    });
+    getSessionResult.mockResolvedValue({ status: 'ok', session: tokenSession('user-A', 'token-1') });
+    getMyProfileResult.mockResolvedValue({ status: 'ok', profile: PROFILE_A });
+
+    const view = mountWithToken();
+    await waitFor(() => expect(status()).toBe('authenticated'));
+    await emitAuthEvent('TOKEN_REFRESHED', tokenSession('user-A', 'token-2'));
+    expect(onAuthChange).toHaveBeenCalledTimes(1);
+    expect(unsubscribe).not.toHaveBeenCalled();
+
+    view.unmount();
+    expect(unsubscribe).toHaveBeenCalledTimes(1);
+
+    await act(async () => { void authCallback('SIGNED_IN', tokenSession('user-B', 'token-b')); });
+    expect(getMyProfileResult).toHaveBeenCalledTimes(1);
   });
 });

@@ -635,6 +635,18 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
       // No wildcard and no directory exemption, so every other file under
       // `src/app` still fails this guard closed.
       'src/app/__tests__/language-preference-bridge.runtime.test.tsx',
+      // PR #205 (auth tab-refocus continuity): one new test file under the
+      // watched `src/shared/supabase` prefix, registered by EXACT filename
+      // like every entry above. It is TEST-ONLY: it pins that
+      // auth.service.onAuthChange stays a transparent adapter over Supabase's
+      // auth events. The runtime change lands in `src/app/AppContext.tsx`,
+      // which is already listed, and auth.service.ts itself ends byte-identical
+      // to master. No migration, RPC, RLS, permission, dependency or
+      // environment surface is touched.
+      //
+      // No wildcard and no directory exemption, so every other file under
+      // `src/shared/supabase` still fails this guard closed.
+      'src/shared/supabase/services/__tests__/auth-tab-refocus.runtime.test.ts',
     ];
     const changed=execSync(`git diff --name-only ${BASE}`,{cwd:ROOT,encoding:'utf8'}).split('\n').map(l=>l.trim()).filter(Boolean);
     const prohibited=changed.filter(f=>WATCHED.some(p=>f===p||f.startsWith(p+'/'))&&!EXCLUDED.includes(f));
