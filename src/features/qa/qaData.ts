@@ -271,6 +271,15 @@ export const QA_FIXTURES: Record<string, unknown> = {
   // fails closed on an unregistered RPC, so the harness answers this read with
   // the same empty set the table fixture used to give — no operational line yet.
   'rpc:phoenix_central_needs_list_need_lines': [],
+  // (213) Same reasoning as list_need_lines just above: beneficiary-column
+  // mappings are read through their own bounded RPC, not a table, and the
+  // fixture client fails closed on any RPC name it doesn't recognize — which
+  // would otherwise reject reloadRevision()'s Promise.all and silently blank
+  // out every session-derived surface (disposition table, need-line panel,
+  // override editor, source-evidence search) for the WHOLE CN-2B harness,
+  // not just the new beneficiary-column panel. No physical column has been
+  // confirmed in this fixture revision, so the harness answers with none.
+  'rpc:phoenix_central_needs_list_beneficiary_columns': [],
   organizations: [
     { id: ORG_A, name: 'QA · Al-Hilla Teaching Hospital', name_ar: 'QA · مستشفى الحلة التعليمي', code: 'QA-A', city: 'Al-Hilla', status: 'active', kind: 'institution' },
     { id: ORG_B, name: 'QA · Al-Imam Al-Sadiq Hospital', name_ar: 'QA · مستشفى الإمام الصادق', code: 'QA-B', city: 'Al-Hilla', status: 'active', kind: 'institution' },

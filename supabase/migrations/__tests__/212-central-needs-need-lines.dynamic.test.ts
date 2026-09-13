@@ -18,9 +18,30 @@
  * Fixtures are seeded through the rig's superuser connection, exactly as the
  * 209/211 dynamic suites do: this suite tests 212's own contract, not 210/211's
  * import pipeline.
+ *
+ * TWO CHAIN MODES, ONE SET OF M212 ASSERTIONS. `buildRig({})` replays every
+ * migration on disk, so this file runs against either:
+ *   - the HISTORICAL boundary (chain through 212 only), or
+ *   - the FORWARD contract (chain through 213), where a source cell may feed a
+ *     need line only once its PHYSICAL COLUMN — (import session, sheetIndex,
+ *     coordinate.col), read from the record's own source_provenance — carries a
+ *     confirmed beneficiary mapping, and that beneficiary is the line's.
+ * Every seeded source record therefore carries CN-2A-shaped evidence and
+ * provenance, and each cell declares whose physical column it sits in (ORG_BENE
+ * unless a test says otherwise). One header shared by cells of DIFFERENT
+ * beneficiaries is two physical columns, exactly as in the real corpus. Under
+ * the forward contract the fixtures confirm those columns through the REAL
+ * phoenix_central_needs_set_beneficiary_columns RPC — never a mock, never a
+ * disabled trigger; only J's deliberate privileged-bypass scenario writes a
+ * mapping directly, because bypassing the RPCs is that test's premise. The mode
+ * is detected from the replayed schema and cross-checked against the migration
+ * files actually applied (see beforeAll), so it cannot silently disagree with
+ * the chain. Mode branches wrap only SETUP that references 213 objects; the one
+ * mode-aware EXPECTATION is A's exact trigger-attachment set, which 213
+ * intentionally extends by one table — each mode asserts its own exact set.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { buildRig, rigAvailable } from '../../../tools/pg-rig/rig.mjs';
+import { buildRig, migrationFiles, rigAvailable } from '../../../tools/pg-rig/rig.mjs';
 
 const run = rigAvailable() ? describe : describe.skip;
 
@@ -61,7 +82,12 @@ interface Row {
   entity: string;
   item?: string | null;
   decision?: 'mapped' | 'not_applicable';
-  fields?: Array<{ name: string; value: unknown }>;
+  /**
+   * `beneficiary` is the institution whose PHYSICAL column this cell sits in
+   * (default ORG_BENE). Same header + same beneficiary = one column; the same
+   * header for a different beneficiary is a different physical column.
+   */
+  fields?: Array<{ name: string; value: unknown; beneficiary?: string }>;
 }
 
 interface Refusal { code: string; message: string; detail?: string }
@@ -81,6 +107,8 @@ run('CN-2B/212 operational need lines — dynamic', () => {
   let rig: Awaited<ReturnType<typeof buildRig>>;
   let year = 2010;
   let fileSeq = 0;
+  /** True when the replayed chain carries 213's beneficiary-column contract (set in beforeAll). */
+  let FORWARD = false;
 
   const call = (userId: string | null, sql: string, params: unknown[] = [], role = 'authenticated') =>
     rig.asUser(userId, (c: any) => c.query(sql, params).then((r: any) => r.rows[0]?.result ?? r.rows[0]),
@@ -114,15 +142,35 @@ run('CN-2B/212 operational need lines — dynamic', () => {
       [revId, ORG_OWNER, fileId, digest, JSON.stringify(PARSER_IDENTITY)]);
 
     const records = new Map<string, string>();
+    // This session's physical columns: one per distinct (sheet, header, beneficiary).
+    const columns = new Map<string, { sheetIndex: number; columnIndex: number; beneficiary: string }>();
     let ordinal = 0;
     for (const row of rows) {
+      const at = /^sheet:(\d+):row:(\d+)$/.exec(row.entity);
+      const sheetIndex = at ? Number(at[1]) : 0;
+      const rowIndex = at ? Number(at[2]) : ordinal;
       for (const f of row.fields ?? [{ name: 'final', value: 100 }]) {
         ordinal += 1;
+        const beneficiary = f.beneficiary ?? ORG_BENE;
+        const columnKey = `${sheetIndex} ${f.name} ${beneficiary}`;
+        if (!columns.has(columnKey)) columns.set(columnKey, { sheetIndex, columnIndex: columns.size, beneficiary });
+        const { columnIndex } = columns.get(columnKey)!;
+        // CN-2A's own evidence and provenance shapes — the physical coordinate 213 keys on.
+        const sourceValues = {
+          value: f.value, valueType: typeof f.value === 'number' ? 'number' : 'string', isFormula: false, formula: null,
+        };
+        const provenance = {
+          fileFingerprintSha256: hash, originalFilename: `needs-${fileSeq}.xls`, parserVersion: '1.0.0',
+          sheetIndex, sheetName: `Sheet${sheetIndex}`, sheetHidden: 'visible',
+          coordinate: { row: rowIndex, col: columnIndex, a1: `${String.fromCharCode(65 + columnIndex)}${rowIndex + 1}` },
+          extractedAt: '2026-01-01T00:00:00.000Z',
+        };
         const [{ id }] = await admin(
           `INSERT INTO central_needs_source_records
-             (import_session_id, organization_id, record_ordinal, target_entity, field_name, source_values)
-           VALUES ($1,$2,$3,$4,$5,$6::jsonb) RETURNING id`,
-          [sessionId, ORG_OWNER, ordinal, row.entity, f.name, JSON.stringify({ value: f.value })]);
+             (import_session_id, organization_id, record_ordinal, target_entity, field_name,
+              source_values, source_provenance)
+           VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb) RETURNING id`,
+          [sessionId, ORG_OWNER, ordinal, row.entity, f.name, JSON.stringify(sourceValues), JSON.stringify(provenance)]);
         records.set(`${row.entity}::${f.name}`, id);
       }
       const decision = row.decision ?? 'mapped';
@@ -133,6 +181,16 @@ run('CN-2B/212 operational need lines — dynamic', () => {
         [sessionId, ORG_OWNER, row.entity,
           decision === 'mapped' ? (row.item ?? ITEM_A) : null, decision,
           decision === 'mapped' ? null : 'out of scope']);
+    }
+    // Forward contract only: a human confirms each physical column's
+    // beneficiary, through the real RPC, before any of its cells may feed a line.
+    if (FORWARD) {
+      await call(U_EDIT,
+        `SELECT public.phoenix_central_needs_set_beneficiary_columns($1,$2::jsonb,$3) AS result`,
+        [revId, JSON.stringify([...columns.values()].map((c) => ({
+          importSessionId: sessionId, sheetIndex: c.sheetIndex, columnIndex: c.columnIndex,
+          beneficiaryOrganizationId: c.beneficiary, previousBeneficiaryOrganizationId: null,
+        }))), 'fixture: confirmed physical beneficiary column']);
     }
     return { sessionId, records };
   }
@@ -147,11 +205,16 @@ run('CN-2B/212 operational need lines — dynamic', () => {
     const [{ id: planId }] = await admin(
       `INSERT INTO central_needs_plans (organization_id, plan_year) VALUES ($1,$2) RETURNING id`,
       [ORG_OWNER, y]);
+    // Always seeded as a DRAFT so its evidence (and, under 213, its column
+    // confirmations) can be established; a non-draft status is applied after.
     const [{ id: revId }] = await admin(
       `INSERT INTO central_needs_plan_revisions (plan_id, organization_id, revision_number, status)
-         VALUES ($1,$2,1,$3) RETURNING id`,
-      [planId, ORG_OWNER, opts.status ?? 'draft']);
+         VALUES ($1,$2,1,'draft') RETURNING id`,
+      [planId, ORG_OWNER]);
     const { sessionId, records } = await addSession(revId, rows);
+    if (opts.status && opts.status !== 'draft') {
+      await admin(`UPDATE central_needs_plan_revisions SET status=$2 WHERE id=$1`, [revId, opts.status]);
+    }
     return { planId, revId, sessionId, records, rows, year: y };
   }
 
@@ -212,6 +275,24 @@ run('CN-2B/212 operational need lines — dynamic', () => {
   const blockers = (revId: string) =>
     admin(`SELECT blocker, detail FROM public._phoenix_central_needs_review_blockers_v1($1)`, [revId]);
 
+  /**
+   * Forward contract only: re-confirm the physical column a record sits in for
+   * a different beneficiary, through the real RPC and its stale-view guard.
+   */
+  const remapColumnOf = async (revId: string, recordId: string, to: string, from: string) => {
+    const [cell] = await admin(
+      `SELECT import_session_id AS session,
+              (source_provenance->>'sheetIndex')::int AS sheet,
+              (source_provenance->'coordinate'->>'col')::int AS col
+         FROM central_needs_source_records WHERE id=$1`, [recordId]);
+    return call(U_EDIT,
+      `SELECT public.phoenix_central_needs_set_beneficiary_columns($1,$2::jsonb,$3) AS result`,
+      [revId, JSON.stringify([{
+        importSessionId: cell.session, sheetIndex: cell.sheet, columnIndex: cell.col,
+        beneficiaryOrganizationId: to, previousBeneficiaryOrganizationId: from,
+      }]), 'fixture: beneficiary column corrected']);
+  };
+
   const freshWarehouse = async (org = ORG_BENE) => {
     const [{ id }] = await admin(
       `INSERT INTO warehouses (organization_id, name, name_ar, status)
@@ -221,6 +302,16 @@ run('CN-2B/212 operational need lines — dynamic', () => {
 
   beforeAll(async () => {
     rig = await buildRig({});
+    // Which contract did the replay produce? Detected from the schema, then
+    // cross-checked against the migration files the rig actually applied, so
+    // the fixture mode can never silently disagree with the chain under test.
+    const [{ present }] = await admin(
+      `SELECT to_regprocedure('public.phoenix_central_needs_set_beneficiary_columns(uuid, jsonb, text)') IS NOT NULL AS present`);
+    const chainIncludes213 = migrationFiles().some((f: string) => f.startsWith('213_'));
+    if (present !== chainIncludes213) {
+      throw new Error(`fixture mode mismatch: 213 contract present=${present}, 213 applied=${chainIncludes213}`);
+    }
+    FORWARD = present;
     await rig.asAdmin(async (c: any) => {
       await c.query(`INSERT INTO organizations (id,name,name_ar,code,organization_kind,institution_class) VALUES
         ('${ORG_OWNER}','CN212-OWNER','مالك','p212-owner','care_institution','hospital'),
@@ -356,8 +447,11 @@ run('CN-2B/212 operational need lines — dynamic', () => {
            FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
           WHERE t.tgname='assert_need_line_integrity' AND NOT t.tgisinternal
           ORDER BY c.relname`);
-      expect(rows.map((r: any) => r.relname)).toEqual(
-        ['central_needs_need_line_sources', 'central_needs_need_lines']);
+      // 213 attaches the SAME deferred assertion to its mapping table as well;
+      // each chain asserts its own exact attachment set.
+      expect(rows.map((r: any) => r.relname)).toEqual(FORWARD
+        ? ['central_needs_beneficiary_column_mappings', 'central_needs_need_line_sources', 'central_needs_need_lines']
+        : ['central_needs_need_line_sources', 'central_needs_need_lines']);
       for (const r of rows) {
         expect(r.tgdeferrable, r.relname).toBe(true);
         expect(r.tginitdeferred, r.relname).toBe(true);
@@ -979,7 +1073,7 @@ run('CN-2B/212 operational need lines — dynamic', () => {
       const s = await scenario({
         rows: [
           { entity: 'sheet:0:row:1', fields: [{ name: 'final', value: 10 }] },
-          { entity: 'sheet:0:row:2', fields: [{ name: 'final', value: 20 }] },
+          { entity: 'sheet:0:row:2', fields: [{ name: 'final', value: 20, beneficiary: ORG_BENE2 }] },
         ],
       });
       await setLine(U_EDIT, s.revId, {
@@ -1085,6 +1179,20 @@ run('CN-2B/212 operational need lines — dynamic', () => {
       const id = s.records.get('sheet:0:row:5::final')!;
       await rig.asAdmin(async (c: any) => {
         await c.query('BEGIN');
+        if (FORWARD) {
+          // Under 213 a bypass of the write RPC must also bypass the column-
+          // mapping RPC (which refuses an inactive beneficiary): the privileged
+          // session re-points this cell's confirmed column to ORG_INACTIVE.
+          await c.query(
+            `UPDATE central_needs_beneficiary_column_mappings m
+                SET beneficiary_organization_id = $1
+               FROM central_needs_source_records r
+              WHERE r.id = $2
+                AND m.import_session_id = r.import_session_id
+                AND m.sheet_index  = (r.source_provenance->>'sheetIndex')::int
+                AND m.column_index = (r.source_provenance->'coordinate'->>'col')::int`,
+            [ORG_INACTIVE, id]);
+        }
         const { rows } = await c.query(
           `INSERT INTO central_needs_need_lines
              (plan_revision_id, organization_id, beneficiary_organization_id, central_item_id,
@@ -1217,7 +1325,7 @@ run('CN-2B/212 operational need lines — dynamic', () => {
     const multiInstitutionRow = () => scenario({
       rows: [{
         entity: 'sheet:0:row:12',
-        fields: [{ name: 'مستشفى أ', value: 30 }, { name: 'مستشفى ب', value: 45 }],
+        fields: [{ name: 'مستشفى أ', value: 30 }, { name: 'مستشفى ب', value: 45, beneficiary: ORG_BENE2 }],
       }],
     });
 
@@ -1243,8 +1351,13 @@ run('CN-2B/212 operational need lines — dynamic', () => {
       const s = await multiInstitutionRow();
       const cellA = s.records.get('sheet:0:row:12::مستشفى أ')!;
       const first = await setLine(U_EDIT, s.revId, { beneficiary: ORG_BENE, qty: '30', sources: sources([cellA, '30']) });
+      // A second line is a different SCOPE. Cell A sits in Hospital A's column,
+      // so under 213 a Hospital-B line would be refused earlier, by the column
+      // contract; the second scope is therefore Hospital A's warehouse-targeted
+      // line — a genuinely different line in both chains, refused only because
+      // the CELL is already taken.
       const r = await refusal(setLine(U_EDIT, s.revId, {
-        beneficiary: ORG_BENE2, qty: '30', sources: sources([cellA, '30']),
+        beneficiary: ORG_BENE, warehouse: WH_BENE, qty: '30', sources: sources([cellA, '30']),
       }));
       expect(r).toMatchObject({ code: '23514', message: 'source_record_already_linked' });
       expect(r.detail).toBe(`source_record=${cellA} need_line=${first.need_line_id}`);
@@ -1382,7 +1495,9 @@ run('CN-2B/212 operational need lines — dynamic', () => {
         await setLine(U_EDIT, t.revId, { beneficiary: ORG_BENE, qty: '10', sources: sources([t.s1, '10']) });
         const r = await refusal(client.query(
           `SELECT public.phoenix_central_needs_set_need_line($1,$2,$3,$4,$5,$6,$7::uuid[],$8,$9,$10,$11)`,
-          [t.revId, ORG_BENE2, ITEM_A, '10', 'stale snapshot', sources([t.s1, '10']), [], 'box', 'canonical', null, null]));
+          // The same cell for a different scope of the SAME beneficiary (see L):
+          // under 213 a Hospital-B scope would be refused by the column contract first.
+          [t.revId, ORG_BENE, ITEM_A, '10', 'stale snapshot', sources([t.s1, '10']), [], 'box', 'canonical', WH_BENE, null]));
         expect(r).toMatchObject({ code: '23514', message: 'source_record_already_linked' });
         expect(r.message).not.toMatch(/duplicate|record_key/);
       } finally {
@@ -1511,10 +1626,19 @@ run('CN-2B/212 operational need lines — dynamic', () => {
     });
 
     it('RECOVERS a wrong beneficiary: delete, then the same cell maps to the right one', async () => {
-      const s = await scenario();
+      // The wrong decision starts at the cell's column: it was confirmed as ORG_BENE2's.
+      const s = await scenario({
+        rows: [{
+          entity: 'sheet:0:row:5',
+          fields: [{ name: 'requested', value: 100 }, { name: 'final', value: 120, beneficiary: ORG_BENE2 }],
+        }],
+      });
       const id = s.records.get('sheet:0:row:5::final')!;
       const wrong = await setLine(U_EDIT, s.revId, { beneficiary: ORG_BENE2, sources: sources([id, '100']) });
       await deleteLine(U_EDIT, wrong.need_line_id, 'beneficiary was ORG_BENE', [id]);
+      // Under 213 the correction also lives where the error lived — the column —
+      // and is possible only now that no need line uses it.
+      if (FORWARD) await remapColumnOf(s.revId, id, ORG_BENE, ORG_BENE2);
       const right = await setLine(U_EDIT, s.revId, { beneficiary: ORG_BENE, sources: sources([id, '100']) });
       const lines = await linesOf(s.revId);
       expect(lines).toHaveLength(1);
@@ -1583,10 +1707,14 @@ run('CN-2B/212 operational need lines — dynamic', () => {
       const x = s.records.get('sheet:0:row:1::final')!;
       const z = s.records.get('sheet:0:row:1::extra')!;
       const y = s.records.get('sheet:0:row:2::final')!;
+      // Two distinct lines of ONE beneficiary (a warehouse split). Under 213 a
+      // cell of ORG_BENE's confirmed column can never sit on another
+      // beneficiary's line at all, so a cross-beneficiary re-point would be
+      // refused for THAT reason first and could no longer probe L1's lineage.
       const l1 = extraOnFirst
-        ? await setLine(U_EDIT, s.revId, { beneficiary: ORG_BENE, qty: '15', sources: sources([x, '10'], [z, '5']) })
-        : await setLine(U_EDIT, s.revId, { beneficiary: ORG_BENE, qty: '10', sources: sources([x, '10']) });
-      const l2 = await setLine(U_EDIT, s.revId, { beneficiary: ORG_BENE2, qty: '20', sources: sources([y, '20']) });
+        ? await setLine(U_EDIT, s.revId, { warehouse: WH_BENE, qty: '15', sources: sources([x, '10'], [z, '5']) })
+        : await setLine(U_EDIT, s.revId, { warehouse: WH_BENE, qty: '10', sources: sources([x, '10']) });
+      const l2 = await setLine(U_EDIT, s.revId, { warehouse: WH_BENE_2, qty: '20', sources: sources([y, '20']) });
       return { s, x, y, z, l1: l1.need_line_id as string, l2: l2.need_line_id as string };
     };
 
@@ -1668,7 +1796,7 @@ run('CN-2B/212 operational need lines — dynamic', () => {
       const s = await scenario({
         rows: [
           { entity: 'sheet:0:row:1', fields: [{ name: 'final', value: 120.1239 }] },
-          { entity: 'sheet:0:row:2', fields: [{ name: 'a', value: 0.1 }, { name: 'b', value: 0.2 }] },
+          { entity: 'sheet:0:row:2', fields: [{ name: 'a', value: 0.1, beneficiary: ORG_BENE2 }, { name: 'b', value: 0.2, beneficiary: ORG_BENE2 }] },
           { entity: 'sheet:0:row:3', item: ITEM_B, fields: [{ name: 'final', value: 0 }] },
         ],
       });

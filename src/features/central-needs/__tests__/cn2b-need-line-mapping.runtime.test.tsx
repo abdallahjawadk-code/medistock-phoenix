@@ -5,9 +5,11 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { T } from '@/shared/i18n/strings';
+import type { BeneficiaryColumnSummary } from '../central-needs.service';
 
 /**
- * CN-2B CONFORMANCE (M212) — the operational need-line mapping surface.
+ * CN-2B CONFORMANCE (M212, corrected by 213) — the operational need-line
+ * mapping surface.
  *
  * Covers what only a rendered component can prove: both languages, the mandatory
  * reason, that NOTHING can be saved without designated source provenance, that
@@ -18,11 +20,21 @@ import { T } from '@/shared/i18n/strings';
  * lineage it saw, that a stale or conflicting save is shown as normal localized
  * text, and that deleting a line is a confirmed, reasoned correction.
  *
+ * (213) There is no single global "beneficiary" selector any more. A candidate
+ * cell's beneficiary is resolved from its CONFIRMED physical-column mapping —
+ * identity (importSessionId, sheetIndex, columnIndex), read from the record's
+ * own `sourceProvenance`, never from header/field-name text (the real corpus
+ * duplicates header labels across distinct columns) and never chosen in this
+ * panel. `beneficiaryColumns` fixtures below stand in for
+ * `CentralNeedsBeneficiaryColumnPanel`'s confirmed mappings, exactly as
+ * `CentralNeedsScreen` wires them (`listBeneficiaryColumns()` → this panel).
+ *
  * The need-line writes are mocked at the service boundary, so those tests assert
  * the COMPONENT's behaviour; the service's own exactness and error mapping are
  * asserted against a mocked Supabase client below. The server contract itself is
  * proven against a real PostgreSQL in
- * supabase/migrations/__tests__/212-*.dynamic.test.ts, and the real PostgREST
+ * supabase/migrations/__tests__/212-*.dynamic.test.ts and
+ * supabase/migrations/__tests__/213-*.dynamic.test.ts, and the real PostgREST
  * transport by tools/e2e-acceptance/m212-postgrest-proof.mjs.
  */
 
@@ -73,7 +85,30 @@ const disposition = (entity: string, item = ITEM_A) => ({
   decidedAt: '2026-01-01T00:00:00.000Z',
 });
 
-const record = (id: string, entity: string, fieldName: string, value: unknown, ordinal: number) => ({
+/**
+ * A designatable source record. `column` is the record's OWN physical-column
+ * identity, persisted verbatim in `sourceProvenance` exactly as the real
+ * parser writes it (`{ sheetIndex, coordinate: { col } }`) — the only thing
+ * `CentralNeedsNeedLinePanel` reads to resolve a beneficiary. It defaults to
+ * one distinct column per record (keyed on `ordinal`) so unrelated tests don't
+ * have to think about column identity at all; tests that care about column
+ * identity (duplicate headers, unmapped columns, several beneficiaries on one
+ * row) pass it explicitly.
+ */
+const record = (
+  id: string, entity: string, fieldName: string, value: unknown, ordinal: number,
+  column: { sheetIndex?: number; columnIndex?: number; importSessionId?: string } = {},
+) => ({
+  id, importSessionId: column.importSessionId ?? 's1', recordOrdinal: ordinal, targetEntity: entity, fieldName,
+  sourceValues: { value },
+  // Partial overrides (e.g. `{ columnIndex: 3 }`) must still default sheetIndex —
+  // a JS default parameter only applies when the whole argument is omitted, so
+  // each field is defaulted individually here rather than relying on that.
+  sourceProvenance: { sheetIndex: column.sheetIndex ?? 0, coordinate: { col: column.columnIndex ?? ordinal } },
+});
+
+/** A record whose column identity cannot even be read — never resolvable. */
+const recordWithoutProvenance = (id: string, entity: string, fieldName: string, value: unknown, ordinal: number) => ({
   id, importSessionId: 's1', recordOrdinal: ordinal, targetEntity: entity, fieldName,
   sourceValues: { value }, sourceProvenance: null,
 });
@@ -81,6 +116,36 @@ const record = (id: string, entity: string, fieldName: string, value: unknown, o
 const link = (needLineId: string, sourceRecordId: string, designatedQuantity: string,
   importSessionId = 's1', targetEntity = ROW_5, fieldName = 'final') => ({
   needLineId, sourceRecordId, designatedQuantity, appliedOverrideId: null, importSessionId, targetEntity, fieldName,
+});
+
+/**
+ * (213) One physical column's CONFIRMED beneficiary mapping, exactly the shape
+ * `listBeneficiaryColumns()` returns and `CentralNeedsBeneficiaryColumnPanel`
+ * writes. `beneficiaryOrganizationId: null` models a column nobody has
+ * reviewed yet — present in the revision's column list, but unresolved.
+ */
+const beneficiaryColumn = (
+  columnIndex: number, beneficiaryOrganizationId: string | null,
+  over: Partial<BeneficiaryColumnSummary> = {},
+): BeneficiaryColumnSummary => ({
+  importSessionId: 's1',
+  originalFilename: 'need-2026.xlsx',
+  archiveEntryPath: null,
+  sheetIndex: 0,
+  sheetName: null,
+  columnIndex,
+  sourceFieldName: null,
+  numericValueCount: 1,
+  zeroValueCount: 0,
+  nonzeroNumericCount: 1,
+  mappingId: beneficiaryOrganizationId ? `bc-${columnIndex}` : null,
+  decision: beneficiaryOrganizationId ? 'beneficiary' : null,
+  beneficiaryOrganizationId,
+  mappingReason: beneficiaryOrganizationId ? 'confirmed' : null,
+  mappedAt: beneficiaryOrganizationId ? '2026-01-01T00:00:00.000Z' : null,
+  mappedRowNumericCount: 1,
+  reviewRequired: !beneficiaryOrganizationId,
+  ...over,
 });
 
 /** A line that already exists for (BENE, ITEM_A, institution-level) — built in ANOTHER session. */
@@ -108,25 +173,37 @@ function renderPanel(lang: 'ar' | 'en', over: Partial<PanelProps> = {}) {
     overrides: [],
     needLines: [],
     claimedSources: [],
+    // (213) Every default record above (columns 1, 2, 3) is a CONFIRMED BENE
+    // column, so ordinary M212 behaviour (arithmetic, provenance, quantity
+    // contract, bulk preview, deletion, …) needs no beneficiary interaction of
+    // its own. Tests about column resolution itself override this.
+    beneficiaryColumns: [
+      beneficiaryColumn(1, BENE),
+      beneficiaryColumn(2, BENE),
+      beneficiaryColumn(3, BENE),
+    ],
     onChanged: () => {},
     ...over,
   };
   return render(<CentralNeedsNeedLinePanel {...props} />);
 }
 
-async function chooseBeneficiary(id = BENE) {
-  // The institution list loads asynchronously; a select cannot hold a value
-  // whose <option> has not rendered yet.
-  const beneSelect = await screen.findByLabelText(T.cn2b_nl_beneficiary.en);
-  await waitFor(() => expect(beneSelect.querySelector(`option[value="${id}"]`)).not.toBeNull());
-  fireEvent.change(beneSelect, { target: { value: id } });
-  expect((screen.getByLabelText(T.cn2b_nl_beneficiary.en) as HTMLSelectElement).value).toBe(id);
-}
-
-/** Tick a candidate record's checkbox by its row · field label. */
+/** Tick a candidate record's checkbox by its row · field label (assumes ONE match). */
 function designate(entity: string, fieldName: string) {
   const label = screen.getByText(new RegExp(`${entity.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} · ${fieldName}`));
   const box = label.closest('label')!.querySelector('input[type="checkbox"]') as HTMLInputElement;
+  fireEvent.click(box);
+  return box;
+}
+
+/** Tick the ONE candidate matching row · field whose resolved beneficiary label is `beneficiaryText`. */
+function designateAmong(entity: string, fieldName: string, beneficiaryText: string) {
+  const labels = screen.getAllByText(new RegExp(`${entity.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} · ${fieldName}`));
+  const candidate = labels
+    .map((l) => l.closest('[data-testid="cn2b-nl-candidate"]') as HTMLElement)
+    .find((el) => el.textContent?.includes(beneficiaryText));
+  if (!candidate) throw new Error(`no ${entity} · ${fieldName} candidate resolved to "${beneficiaryText}"`);
+  const box = within(candidate).getByRole('checkbox') as HTMLInputElement;
   fireEvent.click(box);
   return box;
 }
@@ -197,23 +274,36 @@ describe('M212 need-line panel — both languages, no leakage', () => {
     }
   });
 
-  it('offers only LIVE care institutions as beneficiaries', async () => {
+  it('(213) shows the resolved beneficiary beside its candidate — an active institution by name, never a global choice', async () => {
     renderPanel('en');
-    const select = await screen.findByLabelText(T.cn2b_nl_beneficiary.en);
-    await waitFor(() => expect(select.querySelectorAll('option').length).toBeGreaterThan(1));
-    expect(select.textContent).toContain('Beneficiary Hospital');
-    expect(select.textContent).not.toContain('Authority');
-    expect(select.textContent).not.toContain('Inactive Hospital');
+    await screen.findByTestId('cn2b-nl-candidates');
+    const candidate = screen.getByText(new RegExp(`${ROW_5} · final`)).closest('[data-testid="cn2b-nl-candidate"]') as HTMLElement;
+    await waitFor(() => expect(within(candidate).getByTestId('cn2b-nl-candidate-beneficiary')).toHaveTextContent('Beneficiary Hospital'));
+    expect(candidate).toHaveAttribute('data-beneficiary-resolved', 'true');
+    // There is no institution picker anywhere in this panel any more.
+    expect(screen.queryByLabelText(T.cn2b_nl_beneficiary.en)).toBeNull();
+    expect(screen.queryByRole('combobox', { name: /beneficiary/i })).toBeNull();
   });
 
-  it('offers only ACTIVE warehouses of the chosen beneficiary', async () => {
+  it('(213) falls back to the raw id rather than a stale name when the resolved beneficiary is no longer an active institution', async () => {
+    // 'x2' is inactive, so it is absent from the filtered institutions list —
+    // its name/name_ar must not be shown as if it were still live.
+    renderPanel('en', { beneficiaryColumns: [beneficiaryColumn(2, 'x2')] });
+    const candidate = await screen.findByText(new RegExp(`${ROW_5} · final`));
+    await waitFor(() => expect(getOrganizations).toHaveBeenCalled());
+    const el = candidate.closest('[data-testid="cn2b-nl-candidate"]') as HTMLElement;
+    expect(within(el).getByTestId('cn2b-nl-candidate-beneficiary')).toHaveTextContent('x2');
+    expect(within(el).queryByText('Inactive Hospital')).toBeNull();
+  });
+
+  it('offers only ACTIVE warehouses of the beneficiary a designated cell resolves to', async () => {
     getWarehouses.mockResolvedValue([
       { id: 'w1', name: 'Live store', name_ar: 'مخزن فعال', status: 'active' },
       { id: 'w2', name: 'Archived store', name_ar: 'مخزن مؤرشف', status: 'archived' },
       { id: 'w3', name: 'Inactive store', name_ar: 'مخزن معطل', status: 'inactive' },
     ]);
     renderPanel('en');
-    await chooseBeneficiary();
+    designate(ROW_5, 'final'); // resolves to BENE via the default beneficiaryColumns fixture
     const select = screen.getByLabelText(T.cn2b_nl_warehouse.en);
     await waitFor(() => expect(select.textContent).toContain('Live store'));
     expect(getWarehouses).toHaveBeenCalledWith(BENE);
@@ -225,7 +315,6 @@ describe('M212 need-line panel — both languages, no leakage', () => {
 describe('M212 need-line panel — provenance is mandatory', () => {
   it('cannot save with ZERO designated source records', async () => {
     renderPanel('en');
-    await chooseBeneficiary();
     fillReason();
     expect(screen.getByRole('button', { name: T.cn2b_nl_save.en })).toBeDisabled();
     fireEvent.click(screen.getByRole('button', { name: T.cn2b_nl_save.en }));
@@ -235,7 +324,6 @@ describe('M212 need-line panel — provenance is mandatory', () => {
 
   it('enables saving once a record is designated, and sends that exact record and an empty expected lineage', async () => {
     renderPanel('en');
-    await chooseBeneficiary();
     designate(ROW_5, 'final');
     fillReason();
     expect(screen.getByRole('button', { name: T.cn2b_nl_save.en })).toBeEnabled();
@@ -254,7 +342,6 @@ describe('M212 need-line panel — provenance is mandatory', () => {
 
   it('prefills the imported value as a SUGGESTION the reviewer can replace', async () => {
     renderPanel('en');
-    await chooseBeneficiary();
     designate(ROW_5, 'final');
     expect(contributionInput('final').value).toBe('120.5');
     fireEvent.change(contributionInput('final'), { target: { value: '99' } });
@@ -269,14 +356,12 @@ describe('M212 need-line panel — provenance is mandatory', () => {
     renderPanel('en', {
       dispositions: [{ ...disposition(ROW_5), decision: 'not_applicable', centralItemId: null }],
     });
-    await chooseBeneficiary();
     expect(screen.getByTestId('cn2b-nl-no-candidates')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: T.cn2b_nl_save.en })).toBeDisabled();
   });
 
   it('offers no designation for a CELL any line of the revision already claims', async () => {
     renderPanel('en', { claimedSources: [link('nl-0', REC_5_FINAL, '120.5')] });
-    await chooseBeneficiary();
     const candidates = screen.getByTestId('cn2b-nl-candidates');
     expect(within(candidates).queryByText(new RegExp(`${ROW_5} · final`))).toBeNull();
     // ...but the SAME ROW's other cell stays available: a row may feed several lines.
@@ -284,11 +369,160 @@ describe('M212 need-line panel — provenance is mandatory', () => {
   });
 });
 
+describe('M212 need-line panel — beneficiary resolved per physical column, never globally (213)', () => {
+  it('[A] resolves two candidates to two different beneficiaries purely from their own column identity', async () => {
+    renderPanel('en', {
+      dispositions: [disposition(ROW_5, ITEM_A), disposition(ROW_6, ITEM_B)],
+      records: [
+        record('rec-h1', ROW_5, 'final', 100, 1, { sheetIndex: 0, columnIndex: 3 }),
+        record('rec-h2', ROW_6, 'final', 50, 2, { sheetIndex: 0, columnIndex: 4 }),
+      ],
+      beneficiaryColumns: [beneficiaryColumn(3, BENE), beneficiaryColumn(4, BENE2)],
+    });
+    const c1 = (await screen.findByText(new RegExp(`${ROW_5} · final`))).closest('[data-testid="cn2b-nl-candidate"]') as HTMLElement;
+    const c2 = screen.getByText(new RegExp(`${ROW_6} · final`)).closest('[data-testid="cn2b-nl-candidate"]') as HTMLElement;
+    await waitFor(() => {
+      expect(within(c1).getByTestId('cn2b-nl-candidate-beneficiary')).toHaveTextContent('Beneficiary Hospital');
+      expect(within(c2).getByTestId('cn2b-nl-candidate-beneficiary')).toHaveTextContent('Second Hospital');
+    });
+  });
+
+  it('[B/G] same material, two beneficiary columns on ONE row → two separate lines, never combined, previewed grouped by beneficiary', async () => {
+    renderPanel('en', {
+      dispositions: [disposition(ROW_5, ITEM_A)],
+      records: [
+        record('rec-a', ROW_5, 'Hospital A', 100, 1, { columnIndex: 1 }),
+        record('rec-b', ROW_5, 'Hospital B', 50, 2, { columnIndex: 2 }),
+      ],
+      beneficiaryColumns: [beneficiaryColumn(1, BENE), beneficiaryColumn(2, BENE2)],
+    });
+    designate(ROW_5, 'Hospital A');
+    designate(ROW_5, 'Hospital B');
+    fillReason('multi-institution row split by confirmed column');
+    fireEvent.click(screen.getByRole('button', { name: T.cn2b_nl_bulk_preview.en }));
+
+    expect(screen.getByTestId('cn2b-nl-affected')).toHaveTextContent('2');
+    expect(screen.getByTestId('cn2b-nl-lines')).toHaveTextContent('2');
+    expect(screen.getByTestId('cn2b-nl-beneficiary-count')).toHaveTextContent('2');
+    const groups = screen.getAllByTestId('cn2b-nl-preview-group');
+    expect(groups).toHaveLength(2);
+    expect(groups.map((g) => g.getAttribute('data-beneficiary')).sort()).toEqual([BENE, BENE2].sort());
+
+    fireEvent.click(screen.getByRole('button', { name: T.cn2b_nl_bulk_confirm.en }));
+    await waitFor(() => expect(setNeedLine).toHaveBeenCalledTimes(2));
+    const calls = setNeedLine.mock.calls.map((c) => c[0]);
+    const forA = calls.find((c) => c.beneficiaryOrganizationId === BENE);
+    const forB = calls.find((c) => c.beneficiaryOrganizationId === BENE2);
+    expect(forA.quantitySources).toEqual([{ sourceRecordId: 'rec-a', designatedQuantity: '100', appliedOverrideId: null }]);
+    expect(forA.approvedQuantity).toBe('100');
+    expect(forB.quantitySources).toEqual([{ sourceRecordId: 'rec-b', designatedQuantity: '50', appliedOverrideId: null }]);
+    expect(forB.approvedQuantity).toBe('50');
+    // Never combined: each is its own scope, its own RPC call, its own line.
+    expect(calls).toHaveLength(2);
+  });
+
+  it('[C] an unmapped physical column cannot be designated, submitted, or silently treated as mapped', async () => {
+    renderPanel('en', {
+      records: [record('rec-u', ROW_5, 'final', 100, 1, { columnIndex: 9 })],
+      // Column 9 has no entry at all — nobody has confirmed its beneficiary yet.
+      beneficiaryColumns: [],
+    });
+    const candidate = (await screen.findByText(new RegExp(`${ROW_5} · final`))).closest('[data-testid="cn2b-nl-candidate"]') as HTMLElement;
+    expect(candidate).toHaveAttribute('data-beneficiary-resolved', 'false');
+    expect(within(candidate).getByTestId('cn2b-nl-candidate-unmapped')).toBeInTheDocument();
+    const box = within(candidate).getByRole('checkbox') as HTMLInputElement;
+    expect(box).toBeDisabled();
+    // A defensive click still must not designate it, inherit BENE from
+    // elsewhere, or default to any organization.
+    fireEvent.click(box);
+    fillReason();
+    expect(screen.getByRole('button', { name: T.cn2b_nl_save.en })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: T.cn2b_nl_save.en }));
+    expect(setNeedLine).not.toHaveBeenCalled();
+  });
+
+  it('[C] a record whose column identity cannot even be read is unresolved the same way — never inherits, never defaults', async () => {
+    renderPanel('en', {
+      records: [recordWithoutProvenance('rec-legacy', ROW_5, 'final', 100, 1)],
+      beneficiaryColumns: [beneficiaryColumn(1, BENE), beneficiaryColumn(2, BENE)],
+    });
+    const candidate = (await screen.findByText(new RegExp(`${ROW_5} · final`))).closest('[data-testid="cn2b-nl-candidate"]') as HTMLElement;
+    expect(candidate).toHaveAttribute('data-beneficiary-resolved', 'false');
+    expect(within(candidate).getByRole('checkbox')).toBeDisabled();
+  });
+
+  it('[C] a cell of a column reviewed as NOT a beneficiary column says so and can never be designated (independent review finding 1)', async () => {
+    renderPanel('en', {
+      records: [record('rec-nb', ROW_5, 'unit price', 7, 1, { columnIndex: 9 })],
+      beneficiaryColumns: [beneficiaryColumn(9, null, {
+        mappingId: 'bc-9', decision: 'non_beneficiary', mappingReason: 'unit price column', reviewRequired: false,
+      })],
+    });
+    const candidate = (await screen.findByText(new RegExp(`${ROW_5} · unit price`))).closest('[data-testid="cn2b-nl-candidate"]') as HTMLElement;
+    expect(candidate).toHaveAttribute('data-beneficiary-resolved', 'false');
+    expect(candidate).toHaveAttribute('data-column-decision', 'non_beneficiary');
+    expect(within(candidate).getByTestId('cn2b-nl-candidate-non-beneficiary'))
+      .toHaveTextContent(T.cn2b_beneficiary_column_state_non_beneficiary.en);
+    expect(within(candidate).queryByTestId('cn2b-nl-candidate-unmapped')).toBeNull();
+    expect(within(candidate).getByRole('checkbox')).toBeDisabled();
+  });
+
+  it('[D] duplicate header text on two physical columns of the same row stays independent — never collapsed', async () => {
+    renderPanel('en', {
+      dispositions: [disposition(ROW_5, ITEM_A)],
+      records: [
+        // Identical field name AND identical row — only sheetIndex/columnIndex differ.
+        record('rec-dup-1', ROW_5, 'مرجان', 30, 1, { columnIndex: 20 }),
+        record('rec-dup-2', ROW_5, 'مرجان', 45, 2, { columnIndex: 21 }),
+      ],
+      beneficiaryColumns: [beneficiaryColumn(20, BENE), beneficiaryColumn(21, BENE2)],
+    });
+    await screen.findByTestId('cn2b-nl-candidates');
+    // Two distinct candidates render despite the identical visible label —
+    // column identity, not header text, is what keeps them apart.
+    const labels = screen.getAllByText(new RegExp(`${ROW_5} · مرجان`));
+    expect(labels).toHaveLength(2);
+
+    designateAmong(ROW_5, 'مرجان', 'Beneficiary Hospital');
+    designateAmong(ROW_5, 'مرجان', 'Second Hospital');
+    fillReason('duplicate header, distinct columns');
+    fireEvent.click(screen.getByRole('button', { name: T.cn2b_nl_bulk_preview.en }));
+    expect(screen.getByTestId('cn2b-nl-lines')).toHaveTextContent('2');
+    fireEvent.click(screen.getByRole('button', { name: T.cn2b_nl_bulk_confirm.en }));
+    await waitFor(() => expect(setNeedLine).toHaveBeenCalledTimes(2));
+    const beneficiaries = setNeedLine.mock.calls.map((c) => c[0].beneficiaryOrganizationId).sort();
+    expect(beneficiaries).toEqual([BENE, BENE2].sort());
+  });
+
+  it('[E] a mapped source quantity of exact zero is valid, selectable, and travels through as "0" — blank is NOT zero', async () => {
+    renderPanel('en', {
+      records: [record('rec-zero', ROW_5, 'final', 0, 1, { columnIndex: 2 })],
+    });
+    const box = designate(ROW_5, 'final');
+    expect(box.disabled).toBe(false);
+    expect(contributionInput('final').value).toBe('0'); // prefilled from the raw cell, not blank
+    fillReason('zero is a real confirmed value');
+    expect(screen.getByRole('button', { name: T.cn2b_nl_save.en })).toBeEnabled();
+    // Clearing the field is a DIFFERENT state from designating zero: blank
+    // disables saving, and re-typing zero re-enables it — all before ever
+    // committing, so the still-mounted candidate is what is being asserted on.
+    fireEvent.change(contributionInput('final'), { target: { value: '' } });
+    expect(screen.getByRole('button', { name: T.cn2b_nl_save.en })).toBeDisabled();
+    fireEvent.change(contributionInput('final'), { target: { value: '0' } });
+    expect(screen.getByRole('button', { name: T.cn2b_nl_save.en })).toBeEnabled();
+    saveAndConfirm();
+    await waitFor(() => expect(setNeedLine).toHaveBeenCalledTimes(1));
+    const call = setNeedLine.mock.calls[0][0];
+    expect(call.quantitySources).toEqual([{ sourceRecordId: 'rec-zero', designatedQuantity: '0', appliedOverrideId: null }]);
+    expect(call.approvedQuantity).toBe('0');
+  });
+});
+
 describe('M212 need-line panel — one row, several beneficiaries (C1)', () => {
   it('lets the second institution cell of a row go to a DIFFERENT beneficiary', async () => {
     const hospitalCells = [
-      record('rec-a', ROW_5, 'مستشفى أ', 30, 1),
-      record('rec-b', ROW_5, 'مستشفى ب', 45, 2),
+      record('rec-a', ROW_5, 'مستشفى أ', 30, 1, { columnIndex: 1 }),
+      record('rec-b', ROW_5, 'مستشفى ب', 45, 2, { columnIndex: 2 }),
     ];
     const lineA = { ...EXISTING, id: 'nl-a', approvedQuantity: '30' };
     renderPanel('en', {
@@ -296,8 +530,8 @@ describe('M212 need-line panel — one row, several beneficiaries (C1)', () => {
       records: hospitalCells,
       needLines: [lineA],
       claimedSources: [link('nl-a', 'rec-a', '30', 's1', ROW_5, 'مستشفى أ')],
+      beneficiaryColumns: [beneficiaryColumn(1, BENE), beneficiaryColumn(2, BENE2)],
     });
-    await chooseBeneficiary(BENE2);
     // Scoped to the CANDIDATES: the claimed cell must not be designatable, while
     // the existing line's lineage below legitimately still names it.
     const candidates = screen.getByTestId('cn2b-nl-candidates');
@@ -326,7 +560,6 @@ describe('M212 need-line panel — revision-wide provenance (Q1)', () => {
 
   it('ADDS to the existing line of the same scope: the lineage it saw, the exact combined total, the line’s own unit', async () => {
     renderPanel('en', { needLines: [EXISTING], claimedSources: [EXISTING_LINK] });
-    await chooseBeneficiary();
     designate(ROW_5, 'final');
     fireEvent.change(contributionInput('final'), { target: { value: '0.2' } });
     // Changing the form's unit does not re-interpret the existing designations.
@@ -352,7 +585,6 @@ describe('M212 need-line panel — revision-wide provenance (Q1)', () => {
     setNeedLine.mockRejectedValueOnce(new CentralNeedsError('need_line_lineage_stale', 'need_line_lineage_stale'));
     const onChanged = vi.fn();
     renderPanel('en', { onChanged });
-    await chooseBeneficiary();
     designate(ROW_5, 'final');
     fillReason();
     saveAndConfirm();
@@ -365,7 +597,6 @@ describe('M212 need-line panel — revision-wide provenance (Q1)', () => {
   it('shows an already-linked cell as normal localized text — never duplicate / 23505 / a constraint name', async () => {
     setNeedLine.mockRejectedValueOnce(new CentralNeedsError('source_record_already_linked', 'source_record_already_linked'));
     renderPanel('en');
-    await chooseBeneficiary();
     designate(ROW_5, 'final');
     fillReason();
     saveAndConfirm();
@@ -428,7 +659,6 @@ describe('M212 need-line panel — the explicit correction path (Q3)', () => {
 describe('M212 need-line panel — the quantity contract', () => {
   it('accepts zero, and treats blank as NOT zero', async () => {
     renderPanel('en');
-    await chooseBeneficiary();
     designate(ROW_5, 'final');
     fillReason();
     fireEvent.change(contributionInput('final'), { target: { value: '0' } });
@@ -440,7 +670,6 @@ describe('M212 need-line panel — the quantity contract', () => {
 
   it('refuses a negative contribution', async () => {
     renderPanel('en');
-    await chooseBeneficiary();
     designate(ROW_5, 'final');
     fillReason();
     fireEvent.change(contributionInput('final'), { target: { value: '-5' } });
@@ -450,7 +679,6 @@ describe('M212 need-line panel — the quantity contract', () => {
 
   it('keeps a high-scale decimal EXACT, end to end, with no rounding', async () => {
     renderPanel('en');
-    await chooseBeneficiary();
     designate(ROW_5, 'final');
     designate(ROW_5, 'requested');
     fireEvent.change(contributionInput('final'), { target: { value: '120.1239' } });
@@ -469,7 +697,6 @@ describe('M212 need-line panel — the quantity contract', () => {
 
   it('sends a NULL unit when the conversion cannot be made', async () => {
     renderPanel('en');
-    await chooseBeneficiary();
     designate(ROW_5, 'final');
     fillReason();
     fireEvent.click(screen.getByLabelText(T.cn2b_nl_unit_conversion_required.en));
@@ -483,7 +710,6 @@ describe('M212 need-line panel — the quantity contract', () => {
 describe('M212 need-line panel — mandatory reason', () => {
   it('will not save without a mapping justification', async () => {
     renderPanel('en');
-    await chooseBeneficiary();
     designate(ROW_5, 'final');
     expect(screen.getByRole('button', { name: T.cn2b_nl_save.en })).toBeDisabled();
     expect(screen.getByText(T.cn2b_nl_reason_required.en)).toBeInTheDocument();
@@ -497,13 +723,14 @@ describe('M212 need-line panel — a bulk action is still an explicit act', () =
     renderPanel('en', {
       dispositions: [disposition(ROW_5, ITEM_A), disposition(ROW_6, ITEM_B)],
     });
-    await chooseBeneficiary();
     designate(ROW_5, 'final');
     designate(ROW_6, 'final');
     fillReason();
     fireEvent.click(screen.getByRole('button', { name: T.cn2b_nl_bulk_preview.en }));
     expect(screen.getByTestId('cn2b-nl-affected')).toHaveTextContent('2');
     expect(screen.getByTestId('cn2b-nl-lines')).toHaveTextContent('2');
+    // Same beneficiary (BENE) for both scopes here, so no multi-beneficiary note.
+    expect(screen.queryByTestId('cn2b-nl-beneficiary-count')).toBeNull();
     expect(setNeedLine).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('button', { name: T.cn2b_nl_bulk_confirm.en }));
@@ -514,7 +741,6 @@ describe('M212 need-line panel — a bulk action is still an explicit act', () =
 
   it('writes nothing when the preview is cancelled', async () => {
     renderPanel('en');
-    await chooseBeneficiary();
     designate(ROW_5, 'final');
     fillReason();
     fireEvent.click(screen.getByRole('button', { name: T.cn2b_nl_save.en }));
@@ -529,7 +755,7 @@ describe('M212 need-line panel — read-only and completeness', () => {
   it('offers no editing on a closed revision', async () => {
     renderPanel('en', { editable: false });
     expect(await screen.findByTestId('cn2b-nl-readonly')).toBeInTheDocument();
-    expect(screen.queryByLabelText(T.cn2b_nl_beneficiary.en)).toBeNull();
+    expect(screen.queryByTestId('cn2b-nl-candidates')).toBeNull();
     expect(screen.queryByRole('button', { name: T.cn2b_nl_save.en })).toBeNull();
   });
 
@@ -690,6 +916,15 @@ describe('M212 — the client never becomes the authority', () => {
     ]) {
       expect(PANEL, heuristic).not.toContain(heuristic);
     }
+  });
+
+  it('(213) resolves a beneficiary only from the confirmed column map — never a per-panel selection, never workbook text', () => {
+    expect(PANEL).toContain('beneficiaryByRecordId');
+    expect(PANEL).toContain('columnIdentity');
+    // The removed global control must not have come back.
+    expect(PANEL).not.toContain('cn2b_nl_beneficiary\'');
+    expect(PANEL).not.toContain('cn2b_nl_beneficiary"');
+    expect(PANEL).not.toMatch(/aria-label=\{t\('cn2b_nl_beneficiary'/);
   });
 
   it('keeps the canonical unit vocabulary identical to the migration', () => {
