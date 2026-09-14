@@ -29,20 +29,15 @@ const SET_NEED_LINE_SIG =
   'public.phoenix_central_needs_set_need_line(uuid, uuid, uuid, numeric, text, jsonb, uuid[], text, text, uuid, text)';
 
 describe('CN-2B/213 static — registration and file hygiene', () => {
-  it('213 exists on disk immediately after 212, and is NOT yet reviewed', () => {
+  it('213 exists at its canonical ordinal and is independently reviewed', () => {
     const files = readdirSync(MIGRATIONS).filter((f) => /^\d{3}_.*\.sql$/.test(f)).sort();
     expect(files).toContain(FILENAME);
-    expect(files[files.length - 1]).toBe(FILENAME);
-    expect(files.filter((f) => Number(f.slice(0, 3)) > 213)).toEqual([]);
 
-    // The load-bearing governance assertion: 213 must NOT be added to the
-    // hand-maintained reviewed list merely to make this suite (or the repo's
-    // own reviewed-migration-manifest test) green. It stays the next
-    // UNREVIEWED migration until an independent review authorizes advancing
-    // the ceiling — exactly the discipline M212 itself passed through.
-    expect(isReviewedMigrationFile(FILENAME)).toBe(false);
-    expect(REVIEWED_MIGRATION_FILES).not.toContain(FILENAME);
-    expect(getNextUnreviewedMigrationNumber()).toBe(213);
+    // 213 entered the canonical reviewed-migration registry only after the
+    // independent review chain authorized this exact migration candidate.
+    // Future reviewed migrations must not invalidate this historical proof.
+    expect(isReviewedMigrationFile(FILENAME)).toBe(true);
+    expect(REVIEWED_MIGRATION_FILES).toContain(FILENAME);
   });
 
   it('edits no historical migration file — only CREATE OR REPLACE of the two extended functions', () => {

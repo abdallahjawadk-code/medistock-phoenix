@@ -205,11 +205,19 @@ describe('no client-side document-number sequence exists',()=>{
     // order (WITH ORDINALITY), never allocated by a client and never an
     // authoritative document/reference number. Boundary moves to 212 so the
     // next unknown migration still fails closed.
-    const beyond=migrations.filter(f=>/^(1[89]\d|[2-9]\d\d)_/.test(f)&&!/^(179|180|181|182|183|184|185|186|187|188|189|190|191|192|193|194|195|196|197|198|199|200|201|202|203|204|205|206|207|208|209|210|211|212)_/.test(f));
+    // CN-2B / M213: the independently reviewed Central Needs beneficiary-
+    // column-mapping layer. Same finding — no sequence, no counter, no
+    // max()+1, no generated numeric identity and no document number of any
+    // kind: its one new table keys on gen_random_uuid(), and sheet_index /
+    // column_index are the persisted evidence's own zero-based grid positions,
+    // never allocated by a client. Boundary moves to 213 so the next unknown
+    // migration still fails closed.
+    const beyond=migrations.filter(f=>/^(1[89]\d|[2-9]\d\d)_/.test(f)&&!/^(179|180|181|182|183|184|185|186|187|188|189|190|191|192|193|194|195|196|197|198|199|200|201|202|203|204|205|206|207|208|209|210|211|212|213)_/.test(f));
     expect(beyond).toEqual([]);
     for(const f of [
       '211_phoenix_central_needs_batch_and_disposition.sql',
       '212_phoenix_central_needs_need_lines.sql',
+      '213_phoenix_central_needs_beneficiary_column_mapping.sql',
       '200_phoenix_demo_purge_auth_boundary_correction.sql',
       '199_phoenix_command_center_read_contract.sql',
       '198_phoenix_secdef_search_path_convergence.sql',

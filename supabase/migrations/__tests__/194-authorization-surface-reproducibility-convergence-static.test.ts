@@ -23,7 +23,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
-import { REVIEWED_MIGRATION_FILES } from './helpers/reviewed-migrations';
+import { REVIEWED_MIGRATION_FILES, getNextUnreviewedMigrationNumber } from './helpers/reviewed-migrations';
 
 const ROOT = join(__dirname, '../../../');
 const MIGRATIONS_DIR = join(ROOT, 'supabase/migrations');
@@ -297,13 +297,15 @@ describe('194 · static · historical immutability and rig coupling', () => {
     expect(dirty).toBe('');
   });
 
-  // CN-1B (210, Central Needs workflow RPCs) is now the reviewed successor.
-  // This relaxes ONLY which future migration numbers may exist; every M194
-  // assertion in this file is unchanged.
-  it('no migration numbered 213 or higher exists', () => {
+  // CN-2B / Finding-1 corrective (213, Central Needs beneficiary-column-
+  // mapping) is now the reviewed successor. This relaxes ONLY which future
+  // migration numbers may exist; every M194 assertion in this file is
+  // unchanged. Derived from the canonical registry rather than a bumped
+  // literal, so this guard never needs a manual number edit again.
+  it('no migration numbered one past the reviewed ceiling or higher exists', () => {
     const above = readdirSync(MIGRATIONS_DIR)
       .filter((f) => /^\d{3}_.*\.sql$/.test(f))
-      .filter((f) => Number(f.slice(0, 3)) >= 213);
+      .filter((f) => Number(f.slice(0, 3)) >= getNextUnreviewedMigrationNumber());
     expect(above).toEqual([]);
   });
 

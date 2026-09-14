@@ -51,9 +51,12 @@ describe('M197 static — identity and placement', () => {
       '210_phoenix_central_needs_workflow_rpcs.sql',
       '211_phoenix_central_needs_batch_and_disposition.sql',
       '212_phoenix_central_needs_need_lines.sql',
+      // CN-2B / Finding-1 corrective (213): the Central Needs beneficiary-
+      // column-mapping layer. It is now the reviewed successor.
+      '213_phoenix_central_needs_beneficiary_column_mapping.sql',
     ]);
-    expect(files.filter((f) => Number(f.slice(0, 3)) > 212)).toEqual([]);
-    expect(files).toHaveLength(212);
+    expect(files.filter((f) => Number(f.slice(0, 3)) > 213)).toEqual([]);
+    expect(files).toHaveLength(213);
   });
 
   it('carries no MANUAL APPLY ONLY banner, so the pinned executor will accept it', () => {

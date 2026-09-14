@@ -614,6 +614,19 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
       'supabase/migrations/212_phoenix_central_needs_need_lines.sql',
       'supabase/migrations/__tests__/212-central-needs-need-lines-static.test.ts',
       'supabase/migrations/__tests__/212-central-needs-need-lines.dynamic.test.ts',
+      // CN-2B corrective (213): the independently reviewed Central Needs
+      // beneficiary-column-mapping layer — one reviewed, forward-only
+      // migration plus its static and dynamic proofs. The migration adds no
+      // branding asset, no RLS policy on an A7.2.4 surface and no
+      // authorization decision: its own RLS lives on one NEW table and
+      // authorizes through the existing phoenix_status_center_authorized
+      // helper, so A7.2.4's own subject is untouched by it. Registered by
+      // EXACT filename, exactly as M209-M212 were. No wildcard and no
+      // directory exemption, so every other file under supabase/ still fails
+      // this guard closed.
+      'supabase/migrations/213_phoenix_central_needs_beneficiary_column_mapping.sql',
+      'supabase/migrations/__tests__/213-central-needs-beneficiary-column-mapping-static.test.ts',
+      'supabase/migrations/__tests__/213-central-needs-beneficiary-column-mapping.dynamic.test.ts',
       // INTERACTIVE-GUIDE-IG1: one new file under the watched `src/app`
       // prefix, registered by EXACT filename like every entry above.
       //

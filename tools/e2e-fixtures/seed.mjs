@@ -397,22 +397,48 @@ async function main() {
     // Four rows: one for the exact-decimal proof, two for the float-drift proof,
     // and one carrying a value no JavaScript number can hold exactly — kept as
     // a JSON STRING here so the evidence itself is not rounded by this seed.
+    //
+    // CN-2B corrective (M213): every cell also carries the physical-column
+    // provenance the parser persists (sheetIndex + coordinate), because M213
+    // resolves a cell's beneficiary from its CONFIRMED PHYSICAL COLUMN, never
+    // from header text or a caller's choice. The sheet is a multi-institution
+    // layout: column B holds the requested quantity, column C holds
+    // institution A's final requirement and column D holds institution B's.
+    // C and D deliberately share the header text "final" — the corpus finding
+    // M213 was built for — so only the physical coordinate tells them apart.
+    // No column is mapped here: the acceptance run proves the unresolved
+    // refusal first and then records the BENEFICIARY decisions through the
+    // real phoenix_central_needs_set_beneficiary_columns RPC.
+    const CN_SHEET = 0;
+    const CN_COLUMNS = { requested: 1, institutionA: 2, institutionB: 3 };
     const cnRecords = {};
     const cnRows = [
-      { entity: 'sheet:0:row:1', fields: [['requested', 900], ['final', 120.1239]] },
-      { entity: 'sheet:0:row:2', fields: [['final', 0.1]] },
-      { entity: 'sheet:0:row:3', fields: [['final', 0.2]] },
-      { entity: 'sheet:0:row:4', fields: [['final', '12345678901234567.891']] },
+      { row: 1, entity: 'sheet:0:row:1', cells: [['requested', CN_COLUMNS.requested, 900], ['final', CN_COLUMNS.institutionA, 120.1239]] },
+      { row: 2, entity: 'sheet:0:row:2', cells: [['final', CN_COLUMNS.institutionB, 0.1]] },
+      { row: 3, entity: 'sheet:0:row:3', cells: [['final', CN_COLUMNS.institutionB, 0.2]] },
+      { row: 4, entity: 'sheet:0:row:4', cells: [['final', CN_COLUMNS.institutionA, '12345678901234567.891']] },
     ];
     let cnOrdinal = 0;
     for (const row of cnRows) {
-      for (const [field, value] of row.fields) {
+      for (const [field, col, value] of row.cells) {
         cnOrdinal += 1;
+        const provenance = {
+          fileFingerprintSha256: 'e'.repeat(64),
+          originalFilename: 'e2e-annual-needs.xls',
+          parserVersion: '1.0.0',
+          sheetIndex: CN_SHEET,
+          sheetName: 'E2E Needs',
+          sheetHidden: 'visible',
+          coordinate: { row: row.row, col, a1: `${String.fromCharCode(65 + col)}${row.row + 1}` },
+          extractedAt: '2026-01-01T00:00:00.000Z',
+        };
         const id = (await client.query(
           `INSERT INTO central_needs_source_records
-             (import_session_id, organization_id, record_ordinal, target_entity, field_name, source_values)
-           VALUES ($1,$2,$3,$4,$5,$6::jsonb) RETURNING id`,
-          [cnSession, ORG_C_AUTHORITY, cnOrdinal, row.entity, field, JSON.stringify({ value })],
+             (import_session_id, organization_id, record_ordinal, target_entity, field_name,
+              source_values, source_provenance)
+           VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb) RETURNING id`,
+          [cnSession, ORG_C_AUTHORITY, cnOrdinal, row.entity, field, JSON.stringify({ value }),
+            JSON.stringify(provenance)],
         )).rows[0].id;
         cnRecords[`${row.entity}::${field}`] = id;
       }
@@ -450,6 +476,13 @@ async function main() {
         planRevisionId: cnRevision,
         importSessionId: cnSession,
         centralItemId: CN_ITEM,
+        // CN-2B corrective (M213): the physical columns the acceptance run
+        // resolves through the canonical column-mapping RPC.
+        columns: {
+          requested: { sheetIndex: CN_SHEET, columnIndex: CN_COLUMNS.requested },
+          institutionA: { sheetIndex: CN_SHEET, columnIndex: CN_COLUMNS.institutionA },
+          institutionB: { sheetIndex: CN_SHEET, columnIndex: CN_COLUMNS.institutionB },
+        },
         editor: { email: 'e2e-central-needs-editor@phoenix.local', id: cnUserId },
         records: cnRecords,
       },

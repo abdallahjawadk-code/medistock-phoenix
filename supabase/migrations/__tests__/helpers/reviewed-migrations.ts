@@ -221,6 +221,15 @@ export const REVIEWED_MIGRATION_FILES: readonly string[] = Object.freeze([
   // M210 deliberately deferred.
   '211_phoenix_central_needs_batch_and_disposition.sql',
   '212_phoenix_central_needs_need_lines.sql',
+  // CN-2B / Finding-1 corrective (213): the Central Needs beneficiary-column-
+  // mapping layer — one new organization-scoped table (physical-column
+  // decisions: beneficiary / non_beneficiary / unresolved) plus the
+  // server-enforced `beneficiary_column_mapping_required` blocker that
+  // closes the reviewed independent-review finding (an unreviewed
+  // beneficiary column could otherwise escape readiness/submit, including
+  // via a direct PostgREST call bypassing the UI). It moves no stock,
+  // creates no transfer and adds no corridor, route or dispatch SQL at all.
+  '213_phoenix_central_needs_beneficiary_column_mapping.sql',
 ]);
 
 const REVIEWED_SET: ReadonlySet<string> = new Set(REVIEWED_MIGRATION_FILES);
