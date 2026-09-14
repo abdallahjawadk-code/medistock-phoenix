@@ -535,6 +535,101 @@
   border: 0;
 }
 
+/* ── UX-2A · Operational toolbars ────────────────────────────────────────── */
+/* One control strip for the Source search and the Review workbench. It wraps
+   rather than scrolls, so no control can end up outside the viewport, and it
+   never widens the page: every child may shrink to zero. */
+.cn2b-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+  min-inline-size: 0;
+  max-inline-size: 100%;
+}
+
+.cn2b-toolbar__grow { flex: 1 1 16rem; min-inline-size: 0; }
+.cn2b-toolbar__actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.cn2b-toolbar .cn2b-input, .cn2b-toolbar .cn2b-select { max-inline-size: 100%; }
+.cn2b-toolbar--review { padding-block-end: 2px; }
+
+/* The search state line: one sentence, one state, never two at once. The phase
+   is carried by a data attribute and by the WORDS, never by hue alone. */
+.cn2b-searchstate {
+  margin: 0;
+  font-size: 0.8rem;
+  padding-inline-start: 10px;
+  border-inline-start: 3px solid var(--brd);
+  color: var(--text);
+  opacity: 0.85;
+}
+
+.cn2b-searchstate[data-phase='searching'] { border-inline-start-color: var(--cyan); }
+.cn2b-searchstate[data-phase='done'] { border-inline-start-color: var(--ok); font-weight: 600; opacity: 1; }
+.cn2b-searchstate[data-phase='failed'] { border-inline-start-color: var(--danger); font-weight: 600; opacity: 1; }
+
+/* ── UX-2A · Review counts ───────────────────────────────────────────────── */
+.cn2b-counts {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  padding: 9px 12px;
+  border: 1px solid var(--brd);
+  border-radius: 11px;
+  background: var(--surface2, var(--surface));
+  min-inline-size: 0;
+}
+
+.cn2b-counts__cell { display: flex; align-items: baseline; gap: 7px; min-inline-size: 0; }
+.cn2b-counts dt { font-size: 0.72rem; opacity: 0.72; }
+
+.cn2b-counts dd {
+  margin: 0;
+  font-size: 0.92rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.cn2b-counts dd[data-count='undecided'] { color: var(--warn); }
+.cn2b-counts dd[data-count='selected'] { color: var(--cyan); }
+
+/* ── UX-2A · Canonical-material lookup ───────────────────────────────────── */
+/* Deliberately its own bordered block: FINDING a material is not APPLYING one,
+   and the two must not read as a single step. */
+.cn2b-lookup {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px dashed var(--brd);
+  border-radius: 11px;
+  min-inline-size: 0;
+}
+
+/* ── UX-2A · Bulk workbench ──────────────────────────────────────────────── */
+.cn2b-bulk__selection { margin: 0; font-size: 0.8rem; }
+.cn2b-bulk__selection strong { font-variant-numeric: tabular-nums; color: var(--cyan); }
+
+/* ── UX-2A · Table density ───────────────────────────────────────────────── */
+.cn2b-cell--actions { white-space: nowrap; }
+.cn2b-cell--digest { max-inline-size: 12rem; }
+
+.cn2b-list--sessions { gap: 7px; }
+
+.cn2b-session__current {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  padding: 1px 7px;
+  border: 1px solid var(--cyan);
+  border-radius: 999px;
+  color: var(--cyan);
+  white-space: nowrap;
+}
+
 /* ── Mobile ──────────────────────────────────────────────────────────────── */
 @media (max-width: 720px) {
   .cn2b-panel__body { padding: 11px 12px; }
@@ -549,5 +644,15 @@
   .cn2b-summary__grid { grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr)); }
   .cn2b-stagelink { font-size: 0.75rem; padding: 7px 10px; }
   .cn2b-stagelink[data-active='true'] { padding: 6px 9px; }
+
+  /* UX-2A — toolbar controls stack to full width rather than shrinking into
+     unusable slivers, and every action keeps a comfortable touch target. */
+  .cn2b-toolbar { align-items: stretch; }
+  .cn2b-toolbar__grow { flex: 1 1 100%; }
+  .cn2b-toolbar .cn2b-field { flex: 1 1 100%; }
+  .cn2b-toolbar__actions { inline-size: 100%; }
+  .cn2b-toolbar__actions .cn2b-btn { flex: 1 1 auto; min-block-size: 44px; }
+  .cn2b-counts { gap: 6px 14px; padding: 9px 10px; }
+  .cn2b-cell--digest { max-inline-size: none; }
   .cn2b-stage__title { font-size: 0.74rem; }
 }

@@ -39,7 +39,7 @@
  *     ALREADY loaded. Neither adds a query, and neither computes a business
  *     fact — readiness still comes from the server, as it always did.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
@@ -192,6 +192,37 @@ export function CentralNeedsScreen() {
   const [busy, setBusy] = useState<Busy>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  /**
+   * UX-2A — in-flight marker for the session read this screen already performs.
+   * It distinguishes "still loading" from "loaded and genuinely empty", which
+   * previously rendered identically. It adds no request.
+   *
+   * There is no matching flag for the revision reload any more: `dataRevisionId`
+   * below is strictly stronger, since it says not just whether a read is in
+   * flight but WHICH revision the committed evidence belongs to — which is the
+   * question every revision-scoped render site actually has to answer.
+   */
+  const [sessionLoading, setSessionLoading] = useState(false);
+  /**
+   * FINDING C — the revision LIST is loading until its one existing read
+   * resolves. It starts true so the very first paint cannot assert "no
+   * revisions" about a question that has not been answered yet.
+   */
+  const [revisionsLoading, setRevisionsLoading] = useState(true);
+  /**
+   * WHICH REVISION THE COMMITTED EVIDENCE ACTUALLY BELONGS TO.
+   *
+   * Clearing the old revision's state in an effect is too late: a passive
+   * effect runs AFTER the render that already carries the new `revisionId`, so
+   * for one commit the screen would show revision A's batches, sessions and
+   * review rows beneath revision B's header. On a provenance screen that
+   * single frame is a false attribution, so the guard has to hold DURING
+   * render, not after it.
+   *
+   * This is set only by a reload that both succeeded and is still the current
+   * generation, and is dropped to null the moment anything invalidates it.
+   */
+  const [dataRevisionId, setDataRevisionId] = useState<string | null>(null);
 
   const preview = useCentralNeedsPreview();
   const [pendingFile, setPendingFile] = useState<File | null>(null);
@@ -202,9 +233,64 @@ export function CentralNeedsScreen() {
   const [sourceQuery, setSourceQuery] = useState('');
   const [sourceFiles, setSourceFiles] = useState<SourceFile[]>([]);
   const [entryHits, setEntryHits] = useState<Array<{ id: string; archiveEntryPath: string | null; entrySha256: string; containerFilename: string; entryOrdinal: number }>>([]);
+  /**
+   * UX-2A — the four states a bounded evidence search can actually be in.
+   *
+   * They exist because "no results" and "you have not searched yet" are
+   * different facts, and the screen used to render the first sentence for the
+   * second situation. This adds NO query: the same two bounded server-side
+   * searches run, in the same place, under the same RLS scope; the phase only
+   * records where that one request currently is.
+   */
+  const [sourceSearchPhase, setSourceSearchPhase] = useState<'idle' | 'searching' | 'done' | 'failed'>('idle');
+  const [sourceSearchError, setSourceSearchError] = useState<string | null>(null);
+  /**
+   * Monotonic request token. A slower earlier keystroke must never overwrite a
+   * newer answer, which would show results for a query the operator has already
+   * replaced. Nothing is cancelled server-side; a stale reply is simply ignored.
+   */
+  const sourceSearchSeq = useRef(0);
+  /**
+   * FINDING B — the same monotonic-token discipline for the revision reload.
+   *
+   * Two reloads can overlap (a revision switch, or a panel's onChanged landing
+   * mid-flight). Without a token the LAST REPLY wins rather than the LATEST
+   * REQUEST, so a slow read for revision A can overwrite revision B's evidence
+   * and present it as B's. Only the newest request may commit.
+   */
+  const revisionReloadSeq = useRef(0);
 
   const revision = useMemo(() => revisions.find((r) => r.id === revisionId) ?? null, [revisions, revisionId]);
   const isDraft = revision?.status === 'draft';
+
+  /**
+   * FINDINGS A + B — everything below is scoped to ONE revision, so a revision
+   * change must drop all of it at once. Showing the previous revision's
+   * batches, sessions, review rows or search hits under a new revision's header
+   * would attribute evidence to a plan it does not belong to, which is exactly
+   * the kind of claim this feature exists to make impossible.
+   */
+  const resetRevisionScopedState = useCallback(() => {
+    revisionReloadSeq.current += 1;
+    sourceSearchSeq.current += 1;
+    // Nothing on screen may claim a revision until a reload proves which one.
+    setDataRevisionId(null);
+    setSessions([]);
+    setBatches([]);
+    setOverrides([]);
+    setReadiness(null);
+    setNeedLines([]);
+    setClaimedSources([]);
+    setBeneficiaryColumns([]);
+    setActiveSessionId(null);
+    setRecords([]);
+    setDispositions([]);
+    setSourceQuery('');
+    setSourceFiles([]);
+    setEntryHits([]);
+    setSourceSearchError(null);
+    setSourceSearchPhase('idle');
+  }, []);
 
   // --- loading -------------------------------------------------------------
 
@@ -225,17 +311,24 @@ export function CentralNeedsScreen() {
   useEffect(() => {
     if (!organizationId) return;
     let cancelled = false;
+    // FINDING C — "still asking" and "asked, and there are none" are different
+    // answers. Until this resolves the screen must not claim the second.
+    setRevisionsLoading(true);
     listPlanRevisions(organizationId)
       .then((rows) => {
         if (cancelled) return;
         setRevisions(rows);
         setRevisionId((current) => current ?? rows[0]?.id ?? null);
       })
-      .catch((e: unknown) => !cancelled && setError(e instanceof CentralNeedsError ? e.code : 'load_failed'));
+      .catch((e: unknown) => !cancelled && setError(e instanceof CentralNeedsError ? e.code : 'load_failed'))
+      .finally(() => { if (!cancelled) setRevisionsLoading(false); });
     return () => { cancelled = true; };
   }, [organizationId]);
 
   const reloadRevision = useCallback(async (id: string) => {
+    // FINDING B — claim this reload's generation BEFORE awaiting. The same six
+    // reads run, in the same order; only the right to commit them is gated.
+    const seq = (revisionReloadSeq.current += 1);
     const [nextSessions, nextBatches, nextOverrides, nextReadiness, nextLineage, nextBeneficiaryColumns] =
       await Promise.all([
         listImportSessions(id),
@@ -249,6 +342,9 @@ export function CentralNeedsScreen() {
         // to whichever import session happens to be on screen.
         listBeneficiaryColumns(id),
       ]);
+    // A newer reload started while this one was in flight: its answer is the
+    // current one, and this late reply is discarded rather than overwriting it.
+    if (seq !== revisionReloadSeq.current) return;
     setSessions(nextSessions);
     setBatches(nextBatches);
     setOverrides(nextOverrides);
@@ -258,23 +354,37 @@ export function CentralNeedsScreen() {
     setBeneficiaryColumns(nextBeneficiaryColumns);
     const completed = nextSessions.filter((s) => s.status === 'completed');
     setActiveSessionId((current) => (current && completed.some((s) => s.id === current) ? current : completed[0]?.id ?? null));
+    // Last, and only here: every read above succeeded and this is still the
+    // current generation, so the committed evidence now provably belongs to
+    // `id`. A rejected reload never reaches this line, so a failure leaves the
+    // identity null rather than mislabelling stale data.
+    setDataRevisionId(id);
   }, []);
 
   useEffect(() => {
     if (!revisionId) return;
     let cancelled = false;
+    // FINDINGS A + B — drop the previous revision's evidence and its search
+    // BEFORE the new reads start, so nothing from the old plan is ever on
+    // screen under the new plan's header, not even for one frame.
+    resetRevisionScopedState();
+    // The reload publishes `dataRevisionId` itself, and only on success while
+    // still current, so a failure leaves the evidence unattributed and the
+    // render gate keeps showing the waiting state rather than stale rows.
     reloadRevision(revisionId).catch((e: unknown) => {
       if (!cancelled) setError(e instanceof CentralNeedsError ? e.code : 'load_failed');
     });
     return () => { cancelled = true; };
-  }, [revisionId, reloadRevision]);
+  }, [revisionId, reloadRevision, resetRevisionScopedState]);
 
   useEffect(() => {
-    if (!activeSessionId) { setRecords([]); setDispositions([]); return; }
+    if (!activeSessionId) { setRecords([]); setDispositions([]); setSessionLoading(false); return; }
     let cancelled = false;
+    setSessionLoading(true);
     Promise.all([listSourceRecords(activeSessionId), listDispositions(activeSessionId)])
       .then(([r, d]) => { if (!cancelled) { setRecords(r); setDispositions(d); } })
-      .catch((e: unknown) => !cancelled && setError(e instanceof CentralNeedsError ? e.code : 'load_failed'));
+      .catch((e: unknown) => !cancelled && setError(e instanceof CentralNeedsError ? e.code : 'load_failed'))
+      .finally(() => { if (!cancelled) setSessionLoading(false); });
     return () => { cancelled = true; };
   }, [activeSessionId]);
 
@@ -348,19 +458,48 @@ export function CentralNeedsScreen() {
   // I — search runs against the selected revision only; RLS is the boundary.
   const onSearchSource = useCallback(async (q: string) => {
     setSourceQuery(q);
-    if (!revisionId) return;
+    const trimmed = q.trim();
+    // An empty box is NOT a search that found nothing — it is no search at all,
+    // and any in-flight reply is disowned by advancing the token.
+    if (!revisionId || trimmed === '') {
+      sourceSearchSeq.current += 1;
+      setSourceFiles([]);
+      setEntryHits([]);
+      setSourceSearchError(null);
+      setSourceSearchPhase('idle');
+      return;
+    }
+    const seq = (sourceSearchSeq.current += 1);
+    setSourceSearchError(null);
+    setSourceSearchPhase('searching');
     try {
       const [files, entries] = await Promise.all([
         searchSourceFiles(revisionId, q),
         searchBatchEntries(revisionId, q),
       ]);
+      if (seq !== sourceSearchSeq.current) return;
       setSourceFiles(files);
       setEntryHits(entries);
-    } catch {
+      setSourceSearchPhase('done');
+    } catch (e: unknown) {
+      if (seq !== sourceSearchSeq.current) return;
       setSourceFiles([]);
       setEntryHits([]);
+      // A refused search is reported as a refusal, never as "nothing matched".
+      setSourceSearchError(e instanceof CentralNeedsError ? e.code : 'load_failed');
+      setSourceSearchPhase('failed');
     }
   }, [revisionId]);
+
+  /** UX-2A — reset the evidence search. Presentation only: it writes nothing. */
+  const onClearSourceSearch = useCallback(() => {
+    sourceSearchSeq.current += 1;
+    setSourceQuery('');
+    setSourceFiles([]);
+    setEntryHits([]);
+    setSourceSearchError(null);
+    setSourceSearchPhase('idle');
+  }, []);
 
   const onSubmit = useCallback(async () => {
     if (!revisionId) return;
@@ -439,8 +578,21 @@ export function CentralNeedsScreen() {
   // UX-1 — summary figures, every one of them counted off state already on
   // screen. A column counts as decided once a review decision exists for it,
   // whichever decision that was.
+  /**
+   * THE RENDER-TIME ATTRIBUTION GATE.
+   *
+   * Computed during render from the two identities, so it is already correct in
+   * the very first commit after `revisionId` changes — the render in which the
+   * effect has not run yet and the state below still holds the previous
+   * revision's evidence. Nothing revision-scoped may be presented unless the
+   * committed data provably belongs to the revision now selected.
+   */
+  const revisionDataReady = revisionId !== null && dataRevisionId === revisionId;
+
   const completedSessionCount = sessions.filter((s) => s.status === 'completed').length;
   const decidedColumnCount = beneficiaryColumns.filter((c) => c.decision !== null).length;
+  /** An unattributable figure is shown as unknown, never as a number. */
+  const metric = (value: number | string) => (revisionDataReady ? value : '—');
 
   /**
    * UX-1 — the content of each workflow stage, keyed by its canonical id.
@@ -460,7 +612,13 @@ export function CentralNeedsScreen() {
             value={revisionId ?? ''}
             onChange={(e) => setRevisionId(e.target.value || null)}
           >
-            {revisions.length === 0 && <option value="">{t('cn2b_no_revisions', lang)}</option>}
+            {/* FINDING C — while the list is still being read, say so. Only a
+                RESOLVED empty list may claim there are no revisions. */}
+            {revisions.length === 0 && (
+              <option value="">
+                {revisionsLoading ? t('cn2b_revisions_loading', lang) : t('cn2b_no_revisions', lang)}
+              </option>
+            )}
             {revisions.map((r) => (
               <option key={r.id} value={r.id}>{revisionLabel(r, lang)}</option>
             ))}
@@ -553,7 +711,11 @@ export function CentralNeedsScreen() {
         )}
 
         <Panel titleKey="cn2b_panel_batches" icon="warehouse">
-          {batches.length === 0 ? (
+          {!revisionDataReady ? (
+            /* Attribution gate: no batch may be shown under a revision the
+               committed data does not provably belong to. */
+            <p className="cn2b-hint" role="status">{t('cn2b_revision_loading', lang)}</p>
+          ) : batches.length === 0 ? (
             <PhoenixEmptyState title={t('cn2b_no_batches', lang)} />
           ) : (
             <div className="cn2b-scroll">
@@ -574,9 +736,9 @@ export function CentralNeedsScreen() {
                       <td>{b.containerFilename}</td>
                       <td>{t(`cn2b_kind_${b.containerKind}`, lang)}</td>
                       <td>{`${b.acceptedEntryCount} (+${b.excludedEntryCount})`}</td>
-                      <td><code className="cn2b-code">{b.containerSha256.slice(0, 12)}…</code></td>
-                      <td>
-                        <button type="button" className="cn2b-btn" onClick={() => void onDownloadSource(b.id)}>
+                      <td className="cn2b-cell--digest"><code className="cn2b-code">{b.containerSha256.slice(0, 12)}…</code></td>
+                      <td className="cn2b-cell--actions">
+                        <button type="button" className="cn2b-btn cn2b-btn--sm" onClick={() => void onDownloadSource(b.id)}>
                           {t('cn2b_download_source', lang)}
                         </button>
                       </td>
@@ -589,84 +751,164 @@ export function CentralNeedsScreen() {
         </Panel>
 
         <Panel titleKey="cn2b_panel_source_search" icon="reports">
-          <label className="cn2b-field">
-            <span className="cn2b-field__label">{t('cn2b_source_search', lang)}</span>
-            <input
-              className="cn2b-input"
-              type="search"
-              value={sourceQuery}
-              placeholder={t('cn2b_source_search_hint', lang)}
-              onChange={(e) => void onSearchSource(e.target.value)}
-            />
-          </label>
-          {sourceFiles.length === 0 && entryHits.length === 0 ? (
-            <p className="cn2b-hint">{t('cn2b_source_search_empty', lang)}</p>
+          {/*
+            REVISION ATTRIBUTION GATE for the whole search surface.
+
+            Hiding only the result ROWS was not enough: the typed query, the
+            phase line, the result COUNT and any refusal are equally statements
+            ABOUT a revision. In the single commit between selecting a new
+            revision and the reset effect running, they would otherwise still
+            describe the previous one — the same false attribution, just in
+            words instead of rows. So the entire operational surface waits
+            until the committed evidence provably belongs to the selection.
+          */}
+          {!revisionDataReady ? (
+            <p className="cn2b-hint" role="status">{t('cn2b_revision_loading', lang)}</p>
           ) : (
-            <div className="cn2b-scroll">
-              <table className="cn2b-table">
-                <caption className="cn2b-visually-hidden">{t('cn2b_panel_source_search', lang)}</caption>
-                <thead>
-                  <tr>
-                    <th scope="col">{t('cn2b_col_container', lang)}</th>
-                    <th scope="col">{t('cn2b_col_entry_path', lang)}</th>
-                    <th scope="col">{t('cn2b_col_sha', lang)}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sourceFiles.map((f) => (
-                    <tr key={f.id}>
-                      <td>{f.originalFilename}</td>
-                      <td>—</td>
-                      <td><code className="cn2b-code">{f.fileHash.slice(0, 16)}…</code></td>
-                    </tr>
-                  ))}
-                  {entryHits.map((e) => (
-                    <tr key={e.id}>
-                      <td>{e.containerFilename}</td>
-                      <td><code className="cn2b-code">{e.archiveEntryPath ?? '—'}</code></td>
-                      <td><code className="cn2b-code">{e.entrySha256.slice(0, 16)}…</code></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <>
+            {/*
+              UX-2A search toolbar. The input, the reset and the state line read
+              as one control strip; the state line below is the ONLY place that
+              says what the search is doing, so "nothing matched" can never be
+              shown to someone who has not searched.
+            */}
+            <div className="cn2b-toolbar">
+              <label className="cn2b-field cn2b-toolbar__grow" htmlFor="cn2b-source-search">
+                <span className="cn2b-field__label">{t('cn2b_source_search', lang)}</span>
+                <input
+                  id="cn2b-source-search"
+                  className="cn2b-input"
+                  type="search"
+                  value={sourceQuery}
+                  placeholder={t('cn2b_source_search_hint', lang)}
+                  onChange={(e) => void onSearchSource(e.target.value)}
+                />
+              </label>
+              <div className="cn2b-toolbar__actions">
+                <button
+                  type="button"
+                  className="cn2b-btn"
+                  disabled={sourceQuery === '' && sourceSearchPhase === 'idle'}
+                  onClick={onClearSourceSearch}
+                >
+                  {t('cn2b_source_search_clear', lang)}
+                </button>
+              </div>
             </div>
+
+            {/*
+              The four states are mutually exclusive and each is named. A refused
+              search is reported through the Central Needs translator as a
+              refusal, never flattened into an empty result.
+            */}
+            <p className="cn2b-searchstate" data-phase={sourceSearchPhase} role="status">
+              {sourceSearchPhase === 'idle' && t('cn2b_source_search_idle', lang)}
+              {sourceSearchPhase === 'searching' && t('cn2b_source_search_running', lang)}
+              {sourceSearchPhase === 'done' && (
+                `${t('cn2b_source_search_results', lang)}: ${sourceFiles.length + entryHits.length}`
+              )}
+              {sourceSearchPhase === 'failed' && t('cn2b_source_search_failed', lang)}
+            </p>
+            {sourceSearchPhase === 'failed' && sourceSearchError && (
+              <PhoenixErrorState message={centralNeedsErrorText(sourceSearchError, lang)} />
+            )}
+
+            {sourceSearchPhase === 'done' && sourceFiles.length === 0 && entryHits.length === 0 && (
+              <PhoenixEmptyState title={t('cn2b_source_search_empty', lang)} />
+            )}
+
+            {/* The attribution gate above now wraps this entire surface, so the
+                rows only have to decide whether there is anything to show. */}
+            {sourceFiles.length === 0 && entryHits.length === 0 ? null : (
+              <div className="cn2b-scroll">
+                <table className="cn2b-table">
+                  <caption className="cn2b-visually-hidden">{t('cn2b_panel_source_search', lang)}</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">{t('cn2b_col_container', lang)}</th>
+                      <th scope="col">{t('cn2b_col_entry_path', lang)}</th>
+                      <th scope="col">{t('cn2b_col_sha', lang)}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sourceFiles.map((f) => (
+                      <tr key={f.id}>
+                        <td>{f.originalFilename}</td>
+                        <td>—</td>
+                        <td><code className="cn2b-code">{f.fileHash.slice(0, 16)}…</code></td>
+                      </tr>
+                    ))}
+                    {entryHits.map((e) => (
+                      <tr key={e.id}>
+                        <td>{e.containerFilename}</td>
+                        <td><code className="cn2b-code">{e.archiveEntryPath ?? '—'}</code></td>
+                        <td><code className="cn2b-code">{e.entrySha256.slice(0, 16)}…</code></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            </>
           )}
         </Panel>
 
         <Panel titleKey="cn2b_panel_sessions" icon="alerts">
-          {sessions.length === 0 ? (
+          {!revisionDataReady ? (
+            <p className="cn2b-hint" role="status">{t('cn2b_revision_loading', lang)}</p>
+          ) : sessions.length === 0 ? (
             <PhoenixEmptyState title={t('cn2b_no_sessions', lang)} />
           ) : (
-            <ul className="cn2b-list">
-              {sessions.map((s) => (
-                <li key={s.id} className="cn2b-list__row">
-                  <button
-                    type="button"
-                    className="cn2b-session"
-                    data-active={s.id === activeSessionId}
-                    disabled={s.status !== 'completed'}
-                    onClick={() => setActiveSessionId(s.id)}
-                  >
-                    <span className="cn2b-session__status" data-status={s.status}>
-                      {t(`cn2b_sess_${s.status}`, lang)}
-                    </span>
-                    {s.status === 'completed' && <StateBadge state="verified" />}
-                    <code className="cn2b-code">{(s.authoritativeDigest ?? s.previewDigest ?? '').slice(0, 12)}…</code>
-                  </button>
-                  {canImport && isDraft && (s.status === 'pending' || s.status === 'processing') && (
-                    <button type="button" className="cn2b-btn" disabled={busy !== null} onClick={() => void onAbandon(s.id)}>
-                      {t('cn2b_abandon', lang)}
+            <>
+              {/*
+                UX-2A — a compact operational selector, not a filtered list.
+                EVERY session stays listed whatever its status, because a failed
+                or abandoned attempt is part of the import record. Only a
+                completed one is selectable, exactly as before: that is the
+                single session whose evidence the review surface may read.
+              */}
+              <p className="cn2b-hint" role="status">
+                {t('cn2b_sessions_completed_of', lang)}: {completedSessionCount}/{sessions.length}
+              </p>
+              <ul className="cn2b-list cn2b-list--sessions">
+                {sessions.map((s) => (
+                  <li key={s.id} className="cn2b-list__row">
+                    <button
+                      type="button"
+                      className="cn2b-session"
+                      data-active={s.id === activeSessionId}
+                      aria-pressed={s.id === activeSessionId}
+                      disabled={s.status !== 'completed'}
+                      onClick={() => setActiveSessionId(s.id)}
+                    >
+                      <span className="cn2b-session__status" data-status={s.status}>
+                        {t(`cn2b_sess_${s.status}`, lang)}
+                      </span>
+                      {s.status === 'completed' && <StateBadge state="verified" />}
+                      <code className="cn2b-code">{(s.authoritativeDigest ?? s.previewDigest ?? '').slice(0, 12)}…</code>
+                      {s.id === activeSessionId && (
+                        <span className="cn2b-session__current">{t('cn2b_session_current', lang)}</span>
+                      )}
                     </button>
-                  )}
-                </li>
-              ))}
-            </ul>
+                    {canImport && isDraft && (s.status === 'pending' || s.status === 'processing') && (
+                      <button type="button" className="cn2b-btn cn2b-btn--sm" disabled={busy !== null} onClick={() => void onAbandon(s.id)}>
+                        {t('cn2b_abandon', lang)}
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </>
           )}
         </Panel>
       </>
     ),
 
-    review: activeSessionId ? (
+    review: !revisionDataReady ? (
+      <p className="cn2b-hint" role="status">{t('cn2b_revision_loading', lang)}</p>
+    ) : sessionLoading ? (
+      <p className="cn2b-hint" role="status">{t('cn2b_session_loading', lang)}</p>
+    ) : activeSessionId ? (
       <Panel titleKey="cn2b_panel_review" icon="editor">
         <CentralNeedsDispositionTable
           importSessionId={activeSessionId}
@@ -682,7 +924,9 @@ export function CentralNeedsScreen() {
       <p className="cn2b-hint">{t('cn2b_stage_review_waiting', lang)}</p>
     ),
 
-    beneficiaries: revision ? (
+    beneficiaries: !revisionDataReady ? (
+      <p className="cn2b-hint" role="status">{t('cn2b_revision_loading', lang)}</p>
+    ) : revision ? (
       <Panel titleKey="cn2b_panel_beneficiary_columns" icon="editor">
         <CentralNeedsBeneficiaryColumnPanel
           lang={lang}
@@ -697,7 +941,9 @@ export function CentralNeedsScreen() {
       <p className="cn2b-hint">{t('cn2b_stage_revision_waiting', lang)}</p>
     ),
 
-    'need-lines': revision ? (
+    'need-lines': !revisionDataReady ? (
+      <p className="cn2b-hint" role="status">{t('cn2b_revision_loading', lang)}</p>
+    ) : revision ? (
       <Panel titleKey="cn2b_panel_need_lines" icon="editor">
         <CentralNeedsNeedLinePanel
           lang={lang}
@@ -716,7 +962,9 @@ export function CentralNeedsScreen() {
       <p className="cn2b-hint">{t('cn2b_stage_revision_waiting', lang)}</p>
     ),
 
-    readiness: (
+    readiness: !revisionDataReady ? (
+      <p className="cn2b-hint" role="status">{t('cn2b_revision_loading', lang)}</p>
+    ) : (
       <Panel titleKey="cn2b_panel_readiness" icon="alerts">
         {!readiness ? (
           <PhoenixEmptyState title={t('cn2b_readiness_unknown', lang)} />
@@ -785,9 +1033,11 @@ export function CentralNeedsScreen() {
               </span>
             </span>
           ) : (
-            <span className="cn2b-revchip" data-empty="true">{t('cn2b_no_revisions', lang)}</span>
+            <span className="cn2b-revchip" data-empty="true">
+              {revisionsLoading ? t('cn2b_revisions_loading', lang) : t('cn2b_no_revisions', lang)}
+            </span>
           )}
-          {readiness && (readiness.ready ? <StateBadge state="ready" /> : <StateBadge state="incomplete" />)}
+          {revisionDataReady && readiness && (readiness.ready ? <StateBadge state="ready" /> : <StateBadge state="incomplete" />)}
         </div>
       </header>
 
@@ -795,11 +1045,11 @@ export function CentralNeedsScreen() {
 
       <section className="cn2b-summary" aria-label={t('cn2b_summary_label', lang)}>
         <dl className="cn2b-summary__grid">
-          <SummaryMetric labelKey="cn2b_sum_sessions" value={`${completedSessionCount}/${sessions.length}`} />
-          <SummaryMetric labelKey="cn2b_sum_batches" value={batches.length} />
-          <SummaryMetric labelKey="cn2b_sum_columns" value={`${decidedColumnCount}/${beneficiaryColumns.length}`} />
-          <SummaryMetric labelKey="cn2b_sum_need_lines" value={needLines.length} />
-          <SummaryMetric labelKey="cn2b_sum_blockers" value={readiness ? readiness.blockers.length : '—'} />
+          <SummaryMetric labelKey="cn2b_sum_sessions" value={metric(`${completedSessionCount}/${sessions.length}`)} />
+          <SummaryMetric labelKey="cn2b_sum_batches" value={metric(batches.length)} />
+          <SummaryMetric labelKey="cn2b_sum_columns" value={metric(`${decidedColumnCount}/${beneficiaryColumns.length}`)} />
+          <SummaryMetric labelKey="cn2b_sum_need_lines" value={metric(needLines.length)} />
+          <SummaryMetric labelKey="cn2b_sum_blockers" value={metric(readiness ? readiness.blockers.length : '—')} />
         </dl>
       </section>
 
