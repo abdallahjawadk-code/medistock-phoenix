@@ -71,17 +71,17 @@ describe('CN-1B/210 static — registration and file hygiene', () => {
     const files = readdirSync(MIGRATIONS).filter((f) => /^\d{3}_.*\.sql$/.test(f)).sort();
     expect(files).toContain(FILENAME);
     expect(files.indexOf(FILENAME)).toBe(209);
-    expect(files.filter((f) => Number(f.slice(0, 3)) > 212)).toEqual([]);
-    expect(files).toHaveLength(212);
+    expect(files.filter((f) => Number(f.slice(0, 3)) > 213)).toEqual([]);
+    expect(files).toHaveLength(213);
     expect(isReviewedMigrationFile(FILENAME)).toBe(true);
     // 210 is no longer last: CN-2B/211 sits directly after it, and 211's own
     // static suite owns the ceiling assertions from here on.
     expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.indexOf(FILENAME) + 1])
       .toBe('211_phoenix_central_needs_batch_and_disposition.sql');
     expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1])
-      .toBe('212_phoenix_central_needs_need_lines.sql');
-    expect(getMaximumReviewedMigrationNumber()).toBe(212);
-    expect(getNextUnreviewedMigrationNumber()).toBe(213);
+      .toBe('213_phoenix_central_needs_beneficiary_column_mapping.sql');
+    expect(getMaximumReviewedMigrationNumber()).toBe(213);
+    expect(getNextUnreviewedMigrationNumber()).toBe(214);
   });
 
   it('carries no CR bytes — LF only', () => {

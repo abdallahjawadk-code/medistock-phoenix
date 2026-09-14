@@ -14,6 +14,14 @@
  * component; neither can prove the TRANSPORT — that supabase-js -> Kong ->
  * PostgREST resolves these RPCs, hands PostgreSQL the exact decimal on the way
  * in, and hands TypeScript the exact decimal on the way back.
+ *
+ * CN-2B corrective (M213): the same transport also carries M213's change to
+ * this shared RPC contract. A cell whose physical beneficiary column is
+ * unresolved is refused as 23514 beneficiary_column_mapping_required; the
+ * editor then records explicit BENEFICIARY decisions through
+ * phoenix_central_needs_set_beneficiary_columns, and only then does the same
+ * designation succeed. Both states are asserted here, so this module is also
+ * regression protection for the M213 Finding-1 fix.
  */
 
 /**
@@ -30,9 +38,10 @@ export async function proveM212NumericTransport({ seed, record, dbQuery, root })
 // database is involved, and none is needed.
 // ==========================================================================
 const cn = seed.centralNeeds;
-if (!cn) {
+if (!cn || !cn.columns) {
   record('M212 PostgREST proof: the seed carries the Central Needs fixture', false,
-    'seed.centralNeeds is missing — re-run tools/e2e-fixtures/seed.mjs');
+    !cn ? 'seed.centralNeeds is missing — re-run tools/e2e-fixtures/seed.mjs'
+      : 'seed.centralNeeds.columns is missing — re-run tools/e2e-fixtures/seed.mjs (M213 physical columns)');
 } else {
   const { createClient } = await import('@supabase/supabase-js');
   const apiUrl = seed.supabaseUrl ?? process.env.SUPABASE_URL;
@@ -67,6 +76,7 @@ if (!cn) {
 
     const BIG = '12345678901234567.891';
     const BIG_PLUS = '12345678901234688.0149'; // BIG + 120.1239, exactly
+    const RELINK_TOTAL = '12345678901234808.1388'; // BIG_PLUS + 120.1239, exactly
     const rec = (key) => cn.records[key];
     const set = (args) => client.rpc('phoenix_central_needs_set_need_line', args);
     const base = {
@@ -87,17 +97,104 @@ if (!cn) {
     // 1. A 4-decimal value, passed as a STRING, must survive byte for byte —
     //    this is the value the rejected numeric(20,3) design would have turned
     //    into 120.124.
-    const { data: exact, error: exactError } = await set({
+    const exactArgs = {
       ...scopeA,
       p_approved_quantity: '120.1239',
       p_quantity_sources: [
         { sourceRecordId: rec('sheet:0:row:1::final'), designatedQuantity: '120.1239', appliedOverrideId: null },
       ],
       p_expected_source_record_ids: [],
+    };
+    const scopeLines = async (beneficiary) => Number((await dbQuery(
+      `SELECT count(*)::int AS n FROM central_needs_need_lines
+        WHERE plan_revision_id = $1 AND beneficiary_organization_id = $2`,
+      [cn.planRevisionId, beneficiary]))?.rows?.[0]?.n);
+    const mappingRows = async () => (await dbQuery(
+      `SELECT column_index, decision, beneficiary_organization_id::text AS beneficiary,
+              mapped_by::text AS mapped_by, source_field_name
+         FROM central_needs_beneficiary_column_mappings
+        WHERE import_session_id = $1 ORDER BY column_index`, [cn.importSessionId]))?.rows ?? [];
+
+    // 1a. M213 NEGATIVE PROOF. Institution A's physical column has no review
+    //     decision yet, so the SAME designation is refused before any cell is
+    //     consumed — and nothing is written.
+    const { data: unresolved, error: unresolvedError } = await set(exactArgs);
+    const afterUnresolved = {
+      lines: await scopeLines(cn.beneficiaryOrganization), mappings: (await mappingRows()).length,
+    };
+    record('M213 contract: an unresolved physical beneficiary column refuses designation as 23514 beneficiary_column_mapping_required',
+      !unresolved && unresolvedError?.code === '23514'
+        && unresolvedError?.message === 'beneficiary_column_mapping_required'
+        && afterUnresolved.lines === 0 && afterUnresolved.mappings === 0,
+      `${unresolvedError ? `${unresolvedError.code ?? ''} ${unresolvedError.message}` : 'no error raised'} `
+        + `lines=${afterUnresolved.lines} mappings=${afterUnresolved.mappings}`);
+
+    //     The decision cannot be manufactured by writing the mapping table
+    //     directly, even by the editor who holds central_needs.edit.
+    const directMapping = await client.from('central_needs_beneficiary_column_mappings').insert({
+      plan_revision_id: cn.planRevisionId, organization_id: cn.owningOrganization,
+      import_session_id: cn.importSessionId, sheet_index: cn.columns.institutionA.sheetIndex,
+      column_index: cn.columns.institutionA.columnIndex, decision: 'beneficiary',
+      beneficiary_organization_id: cn.beneficiaryOrganization, mapping_reason: 'M213 direct write attempt',
     });
+    record('M213 contract: a direct INSERT into the column-mapping table is refused (42501) and records no decision',
+      directMapping.error?.code === '42501' && (await mappingRows()).length === 0,
+      `insert=${directMapping.error?.code ?? 'none'}`);
+
+    // 1b. M213 CANONICAL RESOLUTION. The editor reviews both institution
+    //     columns and records explicit BENEFICIARY decisions through the real
+    //     RPC, stating the believed-current state (unresolved) and a reason.
+    const columnDecision = (column, beneficiary) => ({
+      importSessionId: cn.importSessionId,
+      sheetIndex: column.sheetIndex,
+      columnIndex: column.columnIndex,
+      decision: 'beneficiary',
+      beneficiaryOrganizationId: beneficiary,
+      previousDecision: null,
+      previousBeneficiaryOrganizationId: null,
+    });
+    const { data: confirmed, error: confirmError } = await client.rpc('phoenix_central_needs_set_beneficiary_columns', {
+      p_plan_revision_id: cn.planRevisionId,
+      p_mappings: [
+        columnDecision(cn.columns.institutionA, cn.beneficiaryOrganization),
+        columnDecision(cn.columns.institutionB, cn.secondBeneficiaryOrganization),
+      ],
+      p_mapping_reason: "E2E review: column C is institution A's annual requirement, column D is institution B's",
+    });
+    const confirmedCols = confirmed?.confirmed ?? [];
+    const confirmedFor = (column) => confirmedCols.find((c) => c.columnIndex === column.columnIndex);
+    record('M213 contract: the editor records explicit BENEFICIARY decisions for both institution columns through PostgREST',
+      !confirmError && confirmed?.ok === true && confirmedCols.length === 2
+        && confirmedCols.every((c) => c.decision === 'beneficiary' && c.created === true && c.changed === true)
+        && confirmedFor(cn.columns.institutionA)?.beneficiaryOrganizationId === cn.beneficiaryOrganization
+        && confirmedFor(cn.columns.institutionB)?.beneficiaryOrganizationId === cn.secondBeneficiaryOrganization,
+      confirmError ? `${confirmError.code ?? ''} ${confirmError.message}` : JSON.stringify(confirmedCols));
+    const storedMappings = await mappingRows();
+    const auditedMappings = Number((await dbQuery(
+      `SELECT count(*)::int AS n FROM audit_logs
+        WHERE action = 'central_needs.beneficiary_column.set'
+          AND actor_id = $1 AND payload->>'plan_revision_id' = $2`,
+      [cn.editor.id, cn.planRevisionId]))?.rows?.[0]?.n);
+    record('M213 contract: the decisions persist by physical column, attributed to the editor and audited; the requested column stays unresolved',
+      storedMappings.length === 2
+        && storedMappings[0].column_index === cn.columns.institutionA.columnIndex
+        && storedMappings[0].beneficiary === cn.beneficiaryOrganization
+        && storedMappings[1].column_index === cn.columns.institutionB.columnIndex
+        && storedMappings[1].beneficiary === cn.secondBeneficiaryOrganization
+        && storedMappings.every((r) => r.decision === 'beneficiary' && r.mapped_by === cn.editor.id
+          && r.source_field_name === 'final')
+        && !storedMappings.some((r) => r.column_index === cn.columns.requested.columnIndex)
+        && auditedMappings === 2,
+      `rows=${JSON.stringify(storedMappings.map((r) => [r.column_index, r.decision, r.beneficiary]))} audited=${auditedMappings}`);
+
+    // 1c. M213 POSITIVE PROOF — the identical designation now commits.
+    const { data: exact, error: exactError } = await set(exactArgs);
     record('M212 PostgREST proof: the RPC resolves through PostgREST and commits',
       !exactError && Boolean(exact?.need_line_id),
       exactError ? `${exactError.code ?? ''} ${exactError.message}` : '');
+    record('M213 contract: the designation refused while the column was unresolved succeeds once it is resolved',
+      unresolvedError?.message === 'beneficiary_column_mapping_required' && !exactError && Boolean(exact?.need_line_id),
+      exactError ? `${exactError.code ?? ''} ${exactError.message}` : `need_line=${exact?.need_line_id}`);
 
     if (exact?.need_line_id) {
       const stored = await dbQuery(
@@ -220,16 +317,40 @@ if (!cn) {
 
     // 5. One cell cannot feed a second line — and the refusal is the domain
     //    error, never PostgreSQL's raw duplicate-key text.
-    const { error: dupError } = await set({
+    //
+    // 5a. (M213) Across beneficiaries the confirmed column mapping refuses it
+    //     first: institution A's cell can never feed institution B's line, and
+    //     neither line changes.
+    const { error: crossError } = await set({
       ...scopeB, p_approved_quantity: '0.4',
       p_quantity_sources: [
         { sourceRecordId: rec('sheet:0:row:1::final'), designatedQuantity: '0.1', appliedOverrideId: null },
       ],
       p_expected_source_record_ids: floatCells.map((c) => c.sourceRecordId),
     });
+    const crossLinks = {
+      a: exact?.need_line_id ? await linkCount(exact.need_line_id) : -1,
+      b: sum?.need_line_id ? await linkCount(sum.need_line_id) : -1,
+    };
+    record("M213 contract: institution A's cell is refused for institution B as 23514 beneficiary_column_mapping_conflict",
+      crossError?.code === '23514' && crossError?.message === 'beneficiary_column_mapping_conflict'
+        && crossLinks.a === 2 && crossLinks.b === 2,
+      `${crossError ? `${crossError.code ?? ''} ${crossError.message}` : 'no error raised'} links A=${crossLinks.a} B=${crossLinks.b}`);
+
+    // 5b. Within its own beneficiary, re-designating an already-linked cell —
+    //     with the line's lineage stated correctly and a consistent total — is
+    //     refused as source_record_already_linked.
+    const { error: dupError } = await set({
+      ...scopeA, p_approved_quantity: RELINK_TOTAL,
+      p_quantity_sources: [
+        { sourceRecordId: rec('sheet:0:row:1::final'), designatedQuantity: '120.1239', appliedOverrideId: null },
+      ],
+      p_expected_source_record_ids: [rec('sheet:0:row:1::final'), rec('sheet:0:row:4::final')],
+    });
     record('M212 PostgREST proof: a double-consumed cell is refused as source_record_already_linked, not a raw 23505',
       dupError?.message === 'source_record_already_linked' && dupError?.code !== '23505'
-        && !/duplicate|_record_key/.test(`${dupError?.message} ${dupError?.details ?? ''}`),
+        && !/duplicate|_record_key/.test(`${dupError?.message} ${dupError?.details ?? ''}`)
+        && (exact?.need_line_id ? (await linkCount(exact.need_line_id)) === 2 : false),
       dupError ? `${dupError.code ?? ''} ${dupError.message}` : 'no error raised');
 
     // 6. The EXACT READ: what supabase-js decodes for TypeScript.

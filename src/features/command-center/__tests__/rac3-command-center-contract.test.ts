@@ -400,7 +400,13 @@ describe('RAC-3 · I) no backend or migration change', () => {
     // EXACT filename, exactly as M200-M211 were. RAC-3's own subject (the
     // command centre) remains untouched by it.
     const M212 = 'supabase/migrations/212_phoenix_central_needs_need_lines.sql';
-    const ALLOWED_SQL = [M200, M201, M202, M203, M204, M205, M206, M207, M208, M209, M210, M211, M212];
+    // CN-2B corrective: migration 213 is the independently reviewed Central
+    // Needs beneficiary-column-mapping layer — one additive organization-scoped
+    // relation, its write/read RPCs and the designation blocker. Registered by
+    // EXACT filename, exactly as M200-M212 were. RAC-3's own subject (the
+    // command centre) remains untouched by it.
+    const M213 = 'supabase/migrations/213_phoenix_central_needs_beneficiary_column_mapping.sql';
+    const ALLOWED_SQL = [M200, M201, M202, M203, M204, M205, M206, M207, M208, M209, M210, M211, M212, M213];
     const changed = execSync(
       'git diff --name-only b707f073d60b4cc61205c35003ab491f3aed7468',
       { cwd: process.cwd(), encoding: 'utf8' },

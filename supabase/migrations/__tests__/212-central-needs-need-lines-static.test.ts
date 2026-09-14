@@ -37,16 +37,21 @@ function fnBody(name: string): string {
 }
 
 describe('CN-2B/212 static — registration and file hygiene', () => {
-  it('is registered at 212 and is now the ceiling', () => {
+  it('is registered at 212, immediately below CN-2B/Finding-1 corrective 213 which is now the ceiling', () => {
     const files = readdirSync(MIGRATIONS).filter((f) => /^\d{3}_.*\.sql$/.test(f)).sort();
     expect(files).toContain(FILENAME);
     expect(files.indexOf(FILENAME)).toBe(211);
-    expect(files.filter((f) => Number(f.slice(0, 3)) > 212)).toEqual([]);
-    expect(files).toHaveLength(212);
+    expect(files.filter((f) => Number(f.slice(0, 3)) > 213)).toEqual([]);
+    expect(files).toHaveLength(213);
     expect(isReviewedMigrationFile(FILENAME)).toBe(true);
-    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1]).toBe(FILENAME);
-    expect(getMaximumReviewedMigrationNumber()).toBe(212);
-    expect(getNextUnreviewedMigrationNumber()).toBe(213);
+    // 212 is no longer last: 213 sits directly after it, and 213's own
+    // static suite owns the ceiling assertions from here on.
+    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.indexOf(FILENAME) + 1])
+      .toBe('213_phoenix_central_needs_beneficiary_column_mapping.sql');
+    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1])
+      .toBe('213_phoenix_central_needs_beneficiary_column_mapping.sql');
+    expect(getMaximumReviewedMigrationNumber()).toBe(213);
+    expect(getNextUnreviewedMigrationNumber()).toBe(214);
   });
 
   it('edits no historical migration — it is self-contained', () => {

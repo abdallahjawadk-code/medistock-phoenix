@@ -1795,6 +1795,7 @@ export const T: Dict = {
   cn2b_panel_sessions: { ar: 'جلسات الاستيراد', en: 'Import sessions' },
   cn2b_panel_review: { ar: 'مراجعة المصدر والقرارات', en: 'Source review and decisions' },
   cn2b_panel_readiness: { ar: 'اكتمال المراجعة', en: 'Review completeness' },
+  cn2b_panel_beneficiary_columns: { ar: 'تعيين المستفيدين للأعمدة', en: 'Beneficiary column mapping' },
   cn2b_panel_need_lines: { ar: 'سطور الاحتياج التشغيلية', en: 'Operational need lines' },
   cn2b_revision: { ar: 'المراجعة', en: 'Revision' },
   cn2b_no_revisions: { ar: 'لا توجد مراجعات', en: 'No revisions' },
@@ -1880,6 +1881,8 @@ export const T: Dict = {
   cn2b_blocker_need_line_beneficiary_ineligible: { ar: 'المؤسسة المنتفعة غير مؤهلة', en: 'Beneficiary organization is not eligible' },
   cn2b_blocker_need_line_target_warehouse_not_active: { ar: 'مخزن الهدف لم يعد فعّالًا — احذف السطر وأعد توجيهه', en: 'Target warehouse is no longer active — delete the line and re-route it' },
   cn2b_blocker_need_line_material_mapping_divergent: { ar: 'تغيّر ربط المادة بعد إنشاء سطر الاحتياج — احذف السطر وأعد ربطه', en: 'A row was re-mapped after its need line was created — delete the line and map it again' },
+  cn2b_blocker_beneficiary_column_cell_without_need_line: { ar: 'خلية من عمود مستفيد مؤكَّد بلا سطر احتياج', en: 'A cell of a confirmed beneficiary column has no need line' },
+  cn2b_blocker_beneficiary_column_review_required: { ar: 'عمود رقمي على سطر مرتبط بلا قرار مراجعة — حدّد مستفيده، أو «ليس عمود مستفيد» مع السبب', en: 'A numeric column on a mapped row has no review decision — choose its beneficiary, or “not a beneficiary column” with a reason' },
 
   /* ── CN-2B conformance (M212) — operational need-line mapping ──────────────
      The official annual requirement becomes relational here: beneficiary
@@ -1911,6 +1914,8 @@ export const T: Dict = {
   cn2b_nl_warehouse: { ar: 'مخزن الهدف (اختياري)', en: 'Target warehouse (optional)' },
   cn2b_nl_warehouse_hint: { ar: 'اتركه فارغًا إذا كان الاحتياج على مستوى المؤسسة.', en: 'Leave empty when the requirement is institution-level.' },
   cn2b_nl_warehouse_none: { ar: 'على مستوى المؤسسة', en: 'Institution-level' },
+  cn2b_nl_warehouse_multi_beneficiary_disabled: { ar: 'يشمل التحديد أكثر من مستفيد، فلا يمكن تحديد مخزن هدف واحد — سيبقى كل سطر ناتج على مستوى مؤسسته.', en: 'The selection spans more than one beneficiary, so a single target warehouse cannot apply — each resulting line stays institution-level.' },
+  cn2b_nl_multi_beneficiary_note: { ar: 'مستفيدين مختلفين', en: 'different beneficiaries' },
   /* Deliberately NOT "...reason (required)": Playwright's getByLabel is a
      case-insensitive substring match, and the field-override editor already owns
      the label "Reason (required)". A colliding label would make that existing
@@ -1977,6 +1982,35 @@ export const T: Dict = {
   cn2b_err_target_warehouse_not_active: { ar: 'مخزن الهدف غير فعّال.', en: 'The target warehouse is not active.' },
   cn2b_err_need_line_quantity_provenance_mismatch: { ar: 'الكمية المعتمدة لا تساوي مجموع المساهمات المصدرية.', en: 'The approved quantity does not equal the sum of its source contributions.' },
   cn2b_err_need_line_quantity_not_exact: { ar: 'وصلت كمية بصيغة غير دقيقة فلم تُعرض.', en: 'A quantity arrived in a non-exact form and was not shown.' },
+
+  /* CN-2B corrective extension (213): beneficiary-column mapping. */
+  cn2b_err_beneficiary_column_mapping_required: { ar: 'يجب تأكيد المستفيد من هذا العمود قبل ربط أي خلية منه.', en: 'This column’s beneficiary must be confirmed before any of its cells can be designated.' },
+  cn2b_err_beneficiary_column_mapping_conflict: { ar: 'هذه الخلية تابعة لعمود مستفيده مختلف عن السطر المطلوب.', en: 'This cell’s confirmed column belongs to a different beneficiary than the requested line.' },
+  cn2b_err_beneficiary_column_mapping_stale: { ar: 'تغيّر تعيين هذا العمود منذ تحميله. أُعيد التحميل — راجع ثم أعد المحاولة.', en: 'This column’s mapping changed since it was loaded. It has been reloaded — review and try again.' },
+  cn2b_err_beneficiary_column_no_matching_evidence: { ar: 'لا يوجد دليل مصدري مطابق لهذا العمود بالضبط.', en: 'No authoritative source evidence matches this exact column.' },
+  cn2b_err_beneficiary_column_field_name_inconsistent: { ar: 'سجلات هذا العمود تختلف في نص العنوان — راجع الدليل المصدري أولًا.', en: 'This column’s records disagree on header text — resolve the source evidence first.' },
+  cn2b_err_beneficiary_column_mapping_in_use: { ar: 'هذا العمود يغذّي سطر احتياج بالفعل ولا يمكن إلغاء تعيينه مباشرة.', en: 'This column already feeds a need line and cannot be unmapped directly.' },
+  cn2b_err_beneficiary_column_not_beneficiary: { ar: 'روجِع عمود هذه الخلية على أنه ليس عمود مستفيد — لا يمكن أن يغذّي سطر احتياج.', en: 'This cell’s column was reviewed as not a beneficiary column — it cannot feed a need line.' },
+  cn2b_err_beneficiary_column_decision_invalid: { ar: 'قرار مراجعة العمود غير معروف.', en: 'Unknown column review decision.' },
+  cn2b_err_beneficiary_column_non_beneficiary_must_not_name_beneficiary: { ar: 'قرار «ليس عمود مستفيد» لا يمكن أن يسمّي مؤسسة مستفيدة.', en: 'A “not a beneficiary column” decision cannot name a beneficiary institution.' },
+  cn2b_err_mapping_reason_required: { ar: 'السبب إلزامي.', en: 'A reason is required.' },
+  cn2b_beneficiary_columns_title: { ar: 'تعيين المستفيدين للأعمدة المستوردة', en: 'Beneficiary column mapping' },
+  cn2b_beneficiary_columns_explainer: { ar: 'قد يحتوي الملف الواحد على عدة مؤسسات مستفيدة، كل عمود كمية بمؤسسته الخاصة. لا يُخصَّص الملف بأكمله لمستفيد واحد. يحتاج كل عمود رقمي على سطر مرتبط قرارًا صريحًا: مؤسسة مستفيدة مسجّلة، أو «ليس عمود مستفيد» مع ذكر السبب. العمود الخاص بمؤسسة غير مسجّلة بعد يبقى غير محسوم — ويمنع التقديم — حتى تُسجَّل تلك المؤسسة.', en: 'One uploaded file may represent several beneficiary institutions — each quantity column has its own. The whole file is never assigned to one beneficiary. Every numeric column on a mapped row needs an explicit decision: a registered beneficiary institution, or “not a beneficiary column” with a reason. A column for an institution that is not registered yet stays unresolved — and blocks submission — until that institution exists.' },
+  cn2b_beneficiary_column_state_beneficiary: { ar: 'عمود مستفيد', en: 'Beneficiary column' },
+  cn2b_beneficiary_column_state_non_beneficiary: { ar: 'ليس عمود مستفيد', en: 'Not a beneficiary column' },
+  cn2b_beneficiary_column_state_unresolved: { ar: 'غير محسوم', en: 'Unresolved' },
+  cn2b_beneficiary_column_blocks_readiness: { ar: 'يحتاج قرار مراجعة — يمنع التقديم', en: 'Needs a review decision — blocks submission' },
+  cn2b_beneficiary_column_status_suggested: { ar: 'مقترح مطابق تمامًا', en: 'Exact match suggested' },
+  cn2b_beneficiary_column_status_ambiguous: { ar: 'أكثر من مطابقة — لا يوجد اقتراح', en: 'Multiple matches — no suggestion' },
+  cn2b_beneficiary_column_hint_no_exact_match: { ar: 'لا تطابق أي مؤسسة مسجّلة هذا العنوان تمامًا', en: 'No registered institution matches this header exactly' },
+  cn2b_beneficiary_column_decision_label: { ar: 'قرار مراجعة العمود', en: 'Column review decision' },
+  cn2b_beneficiary_column_option_non_beneficiary: { ar: 'ليس عمود مستفيد (السبب إلزامي)', en: 'Not a beneficiary column (reason required)' },
+  cn2b_beneficiary_column_reason_required: { ar: 'سبب هذا القرار (إلزامي)', en: 'Reason for this decision (required)' },
+  cn2b_beneficiary_column_reason_optional: { ar: 'السبب (اختياري عند التأكيد الأول)', en: 'Reason (optional for a first confirmation)' },
+  cn2b_beneficiary_column_initial_reason: { ar: 'تأكيد أولي للمستفيد بعد مراجعة دليل العمود', en: 'Initial beneficiary confirmation after reviewing the column evidence' },
+  cn2b_beneficiary_column_confirm: { ar: 'تأكيد', en: 'Confirm' },
+  cn2b_beneficiary_column_apply_to_matching: { ar: 'تطبيق على __N__ عمود مطابق', en: 'Apply to __N__ matching columns' },
+  cn2b_beneficiary_column_group_scope_note: { ar: 'تُشمل الأعمدة غير المحسومة فقط — لا تُغيَّر الأعمدة المُراجَعة جماعيًا أبدًا.', en: 'Only unresolved columns are included — reviewed columns are never changed in bulk.' },
 
   /* CN-2B corrective pass: the annual-plan workflow, the field-override
      editor and the bounded source-evidence search. */

@@ -1,41 +1,62 @@
 /**
- * CN-2B CONFORMANCE (M212) — the operational need-line mapping surface.
+ * CN-2B CONFORMANCE (M212, corrected by 213) — the operational need-line
+ * mapping surface.
  *
  * This is where an imported cell stops being evidence and becomes part of an
  * operational requirement: beneficiary institution, canonical material,
  * canonical unit and approved annual quantity, persisted relationally by
  * `phoenix_central_needs_set_need_line`.
  *
- * SIX RULES THIS COMPONENT EXISTS TO HONOUR
+ * SEVEN RULES THIS COMPONENT EXISTS TO HONOUR
  *
  *  1. MAPPING IS HUMAN-AUTHORITATIVE. Nothing is inferred from workbook family,
  *     sheet name, header text, sheet index, filename or row position. The
  *     beneficiary is chosen by a person, every time — including for each
  *     institution column of a multi-institution row.
- *  2. THE APPROVED QUANTITY IS ITS OWN PROVENANCE. A need line is built by
+ *  2. (213) A CELL'S BENEFICIARY COMES FROM ITS CONFIRMED COLUMN MAPPING, NEVER
+ *     FROM ONE GLOBAL CHOICE. There is no single "beneficiary" selector that
+ *     applies to every designated cell. Each candidate's beneficiary is
+ *     resolved from `phoenix_central_needs_set_beneficiary_columns`
+ *     (`CentralNeedsBeneficiaryColumnPanel`, rendered above this one), keyed on
+ *     (importSessionId, sheetIndex, columnIndex) — never on header text, which
+ *     the corpus is proven to duplicate. A cell whose column has no confirmed
+ *     mapping cannot be designated here; it must be mapped first.
+ *  3. THE APPROVED QUANTITY IS ITS OWN PROVENANCE. A need line is built by
  *     designating the exact imported cells it comes from and what each
  *     contributes; the approved total is their sum, computed here in EXACT
  *     decimal arithmetic (never a JavaScript float) and re-derived server-side.
  *     There is no way to save a line with no source: the action is disabled, and
  *     the RPC refuses it regardless.
- *  3. PROVENANCE IS REVISION-WIDE. A line may already hold cells from other
+ *  4. PROVENANCE IS REVISION-WIDE. A line may already hold cells from other
  *     import sessions. The panel shows that lineage, and saving into a scope
  *     that already has a line ADDS to it — sending the lineage it saw, so a
  *     stale view is refused by the server instead of erasing anything.
- *  4. REMOVAL IS AN EXPLICIT CORRECTION. The only way to take provenance off a
+ *  5. REMOVAL IS AN EXPLICIT CORRECTION. The only way to take provenance off a
  *     line is to delete the line, after a confirmation, with a reason. Saving
  *     never removes a link.
- *  5. A BULK ACTION IS STILL AN EXPLICIT ACT. Designating records across several
- *     canonical materials creates or extends one need line per material —
- *     previewed with the exact counts, and written only after a second, separate
- *     confirmation.
- *  6. THE SERVER DECIDES. Every check here is for a fast answer, never the
+ *  6. (213) A BULK ACTION MAY SPAN SEVERAL BENEFICIARIES. Designating records
+ *     across several (beneficiary, canonical material, target warehouse)
+ *     scopes creates or extends one need line PER SCOPE — previewed grouped by
+ *     beneficiary with the exact counts, and written only after a second,
+ *     separate confirmation. A single confirmed action can turn one
+ *     multi-institution row into independent requirements for each institution
+ *     it names.
+ *  7. THE SERVER DECIDES. Every check here is for a fast answer, never the
  *     authority. A disabled button is a courtesy, not a control.
  *
  * The canonical material is never chosen here. It is READ from each row's
  * existing `central_needs_record_mappings` decision, so this surface cannot
  * become a competing source of material truth (v7.3 section 14) — and a source
  * reviewed as material A can never feed a line for material B.
+ *
+ * WAREHOUSE SCOPING (213): a target warehouse is optional, manual, explicit
+ * context — never inferred from workbook text — and it is offered only when
+ * every currently designated cell resolves to the SAME beneficiary (a
+ * warehouse belongs to one organization, so it cannot meaningfully scope a
+ * bulk action spanning several). Selecting cells across more than one
+ * beneficiary keeps every resulting line institution-level (NULL warehouse);
+ * an operator who needs a warehouse-scoped split narrows the selection to one
+ * beneficiary at a time.
  */
 import { useEffect, useMemo, useState } from 'react';
 import { t } from '@/shared/i18n/strings';
@@ -46,8 +67,8 @@ import { getOrganizations, type OrgRow } from '@/shared/supabase/services/organi
 import { getWarehouses, type Warehouse } from '@/shared/supabase/services/warehouses.service';
 import {
   NEED_LINE_UNITS, deleteNeedLine, setNeedLine,
-  type FieldOverride, type NeedLine, type NeedLineQuantitySource, type NeedLineSourceLink,
-  type NeedLineUnit, type RecordDisposition, type SourceRecord,
+  type BeneficiaryColumnSummary, type FieldOverride, type NeedLine, type NeedLineQuantitySource,
+  type NeedLineSourceLink, type NeedLineUnit, type RecordDisposition, type SourceRecord,
 } from './central-needs.service';
 import { centralNeedsErrorText } from './central-needs.i18n';
 
@@ -66,6 +87,12 @@ interface Props {
   needLines: NeedLine[];
   /** Every source link of the REVISION, each with its own cell identity. */
   claimedSources: NeedLineSourceLink[];
+  /**
+   * (213) Every confirmed/candidate physical column of the REVISION — the
+   * single source this panel resolves a candidate's beneficiary from. Never
+   * this panel's own state, never header text.
+   */
+  beneficiaryColumns: BeneficiaryColumnSummary[];
   /** Reload the revision after anything changed, or after a stale refusal. */
   onChanged: () => void;
 }
@@ -132,6 +159,9 @@ interface Designation {
 }
 
 interface Group {
+  beneficiaryId: string;
+  itemId: string;
+  warehouseId: string | null;
   recordIds: string[];
   /** Exact sum of the contributions designated now. */
   added: string;
@@ -143,13 +173,22 @@ interface Group {
   expectedIds: string[];
 }
 
+/** (213) A record's own physical-column identity, read from its persisted provenance. */
+function columnIdentity(record: SourceRecord): { sheetIndex: number; columnIndex: number } | null {
+  const p = record.sourceProvenance as { sheetIndex?: unknown; coordinate?: { col?: unknown } } | null;
+  const sheetIndex = p?.sheetIndex;
+  const columnIndex = p?.coordinate?.col;
+  if (typeof sheetIndex !== 'number' || typeof columnIndex !== 'number') return null;
+  return { sheetIndex, columnIndex };
+}
+
 export function CentralNeedsNeedLinePanel({
-  lang, planRevisionId, editable, dispositions, records, overrides, needLines, claimedSources, onChanged,
+  lang, planRevisionId, editable, dispositions, records, overrides, needLines, claimedSources,
+  beneficiaryColumns, onChanged,
 }: Props) {
   const [institutions, setInstitutions] = useState<OrgRow[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
 
-  const [beneficiary, setBeneficiary] = useState('');
   const [unit, setUnit] = useState<NeedLineUnit>('box');
   const [conversionRequired, setConversionRequired] = useState(false);
   const [sourceUnitText, setSourceUnitText] = useState('');
@@ -178,17 +217,55 @@ export function CentralNeedsNeedLinePanel({
     return () => { alive = false; };
   }, []);
 
+  /**
+   * (213) A cell's beneficiary is resolved from its column's explicit
+   * BENEFICIARY decision — never typed or chosen in this panel. A cell with no
+   * entry cannot be designated: its column is either UNRESOLVED (decide it in
+   * `CentralNeedsBeneficiaryColumnPanel` first) or was explicitly reviewed as
+   * NOT a beneficiary column (independent review finding 1), in which case it
+   * is labelled so and is never a need-line source.
+   */
+  const { beneficiaryByRecordId, nonBeneficiaryRecordIds } = useMemo(() => {
+    const byColumn = new Map<string, string>();
+    const nonBeneficiaryColumns = new Set<string>();
+    for (const c of beneficiaryColumns) {
+      const key = `${c.importSessionId}:${c.sheetIndex}:${c.columnIndex}`;
+      if (c.decision === 'beneficiary' && c.beneficiaryOrganizationId) byColumn.set(key, c.beneficiaryOrganizationId);
+      else if (c.decision === 'non_beneficiary') nonBeneficiaryColumns.add(key);
+    }
+    const byRecord = new Map<string, string>();
+    const nonBeneficiary = new Set<string>();
+    for (const r of records) {
+      const col = columnIdentity(r);
+      if (!col) continue;
+      const key = `${r.importSessionId}:${col.sheetIndex}:${col.columnIndex}`;
+      const beneficiaryId = byColumn.get(key);
+      if (beneficiaryId) byRecord.set(r.id, beneficiaryId);
+      else if (nonBeneficiaryColumns.has(key)) nonBeneficiary.add(r.id);
+    }
+    return { beneficiaryByRecordId: byRecord, nonBeneficiaryRecordIds: nonBeneficiary };
+  }, [records, beneficiaryColumns]);
+
+  /** Distinct beneficiaries among the currently designated cells. */
+  const selectedBeneficiaryIds = useMemo(
+    () => new Set(Object.keys(designated).map((id) => beneficiaryByRecordId.get(id)).filter((x): x is string => Boolean(x))),
+    [designated, beneficiaryByRecordId],
+  );
+  /** A target warehouse only makes sense when every selected cell shares one beneficiary. */
+  const singleSelectedBeneficiary = selectedBeneficiaryIds.size === 1 ? [...selectedBeneficiaryIds][0] : null;
+
   // A target warehouse must belong to the chosen beneficiary AND be active, so
-  // the list is scoped to it and cleared whenever the beneficiary changes.
+  // the list is scoped to it and cleared whenever the selection spans more
+  // than one beneficiary, or a different single one.
   useEffect(() => {
     setTargetWarehouseId('');
-    if (!beneficiary) { setWarehouses([]); return; }
+    if (!singleSelectedBeneficiary) { setWarehouses([]); return; }
     let alive = true;
-    getWarehouses(beneficiary)
+    getWarehouses(singleSelectedBeneficiary)
       .then((rows) => { if (alive) setWarehouses(rows.filter((w) => w.status === 'active')); })
       .catch(() => { if (alive) setWarehouses([]); });
     return () => { alive = false; };
-  }, [beneficiary]);
+  }, [singleSelectedBeneficiary]);
 
   /** Which row is mapped to which canonical material — read, never decided here. */
   const mappedItemByEntity = useMemo(() => {
@@ -241,34 +318,47 @@ export function CentralNeedsNeedLinePanel({
 
   const selectedIds = useMemo(() => Object.keys(designated), [designated]);
 
-  /** One need line per distinct canonical material among the designations. */
+  /**
+   * (213) One need line per distinct (beneficiary, canonical material, target
+   * warehouse) SCOPE among the designations — never per material alone. A
+   * single confirmed action may therefore create or extend lines for several
+   * DIFFERENT beneficiaries at once, one per group, exactly matching how a
+   * multi-institution row's cells are each resolved to their own beneficiary.
+   * The target warehouse applies only within the single-beneficiary case
+   * (see the warehouse-scoping note in this file's header); a multi-
+   * beneficiary selection always groups with a NULL warehouse.
+   */
   const groups = useMemo(() => {
-    const byItem = new Map<string, Group>();
+    const byScope = new Map<string, Group>();
     for (const id of selectedIds) {
       const record = records.find((r) => r.id === id);
       const item = record ? mappedItemByEntity.get(record.targetEntity) : undefined;
-      if (!record || !item) continue;
-      const g = byItem.get(item) ?? { recordIds: [], added: '0', total: '0', existing: undefined, expectedIds: [] };
+      const beneficiaryId = beneficiaryByRecordId.get(id);
+      if (!record || !item || !beneficiaryId) continue; // unresolved cells never form a group
+      const warehouseId = singleSelectedBeneficiary ? (targetWarehouseId || null) : null;
+      const key = scopeKey(beneficiaryId, item, warehouseId);
+      const g = byScope.get(key)
+        ?? { beneficiaryId, itemId: item, warehouseId, recordIds: [], added: '0', total: '0', existing: undefined, expectedIds: [] };
       g.recordIds.push(id);
-      byItem.set(item, g);
+      byScope.set(key, g);
     }
-    for (const [item, g] of byItem) {
+    for (const [key, g] of byScope) {
       const added = sumExactDecimals(g.recordIds.map((id) => designated[id]?.quantity ?? ''));
-      const existing = beneficiary
-        ? lineByScope.get(scopeKey(beneficiary, item, targetWarehouseId || null))
-        : undefined;
+      const existing = lineByScope.get(scopeKey(g.beneficiaryId, g.itemId, g.warehouseId));
       const expectedIds = existing ? (sourcesByLine.get(existing.id) ?? []).map((s) => s.sourceRecordId) : [];
       const total = existing && added !== '' ? sumExactDecimals([existing.approvedQuantity, added]) : added;
-      byItem.set(item, { ...g, added, total, existing, expectedIds });
+      byScope.set(key, { ...g, added, total, existing, expectedIds });
     }
-    return byItem;
-  }, [selectedIds, designated, records, mappedItemByEntity, beneficiary, targetWarehouseId, lineByScope, sourcesByLine]);
+    return byScope;
+  }, [selectedIds, designated, records, mappedItemByEntity, beneficiaryByRecordId, singleSelectedBeneficiary,
+      targetWarehouseId, lineByScope, sourcesByLine]);
 
   const anyExisting = [...groups.values()].some((g) => g.existing);
 
   const everyQuantityValid = selectedIds.length > 0
     && selectedIds.every((id) => DECIMAL.test((designated[id]?.quantity ?? '').trim()));
-  const canSave = editable && Boolean(beneficiary) && selectedIds.length > 0
+  const everySelectionResolved = selectedIds.length > 0 && selectedIds.every((id) => beneficiaryByRecordId.has(id));
+  const canSave = editable && selectedIds.length > 0 && everySelectionResolved
     && everyQuantityValid && reason.trim().length > 0 && groups.size > 0
     && [...groups.values()].every((g) => g.total !== '');
 
@@ -290,6 +380,11 @@ export function CentralNeedsNeedLinePanel({
   };
 
   function toggle(record: SourceRecord, on: boolean) {
+    // (213) A cell whose physical column has no confirmed beneficiary cannot
+    // be designated — never guessed, never defaulted. The checkbox itself is
+    // disabled for this case (see the candidates list below); this is a
+    // second, defensive gate against toggling one programmatically.
+    if (on && !beneficiaryByRecordId.has(record.id)) return;
     setDesignated((prev) => {
       const next = { ...prev };
       if (!on) { delete next[record.id]; return next; }
@@ -324,8 +419,10 @@ export function CentralNeedsNeedLinePanel({
     setBusy(true); setError(null); setNotice(null);
     let written = 0;
     try {
-      // One RPC call per canonical material, each independently audited.
-      for (const [centralItemId, group] of groups) {
+      // (213) One RPC call per (beneficiary, canonical material, warehouse)
+      // SCOPE, each independently audited — a single confirmation may still
+      // write lines for several different beneficiaries in one action.
+      for (const group of groups.values()) {
         const quantitySources: NeedLineQuantitySource[] = group.recordIds.map((id) => ({
           sourceRecordId: id,
           designatedQuantity: (designated[id]?.quantity ?? '').trim(),
@@ -334,8 +431,8 @@ export function CentralNeedsNeedLinePanel({
         const existing = group.existing;
         await setNeedLine({
           planRevisionId,
-          beneficiaryOrganizationId: beneficiary,
-          centralItemId,
+          beneficiaryOrganizationId: group.beneficiaryId,
+          centralItemId: group.itemId,
           approvedQuantity: group.total,
           mappingReason: reason.trim(),
           quantitySources,
@@ -345,7 +442,7 @@ export function CentralNeedsNeedLinePanel({
           unitConversionState: existing
             ? existing.unitConversionState
             : (conversionRequired ? 'conversion_required' : 'canonical'),
-          targetWarehouseId: targetWarehouseId || null,
+          targetWarehouseId: group.warehouseId,
           sourceUnitText: existing ? existing.sourceUnitText : (sourceUnitText.trim() || null),
         });
         written += 1;
@@ -407,20 +504,11 @@ export function CentralNeedsNeedLinePanel({
 
       {editable && (
         <div className="cn2b-nl-form">
-          <label>
-            {t('cn2b_nl_beneficiary', lang)}
-            <select
-              aria-label={t('cn2b_nl_beneficiary', lang)}
-              value={beneficiary}
-              onChange={(e) => setBeneficiary(e.target.value)}
-            >
-              <option value="">—</option>
-              {institutions.map((o) => (
-                <option key={o.id} value={o.id}>{lang === 'ar' ? o.name_ar : o.name}</option>
-              ))}
-            </select>
-          </label>
-          <p>{t('cn2b_nl_beneficiary_hint', lang)}</p>
+          {/* (213) No global beneficiary choice: each candidate's beneficiary
+              is resolved from its own confirmed column mapping and shown
+              beside it. A cell with none is listed but cannot be selected —
+              map its column in the panel above first. */}
+          <p data-testid="cn2b-nl-beneficiary-note">{t('cn2b_nl_beneficiary_hint', lang)}</p>
 
           {/* The designated provenance. Without at least one row here there is
               nothing to save — and nothing the server would accept. */}
@@ -432,16 +520,27 @@ export function CentralNeedsNeedLinePanel({
               const picked = designated[r.id];
               const o = overrideByRecord.get(`${r.targetEntity}::${r.fieldName}`);
               const raw = rawDecimal(r);
+              const beneficiaryId = beneficiaryByRecordId.get(r.id);
+              const beneficiaryLabel = beneficiaryId ? institutionName(beneficiaryId) : null;
               return (
-                <div key={r.id} className="cn2b-nl-candidate">
+                <div key={r.id} className="cn2b-nl-candidate" data-testid="cn2b-nl-candidate"
+                  data-beneficiary-resolved={beneficiaryId ? 'true' : 'false'}
+                  data-column-decision={beneficiaryId ? 'beneficiary' : nonBeneficiaryRecordIds.has(r.id) ? 'non_beneficiary' : 'unresolved'}>
                   <label>
                     <input
                       type="checkbox"
                       checked={Boolean(picked)}
+                      disabled={!beneficiaryId}
                       onChange={(e) => toggle(r, e.target.checked)}
                     />
                     {r.targetEntity} · {r.fieldName}
                     {raw !== null && <> · {t('cn2b_nl_suggested', lang)} {raw}</>}
+                    {' · '}
+                    {beneficiaryLabel
+                      ? <strong data-testid="cn2b-nl-candidate-beneficiary">{beneficiaryLabel}</strong>
+                      : nonBeneficiaryRecordIds.has(r.id)
+                        ? <span data-testid="cn2b-nl-candidate-non-beneficiary">{t('cn2b_beneficiary_column_state_non_beneficiary', lang)}</span>
+                        : <span data-testid="cn2b-nl-candidate-unmapped">{t('cn2b_beneficiary_column_state_unresolved', lang)}</span>}
                   </label>
                   {picked && (
                     <>
@@ -504,6 +603,7 @@ export function CentralNeedsNeedLinePanel({
             <select
               aria-label={t('cn2b_nl_warehouse', lang)}
               value={targetWarehouseId}
+              disabled={!singleSelectedBeneficiary}
               onChange={(e) => setTargetWarehouseId(e.target.value)}
             >
               <option value="">{t('cn2b_nl_warehouse_none', lang)}</option>
@@ -512,7 +612,13 @@ export function CentralNeedsNeedLinePanel({
               ))}
             </select>
           </label>
-          <p>{t('cn2b_nl_warehouse_hint', lang)}</p>
+          {/* (213) A warehouse belongs to one organization, so it can only
+              scope a selection that resolves to a single beneficiary. */}
+          <p data-testid="cn2b-nl-warehouse-hint">
+            {selectedBeneficiaryIds.size > 1
+              ? t('cn2b_nl_warehouse_multi_beneficiary_disabled', lang)
+              : t('cn2b_nl_warehouse_hint', lang)}
+          </p>
 
           <PhoenixInput
             label={t('cn2b_nl_reason', lang)}
@@ -522,10 +628,13 @@ export function CentralNeedsNeedLinePanel({
           />
 
           {/* The approved total is never typed: it IS the designated sum, plus
-              whatever the line already holds when it exists. */}
+              whatever the line already holds when it exists — one figure per
+              (beneficiary, material, warehouse) scope. */}
           <p data-testid="cn2b-nl-total">
             {t('cn2b_nl_total', lang)}:{' '}
-            {[...groups.entries()].map(([item, g]) => `${item}=${g.total}`).join(' · ') || '—'}
+            {[...groups.values()]
+              .map((g) => `${institutionName(g.beneficiaryId)} / ${g.itemId}=${g.total}`)
+              .join(' · ') || '—'}
           </p>
 
           {!previewing && (
@@ -547,11 +656,26 @@ export function CentralNeedsNeedLinePanel({
                 {' · '}
                 {t('cn2b_nl_lines_to_create', lang)}:{' '}
                 <strong data-testid="cn2b-nl-lines">{groups.size}</strong>
+                {selectedBeneficiaryIds.size > 1 && (
+                  <>
+                    {' · '}
+                    <strong data-testid="cn2b-nl-beneficiary-count">{selectedBeneficiaryIds.size}</strong>
+                    {' '}{t('cn2b_nl_multi_beneficiary_note', lang)}
+                  </>
+                )}
               </p>
+              {/* (213) Grouped by beneficiary FIRST, so a multi-institution
+                  bulk save is reviewed the way section 18 of the corrective
+                  brief describes it: Hospital A's lines, then Hospital B's. */}
               <ul>
-                {[...groups.entries()].map(([item, g]) => (
-                  <li key={item} data-testid="cn2b-nl-preview-group" data-existing={g.existing ? 'true' : 'false'}>
-                    {item}:{' '}
+                {[...groups.values()]
+                  .sort((a, b) => institutionName(a.beneficiaryId).localeCompare(institutionName(b.beneficiaryId)))
+                  .map((g) => (
+                  <li key={`${g.beneficiaryId}|${g.itemId}|${g.warehouseId ?? ''}`}
+                    data-testid="cn2b-nl-preview-group" data-existing={g.existing ? 'true' : 'false'}
+                    data-beneficiary={g.beneficiaryId}>
+                    <strong>{institutionName(g.beneficiaryId)}</strong>
+                    {' — '}{g.itemId}:{' '}
                     {g.existing
                       ? <>{t('cn2b_nl_adds_to_existing', lang)} ({g.expectedIds.length} · {t('cn2b_nl_current_total', lang)} {g.existing.approvedQuantity}) → {t('cn2b_nl_new_total', lang)} {g.total}</>
                       : <>{t('cn2b_nl_creates_new', lang)} → {g.total}</>}

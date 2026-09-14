@@ -178,6 +178,78 @@ export interface NeedLineSourceLink extends NeedLineQuantitySource {
   fieldName: string;
 }
 
+/**
+ * CN-2B corrective extension (213): one physical imported column's explicit
+ * review decision. Identity is (importSessionId, sheetIndex, columnIndex) —
+ * read from persisted `source_provenance` server-side, never from header text,
+ * which the corpus is proven to duplicate across distinct columns.
+ *
+ * Independent review finding 1: a column is in exactly one state —
+ * `beneficiary` (names one care institution), `non_beneficiary` (names none;
+ * an explicit, reasoned, audited human classification), or no decision at all
+ * (`null` = UNRESOLVED). UNRESOLVED is never read as "not a beneficiary": the
+ * server blocks readiness for every unresolved column that carries numeric
+ * evidence on a mapped row.
+ */
+export type BeneficiaryColumnDecision = 'beneficiary' | 'non_beneficiary';
+
+export interface BeneficiaryColumnMapping {
+  importSessionId: string;
+  sheetIndex: number;
+  columnIndex: number;
+  decision: BeneficiaryColumnDecision;
+  beneficiaryOrganizationId: string | null;
+  sourceFieldName: string | null;
+  created: boolean;
+  changed: boolean;
+}
+
+export interface SetBeneficiaryColumnsInput {
+  importSessionId: string;
+  sheetIndex: number;
+  columnIndex: number;
+  decision: BeneficiaryColumnDecision;
+  /** The institution for a `beneficiary` decision; `null` for `non_beneficiary`. */
+  beneficiaryOrganizationId: string | null;
+  /**
+   * The decision and beneficiary this column is believed to hold right now —
+   * `null` / `null` when the caller believes it is still UNRESOLVED. A mismatch
+   * refuses the WHOLE bulk call (`beneficiary_column_mapping_stale`) — no
+   * silent overwrite of a decision the caller never saw.
+   */
+  previousDecision: BeneficiaryColumnDecision | null;
+  previousBeneficiaryOrganizationId: string | null;
+}
+
+/**
+ * The bounded, revision-level summary of every physical candidate beneficiary
+ * column — one row per (importSessionId, sheetIndex, columnIndex), never one
+ * row per cell. Backs the column-mapping picker without loading the full
+ * ~113k-record archive into the browser.
+ */
+export interface BeneficiaryColumnSummary {
+  importSessionId: string;
+  originalFilename: string | null;
+  archiveEntryPath: string | null;
+  sheetIndex: number;
+  sheetName: string | null;
+  columnIndex: number;
+  sourceFieldName: string | null;
+  numericValueCount: number;
+  zeroValueCount: number;
+  nonzeroNumericCount: number;
+  mappingId: string | null;
+  /** The column's explicit review decision, or `null` = UNRESOLVED. */
+  decision: BeneficiaryColumnDecision | null;
+  beneficiaryOrganizationId: string | null;
+  mappingReason: string | null;
+  mappedAt: string | null;
+  /** Numeric cells on rows dispositioned `mapped` in completed sessions — what makes a column review-relevant. */
+  mappedRowNumericCount: number;
+  /** The server's rule: UNRESOLVED and carrying numeric evidence on a mapped row, so it blocks submission. */
+  reviewRequired: boolean;
+}
+
 export interface ReviewBlocker {
   blocker: string;
   detail: string | null;
@@ -632,6 +704,78 @@ export async function deleteNeedLine(input: {
     needLineId: row.need_line_id as string,
     deletedSourceCount: Number(row.deleted_source_count ?? 0),
   };
+}
+
+/**
+ * CN-2B corrective extension (213): record one or more physical columns'
+ * explicit review decisions atomically — one user confirmation for the whole batch. Never
+ * assigns a whole uploaded file/workbook to one beneficiary; each physical
+ * column is confirmed and persisted independently, even when several share
+ * the same `beneficiaryOrganizationId` in one call.
+ */
+export async function setBeneficiaryColumns(input: {
+  planRevisionId: string;
+  mappings: SetBeneficiaryColumnsInput[];
+  mappingReason: string;
+}): Promise<{ confirmed: BeneficiaryColumnMapping[] }> {
+  const { data, error } = await supabase.rpc('phoenix_central_needs_set_beneficiary_columns', {
+    p_plan_revision_id: input.planRevisionId,
+    p_mappings: input.mappings.map((m) => ({
+      importSessionId: m.importSessionId,
+      sheetIndex: m.sheetIndex,
+      columnIndex: m.columnIndex,
+      decision: m.decision,
+      beneficiaryOrganizationId: m.beneficiaryOrganizationId,
+      previousDecision: m.previousDecision,
+      previousBeneficiaryOrganizationId: m.previousBeneficiaryOrganizationId,
+    })),
+    p_mapping_reason: input.mappingReason,
+  });
+  if (error) fail(error);
+  const rows = ((data as Record<string, unknown>).confirmed ?? []) as Array<Record<string, unknown>>;
+  return {
+    confirmed: rows.map((r) => ({
+      importSessionId: r.importSessionId as string,
+      sheetIndex: Number(r.sheetIndex),
+      columnIndex: Number(r.columnIndex),
+      decision: r.decision as BeneficiaryColumnDecision,
+      beneficiaryOrganizationId: (r.beneficiaryOrganizationId as string | null) ?? null,
+      sourceFieldName: (r.sourceFieldName as string | null) ?? null,
+      created: r.created === true,
+      changed: r.changed === true,
+    })),
+  };
+}
+
+/**
+ * The bounded column-summary read (213). SECURITY INVOKER, RLS-governed —
+ * grants nothing beyond what the caller's own `central_needs.view` already
+ * allows, same posture as `fetchNeedLines` below.
+ */
+export async function listBeneficiaryColumns(planRevisionId: string): Promise<BeneficiaryColumnSummary[]> {
+  const { data, error } = await supabase.rpc('phoenix_central_needs_list_beneficiary_columns', {
+    p_plan_revision_id: planRevisionId,
+  });
+  if (error) fail(error);
+  return ((data ?? []) as Array<Record<string, unknown>>).map((row) => ({
+    importSessionId: row.import_session_id as string,
+    originalFilename: (row.original_filename as string | null) ?? null,
+    archiveEntryPath: (row.archive_entry_path as string | null) ?? null,
+    sheetIndex: Number(row.sheet_index),
+    sheetName: (row.sheet_name as string | null) ?? null,
+    columnIndex: Number(row.column_index),
+    sourceFieldName: (row.source_field_name as string | null) ?? null,
+    numericValueCount: Number(row.numeric_value_count ?? 0),
+    zeroValueCount: Number(row.zero_value_count ?? 0),
+    nonzeroNumericCount: Number(row.nonzero_numeric_count ?? 0),
+    mappingId: (row.mapping_id as string | null) ?? null,
+    decision: (row.column_decision as BeneficiaryColumnDecision | null) ?? null,
+    beneficiaryOrganizationId: (row.beneficiary_organization_id as string | null) ?? null,
+    mappingReason: (row.mapping_reason as string | null) ?? null,
+    mappedAt: (row.mapped_at as string | null) ?? null,
+    mappedRowNumericCount: Number(row.mapped_row_numeric_count ?? 0),
+    reviewRequired: row.review_required === true,
+  }));
 }
 
 export async function recordFieldOverride(input: {

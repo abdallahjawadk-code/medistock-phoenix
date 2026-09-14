@@ -39,16 +39,19 @@ const EXPECTED:readonly string[]=Object.freeze([
 '209_phoenix_central_needs_registry.sql','210_phoenix_central_needs_workflow_rpcs.sql',
 '211_phoenix_central_needs_batch_and_disposition.sql',
 '212_phoenix_central_needs_need_lines.sql',
+'213_phoenix_central_needs_beneficiary_column_mapping.sql',
 ]);
 
-// CN-2B/211: 211 is now the reviewed Central Needs batch + disposition layer;
-// the synthetic unknown boundary moves to 212 and must remain genuinely absent.
-const SYNTH_NEXT='213_unreviewed_test_migration.sql';
+// CN-2B/213: 213 is now the independently reviewed Central Needs beneficiary-
+// column-mapping layer and this manifest owns the current reviewed ceiling.
+// The synthetic unknown boundary moves to 214 and must remain genuinely absent:
+// approving 213 authorizes 213 by exact filename and nothing after it.
+const SYNTH_NEXT='214_unauthorized_probe.sql';
 const SYNTH_ALT='187_phoenix_some_other_name.sql';
 
-describe('reviewed migration manifest through 212',()=>{
+describe('reviewed migration manifest through 213',()=>{
   it('counter-gates registry and disk by exact filename',()=>{
-    expect(EXPECTED).toHaveLength(212);
+    expect(EXPECTED).toHaveLength(213);
     expect([...REVIEWED_MIGRATION_FILES]).toEqual([...EXPECTED]);
     expect(sortMigrationFiles(actualSqlFiles())).toEqual([...EXPECTED]);
     expect(findMissingReviewedMigrationFiles(actualSqlFiles())).toEqual([]);
@@ -62,9 +65,9 @@ describe('reviewed migration manifest through 212',()=>{
     expect([...REVIEWED_MIGRATION_FILES]).toEqual(sortMigrationFiles(REVIEWED_MIGRATION_FILES));
     for(const f of EXPECTED) expect(isNumberedMigrationFile(f),f).toBe(true);
   });
-  it('pins maximum 212 and next unreviewed 213',()=>{
-    expect(getMaximumReviewedMigrationNumber()).toBe(212);
-    expect(getNextUnreviewedMigrationNumber()).toBe(213);
+  it('pins maximum 213 and next unreviewed 214',()=>{
+    expect(getMaximumReviewedMigrationNumber()).toBe(213);
+    expect(getNextUnreviewedMigrationNumber()).toBe(214);
     expect(isReviewedMigrationFile('178_phoenix_distribution_point_owner_guard_privilege_fix.sql')).toBe(true);
     expect(isReviewedMigrationFile('179_phoenix_canonical_authenticated_availability_hardening.sql')).toBe(true);
     expect(isReviewedMigrationFile('180_phoenix_emergency_initial_provisioning_boundary.sql')).toBe(true);
@@ -100,16 +103,24 @@ describe('reviewed migration manifest through 212',()=>{
     expect(isReviewedMigrationFile('210_phoenix_central_needs_workflow_rpcs.sql')).toBe(true);
     expect(isReviewedMigrationFile('211_phoenix_central_needs_batch_and_disposition.sql')).toBe(true);
     expect(isReviewedMigrationFile('212_phoenix_central_needs_need_lines.sql')).toBe(true);
+    expect(isReviewedMigrationFile('213_phoenix_central_needs_beneficiary_column_mapping.sql')).toBe(true);
     expect(isReviewedMigrationFile(SYNTH_ALT)).toBe(false);
     expect(isReviewedMigrationFile(SYNTH_NEXT)).toBe(false);
   });
   it('derived above/between slices remain exact against the independent list',()=>{
     const num=(f:string)=>{const n=extractMigrationNumber(f);if(n===null)throw new Error(f);return n;};
-    for(let n=0;n<=212;n++) expect(reviewedMigrationFilesAbove(n),`above ${n}`).toEqual(EXPECTED.filter(f=>num(f)>n));
-    for(const [a,b] of [[1,181],[150,181],[170,181],[174,181],[175,181],[176,181],[177,181],[178,181],[179,181],[180,181],[181,181],[182,182],[183,183],[184,184],[185,185],[186,186],[187,187],[188,200],[198,200],[199,200],[200,200],[200,201],[201,201],[201,202],[202,202],[202,203],[203,203],[203,204],[204,204],[204,205],[205,205],[205,206],[206,206],[206,207],[207,207],[207,208],[208,208],[208,209],[209,209],[209,210],[210,210],[210,211],[211,211],[211,212],[212,212]] as const)
+    for(let n=0;n<=213;n++) expect(reviewedMigrationFilesAbove(n),`above ${n}`).toEqual(EXPECTED.filter(f=>num(f)>n));
+    for(const [a,b] of [[1,181],[150,181],[170,181],[174,181],[175,181],[176,181],[177,181],[178,181],[179,181],[180,181],[181,181],[182,182],[183,183],[184,184],[185,185],[186,186],[187,187],[188,200],[198,200],[199,200],[200,200],[200,201],[201,201],[201,202],[202,202],[202,203],[203,203],[203,204],[204,204],[204,205],[205,205],[205,206],[206,206],[206,207],[207,207],[207,208],[208,208],[208,209],[209,209],[209,210],[210,210],[210,211],[211,211],[211,212],[212,212],[212,213],[213,213]] as const)
       expect(reviewedMigrationFilesBetween(a,b),`${a}-${b}`).toEqual(EXPECTED.filter(f=>num(f)>=a&&num(f)<=b));
   });
   it('future and alternate names remain fail-closed',()=>{
+    // M214 UNAUTHORIZED PROBE: reviewing 213 authorizes 213 by exact filename
+    // and nothing after it. The probe sits exactly at the next number, is not
+    // on disk, and every canonical predicate rejects it.
+    expect(actualSqlFiles()).not.toContain(SYNTH_NEXT);
+    expect(extractMigrationNumber(SYNTH_NEXT)).toBe(getNextUnreviewedMigrationNumber());
+    expect(isReviewedMigrationFile(SYNTH_NEXT)).toBe(false);
+    expect(reviewedMigrationFilesAbove(getMaximumReviewedMigrationNumber())).toEqual([]);
     expect(findUnreviewedMigrationFiles([...actualSqlFiles(),SYNTH_NEXT])).toEqual([SYNTH_NEXT]);
     expect(findUnreviewedMigrationFiles([...actualSqlFiles(),SYNTH_ALT])).toEqual([SYNTH_ALT]);
   });

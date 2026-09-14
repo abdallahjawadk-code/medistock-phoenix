@@ -33,8 +33,10 @@ import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
 import { PhoenixErrorState } from '@/shared/ui/PhoenixErrorState';
 import { useCentralNeedsPreview, detectContainerKind } from './useCentralNeedsPreview';
 import { centralNeedsErrorText } from './central-needs.i18n';
+import { getOrganizations, type OrgRow } from '@/shared/supabase/services/organizations.service';
 import { CentralNeedsDispositionTable } from './CentralNeedsDispositionTable';
 import { CentralNeedsNeedLinePanel } from './CentralNeedsNeedLinePanel';
+import { CentralNeedsBeneficiaryColumnPanel } from './CentralNeedsBeneficiaryColumnPanel';
 import {
   CentralNeedsError,
   abandonImportSession,
@@ -42,6 +44,7 @@ import {
   fetchReviewReadiness,
   finalizeImport,
   listDispositions,
+  listBeneficiaryColumns,
   listNeedLineLineage,
   listImportBatches,
   listImportSessions,
@@ -56,6 +59,7 @@ import {
   requestUploadTicket,
   submitRevision,
   uploadToStaging,
+  type BeneficiaryColumnSummary,
   type FieldOverride,
   type NeedLine,
   type NeedLineSourceLink,
@@ -137,6 +141,10 @@ export function CentralNeedsScreen() {
   const [overrides, setOverrides] = useState<FieldOverride[]>([]);
   const [needLines, setNeedLines] = useState<NeedLine[]>([]);
   const [claimedSources, setClaimedSources] = useState<NeedLineSourceLink[]>([]);
+  /** (213) Every physical candidate column of the revision and its confirmed beneficiary, if any. */
+  const [beneficiaryColumns, setBeneficiaryColumns] = useState<BeneficiaryColumnSummary[]>([]);
+  /** Active care institutions — the only eligible beneficiaries, same rule the server enforces. */
+  const [careInstitutions, setCareInstitutions] = useState<OrgRow[]>([]);
   const [readiness, setReadiness] = useState<ReviewReadiness | null>(null);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [busy, setBusy] = useState<Busy>(null);
@@ -158,6 +166,20 @@ export function CentralNeedsScreen() {
 
   // --- loading -------------------------------------------------------------
 
+  // Only a live care institution may be a beneficiary — surfaced once here
+  // and shared by the column-mapping and need-line panels, rather than each
+  // fetching its own copy.
+  useEffect(() => {
+    let cancelled = false;
+    getOrganizations()
+      .then((rows) => {
+        if (cancelled) return;
+        setCareInstitutions(rows.filter((o) => o.organizationKind === 'care_institution' && o.status === 'active'));
+      })
+      .catch(() => { if (!cancelled) setCareInstitutions([]); });
+    return () => { cancelled = true; };
+  }, []);
+
   useEffect(() => {
     if (!organizationId) return;
     let cancelled = false;
@@ -172,7 +194,7 @@ export function CentralNeedsScreen() {
   }, [organizationId]);
 
   const reloadRevision = useCallback(async (id: string) => {
-    const [nextSessions, nextBatches, nextOverrides, nextReadiness, nextLineage] =
+    const [nextSessions, nextBatches, nextOverrides, nextReadiness, nextLineage, nextBeneficiaryColumns] =
       await Promise.all([
         listImportSessions(id),
         listImportBatches(id),
@@ -181,6 +203,9 @@ export function CentralNeedsScreen() {
         // Revision-wide, through the exact-decimal read: a line's provenance may
         // span every import session of the revision.
         listNeedLineLineage(id),
+        // (213) Revision-wide too: a physical column's mapping is not scoped
+        // to whichever import session happens to be on screen.
+        listBeneficiaryColumns(id),
       ]);
     setSessions(nextSessions);
     setBatches(nextBatches);
@@ -188,6 +213,7 @@ export function CentralNeedsScreen() {
     setReadiness(nextReadiness);
     setNeedLines(nextLineage.needLines);
     setClaimedSources(nextLineage.sources);
+    setBeneficiaryColumns(nextBeneficiaryColumns);
     const completed = nextSessions.filter((s) => s.status === 'completed');
     setActiveSessionId((current) => (current && completed.some((s) => s.id === current) ? current : completed[0]?.id ?? null));
   }, []);
@@ -607,6 +633,19 @@ export function CentralNeedsScreen() {
       )}
 
       {revision && (
+        <Panel titleKey="cn2b_panel_beneficiary_columns" icon="editor">
+          <CentralNeedsBeneficiaryColumnPanel
+            lang={lang}
+            planRevisionId={revision.id}
+            editable={canEdit && isDraft}
+            columns={beneficiaryColumns}
+            activeCareInstitutions={careInstitutions}
+            onChanged={() => void reloadRevision(revision.id)}
+          />
+        </Panel>
+      )}
+
+      {revision && (
         <Panel titleKey="cn2b_panel_need_lines" icon="editor">
           <CentralNeedsNeedLinePanel
             lang={lang}
@@ -615,6 +654,7 @@ export function CentralNeedsScreen() {
             dispositions={dispositions}
             records={records}
             overrides={overrides}
+            beneficiaryColumns={beneficiaryColumns}
             needLines={needLines}
             claimedSources={claimedSources}
             onChanged={() => void reloadRevision(revision.id)}
