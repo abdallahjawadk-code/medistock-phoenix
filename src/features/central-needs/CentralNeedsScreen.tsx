@@ -752,89 +752,104 @@ export function CentralNeedsScreen() {
 
         <Panel titleKey="cn2b_panel_source_search" icon="reports">
           {/*
-            UX-2A search toolbar. The input, the reset and the state line read
-            as one control strip; the state line below is the ONLY place that
-            says what the search is doing, so "nothing matched" can never be
-            shown to someone who has not searched.
-          */}
-          <div className="cn2b-toolbar">
-            <label className="cn2b-field cn2b-toolbar__grow" htmlFor="cn2b-source-search">
-              <span className="cn2b-field__label">{t('cn2b_source_search', lang)}</span>
-              <input
-                id="cn2b-source-search"
-                className="cn2b-input"
-                type="search"
-                value={sourceQuery}
-                placeholder={t('cn2b_source_search_hint', lang)}
-                onChange={(e) => void onSearchSource(e.target.value)}
-              />
-            </label>
-            <div className="cn2b-toolbar__actions">
-              <button
-                type="button"
-                className="cn2b-btn"
-                disabled={sourceQuery === '' && sourceSearchPhase === 'idle'}
-                onClick={onClearSourceSearch}
-              >
-                {t('cn2b_source_search_clear', lang)}
-              </button>
-            </div>
-          </div>
+            REVISION ATTRIBUTION GATE for the whole search surface.
 
-          {/*
-            The four states are mutually exclusive and each is named. A refused
-            search is reported through the Central Needs translator as a
-            refusal, never flattened into an empty result.
+            Hiding only the result ROWS was not enough: the typed query, the
+            phase line, the result COUNT and any refusal are equally statements
+            ABOUT a revision. In the single commit between selecting a new
+            revision and the reset effect running, they would otherwise still
+            describe the previous one — the same false attribution, just in
+            words instead of rows. So the entire operational surface waits
+            until the committed evidence provably belongs to the selection.
           */}
-          <p className="cn2b-searchstate" data-phase={sourceSearchPhase} role="status">
-            {sourceSearchPhase === 'idle' && t('cn2b_source_search_idle', lang)}
-            {sourceSearchPhase === 'searching' && t('cn2b_source_search_running', lang)}
-            {sourceSearchPhase === 'done' && (
-              `${t('cn2b_source_search_results', lang)}: ${sourceFiles.length + entryHits.length}`
+          {!revisionDataReady ? (
+            <p className="cn2b-hint" role="status">{t('cn2b_revision_loading', lang)}</p>
+          ) : (
+            <>
+            {/*
+              UX-2A search toolbar. The input, the reset and the state line read
+              as one control strip; the state line below is the ONLY place that
+              says what the search is doing, so "nothing matched" can never be
+              shown to someone who has not searched.
+            */}
+            <div className="cn2b-toolbar">
+              <label className="cn2b-field cn2b-toolbar__grow" htmlFor="cn2b-source-search">
+                <span className="cn2b-field__label">{t('cn2b_source_search', lang)}</span>
+                <input
+                  id="cn2b-source-search"
+                  className="cn2b-input"
+                  type="search"
+                  value={sourceQuery}
+                  placeholder={t('cn2b_source_search_hint', lang)}
+                  onChange={(e) => void onSearchSource(e.target.value)}
+                />
+              </label>
+              <div className="cn2b-toolbar__actions">
+                <button
+                  type="button"
+                  className="cn2b-btn"
+                  disabled={sourceQuery === '' && sourceSearchPhase === 'idle'}
+                  onClick={onClearSourceSearch}
+                >
+                  {t('cn2b_source_search_clear', lang)}
+                </button>
+              </div>
+            </div>
+
+            {/*
+              The four states are mutually exclusive and each is named. A refused
+              search is reported through the Central Needs translator as a
+              refusal, never flattened into an empty result.
+            */}
+            <p className="cn2b-searchstate" data-phase={sourceSearchPhase} role="status">
+              {sourceSearchPhase === 'idle' && t('cn2b_source_search_idle', lang)}
+              {sourceSearchPhase === 'searching' && t('cn2b_source_search_running', lang)}
+              {sourceSearchPhase === 'done' && (
+                `${t('cn2b_source_search_results', lang)}: ${sourceFiles.length + entryHits.length}`
+              )}
+              {sourceSearchPhase === 'failed' && t('cn2b_source_search_failed', lang)}
+            </p>
+            {sourceSearchPhase === 'failed' && sourceSearchError && (
+              <PhoenixErrorState message={centralNeedsErrorText(sourceSearchError, lang)} />
             )}
-            {sourceSearchPhase === 'failed' && t('cn2b_source_search_failed', lang)}
-          </p>
-          {sourceSearchPhase === 'failed' && sourceSearchError && (
-            <PhoenixErrorState message={centralNeedsErrorText(sourceSearchError, lang)} />
-          )}
 
-          {sourceSearchPhase === 'done' && sourceFiles.length === 0 && entryHits.length === 0 && (
-            <PhoenixEmptyState title={t('cn2b_source_search_empty', lang)} />
-          )}
+            {sourceSearchPhase === 'done' && sourceFiles.length === 0 && entryHits.length === 0 && (
+              <PhoenixEmptyState title={t('cn2b_source_search_empty', lang)} />
+            )}
 
-          {/* Search hits are evidence OF a revision, so they pass the same
-              attribution gate: a hit found under the previous revision can
-              never render beneath the newly selected one, not even for the
-              single commit before the reset effect runs. */}
-          {!revisionDataReady || (sourceFiles.length === 0 && entryHits.length === 0) ? null : (
-            <div className="cn2b-scroll">
-              <table className="cn2b-table">
-                <caption className="cn2b-visually-hidden">{t('cn2b_panel_source_search', lang)}</caption>
-                <thead>
-                  <tr>
-                    <th scope="col">{t('cn2b_col_container', lang)}</th>
-                    <th scope="col">{t('cn2b_col_entry_path', lang)}</th>
-                    <th scope="col">{t('cn2b_col_sha', lang)}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sourceFiles.map((f) => (
-                    <tr key={f.id}>
-                      <td>{f.originalFilename}</td>
-                      <td>—</td>
-                      <td><code className="cn2b-code">{f.fileHash.slice(0, 16)}…</code></td>
+            {/* The attribution gate above now wraps this entire surface, so the
+                rows only have to decide whether there is anything to show. */}
+            {sourceFiles.length === 0 && entryHits.length === 0 ? null : (
+              <div className="cn2b-scroll">
+                <table className="cn2b-table">
+                  <caption className="cn2b-visually-hidden">{t('cn2b_panel_source_search', lang)}</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">{t('cn2b_col_container', lang)}</th>
+                      <th scope="col">{t('cn2b_col_entry_path', lang)}</th>
+                      <th scope="col">{t('cn2b_col_sha', lang)}</th>
                     </tr>
-                  ))}
-                  {entryHits.map((e) => (
-                    <tr key={e.id}>
-                      <td>{e.containerFilename}</td>
-                      <td><code className="cn2b-code">{e.archiveEntryPath ?? '—'}</code></td>
-                      <td><code className="cn2b-code">{e.entrySha256.slice(0, 16)}…</code></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {sourceFiles.map((f) => (
+                      <tr key={f.id}>
+                        <td>{f.originalFilename}</td>
+                        <td>—</td>
+                        <td><code className="cn2b-code">{f.fileHash.slice(0, 16)}…</code></td>
+                      </tr>
+                    ))}
+                    {entryHits.map((e) => (
+                      <tr key={e.id}>
+                        <td>{e.containerFilename}</td>
+                        <td><code className="cn2b-code">{e.archiveEntryPath ?? '—'}</code></td>
+                        <td><code className="cn2b-code">{e.entrySha256.slice(0, 16)}…</code></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            </>
           )}
         </Panel>
 

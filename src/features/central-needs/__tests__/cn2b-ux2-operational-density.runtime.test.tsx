@@ -619,8 +619,16 @@ describe('UX-2A corrective — revision-scoped isolation', () => {
     selectRevision(REV_B);
     await waitFor(() => expect(listImportBatches).toHaveBeenCalledWith(REV_B));
 
-    expect(searchState().dataset.phase).toBe('idle');
+    // While B is unproven the whole search surface is withheld — stricter than
+    // merely resetting it, since the query and count are claims about A too.
+    expect(searchState(), 'the search surface must not render for an unproven revision').toBeNull();
     expect(screen.queryByText('alpha-evidence.xlsx'), 'A hits must not survive into B').toBeNull();
+
+    // Once B is proven the surface returns, reset to "not started" for B.
+    release(REV_B);
+    await screen.findByText('BRAVO-2027.zip');
+    expect(searchState().dataset.phase).toBe('idle');
+    expect(screen.queryByText('alpha-evidence.xlsx')).toBeNull();
     expect((screen.getByLabelText(T.cn2b_source_search.en) as HTMLInputElement).value).toBe('');
   });
 
@@ -698,6 +706,54 @@ describe('UX-2A corrective — revision-scoped isolation', () => {
     await waitFor(() => expect(listImportBatches).toHaveBeenCalledWith(REV_B));
     release(REV_B);
     await screen.findByText('BRAVO-2027.zip');
+  });
+
+  /**
+   * The same render-time window, for the search surface's WORDS.
+   *
+   * Hiding the result rows is not enough: the typed query, the phase line, the
+   * result count and any refusal are equally statements about a revision. This
+   * switches revision outside act(), exactly as the test above, and asserts
+   * that none of revision A's search presentation survives into that commit.
+   */
+  it('does not render the old revision source search query, count or error before the reset effect', async () => {
+    listPlanRevisions.mockResolvedValue([REVISION, REVISION_B]);
+    gateRevisionReads();
+    searchSourceFiles.mockResolvedValue([
+      { id: 'f1', originalFilename: 'insulin-2026.xlsx', fileHash: 'a'.repeat(64) },
+    ]);
+    searchBatchEntries.mockResolvedValue([]);
+
+    render(<CentralNeedsScreen />);
+    await waitFor(() => expect(listImportBatches).toHaveBeenCalledWith(REV));
+    release(REV);
+    await screen.findByText('ALPHA-2026.zip');
+
+    fireEvent.change(screen.getByLabelText(T.cn2b_source_search.en), { target: { value: 'insulin' } });
+    await waitFor(() => expect(searchState().dataset.phase).toBe('done'));
+    expect(searchState()).toHaveTextContent(`${T.cn2b_source_search_results.en}: 1`);
+
+    const select = screen.getByLabelText(T.cn2b_revision.en) as HTMLSelectElement;
+    const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!;
+    setter.call(select, REV_B);
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+
+    // Selection has moved to B, and the reset effect has NOT run yet.
+    expect((screen.getByLabelText(T.cn2b_revision.en) as HTMLSelectElement).value).toBe(REV_B);
+    expect(document.querySelector('.cn2b-searchstate'), 'A phase/count line under B').toBeNull();
+    expect(screen.queryByLabelText(T.cn2b_source_search.en), 'A query text under B').toBeNull();
+    expect(screen.queryByText(new RegExp(`${T.cn2b_source_search_results.en}: 1`))).toBeNull();
+    expect(screen.queryByText('insulin-2026.xlsx')).toBeNull();
+    expect(screen.queryByText(T.cn2b_source_search_empty.en)).toBeNull();
+    expect(screen.queryByText(T.cn2b_source_search_failed.en)).toBeNull();
+
+    // Settle B so nothing is left pending.
+    await waitFor(() => expect(listImportBatches).toHaveBeenCalledWith(REV_B));
+    release(REV_B);
+    await screen.findByText('BRAVO-2027.zip');
+    // The surface returns, reset to "not started" for the new revision.
+    expect(searchState().dataset.phase).toBe('idle');
+    expect((screen.getByLabelText(T.cn2b_source_search.en) as HTMLInputElement).value).toBe('');
   });
 
   it('reports a refused search as FAILED with its translated code, never as zero results', async () => {
