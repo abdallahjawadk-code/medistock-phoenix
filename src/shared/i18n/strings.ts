@@ -1876,8 +1876,23 @@ export const T: Dict = {
   cn2b_decide_map: { ar: 'ربط بالصنف المحدد', en: 'Map to selected item' },
   cn2b_decide_na: { ar: 'تعليم غير منطبق', en: 'Mark not applicable' },
   cn2b_item_search: { ar: 'ابحث عن صنف مركزي', en: 'Search central items' },
+  /* UX-2A — finding a material proposes nothing; the reviewer still applies it. */
+  cn2b_item_search_explainer: { ar: 'البحث يعرض الأصناف فقط. لا يُربط أي سطر تلقائيًا — اضغط «ربط بالصنف المحدد» على السطر المقصود.', en: 'Searching only lists materials. No row is ever mapped automatically — press “Map to selected item” on the row you mean.' },
   cn2b_entities_total: { ar: 'إجمالي السطور', en: 'Row entities' },
   cn2b_entities_undecided: { ar: 'بلا قرار', en: 'Undecided' },
+  /* UX-2A — review workbench counts and presentation filters. */
+  cn2b_entities_visible: { ar: 'المعروضة', en: 'Visible' },
+  cn2b_entities_selected: { ar: 'المحددة', en: 'Selected' },
+  cn2b_filter_text: { ar: 'تصفية نصية', en: 'Text filter' },
+  cn2b_filter_text_hint: { ar: 'سطر، حقل، قيمة، ورقة، خلية أو سبب', en: 'Row, field, value, sheet, cell or reason' },
+  cn2b_filter_decision: { ar: 'حالة القرار', en: 'Decision state' },
+  cn2b_filter_all: { ar: 'الكل', en: 'All' },
+  cn2b_filter_undecided: { ar: 'بلا قرار', en: 'Undecided' },
+  cn2b_filter_mapped: { ar: 'مرتبطة', en: 'Mapped' },
+  cn2b_filter_not_applicable: { ar: 'غير منطبقة', en: 'Not applicable' },
+  cn2b_filter_clear: { ar: 'مسح التصفية', en: 'Clear filters' },
+  cn2b_filter_no_matches: { ar: 'لا يوجد سطر مطابق لهذه التصفية. التصفية عرض فقط ولم تُغيّر أي قرار.', en: 'No row matches this filter. Filtering is display only and changed no decision.' },
+  cn2b_no_source_records: { ar: 'جلسة الاستيراد هذه لا تحتوي سطورًا مصدرية.', en: 'This import session carries no source records.' },
   cn2b_bulk_legend: { ar: 'قرار جماعي', en: 'Bulk decision' },
   cn2b_bulk_explainer: { ar: 'يعرض العدد المتأثر قبل أي تعديل، ولا يُنفَّذ إلا بتأكيد صريح.', en: 'Shows exactly how many rows will change before anything is written, and runs only on explicit confirmation.' },
   cn2b_bulk_reason: { ar: 'السبب (إلزامي لغير المنطبق)', en: 'Reason (required for not applicable)' },
@@ -2058,6 +2073,18 @@ export const T: Dict = {
   cn2b_source_search: { ar: 'بحث', en: 'Search' },
   cn2b_source_search_hint: { ar: 'اسم الملف أو البصمة أو مسار المدخل داخل الأرشيف', en: 'Filename, fingerprint, or archive entry path' },
   cn2b_source_search_empty: { ar: 'لا توجد نتائج ضمن هذه المراجعة.', en: 'No matching source evidence in this revision.' },
+  /* UX-2A — the four distinct states of the bounded evidence search. "Not
+     started" and "found nothing" are different facts and never share wording. */
+  cn2b_source_search_idle: { ar: 'اكتب للبحث في الأدلة المصدرية لهذه المراجعة.', en: 'Type to search this revision’s source evidence.' },
+  cn2b_source_search_running: { ar: 'جارٍ البحث…', en: 'Searching…' },
+  cn2b_source_search_results: { ar: 'نتائج', en: 'Results' },
+  cn2b_source_search_failed: { ar: 'تعذّر تنفيذ البحث — لم يُعرض أي دليل.', en: 'The search could not run — no evidence is shown.' },
+  cn2b_source_search_clear: { ar: 'مسح البحث', en: 'Clear search' },
+  /* UX-2A — loading and session-selector states. */
+  cn2b_revision_loading: { ar: 'جارٍ تحميل بيانات المراجعة…', en: 'Loading revision data…' },
+  cn2b_session_loading: { ar: 'جارٍ تحميل سطور الجلسة…', en: 'Loading session records…' },
+  cn2b_sessions_completed_of: { ar: 'جلسات مكتملة', en: 'Completed sessions' },
+  cn2b_session_current: { ar: 'قيد المراجعة', en: 'Under review' },
   cn2b_col_entry_path: { ar: 'مسار المدخل', en: 'Entry path' },
 
   /* Scope — always the scope the SERVER answered at, never the one requested. */

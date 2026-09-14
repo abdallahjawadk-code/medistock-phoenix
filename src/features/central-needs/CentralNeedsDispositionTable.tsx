@@ -25,6 +25,7 @@
 import { useMemo, useState } from 'react';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
+import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
 import { centralNeedsErrorText } from './central-needs.i18n';
 import {
   CentralNeedsError,
@@ -52,6 +53,13 @@ interface EntityGroup {
   ordinal: number;
   fields: SourceRecord[];
 }
+
+/**
+ * UX-2A — the review workbench's decision filter. Presentation only: these are
+ * the two decisions the database already accepts plus "no decision yet", and
+ * choosing one narrows what is DISPLAYED. It decides nothing.
+ */
+type DecisionFilter = 'all' | 'undecided' | 'mapped' | 'not_applicable';
 
 /** The explicit JSON shape a corrected value is stored as. */
 type OverrideValueKind = 'number' | 'text' | 'boolean' | 'blank';
@@ -169,6 +177,58 @@ export function CentralNeedsDispositionTable({
 
   const undecidedCount = groups.filter((g) => !dispositionByEntity.has(g.targetEntity)).length;
 
+  /**
+   * UX-2A — the PRESENTATION filter. It is client-only by construction: it
+   * reads the records, dispositions and overrides already in props and calls
+   * nothing. A workbook produces hundreds of row entities, and scrolling for
+   * the undecided ones was the whole review loop.
+   *
+   * It filters ENTITY GROUPS, never individual field rows. A matched entity is
+   * shown with every one of its source fields, because hiding part of an
+   * entity's evidence while showing the rest would misrepresent what the
+   * workbook actually contains — the opposite of what this screen exists for.
+   */
+  const [textFilter, setTextFilter] = useState('');
+  const [decisionFilter, setDecisionFilter] = useState<DecisionFilter>('all');
+  const filtersActive = textFilter.trim() !== '' || decisionFilter !== 'all';
+
+  const visibleGroups = useMemo<EntityGroup[]>(() => {
+    const needle = textFilter.trim().toLowerCase();
+    return groups.filter((group) => {
+      const decision = dispositionByEntity.get(group.targetEntity);
+      if (decisionFilter === 'undecided' && decision) return false;
+      if (decisionFilter === 'mapped' && decision?.decision !== 'mapped') return false;
+      if (decisionFilter === 'not_applicable' && decision?.decision !== 'not_applicable') return false;
+      if (needle === '') return true;
+      // Everything the operator can already see for this entity, and nothing
+      // else: no request, no derived business value.
+      const haystack: string[] = [group.targetEntity, decision?.decisionReason ?? ''];
+      for (const field of group.fields) {
+        const provenance = field.sourceProvenance ?? {};
+        const coordinate = provenance.coordinate as { a1?: string } | undefined;
+        const raw = field.sourceValues?.value;
+        haystack.push(
+          field.fieldName,
+          raw === null || raw === undefined ? '' : String(raw),
+          typeof provenance.sheetName === 'string' ? provenance.sheetName : '',
+          coordinate?.a1 ?? '',
+          overrideByRecord.get(field.id)?.overrideReason ?? '',
+        );
+      }
+      return haystack.join(' ').toLowerCase().includes(needle);
+    });
+  }, [groups, dispositionByEntity, overrideByRecord, textFilter, decisionFilter]);
+
+  /**
+   * Selection is the REVIEWER's, not the filter's. A hidden entity stays
+   * selected — the count below keeps saying so — because silently dropping it
+   * would change what a confirmed bulk action does without anyone deciding to.
+   */
+  function clearFilters() {
+    setTextFilter('');
+    setDecisionFilter('all');
+  }
+
   async function onSearchItems(query: string) {
     setItemQuery(query);
     if (query.trim().length < 2) { setItems([]); return; }
@@ -270,18 +330,83 @@ export function CentralNeedsDispositionTable({
 
   return (
     <div className="cn2b-review">
-      <p className="cn2b-hint" role="status">
-        {t('cn2b_entities_total', lang)}: {groups.length} · {t('cn2b_entities_undecided', lang)}: {undecidedCount}
-      </p>
+      {/*
+        UX-2A review workbench. Every number here is counted off state already
+        on screen, and every control below narrows the VIEW only — none of them
+        reaches the server, and none of them decides anything.
+      */}
+      <div className="cn2b-toolbar cn2b-toolbar--review">
+        <label className="cn2b-field cn2b-toolbar__grow" htmlFor="cn2b-review-filter">
+          <span className="cn2b-field__label">{t('cn2b_filter_text', lang)}</span>
+          <input
+            id="cn2b-review-filter"
+            className="cn2b-input"
+            type="search"
+            value={textFilter}
+            placeholder={t('cn2b_filter_text_hint', lang)}
+            onChange={(e) => setTextFilter(e.target.value)}
+          />
+        </label>
+        <label className="cn2b-field" htmlFor="cn2b-review-decision">
+          <span className="cn2b-field__label">{t('cn2b_filter_decision', lang)}</span>
+          <select
+            id="cn2b-review-decision"
+            className="cn2b-select"
+            value={decisionFilter}
+            onChange={(e) => setDecisionFilter(e.target.value as DecisionFilter)}
+          >
+            <option value="all">{t('cn2b_filter_all', lang)}</option>
+            <option value="undecided">{t('cn2b_filter_undecided', lang)}</option>
+            <option value="mapped">{t('cn2b_filter_mapped', lang)}</option>
+            <option value="not_applicable">{t('cn2b_filter_not_applicable', lang)}</option>
+          </select>
+        </label>
+        <div className="cn2b-toolbar__actions">
+          <button type="button" className="cn2b-btn" disabled={!filtersActive} onClick={clearFilters}>
+            {t('cn2b_filter_clear', lang)}
+          </button>
+        </div>
+      </div>
+
+      <dl className="cn2b-counts" role="status">
+        <div className="cn2b-counts__cell">
+          <dt>{t('cn2b_entities_total', lang)}</dt>
+          <dd data-count="total">{groups.length}</dd>
+        </div>
+        <div className="cn2b-counts__cell">
+          <dt>{t('cn2b_entities_visible', lang)}</dt>
+          <dd data-count="visible">{visibleGroups.length}</dd>
+        </div>
+        <div className="cn2b-counts__cell">
+          <dt>{t('cn2b_entities_undecided', lang)}</dt>
+          <dd data-count="undecided">{undecidedCount}</dd>
+        </div>
+        <div className="cn2b-counts__cell">
+          <dt>{t('cn2b_entities_selected', lang)}</dt>
+          <dd data-count="selected">{selected.size}</dd>
+        </div>
+      </dl>
+
       {error && <p className="cn2b-error" role="alert">{centralNeedsErrorText(error, lang)}</p>}
 
       {canEdit && (
         <fieldset className="cn2b-bulk">
           <legend>{t('cn2b_bulk_legend', lang)}</legend>
           <p className="cn2b-hint">{t('cn2b_bulk_explainer', lang)}</p>
-          <label className="cn2b-field">
+          {/*
+            UX-2A — the workbench states its own subject before anything else:
+            how many entities the reviewer has selected. The two-step gate below
+            is unchanged — reason, then an explicit count, then a separate
+            confirm — because that count is the last thing standing between a
+            selection and a write.
+          */}
+          <p className="cn2b-bulk__selection" role="status">
+            {t('cn2b_entities_selected', lang)}: <strong>{selected.size}</strong>
+          </p>
+          <label className="cn2b-field" htmlFor="cn2b-bulk-reason">
             <span className="cn2b-field__label">{t('cn2b_bulk_reason', lang)}</span>
             <input
+              id="cn2b-bulk-reason"
               className="cn2b-input"
               type="text"
               value={bulkReason}
@@ -317,21 +442,42 @@ export function CentralNeedsDispositionTable({
       )}
 
       {canEdit && (
-        <label className="cn2b-field">
-          <span className="cn2b-field__label">{t('cn2b_item_search', lang)}</span>
-          <input
-            className="cn2b-input"
-            type="search"
-            value={itemQuery}
-            onChange={(e) => void onSearchItems(e.target.value)}
-            list="cn2b-item-options"
-          />
-          <datalist id="cn2b-item-options">
-            {items.map((i) => <option key={i.id} value={i.id} label={i.name} />)}
-          </datalist>
-        </label>
+        /*
+          UX-2A — FINDING a canonical material and APPLYING it are separated
+          visually, and only visually. Searching still proposes nothing: no best
+          match, no fuzzy pick, no default selection. The mapping happens when
+          the reviewer presses the map action on a specific row, exactly as
+          before, using the identifier they themselves chose here.
+        */
+        <div className="cn2b-lookup">
+          <label className="cn2b-field" htmlFor="cn2b-item-search">
+            <span className="cn2b-field__label">{t('cn2b_item_search', lang)}</span>
+            <input
+              id="cn2b-item-search"
+              className="cn2b-input"
+              type="search"
+              value={itemQuery}
+              onChange={(e) => void onSearchItems(e.target.value)}
+              list="cn2b-item-options"
+            />
+            <datalist id="cn2b-item-options">
+              {items.map((i) => <option key={i.id} value={i.id} label={i.name} />)}
+            </datalist>
+          </label>
+          <p className="cn2b-hint">{t('cn2b_item_search_explainer', lang)}</p>
+        </div>
       )}
 
+      {/*
+        Three distinct situations, never collapsed into one another: the
+        session carries no source evidence at all; the evidence is there but
+        this filter matches none of it; or there are rows to review.
+      */}
+      {groups.length === 0 ? (
+        <PhoenixEmptyState title={t('cn2b_no_source_records', lang)} />
+      ) : visibleGroups.length === 0 ? (
+        <PhoenixEmptyState title={t('cn2b_filter_no_matches', lang)} />
+      ) : (
       <div className="cn2b-scroll">
         <table className="cn2b-table cn2b-table--review">
           <caption className="cn2b-visually-hidden">{t('cn2b_panel_review', lang)}</caption>
@@ -347,7 +493,7 @@ export function CentralNeedsDispositionTable({
             </tr>
           </thead>
           <tbody>
-            {groups.map((group) => {
+            {visibleGroups.map((group) => {
               const decision = dispositionByEntity.get(group.targetEntity);
               return group.fields.map((field, index) => {
                 const override = overrideByRecord.get(field.id);
@@ -518,6 +664,7 @@ export function CentralNeedsDispositionTable({
           </tbody>
         </table>
       </div>
+      )}
     </div>
   );
 }

@@ -39,7 +39,7 @@
  *     ALREADY loaded. Neither adds a query, and neither computes a business
  *     fact — readiness still comes from the server, as it always did.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
@@ -192,6 +192,13 @@ export function CentralNeedsScreen() {
   const [busy, setBusy] = useState<Busy>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  /**
+   * UX-2A — in-flight markers for the two reads this screen already performs.
+   * They distinguish "still loading" from "loaded and genuinely empty", which
+   * previously rendered identically. Neither adds a request.
+   */
+  const [revisionLoading, setRevisionLoading] = useState(false);
+  const [sessionLoading, setSessionLoading] = useState(false);
 
   const preview = useCentralNeedsPreview();
   const [pendingFile, setPendingFile] = useState<File | null>(null);
@@ -202,6 +209,23 @@ export function CentralNeedsScreen() {
   const [sourceQuery, setSourceQuery] = useState('');
   const [sourceFiles, setSourceFiles] = useState<SourceFile[]>([]);
   const [entryHits, setEntryHits] = useState<Array<{ id: string; archiveEntryPath: string | null; entrySha256: string; containerFilename: string; entryOrdinal: number }>>([]);
+  /**
+   * UX-2A — the four states a bounded evidence search can actually be in.
+   *
+   * They exist because "no results" and "you have not searched yet" are
+   * different facts, and the screen used to render the first sentence for the
+   * second situation. This adds NO query: the same two bounded server-side
+   * searches run, in the same place, under the same RLS scope; the phase only
+   * records where that one request currently is.
+   */
+  const [sourceSearchPhase, setSourceSearchPhase] = useState<'idle' | 'searching' | 'done' | 'failed'>('idle');
+  const [sourceSearchError, setSourceSearchError] = useState<string | null>(null);
+  /**
+   * Monotonic request token. A slower earlier keystroke must never overwrite a
+   * newer answer, which would show results for a query the operator has already
+   * replaced. Nothing is cancelled server-side; a stale reply is simply ignored.
+   */
+  const sourceSearchSeq = useRef(0);
 
   const revision = useMemo(() => revisions.find((r) => r.id === revisionId) ?? null, [revisions, revisionId]);
   const isDraft = revision?.status === 'draft';
@@ -263,18 +287,26 @@ export function CentralNeedsScreen() {
   useEffect(() => {
     if (!revisionId) return;
     let cancelled = false;
-    reloadRevision(revisionId).catch((e: unknown) => {
-      if (!cancelled) setError(e instanceof CentralNeedsError ? e.code : 'load_failed');
-    });
+    // UX-2A — the flag only records that the EXISTING reload is in flight, so
+    // "still loading" and "genuinely empty" stop looking identical. It adds no
+    // request and changes no result.
+    setRevisionLoading(true);
+    reloadRevision(revisionId)
+      .catch((e: unknown) => {
+        if (!cancelled) setError(e instanceof CentralNeedsError ? e.code : 'load_failed');
+      })
+      .finally(() => { if (!cancelled) setRevisionLoading(false); });
     return () => { cancelled = true; };
   }, [revisionId, reloadRevision]);
 
   useEffect(() => {
-    if (!activeSessionId) { setRecords([]); setDispositions([]); return; }
+    if (!activeSessionId) { setRecords([]); setDispositions([]); setSessionLoading(false); return; }
     let cancelled = false;
+    setSessionLoading(true);
     Promise.all([listSourceRecords(activeSessionId), listDispositions(activeSessionId)])
       .then(([r, d]) => { if (!cancelled) { setRecords(r); setDispositions(d); } })
-      .catch((e: unknown) => !cancelled && setError(e instanceof CentralNeedsError ? e.code : 'load_failed'));
+      .catch((e: unknown) => !cancelled && setError(e instanceof CentralNeedsError ? e.code : 'load_failed'))
+      .finally(() => { if (!cancelled) setSessionLoading(false); });
     return () => { cancelled = true; };
   }, [activeSessionId]);
 
@@ -348,19 +380,48 @@ export function CentralNeedsScreen() {
   // I — search runs against the selected revision only; RLS is the boundary.
   const onSearchSource = useCallback(async (q: string) => {
     setSourceQuery(q);
-    if (!revisionId) return;
+    const trimmed = q.trim();
+    // An empty box is NOT a search that found nothing — it is no search at all,
+    // and any in-flight reply is disowned by advancing the token.
+    if (!revisionId || trimmed === '') {
+      sourceSearchSeq.current += 1;
+      setSourceFiles([]);
+      setEntryHits([]);
+      setSourceSearchError(null);
+      setSourceSearchPhase('idle');
+      return;
+    }
+    const seq = (sourceSearchSeq.current += 1);
+    setSourceSearchError(null);
+    setSourceSearchPhase('searching');
     try {
       const [files, entries] = await Promise.all([
         searchSourceFiles(revisionId, q),
         searchBatchEntries(revisionId, q),
       ]);
+      if (seq !== sourceSearchSeq.current) return;
       setSourceFiles(files);
       setEntryHits(entries);
-    } catch {
+      setSourceSearchPhase('done');
+    } catch (e: unknown) {
+      if (seq !== sourceSearchSeq.current) return;
       setSourceFiles([]);
       setEntryHits([]);
+      // A refused search is reported as a refusal, never as "nothing matched".
+      setSourceSearchError(e instanceof CentralNeedsError ? e.code : 'load_failed');
+      setSourceSearchPhase('failed');
     }
   }, [revisionId]);
+
+  /** UX-2A — reset the evidence search. Presentation only: it writes nothing. */
+  const onClearSourceSearch = useCallback(() => {
+    sourceSearchSeq.current += 1;
+    setSourceQuery('');
+    setSourceFiles([]);
+    setEntryHits([]);
+    setSourceSearchError(null);
+    setSourceSearchPhase('idle');
+  }, []);
 
   const onSubmit = useCallback(async () => {
     if (!revisionId) return;
@@ -553,7 +614,9 @@ export function CentralNeedsScreen() {
         )}
 
         <Panel titleKey="cn2b_panel_batches" icon="warehouse">
-          {batches.length === 0 ? (
+          {revisionLoading && batches.length === 0 ? (
+            <p className="cn2b-hint" role="status">{t('cn2b_revision_loading', lang)}</p>
+          ) : batches.length === 0 ? (
             <PhoenixEmptyState title={t('cn2b_no_batches', lang)} />
           ) : (
             <div className="cn2b-scroll">
@@ -574,9 +637,9 @@ export function CentralNeedsScreen() {
                       <td>{b.containerFilename}</td>
                       <td>{t(`cn2b_kind_${b.containerKind}`, lang)}</td>
                       <td>{`${b.acceptedEntryCount} (+${b.excludedEntryCount})`}</td>
-                      <td><code className="cn2b-code">{b.containerSha256.slice(0, 12)}…</code></td>
-                      <td>
-                        <button type="button" className="cn2b-btn" onClick={() => void onDownloadSource(b.id)}>
+                      <td className="cn2b-cell--digest"><code className="cn2b-code">{b.containerSha256.slice(0, 12)}…</code></td>
+                      <td className="cn2b-cell--actions">
+                        <button type="button" className="cn2b-btn cn2b-btn--sm" onClick={() => void onDownloadSource(b.id)}>
                           {t('cn2b_download_source', lang)}
                         </button>
                       </td>
@@ -589,19 +652,58 @@ export function CentralNeedsScreen() {
         </Panel>
 
         <Panel titleKey="cn2b_panel_source_search" icon="reports">
-          <label className="cn2b-field">
-            <span className="cn2b-field__label">{t('cn2b_source_search', lang)}</span>
-            <input
-              className="cn2b-input"
-              type="search"
-              value={sourceQuery}
-              placeholder={t('cn2b_source_search_hint', lang)}
-              onChange={(e) => void onSearchSource(e.target.value)}
-            />
-          </label>
-          {sourceFiles.length === 0 && entryHits.length === 0 ? (
-            <p className="cn2b-hint">{t('cn2b_source_search_empty', lang)}</p>
-          ) : (
+          {/*
+            UX-2A search toolbar. The input, the reset and the state line read
+            as one control strip; the state line below is the ONLY place that
+            says what the search is doing, so "nothing matched" can never be
+            shown to someone who has not searched.
+          */}
+          <div className="cn2b-toolbar">
+            <label className="cn2b-field cn2b-toolbar__grow" htmlFor="cn2b-source-search">
+              <span className="cn2b-field__label">{t('cn2b_source_search', lang)}</span>
+              <input
+                id="cn2b-source-search"
+                className="cn2b-input"
+                type="search"
+                value={sourceQuery}
+                placeholder={t('cn2b_source_search_hint', lang)}
+                onChange={(e) => void onSearchSource(e.target.value)}
+              />
+            </label>
+            <div className="cn2b-toolbar__actions">
+              <button
+                type="button"
+                className="cn2b-btn"
+                disabled={sourceQuery === '' && sourceSearchPhase === 'idle'}
+                onClick={onClearSourceSearch}
+              >
+                {t('cn2b_source_search_clear', lang)}
+              </button>
+            </div>
+          </div>
+
+          {/*
+            The four states are mutually exclusive and each is named. A refused
+            search is reported through the Central Needs translator as a
+            refusal, never flattened into an empty result.
+          */}
+          <p className="cn2b-searchstate" data-phase={sourceSearchPhase} role="status">
+            {sourceSearchPhase === 'idle' && t('cn2b_source_search_idle', lang)}
+            {sourceSearchPhase === 'searching' && t('cn2b_source_search_running', lang)}
+            {sourceSearchPhase === 'done' && (
+              `${t('cn2b_source_search_results', lang)}: ${sourceFiles.length + entryHits.length}`
+            )}
+            {sourceSearchPhase === 'failed' && t('cn2b_source_search_failed', lang)}
+          </p>
+          {sourceSearchPhase === 'failed' && sourceSearchError && (
+            <PhoenixErrorState message={centralNeedsErrorText(sourceSearchError, lang)} />
+          )}
+
+          {sourceSearchPhase === 'done' && sourceFiles.length === 0 && entryHits.length === 0 && (
+            <PhoenixEmptyState title={t('cn2b_source_search_empty', lang)} />
+          )}
+
+          {sourceFiles.length === 0 && entryHits.length === 0 ? null : (
             <div className="cn2b-scroll">
               <table className="cn2b-table">
                 <caption className="cn2b-visually-hidden">{t('cn2b_panel_source_search', lang)}</caption>
@@ -634,39 +736,59 @@ export function CentralNeedsScreen() {
         </Panel>
 
         <Panel titleKey="cn2b_panel_sessions" icon="alerts">
-          {sessions.length === 0 ? (
+          {revisionLoading && sessions.length === 0 ? (
+            <p className="cn2b-hint" role="status">{t('cn2b_revision_loading', lang)}</p>
+          ) : sessions.length === 0 ? (
             <PhoenixEmptyState title={t('cn2b_no_sessions', lang)} />
           ) : (
-            <ul className="cn2b-list">
-              {sessions.map((s) => (
-                <li key={s.id} className="cn2b-list__row">
-                  <button
-                    type="button"
-                    className="cn2b-session"
-                    data-active={s.id === activeSessionId}
-                    disabled={s.status !== 'completed'}
-                    onClick={() => setActiveSessionId(s.id)}
-                  >
-                    <span className="cn2b-session__status" data-status={s.status}>
-                      {t(`cn2b_sess_${s.status}`, lang)}
-                    </span>
-                    {s.status === 'completed' && <StateBadge state="verified" />}
-                    <code className="cn2b-code">{(s.authoritativeDigest ?? s.previewDigest ?? '').slice(0, 12)}…</code>
-                  </button>
-                  {canImport && isDraft && (s.status === 'pending' || s.status === 'processing') && (
-                    <button type="button" className="cn2b-btn" disabled={busy !== null} onClick={() => void onAbandon(s.id)}>
-                      {t('cn2b_abandon', lang)}
+            <>
+              {/*
+                UX-2A — a compact operational selector, not a filtered list.
+                EVERY session stays listed whatever its status, because a failed
+                or abandoned attempt is part of the import record. Only a
+                completed one is selectable, exactly as before: that is the
+                single session whose evidence the review surface may read.
+              */}
+              <p className="cn2b-hint" role="status">
+                {t('cn2b_sessions_completed_of', lang)}: {completedSessionCount}/{sessions.length}
+              </p>
+              <ul className="cn2b-list cn2b-list--sessions">
+                {sessions.map((s) => (
+                  <li key={s.id} className="cn2b-list__row">
+                    <button
+                      type="button"
+                      className="cn2b-session"
+                      data-active={s.id === activeSessionId}
+                      aria-pressed={s.id === activeSessionId}
+                      disabled={s.status !== 'completed'}
+                      onClick={() => setActiveSessionId(s.id)}
+                    >
+                      <span className="cn2b-session__status" data-status={s.status}>
+                        {t(`cn2b_sess_${s.status}`, lang)}
+                      </span>
+                      {s.status === 'completed' && <StateBadge state="verified" />}
+                      <code className="cn2b-code">{(s.authoritativeDigest ?? s.previewDigest ?? '').slice(0, 12)}…</code>
+                      {s.id === activeSessionId && (
+                        <span className="cn2b-session__current">{t('cn2b_session_current', lang)}</span>
+                      )}
                     </button>
-                  )}
-                </li>
-              ))}
-            </ul>
+                    {canImport && isDraft && (s.status === 'pending' || s.status === 'processing') && (
+                      <button type="button" className="cn2b-btn cn2b-btn--sm" disabled={busy !== null} onClick={() => void onAbandon(s.id)}>
+                        {t('cn2b_abandon', lang)}
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </>
           )}
         </Panel>
       </>
     ),
 
-    review: activeSessionId ? (
+    review: sessionLoading ? (
+      <p className="cn2b-hint" role="status">{t('cn2b_session_loading', lang)}</p>
+    ) : activeSessionId ? (
       <Panel titleKey="cn2b_panel_review" icon="editor">
         <CentralNeedsDispositionTable
           importSessionId={activeSessionId}
