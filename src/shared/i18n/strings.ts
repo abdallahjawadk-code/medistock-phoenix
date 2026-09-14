@@ -2081,6 +2081,7 @@ export const T: Dict = {
   cn2b_source_search_failed: { ar: 'تعذّر تنفيذ البحث — لم يُعرض أي دليل.', en: 'The search could not run — no evidence is shown.' },
   cn2b_source_search_clear: { ar: 'مسح البحث', en: 'Clear search' },
   /* UX-2A — loading and session-selector states. */
+  cn2b_revisions_loading: { ar: 'جارٍ تحميل قائمة المراجعات…', en: 'Loading revisions…' },
   cn2b_revision_loading: { ar: 'جارٍ تحميل بيانات المراجعة…', en: 'Loading revision data…' },
   cn2b_session_loading: { ar: 'جارٍ تحميل سطور الجلسة…', en: 'Loading session records…' },
   cn2b_sessions_completed_of: { ar: 'جلسات مكتملة', en: 'Completed sessions' },

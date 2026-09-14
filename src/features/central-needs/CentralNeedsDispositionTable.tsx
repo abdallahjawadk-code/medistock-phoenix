@@ -215,7 +215,7 @@ export function CentralNeedsDispositionTable({
           overrideByRecord.get(field.id)?.overrideReason ?? '',
         );
       }
-      return haystack.join(' ').toLowerCase().includes(needle);
+      return haystack.join('\u0000').toLowerCase().includes(needle);
     });
   }, [groups, dispositionByEntity, overrideByRecord, textFilter, decisionFilter]);
 

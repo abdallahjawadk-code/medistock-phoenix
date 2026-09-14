@@ -199,6 +199,12 @@ export function CentralNeedsScreen() {
    */
   const [revisionLoading, setRevisionLoading] = useState(false);
   const [sessionLoading, setSessionLoading] = useState(false);
+  /**
+   * FINDING C — the revision LIST is loading until its one existing read
+   * resolves. It starts true so the very first paint cannot assert "no
+   * revisions" about a question that has not been answered yet.
+   */
+  const [revisionsLoading, setRevisionsLoading] = useState(true);
 
   const preview = useCentralNeedsPreview();
   const [pendingFile, setPendingFile] = useState<File | null>(null);
@@ -226,9 +232,45 @@ export function CentralNeedsScreen() {
    * replaced. Nothing is cancelled server-side; a stale reply is simply ignored.
    */
   const sourceSearchSeq = useRef(0);
+  /**
+   * FINDING B — the same monotonic-token discipline for the revision reload.
+   *
+   * Two reloads can overlap (a revision switch, or a panel's onChanged landing
+   * mid-flight). Without a token the LAST REPLY wins rather than the LATEST
+   * REQUEST, so a slow read for revision A can overwrite revision B's evidence
+   * and present it as B's. Only the newest request may commit.
+   */
+  const revisionReloadSeq = useRef(0);
 
   const revision = useMemo(() => revisions.find((r) => r.id === revisionId) ?? null, [revisions, revisionId]);
   const isDraft = revision?.status === 'draft';
+
+  /**
+   * FINDINGS A + B — everything below is scoped to ONE revision, so a revision
+   * change must drop all of it at once. Showing the previous revision's
+   * batches, sessions, review rows or search hits under a new revision's header
+   * would attribute evidence to a plan it does not belong to, which is exactly
+   * the kind of claim this feature exists to make impossible.
+   */
+  const resetRevisionScopedState = useCallback(() => {
+    revisionReloadSeq.current += 1;
+    sourceSearchSeq.current += 1;
+    setSessions([]);
+    setBatches([]);
+    setOverrides([]);
+    setReadiness(null);
+    setNeedLines([]);
+    setClaimedSources([]);
+    setBeneficiaryColumns([]);
+    setActiveSessionId(null);
+    setRecords([]);
+    setDispositions([]);
+    setSourceQuery('');
+    setSourceFiles([]);
+    setEntryHits([]);
+    setSourceSearchError(null);
+    setSourceSearchPhase('idle');
+  }, []);
 
   // --- loading -------------------------------------------------------------
 
@@ -249,17 +291,24 @@ export function CentralNeedsScreen() {
   useEffect(() => {
     if (!organizationId) return;
     let cancelled = false;
+    // FINDING C — "still asking" and "asked, and there are none" are different
+    // answers. Until this resolves the screen must not claim the second.
+    setRevisionsLoading(true);
     listPlanRevisions(organizationId)
       .then((rows) => {
         if (cancelled) return;
         setRevisions(rows);
         setRevisionId((current) => current ?? rows[0]?.id ?? null);
       })
-      .catch((e: unknown) => !cancelled && setError(e instanceof CentralNeedsError ? e.code : 'load_failed'));
+      .catch((e: unknown) => !cancelled && setError(e instanceof CentralNeedsError ? e.code : 'load_failed'))
+      .finally(() => { if (!cancelled) setRevisionsLoading(false); });
     return () => { cancelled = true; };
   }, [organizationId]);
 
   const reloadRevision = useCallback(async (id: string) => {
+    // FINDING B — claim this reload's generation BEFORE awaiting. The same six
+    // reads run, in the same order; only the right to commit them is gated.
+    const seq = (revisionReloadSeq.current += 1);
     const [nextSessions, nextBatches, nextOverrides, nextReadiness, nextLineage, nextBeneficiaryColumns] =
       await Promise.all([
         listImportSessions(id),
@@ -273,6 +322,9 @@ export function CentralNeedsScreen() {
         // to whichever import session happens to be on screen.
         listBeneficiaryColumns(id),
       ]);
+    // A newer reload started while this one was in flight: its answer is the
+    // current one, and this late reply is discarded rather than overwriting it.
+    if (seq !== revisionReloadSeq.current) return;
     setSessions(nextSessions);
     setBatches(nextBatches);
     setOverrides(nextOverrides);
@@ -287,6 +339,10 @@ export function CentralNeedsScreen() {
   useEffect(() => {
     if (!revisionId) return;
     let cancelled = false;
+    // FINDINGS A + B — drop the previous revision's evidence and its search
+    // BEFORE the new reads start, so nothing from the old plan is ever on
+    // screen under the new plan's header, not even for one frame.
+    resetRevisionScopedState();
     // UX-2A — the flag only records that the EXISTING reload is in flight, so
     // "still loading" and "genuinely empty" stop looking identical. It adds no
     // request and changes no result.
@@ -297,7 +353,7 @@ export function CentralNeedsScreen() {
       })
       .finally(() => { if (!cancelled) setRevisionLoading(false); });
     return () => { cancelled = true; };
-  }, [revisionId, reloadRevision]);
+  }, [revisionId, reloadRevision, resetRevisionScopedState]);
 
   useEffect(() => {
     if (!activeSessionId) { setRecords([]); setDispositions([]); setSessionLoading(false); return; }
@@ -521,7 +577,13 @@ export function CentralNeedsScreen() {
             value={revisionId ?? ''}
             onChange={(e) => setRevisionId(e.target.value || null)}
           >
-            {revisions.length === 0 && <option value="">{t('cn2b_no_revisions', lang)}</option>}
+            {/* FINDING C — while the list is still being read, say so. Only a
+                RESOLVED empty list may claim there are no revisions. */}
+            {revisions.length === 0 && (
+              <option value="">
+                {revisionsLoading ? t('cn2b_revisions_loading', lang) : t('cn2b_no_revisions', lang)}
+              </option>
+            )}
             {revisions.map((r) => (
               <option key={r.id} value={r.id}>{revisionLabel(r, lang)}</option>
             ))}
@@ -907,7 +969,9 @@ export function CentralNeedsScreen() {
               </span>
             </span>
           ) : (
-            <span className="cn2b-revchip" data-empty="true">{t('cn2b_no_revisions', lang)}</span>
+            <span className="cn2b-revchip" data-empty="true">
+              {revisionsLoading ? t('cn2b_revisions_loading', lang) : t('cn2b_no_revisions', lang)}
+            </span>
           )}
           {readiness && (readiness.ready ? <StateBadge state="ready" /> : <StateBadge state="incomplete" />)}
         </div>

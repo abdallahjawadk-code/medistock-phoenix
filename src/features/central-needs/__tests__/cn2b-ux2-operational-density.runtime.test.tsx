@@ -459,6 +459,22 @@ describe('UX-2A — authorization is untouched', () => {
     expect(tableSrc).not.toMatch(/normalizeRole|isScreenAuthorized/);
   });
 
+  it('contains no literal U+0000 byte in any UX-2A production file', () => {
+    // A raw NUL makes the file binary to git and to every review tool that
+    // reads it. The separator it stood for is kept, written as an escape.
+    for (const rel of [
+      'src/features/central-needs/CentralNeedsScreen.tsx',
+      'src/features/central-needs/CentralNeedsDispositionTable.tsx',
+      'src/shared/lib/central-needs.css',
+      'src/shared/i18n/strings.ts',
+    ]) {
+      const bytes = readFileSync(join(ROOT, rel));
+      expect(bytes.includes(0), `${rel} contains a literal NUL byte`).toBe(false);
+    }
+    const tableSrc = read('src/features/central-needs/CentralNeedsDispositionTable.tsx');
+    expect(tableSrc).toContain("haystack.join('\\u0000')");
+  });
+
   it('adds no new service call and keeps auto-mapping impossible', () => {
     const tableSrc = read('src/features/central-needs/CentralNeedsDispositionTable.tsx');
     // The filter reads props; it must not reach for a service inside the memo.
@@ -469,5 +485,184 @@ describe('UX-2A — authorization is untouched', () => {
     // Mapping still takes an explicit per-row action with a reviewer-chosen id.
     expect(tableSrc).toContain("applyOne(group.targetEntity, 'mapped', itemQuery.trim())");
     expect(tableSrc).toContain('if (bulkPreview === null || bulkReason.trim() === \'\') return;');
+  });
+});
+
+// ============================================================================
+// G. Revision isolation — independent-review findings A, B and C.
+// ============================================================================
+/**
+ * Everything beneath a revision belongs to THAT revision. These tests exist
+ * because three ways of breaking that are invisible in a fast, single-revision
+ * happy path:
+ *
+ *   * a "no revisions" claim made before the list has actually been read;
+ *   * the previous revision's batches, sessions or review rows still on screen
+ *     under the new revision's header;
+ *   * a slow reply for revision A landing after B was selected and overwriting
+ *     B — including a source search that was started under A.
+ *
+ * Each revision-scoped read is held open deliberately, so the transition itself
+ * is observable rather than asserted on after it has already settled.
+ */
+describe('UX-2A corrective — revision-scoped isolation', () => {
+  const REV_B = 'rev-2';
+  const SESSION_B = 's2';
+  const REVISION_B: PlanRevision = { ...REVISION, id: REV_B, planYear: 2027, revisionNumber: 1 };
+  const SESSION_TWO: ImportSession = { ...SESSION, id: SESSION_B, planRevisionId: REV_B };
+
+  const BATCH_A = { id: 'bA', planRevisionId: REV, containerFilename: 'ALPHA-2026.zip', containerKind: 'zip', containerSha256: 'a'.repeat(64), acceptedEntryCount: 1, excludedEntryCount: 0 } as unknown as ImportBatch;
+  const BATCH_B = { id: 'bB', planRevisionId: REV_B, containerFilename: 'BRAVO-2027.zip', containerKind: 'zip', containerSha256: 'b'.repeat(64), acceptedEntryCount: 1, excludedEntryCount: 0 } as unknown as ImportBatch;
+
+  const RECORDS_B: SourceRecord[] = [field('rB1', 'sheet:0:row:9', 9, 'Material', 'Ceftriaxone 1g', 'B9')];
+
+  /** Revision-scoped reads, held open until the test releases them, per id. */
+  let releasers: Record<string, Array<() => void>>;
+  const gate = <T,>(value: (id: string) => T) => (id: string) =>
+    new Promise<T>((resolve) => { (releasers[id] ??= []).push(() => resolve(value(id))); });
+  const release = (id: string) => {
+    const queued = releasers[id] ?? [];
+    releasers[id] = [];
+    for (const r of queued) r();
+  };
+
+  function gateRevisionReads() {
+    releasers = {};
+    listImportSessions.mockImplementation(gate((id) => (id === REV ? [SESSION] : [SESSION_TWO])));
+    listImportBatches.mockImplementation(gate((id) => (id === REV ? [BATCH_A] : [BATCH_B])));
+    listOverrides.mockImplementation(gate(() => []));
+    fetchReviewReadiness.mockImplementation(gate(() => READINESS));
+    listNeedLineLineage.mockImplementation(gate(() => ({ needLines: [], sources: [] })));
+    listBeneficiaryColumns.mockImplementation(gate(() => []));
+    listSourceRecords.mockImplementation(async (sid: string) => (sid === SESSION_ID ? RECORDS : RECORDS_B));
+    listDispositions.mockImplementation(async (sid: string) => (sid === SESSION_ID ? DISPOSITIONS : []));
+  }
+
+  const searchState = () => document.querySelector('.cn2b-searchstate') as HTMLElement;
+  const selectRevision = (id: string) =>
+    fireEvent.change(screen.getByLabelText(T.cn2b_revision.en), { target: { value: id } });
+
+  it('shows the list as LOADING, and never "no revisions", until the read resolves', async () => {
+    let resolveList!: (rows: PlanRevision[]) => void;
+    listPlanRevisions.mockImplementation(() => new Promise((r) => { resolveList = r; }));
+
+    render(<CentralNeedsScreen />);
+    await waitFor(() => expect(listPlanRevisions).toHaveBeenCalled());
+
+    expect(screen.getAllByText(T.cn2b_revisions_loading.en).length).toBeGreaterThan(0);
+    expect(screen.queryByText(T.cn2b_no_revisions.en), 'must not answer before the question resolves').toBeNull();
+
+    resolveList([]);
+    await waitFor(() => expect(screen.getAllByText(T.cn2b_no_revisions.en).length).toBeGreaterThan(0));
+    expect(screen.queryByText(T.cn2b_revisions_loading.en)).toBeNull();
+  });
+
+  it('drops the previous revision evidence the moment another revision is selected', async () => {
+    listPlanRevisions.mockResolvedValue([REVISION, REVISION_B]);
+    gateRevisionReads();
+
+    render(<CentralNeedsScreen />);
+    await waitFor(() => expect(listImportBatches).toHaveBeenCalledWith(REV));
+    release(REV);
+    await screen.findByText('ALPHA-2026.zip');
+    await waitFor(() => expect(visibleEntities()).toHaveLength(3));
+
+    // B is now selected and its reads are still open.
+    selectRevision(REV_B);
+    await waitFor(() => expect(listImportBatches).toHaveBeenCalledWith(REV_B));
+
+    expect(screen.queryByText('ALPHA-2026.zip'), 'an A batch must not sit under B').toBeNull();
+    expect(screen.queryByText('BRAVO-2027.zip')).toBeNull();
+    expect(visibleEntities(), 'A review rows must not sit under B').toHaveLength(0);
+    expect(document.querySelector('.cn2b-table--review')).toBeNull();
+
+    release(REV_B);
+    await screen.findByText('BRAVO-2027.zip');
+    expect(screen.queryByText('ALPHA-2026.zip')).toBeNull();
+    await waitFor(() => expect(visibleEntities()).toEqual(['sheet:0:row:9']));
+  });
+
+  it('keeps the newest revision when an older reload resolves late, out of order', async () => {
+    listPlanRevisions.mockResolvedValue([REVISION, REVISION_B]);
+    gateRevisionReads();
+
+    render(<CentralNeedsScreen />);
+    await waitFor(() => expect(listImportBatches).toHaveBeenCalledWith(REV));
+
+    // A is still open when B starts, and B answers first.
+    selectRevision(REV_B);
+    await waitFor(() => expect(listImportBatches).toHaveBeenCalledWith(REV_B));
+    release(REV_B);
+    await screen.findByText('BRAVO-2027.zip');
+
+    // A answers afterwards, for a revision nobody is looking at any more.
+    release(REV);
+    await waitFor(() => expect(screen.queryByText('ALPHA-2026.zip')).toBeNull());
+    expect(screen.getByText('BRAVO-2027.zip')).toBeInTheDocument();
+    await waitFor(() => expect(visibleEntities()).toEqual(['sheet:0:row:9']));
+  });
+
+  it('clears a completed source search when the revision changes', async () => {
+    listPlanRevisions.mockResolvedValue([REVISION, REVISION_B]);
+    gateRevisionReads();
+    searchSourceFiles.mockResolvedValue([{ id: 'f1', originalFilename: 'alpha-evidence.xlsx', fileHash: 'a'.repeat(64) }]);
+    searchBatchEntries.mockResolvedValue([]);
+
+    render(<CentralNeedsScreen />);
+    await waitFor(() => expect(listImportBatches).toHaveBeenCalledWith(REV));
+    release(REV);
+    await screen.findByText('ALPHA-2026.zip');
+
+    fireEvent.change(screen.getByLabelText(T.cn2b_source_search.en), { target: { value: 'alpha' } });
+    await screen.findByText('alpha-evidence.xlsx');
+
+    selectRevision(REV_B);
+    await waitFor(() => expect(listImportBatches).toHaveBeenCalledWith(REV_B));
+
+    expect(searchState().dataset.phase).toBe('idle');
+    expect(screen.queryByText('alpha-evidence.xlsx'), 'A hits must not survive into B').toBeNull();
+    expect((screen.getByLabelText(T.cn2b_source_search.en) as HTMLInputElement).value).toBe('');
+  });
+
+  it('ignores a source-search reply that arrives after the revision changed', async () => {
+    listPlanRevisions.mockResolvedValue([REVISION, REVISION_B]);
+    gateRevisionReads();
+    let releaseSearch!: () => void;
+    searchSourceFiles.mockImplementation(() => new Promise((resolve) => {
+      releaseSearch = () => resolve([{ id: 'f1', originalFilename: 'late-alpha.xlsx', fileHash: 'a'.repeat(64) }]);
+    }));
+    searchBatchEntries.mockResolvedValue([]);
+
+    render(<CentralNeedsScreen />);
+    await waitFor(() => expect(listImportBatches).toHaveBeenCalledWith(REV));
+    release(REV);
+    await screen.findByText('ALPHA-2026.zip');
+
+    fireEvent.change(screen.getByLabelText(T.cn2b_source_search.en), { target: { value: 'alpha' } });
+    await waitFor(() => expect(searchState().dataset.phase).toBe('searching'));
+
+    selectRevision(REV_B);
+    await waitFor(() => expect(listImportBatches).toHaveBeenCalledWith(REV_B));
+    release(REV_B);
+    await screen.findByText('BRAVO-2027.zip');
+
+    // The A search finally answers, for a revision that is gone.
+    releaseSearch();
+    await waitFor(() => expect(screen.queryByText('late-alpha.xlsx')).toBeNull());
+    expect(searchState().dataset.phase).toBe('idle');
+  });
+
+  it('reports a refused search as FAILED with its translated code, never as zero results', async () => {
+    const { CentralNeedsError } = await import('../central-needs.service');
+    await renderWorkbench();
+    searchSourceFiles.mockRejectedValue(new CentralNeedsError('forbidden'));
+    searchBatchEntries.mockResolvedValue([]);
+
+    fireEvent.change(screen.getByLabelText(T.cn2b_source_search.en), { target: { value: 'anything' } });
+    await waitFor(() => expect(searchState().dataset.phase).toBe('failed'));
+
+    expect(screen.getByText(T.cn2b_source_search_failed.en)).toBeInTheDocument();
+    expect(screen.getByText(T.cn2b_err_forbidden.en)).toBeInTheDocument();
+    expect(screen.queryByText(T.cn2b_source_search_empty.en), 'a refusal is not "nothing matched"').toBeNull();
   });
 });
