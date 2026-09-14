@@ -627,6 +627,16 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
       'supabase/migrations/213_phoenix_central_needs_beneficiary_column_mapping.sql',
       'supabase/migrations/__tests__/213-central-needs-beneficiary-column-mapping-static.test.ts',
       'supabase/migrations/__tests__/213-central-needs-beneficiary-column-mapping.dynamic.test.ts',
+      // M214: the Central Needs readiness-RPC transaction-mode correction — one
+      // reviewed, forward-only migration plus its static proof. It advances that
+      // single function's volatility (STABLE -> VOLATILE) and changes no body,
+      // grant, search_path, branding asset, RLS policy or authorization
+      // decision, so A7.2.4's own subject is untouched by it. Registered by
+      // EXACT filename, exactly as M209-M213 were. No wildcard and no directory
+      // exemption, so every other file under supabase/ still fails this guard
+      // closed.
+      'supabase/migrations/214_phoenix_central_needs_review_readiness_volatility.sql',
+      'supabase/migrations/__tests__/214-central-needs-review-readiness-volatility-static.test.ts',
       // INTERACTIVE-GUIDE-IG1: one new file under the watched `src/app`
       // prefix, registered by EXACT filename like every entry above.
       //

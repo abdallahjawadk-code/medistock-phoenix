@@ -83,9 +83,14 @@ describe('M198 static — identity and placement', () => {
       // CN-2B / Finding-1 corrective (213): the Central Needs beneficiary-
       // column-mapping layer. It is now the reviewed successor.
       '213_phoenix_central_needs_beneficiary_column_mapping.sql',
+      // M214: the Central Needs readiness-RPC transaction-mode correction. It
+      // advances that one function's volatility (STABLE -> VOLATILE) and leaves
+      // its SECURITY DEFINER search_path exactly as 211 set it, so what 198
+      // converges is untouched. It is now the reviewed ceiling.
+      '214_phoenix_central_needs_review_readiness_volatility.sql',
     ]);
-    expect(files.filter((f) => Number(f.slice(0, 3)) > 213)).toEqual([]);
-    expect(files).toHaveLength(213);
+    expect(files.filter((f) => Number(f.slice(0, 3)) > 214)).toEqual([]);
+    expect(files).toHaveLength(214);
   });
 
   it('carries no MANUAL APPLY ONLY banner, so the pinned executor will accept it', () => {

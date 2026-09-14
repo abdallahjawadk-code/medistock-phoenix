@@ -92,12 +92,17 @@ describe('189 · registration and file hygiene', () => {
     // CN-2B / Finding-1 corrective (213): the Central Needs beneficiary-
     // column-mapping layer. It is now the reviewed successor.
     const NEXT_24 = '213_phoenix_central_needs_beneficiary_column_mapping.sql';
+    // M214: the Central Needs readiness-RPC transaction-mode correction — that
+    // one function's volatility (STABLE -> VOLATILE), no body, grant or
+    // search_path change. It adds no alert-identity SQL, so what 189 asserts is
+    // unaffected; it is listed to keep this successor guard exhaustive.
+    const NEXT_25 = '214_phoenix_central_needs_review_readiness_volatility.sql';
     expect(REVIEWED_MIGRATION_FILES.filter(f => f.startsWith('212_'))).toEqual([NEXT_23]);
     const numbers = REVIEWED_MIGRATION_FILES.map(f => Number(f.slice(0, 3))).filter(Number.isFinite);
-    expect(Math.max(...numbers)).toBe(213);
+    expect(Math.max(...numbers)).toBe(214);
     const i = REVIEWED_MIGRATION_FILES.indexOf(NAME);
-    expect(REVIEWED_MIGRATION_FILES.slice(i + 1)).toEqual([NEXT, NEXT_2, NEXT_3, NEXT_4, NEXT_5, NEXT_6, NEXT_7, NEXT_8, NEXT_9, NEXT_10, NEXT_11, NEXT_12, NEXT_13, NEXT_14, NEXT_15, NEXT_16, NEXT_17, NEXT_18, NEXT_19, NEXT_20, NEXT_21, NEXT_22, NEXT_23, NEXT_24]);
-    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1]).toBe(NEXT_24);
+    expect(REVIEWED_MIGRATION_FILES.slice(i + 1)).toEqual([NEXT, NEXT_2, NEXT_3, NEXT_4, NEXT_5, NEXT_6, NEXT_7, NEXT_8, NEXT_9, NEXT_10, NEXT_11, NEXT_12, NEXT_13, NEXT_14, NEXT_15, NEXT_16, NEXT_17, NEXT_18, NEXT_19, NEXT_20, NEXT_21, NEXT_22, NEXT_23, NEXT_24, NEXT_25]);
+    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1]).toBe(NEXT_25);
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^190_/.test(f))).toEqual([NEXT]);
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^191_/.test(f))).toEqual([NEXT_2]);
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^192_/.test(f))).toEqual([NEXT_3]);
@@ -118,8 +123,9 @@ describe('189 · registration and file hygiene', () => {
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^211_/.test(f))).toEqual([NEXT_22]);
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^212_/.test(f))).toEqual([NEXT_23]);
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^213_/.test(f))).toEqual([NEXT_24]);
-    // The next unauthorized number must still fail closed.
-    expect(REVIEWED_MIGRATION_FILES.filter(f => /^214_/.test(f))).toHaveLength(0);
+    expect(REVIEWED_MIGRATION_FILES.filter(f => /^214_/.test(f))).toEqual([NEXT_25]);
+    // The next unauthorized number must still fail closed — now 215.
+    expect(REVIEWED_MIGRATION_FILES.filter(f => /^215_/.test(f))).toHaveLength(0);
   });
 });
 

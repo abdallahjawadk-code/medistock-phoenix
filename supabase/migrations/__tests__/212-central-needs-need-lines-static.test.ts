@@ -41,17 +41,19 @@ describe('CN-2B/212 static — registration and file hygiene', () => {
     const files = readdirSync(MIGRATIONS).filter((f) => /^\d{3}_.*\.sql$/.test(f)).sort();
     expect(files).toContain(FILENAME);
     expect(files.indexOf(FILENAME)).toBe(211);
-    expect(files.filter((f) => Number(f.slice(0, 3)) > 213)).toEqual([]);
-    expect(files).toHaveLength(213);
+    expect(files.filter((f) => Number(f.slice(0, 3)) > 214)).toEqual([]);
+    expect(files).toHaveLength(214);
     expect(isReviewedMigrationFile(FILENAME)).toBe(true);
     // 212 is no longer last: 213 sits directly after it, and 213's own
-    // static suite owns the ceiling assertions from here on.
+    // static suite owns the ceiling assertions from here on. The 212 -> 213
+    // relationship below is HISTORICAL and never moves; the array's LAST entry
+    // is the ceiling, now the M214 readiness-RPC volatility correction.
     expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.indexOf(FILENAME) + 1])
       .toBe('213_phoenix_central_needs_beneficiary_column_mapping.sql');
     expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1])
-      .toBe('213_phoenix_central_needs_beneficiary_column_mapping.sql');
-    expect(getMaximumReviewedMigrationNumber()).toBe(213);
-    expect(getNextUnreviewedMigrationNumber()).toBe(214);
+      .toBe('214_phoenix_central_needs_review_readiness_volatility.sql');
+    expect(getMaximumReviewedMigrationNumber()).toBe(214);
+    expect(getNextUnreviewedMigrationNumber()).toBe(215);
   });
 
   it('edits no historical migration — it is self-contained', () => {
