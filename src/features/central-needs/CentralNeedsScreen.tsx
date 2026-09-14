@@ -24,6 +24,20 @@
  * Family detection is advisory. It is displayed with its confidence and its
  * reasons, and it gates nothing at all — no authorization, no automatic
  * mapping, no business truth.
+ *
+ * UX-1 — THE WORKSPACE SHELL, and what it deliberately did NOT change.
+ *
+ * The same panels, in the same order, are now grouped under the six named
+ * workflow stages declared in CentralNeedsWorkflowNav. That is a PRESENTATION
+ * change and nothing more:
+ *   * every stage section is rendered unconditionally, so no panel is mounted
+ *     or unmounted by navigating — the data each one loads, and when, is
+ *     exactly what it was before;
+ *   * the conditions inside a stage (`canImport && isDraft`, `activeSessionId`,
+ *     `revision`) are the screen's own, carried over verbatim;
+ *   * the command header and the summary strip read state this screen has
+ *     ALREADY loaded. Neither adds a query, and neither computes a business
+ *     fact — readiness still comes from the server, as it always did.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useApp } from '@/app/AppContext';
@@ -37,6 +51,13 @@ import { getOrganizations, type OrgRow } from '@/shared/supabase/services/organi
 import { CentralNeedsDispositionTable } from './CentralNeedsDispositionTable';
 import { CentralNeedsNeedLinePanel } from './CentralNeedsNeedLinePanel';
 import { CentralNeedsBeneficiaryColumnPanel } from './CentralNeedsBeneficiaryColumnPanel';
+import {
+  CentralNeedsWorkflowNav,
+  CENTRAL_NEEDS_STAGES,
+  stageDomId,
+  stageTitleDomId,
+  type CentralNeedsStageId,
+} from './CentralNeedsWorkflowNav';
 import {
   CentralNeedsError,
   abandonImportSession,
@@ -81,16 +102,37 @@ function revisionLabel(r: PlanRevision, lang: Parameters<typeof t>[1]): string {
   return `${year} · ${t('cn2b_revision', lang)} ${r.revisionNumber} — ${t(`cn2b_revstatus_${r.status}`, lang)}`;
 }
 
+/**
+ * UX-1 — a panel heading is an h3 because a panel now sits INSIDE a stage,
+ * whose own heading is the h2 beneath this screen's single h1. The visual
+ * treatment is unchanged; the document outline simply gained the level it was
+ * missing once the panels were grouped.
+ */
 function Panel({ titleKey, icon, children }: { titleKey: string; icon: Parameters<typeof PhoenixIcon>[0]['name']; children: React.ReactNode }) {
   const { lang } = useApp();
   return (
     <section className="cn2b-panel">
-      <h2 className="cn2b-panel__title">
+      <h3 className="cn2b-panel__title">
         <span className="cn2b-panel__title-icon" aria-hidden="true"><PhoenixIcon name={icon} size={15} /></span>
         {t(titleKey, lang)}
-      </h2>
+      </h3>
       <div className="cn2b-panel__body">{children}</div>
     </section>
+  );
+}
+
+/**
+ * UX-1 — one operational number, read from state the screen has ALREADY
+ * loaded. No metric here triggers a read of its own: a summary that fetched
+ * would be a second source of truth for a fact the panels below already show.
+ */
+function SummaryMetric({ labelKey, value }: { labelKey: string; value: string | number }) {
+  const { lang } = useApp();
+  return (
+    <div className="cn2b-summary__cell">
+      <dt className="cn2b-summary__label">{t(labelKey, lang)}</dt>
+      <dd className="cn2b-summary__value">{value}</dd>
+    </div>
   );
 }
 
@@ -394,21 +436,22 @@ export function CentralNeedsScreen() {
 
   const previewResult = preview.state.phase === 'ready' ? preview.state.outcome.result : null;
 
-  return (
-    <div className="cn2b" dir={dir}>
-      <header className="cn2b-header">
-        <div>
-          <h1 className="cn2b-title">{t('cn2b_title', lang)}</h1>
-          <p className="cn2b-subtitle">{t('cn2b_subtitle', lang)}</p>
-        </div>
-        <div className="cn2b-header__state">
-          {readiness && (readiness.ready ? <StateBadge state="ready" /> : <StateBadge state="incomplete" />)}
-        </div>
-      </header>
+  // UX-1 — summary figures, every one of them counted off state already on
+  // screen. A column counts as decided once a review decision exists for it,
+  // whichever decision that was.
+  const completedSessionCount = sessions.filter((s) => s.status === 'completed').length;
+  const decidedColumnCount = beneficiaryColumns.filter((c) => c.decision !== null).length;
 
-      {error && <PhoenixErrorState message={centralNeedsErrorText(error, lang)} />}
-      {notice && <p className="cn2b-notice" role="status">{t(notice, lang)}</p>}
-
+  /**
+   * UX-1 — the content of each workflow stage, keyed by its canonical id.
+   *
+   * The stage SECTIONS are rendered unconditionally by the map below, in the
+   * one order CENTRAL_NEEDS_STAGES declares. Only the conditions this screen
+   * already had appear inside them, unchanged, so grouping the panels moved no
+   * data loading and hid no surface from anyone who could reach it before.
+   */
+  const stageBody: Record<CentralNeedsStageId, React.ReactNode> = {
+    plan: (
       <Panel titleKey="cn2b_panel_revision" icon="reports">
         <label className="cn2b-field">
           <span className="cn2b-field__label">{t('cn2b_revision', lang)}</span>
@@ -466,202 +509,214 @@ export function CentralNeedsScreen() {
           </>
         )}
       </Panel>
+    ),
 
-      {canImport && isDraft && (
-        <Panel titleKey="cn2b_panel_upload" icon="warehouse">
+    source: (
+      <>
+        {canImport && isDraft && (
+          <Panel titleKey="cn2b_panel_upload" icon="warehouse">
+            <label className="cn2b-field">
+              <span className="cn2b-field__label">{t('cn2b_choose_file', lang)}</span>
+              <input
+                className="cn2b-file"
+                type="file"
+                accept=".xls,.xlsx,.csv,.zip"
+                onChange={(e) => onPickFile(e.target.files?.[0] ?? null)}
+              />
+            </label>
+            {pendingFile && (
+              <p className="cn2b-hint">
+                {pendingFile.name} · {detectContainerKind(pendingFile) === 'archive' ? t('cn2b_kind_zip', lang) : t('cn2b_kind_file', lang)}
+              </p>
+            )}
+            {preview.state.phase === 'parsing' && <p className="cn2b-hint" role="status">{t('cn2b_parsing', lang)}</p>}
+            {preview.state.phase === 'failed' && (
+              <PhoenixErrorState message={`${t('cn2b_preview_failed', lang)} (${preview.state.reason})`} />
+            )}
+          </Panel>
+        )}
+
+        {previewResult && (
+          <Panel titleKey="cn2b_panel_preview" icon="editor">
+            <div className="cn2b-inline"><StateBadge state="provisional" /></div>
+            <p className="cn2b-hint">{t('cn2b_preview_explainer', lang)}</p>
+            <PreviewSummary result={previewResult} kind={preview.state.phase === 'ready' ? preview.state.outcome.kind : 'file'} />
+            <button
+              type="button"
+              className="cn2b-btn cn2b-btn--primary"
+              disabled={busy !== null}
+              onClick={() => void onVerify()}
+            >
+              {busy === 'verifying' ? t('cn2b_verifying', lang) : t('cn2b_verify', lang)}
+            </button>
+          </Panel>
+        )}
+
+        <Panel titleKey="cn2b_panel_batches" icon="warehouse">
+          {batches.length === 0 ? (
+            <PhoenixEmptyState title={t('cn2b_no_batches', lang)} />
+          ) : (
+            <div className="cn2b-scroll">
+              <table className="cn2b-table">
+                <caption className="cn2b-visually-hidden">{t('cn2b_panel_batches', lang)}</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">{t('cn2b_col_container', lang)}</th>
+                    <th scope="col">{t('cn2b_col_kind', lang)}</th>
+                    <th scope="col">{t('cn2b_col_entries', lang)}</th>
+                    <th scope="col">{t('cn2b_col_sha', lang)}</th>
+                    <th scope="col">{t('cn2b_col_actions', lang)}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {batches.map((b) => (
+                    <tr key={b.id}>
+                      <td>{b.containerFilename}</td>
+                      <td>{t(`cn2b_kind_${b.containerKind}`, lang)}</td>
+                      <td>{`${b.acceptedEntryCount} (+${b.excludedEntryCount})`}</td>
+                      <td><code className="cn2b-code">{b.containerSha256.slice(0, 12)}…</code></td>
+                      <td>
+                        <button type="button" className="cn2b-btn" onClick={() => void onDownloadSource(b.id)}>
+                          {t('cn2b_download_source', lang)}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Panel>
+
+        <Panel titleKey="cn2b_panel_source_search" icon="reports">
           <label className="cn2b-field">
-            <span className="cn2b-field__label">{t('cn2b_choose_file', lang)}</span>
+            <span className="cn2b-field__label">{t('cn2b_source_search', lang)}</span>
             <input
-              className="cn2b-file"
-              type="file"
-              accept=".xls,.xlsx,.csv,.zip"
-              onChange={(e) => onPickFile(e.target.files?.[0] ?? null)}
+              className="cn2b-input"
+              type="search"
+              value={sourceQuery}
+              placeholder={t('cn2b_source_search_hint', lang)}
+              onChange={(e) => void onSearchSource(e.target.value)}
             />
           </label>
-          {pendingFile && (
-            <p className="cn2b-hint">
-              {pendingFile.name} · {detectContainerKind(pendingFile) === 'archive' ? t('cn2b_kind_zip', lang) : t('cn2b_kind_file', lang)}
-            </p>
-          )}
-          {preview.state.phase === 'parsing' && <p className="cn2b-hint" role="status">{t('cn2b_parsing', lang)}</p>}
-          {preview.state.phase === 'failed' && (
-            <PhoenixErrorState message={`${t('cn2b_preview_failed', lang)} (${preview.state.reason})`} />
+          {sourceFiles.length === 0 && entryHits.length === 0 ? (
+            <p className="cn2b-hint">{t('cn2b_source_search_empty', lang)}</p>
+          ) : (
+            <div className="cn2b-scroll">
+              <table className="cn2b-table">
+                <caption className="cn2b-visually-hidden">{t('cn2b_panel_source_search', lang)}</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">{t('cn2b_col_container', lang)}</th>
+                    <th scope="col">{t('cn2b_col_entry_path', lang)}</th>
+                    <th scope="col">{t('cn2b_col_sha', lang)}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sourceFiles.map((f) => (
+                    <tr key={f.id}>
+                      <td>{f.originalFilename}</td>
+                      <td>—</td>
+                      <td><code className="cn2b-code">{f.fileHash.slice(0, 16)}…</code></td>
+                    </tr>
+                  ))}
+                  {entryHits.map((e) => (
+                    <tr key={e.id}>
+                      <td>{e.containerFilename}</td>
+                      <td><code className="cn2b-code">{e.archiveEntryPath ?? '—'}</code></td>
+                      <td><code className="cn2b-code">{e.entrySha256.slice(0, 16)}…</code></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </Panel>
-      )}
 
-      {previewResult && (
-        <Panel titleKey="cn2b_panel_preview" icon="editor">
-          <div className="cn2b-inline"><StateBadge state="provisional" /></div>
-          <p className="cn2b-hint">{t('cn2b_preview_explainer', lang)}</p>
-          <PreviewSummary result={previewResult} kind={preview.state.phase === 'ready' ? preview.state.outcome.kind : 'file'} />
-          <button
-            type="button"
-            className="cn2b-btn cn2b-btn--primary"
-            disabled={busy !== null}
-            onClick={() => void onVerify()}
-          >
-            {busy === 'verifying' ? t('cn2b_verifying', lang) : t('cn2b_verify', lang)}
-          </button>
-        </Panel>
-      )}
-
-      <Panel titleKey="cn2b_panel_batches" icon="warehouse">
-        {batches.length === 0 ? (
-          <PhoenixEmptyState title={t('cn2b_no_batches', lang)} />
-        ) : (
-          <div className="cn2b-scroll">
-            <table className="cn2b-table">
-              <caption className="cn2b-visually-hidden">{t('cn2b_panel_batches', lang)}</caption>
-              <thead>
-                <tr>
-                  <th scope="col">{t('cn2b_col_container', lang)}</th>
-                  <th scope="col">{t('cn2b_col_kind', lang)}</th>
-                  <th scope="col">{t('cn2b_col_entries', lang)}</th>
-                  <th scope="col">{t('cn2b_col_sha', lang)}</th>
-                  <th scope="col">{t('cn2b_col_actions', lang)}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {batches.map((b) => (
-                  <tr key={b.id}>
-                    <td>{b.containerFilename}</td>
-                    <td>{t(`cn2b_kind_${b.containerKind}`, lang)}</td>
-                    <td>{`${b.acceptedEntryCount} (+${b.excludedEntryCount})`}</td>
-                    <td><code className="cn2b-code">{b.containerSha256.slice(0, 12)}…</code></td>
-                    <td>
-                      <button type="button" className="cn2b-btn" onClick={() => void onDownloadSource(b.id)}>
-                        {t('cn2b_download_source', lang)}
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Panel>
-
-      <Panel titleKey="cn2b_panel_source_search" icon="reports">
-        <label className="cn2b-field">
-          <span className="cn2b-field__label">{t('cn2b_source_search', lang)}</span>
-          <input
-            className="cn2b-input"
-            type="search"
-            value={sourceQuery}
-            placeholder={t('cn2b_source_search_hint', lang)}
-            onChange={(e) => void onSearchSource(e.target.value)}
-          />
-        </label>
-        {sourceFiles.length === 0 && entryHits.length === 0 ? (
-          <p className="cn2b-hint">{t('cn2b_source_search_empty', lang)}</p>
-        ) : (
-          <div className="cn2b-scroll">
-            <table className="cn2b-table">
-              <caption className="cn2b-visually-hidden">{t('cn2b_panel_source_search', lang)}</caption>
-              <thead>
-                <tr>
-                  <th scope="col">{t('cn2b_col_container', lang)}</th>
-                  <th scope="col">{t('cn2b_col_entry_path', lang)}</th>
-                  <th scope="col">{t('cn2b_col_sha', lang)}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sourceFiles.map((f) => (
-                  <tr key={f.id}>
-                    <td>{f.originalFilename}</td>
-                    <td>—</td>
-                    <td><code className="cn2b-code">{f.fileHash.slice(0, 16)}…</code></td>
-                  </tr>
-                ))}
-                {entryHits.map((e) => (
-                  <tr key={e.id}>
-                    <td>{e.containerFilename}</td>
-                    <td><code className="cn2b-code">{e.archiveEntryPath ?? '—'}</code></td>
-                    <td><code className="cn2b-code">{e.entrySha256.slice(0, 16)}…</code></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Panel>
-
-      <Panel titleKey="cn2b_panel_sessions" icon="alerts">
-        {sessions.length === 0 ? (
-          <PhoenixEmptyState title={t('cn2b_no_sessions', lang)} />
-        ) : (
-          <ul className="cn2b-list">
-            {sessions.map((s) => (
-              <li key={s.id} className="cn2b-list__row">
-                <button
-                  type="button"
-                  className="cn2b-session"
-                  data-active={s.id === activeSessionId}
-                  disabled={s.status !== 'completed'}
-                  onClick={() => setActiveSessionId(s.id)}
-                >
-                  <span className="cn2b-session__status" data-status={s.status}>
-                    {t(`cn2b_sess_${s.status}`, lang)}
-                  </span>
-                  {s.status === 'completed' && <StateBadge state="verified" />}
-                  <code className="cn2b-code">{(s.authoritativeDigest ?? s.previewDigest ?? '').slice(0, 12)}…</code>
-                </button>
-                {canImport && isDraft && (s.status === 'pending' || s.status === 'processing') && (
-                  <button type="button" className="cn2b-btn" disabled={busy !== null} onClick={() => void onAbandon(s.id)}>
-                    {t('cn2b_abandon', lang)}
+        <Panel titleKey="cn2b_panel_sessions" icon="alerts">
+          {sessions.length === 0 ? (
+            <PhoenixEmptyState title={t('cn2b_no_sessions', lang)} />
+          ) : (
+            <ul className="cn2b-list">
+              {sessions.map((s) => (
+                <li key={s.id} className="cn2b-list__row">
+                  <button
+                    type="button"
+                    className="cn2b-session"
+                    data-active={s.id === activeSessionId}
+                    disabled={s.status !== 'completed'}
+                    onClick={() => setActiveSessionId(s.id)}
+                  >
+                    <span className="cn2b-session__status" data-status={s.status}>
+                      {t(`cn2b_sess_${s.status}`, lang)}
+                    </span>
+                    {s.status === 'completed' && <StateBadge state="verified" />}
+                    <code className="cn2b-code">{(s.authoritativeDigest ?? s.previewDigest ?? '').slice(0, 12)}…</code>
                   </button>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
+                  {canImport && isDraft && (s.status === 'pending' || s.status === 'processing') && (
+                    <button type="button" className="cn2b-btn" disabled={busy !== null} onClick={() => void onAbandon(s.id)}>
+                      {t('cn2b_abandon', lang)}
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </Panel>
+      </>
+    ),
+
+    review: activeSessionId ? (
+      <Panel titleKey="cn2b_panel_review" icon="editor">
+        <CentralNeedsDispositionTable
+          importSessionId={activeSessionId}
+          records={records}
+          dispositions={dispositions}
+          overrides={overrides}
+          organizationId={organizationId}
+          canEdit={canEdit && isDraft}
+          onChanged={() => void onDispositionsChanged()}
+        />
       </Panel>
+    ) : (
+      <p className="cn2b-hint">{t('cn2b_stage_review_waiting', lang)}</p>
+    ),
 
-      {activeSessionId && (
-        <Panel titleKey="cn2b_panel_review" icon="editor">
-          <CentralNeedsDispositionTable
-            importSessionId={activeSessionId}
-            records={records}
-            dispositions={dispositions}
-            overrides={overrides}
-            organizationId={organizationId}
-            canEdit={canEdit && isDraft}
-            onChanged={() => void onDispositionsChanged()}
-          />
-        </Panel>
-      )}
+    beneficiaries: revision ? (
+      <Panel titleKey="cn2b_panel_beneficiary_columns" icon="editor">
+        <CentralNeedsBeneficiaryColumnPanel
+          lang={lang}
+          planRevisionId={revision.id}
+          editable={canEdit && isDraft}
+          columns={beneficiaryColumns}
+          activeCareInstitutions={careInstitutions}
+          onChanged={() => void reloadRevision(revision.id)}
+        />
+      </Panel>
+    ) : (
+      <p className="cn2b-hint">{t('cn2b_stage_revision_waiting', lang)}</p>
+    ),
 
-      {revision && (
-        <Panel titleKey="cn2b_panel_beneficiary_columns" icon="editor">
-          <CentralNeedsBeneficiaryColumnPanel
-            lang={lang}
-            planRevisionId={revision.id}
-            editable={canEdit && isDraft}
-            columns={beneficiaryColumns}
-            activeCareInstitutions={careInstitutions}
-            onChanged={() => void reloadRevision(revision.id)}
-          />
-        </Panel>
-      )}
+    'need-lines': revision ? (
+      <Panel titleKey="cn2b_panel_need_lines" icon="editor">
+        <CentralNeedsNeedLinePanel
+          lang={lang}
+          planRevisionId={revision.id}
+          editable={canEdit && isDraft}
+          dispositions={dispositions}
+          records={records}
+          overrides={overrides}
+          beneficiaryColumns={beneficiaryColumns}
+          needLines={needLines}
+          claimedSources={claimedSources}
+          onChanged={() => void reloadRevision(revision.id)}
+        />
+      </Panel>
+    ) : (
+      <p className="cn2b-hint">{t('cn2b_stage_revision_waiting', lang)}</p>
+    ),
 
-      {revision && (
-        <Panel titleKey="cn2b_panel_need_lines" icon="editor">
-          <CentralNeedsNeedLinePanel
-            lang={lang}
-            planRevisionId={revision.id}
-            editable={canEdit && isDraft}
-            dispositions={dispositions}
-            records={records}
-            overrides={overrides}
-            beneficiaryColumns={beneficiaryColumns}
-            needLines={needLines}
-            claimedSources={claimedSources}
-            onChanged={() => void reloadRevision(revision.id)}
-          />
-        </Panel>
-      )}
-
+    readiness: (
       <Panel titleKey="cn2b_panel_readiness" icon="alerts">
         {!readiness ? (
           <PhoenixEmptyState title={t('cn2b_readiness_unknown', lang)} />
@@ -704,6 +759,71 @@ export function CentralNeedsScreen() {
           )}
         </div>
       </Panel>
+    ),
+  };
+
+  return (
+    <div className="cn2b" dir={dir}>
+      {/*
+        UX-1 command header. Every value below is the one the panels already
+        show — the selected revision's own year, number and workflow status,
+        and the server's readiness verdict. It restates them where an operator
+        can see them without scrolling; it never computes one.
+      */}
+      <header className="cn2b-header">
+        <div className="cn2b-header__identity">
+          <h1 className="cn2b-title">{t('cn2b_title', lang)}</h1>
+          <p className="cn2b-subtitle">{t('cn2b_subtitle', lang)}</p>
+        </div>
+        <div className="cn2b-header__state">
+          {revision ? (
+            <span className="cn2b-revchip">
+              <span className="cn2b-revchip__plan">{revision.planYear === null ? '—' : revision.planYear}</span>
+              <span className="cn2b-revchip__label">{t('cn2b_revision', lang)} {revision.revisionNumber}</span>
+              <span className="cn2b-revstatus" data-status={revision.status}>
+                {t(`cn2b_revstatus_${revision.status}`, lang)}
+              </span>
+            </span>
+          ) : (
+            <span className="cn2b-revchip" data-empty="true">{t('cn2b_no_revisions', lang)}</span>
+          )}
+          {readiness && (readiness.ready ? <StateBadge state="ready" /> : <StateBadge state="incomplete" />)}
+        </div>
+      </header>
+
+      <CentralNeedsWorkflowNav lang={lang} />
+
+      <section className="cn2b-summary" aria-label={t('cn2b_summary_label', lang)}>
+        <dl className="cn2b-summary__grid">
+          <SummaryMetric labelKey="cn2b_sum_sessions" value={`${completedSessionCount}/${sessions.length}`} />
+          <SummaryMetric labelKey="cn2b_sum_batches" value={batches.length} />
+          <SummaryMetric labelKey="cn2b_sum_columns" value={`${decidedColumnCount}/${beneficiaryColumns.length}`} />
+          <SummaryMetric labelKey="cn2b_sum_need_lines" value={needLines.length} />
+          <SummaryMetric labelKey="cn2b_sum_blockers" value={readiness ? readiness.blockers.length : '—'} />
+        </dl>
+      </section>
+
+      {error && <PhoenixErrorState message={centralNeedsErrorText(error, lang)} />}
+      {notice && <p className="cn2b-notice" role="status">{t(notice, lang)}</p>}
+
+      {CENTRAL_NEEDS_STAGES.map((stage, index) => (
+        <section
+          key={stage.id}
+          id={stageDomId(stage.id)}
+          className="cn2b-stage"
+          data-stage={stage.id}
+          aria-labelledby={stageTitleDomId(stage.id)}
+          /* Not a tab stop — a scroll target the navigator can focus, so a
+             keyboard user lands inside the stage they asked for. */
+          tabIndex={-1}
+        >
+          <h2 className="cn2b-stage__title" id={stageTitleDomId(stage.id)}>
+            <span className="cn2b-stage__ordinal" aria-hidden="true">{index + 1}</span>
+            <span className="cn2b-stage__text">{t(stage.titleKey, lang)}</span>
+          </h2>
+          <div className="cn2b-stage__body">{stageBody[stage.id]}</div>
+        </section>
+      ))}
     </div>
   );
 }
