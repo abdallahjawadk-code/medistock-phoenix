@@ -21,12 +21,29 @@
   min-inline-size: 0;
 }
 
-/* ── Header ──────────────────────────────────────────────────────────────── */
+/* ── Command header (UX-1) ───────────────────────────────────────────────── */
+/* Richer than a bare title, deliberately quieter than a dashboard. It restates
+   the selected revision and the server's readiness verdict where an operator
+   sees both without scrolling — it derives neither. */
 .cn2b-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
+  flex-wrap: wrap;
+  padding: 14px 16px;
+  background: var(--surface2, var(--surface));
+  border: 1px solid var(--brd);
+  border-radius: 14px;
+  min-inline-size: 0;
+}
+
+.cn2b-header__identity { min-inline-size: 0; }
+
+.cn2b-header__state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   flex-wrap: wrap;
 }
 
@@ -42,6 +59,201 @@
   font-size: 0.85rem;
   color: var(--fg-muted, var(--fg));
   opacity: 0.78;
+}
+
+/* The selected revision, restated: plan year, revision number, workflow state. */
+.cn2b-revchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 4px 11px;
+  border: 1px solid var(--brd);
+  border-radius: 999px;
+  background: var(--surface);
+  font-size: 0.78rem;
+}
+
+.cn2b-revchip[data-empty='true'] { border-style: dashed; opacity: 0.75; }
+.cn2b-revchip__plan { font-size: 0.9rem; font-weight: 700; color: var(--text); }
+.cn2b-revchip__label { opacity: 0.82; white-space: nowrap; }
+
+/* Like the trust badges, a revision state never rests on hue alone: each
+   carries its own border treatment as well as its written label. */
+.cn2b-revstatus {
+  padding: 1px 8px;
+  border: 1px solid var(--brd);
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.cn2b-revstatus[data-status='draft'] { border-style: dashed; color: var(--warn); }
+.cn2b-revstatus[data-status='submitted'] { border-width: 2px; color: var(--cyan); }
+.cn2b-revstatus[data-status='approved'] { border-style: double; border-width: 3px; color: var(--ok); }
+.cn2b-revstatus[data-status='rejected'] { border-style: dotted; color: var(--danger); }
+.cn2b-revstatus[data-status='superseded'] { border-style: dotted; opacity: 0.7; }
+
+/* ── Workflow navigator (UX-1) ───────────────────────────────────────────── */
+/* Six stages, numbered, always in the declared order. The rail SCROLLS inside
+   itself on a narrow screen so the document never gains a horizontal
+   scrollbar, and every target is a real button with a visible focus ring. */
+.cn2b-workflow {
+  min-inline-size: 0;
+  max-inline-size: 100%;
+}
+
+.cn2b-workflow__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  padding-block-end: 2px;
+  display: flex;
+  gap: 6px;
+  align-items: stretch;
+  overflow-x: auto;
+  max-inline-size: 100%;
+  min-inline-size: 0;
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
+}
+
+.cn2b-workflow__item { flex: 0 0 auto; }
+
+.cn2b-stagelink {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 12px;
+  border: 1px solid var(--brd);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.79rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  min-block-size: 38px;
+}
+
+.cn2b-stagelink:hover { background: var(--hover, var(--surface2)); }
+
+/* Current stage — a heavier edge and a filled ordinal, never hue alone. */
+.cn2b-stagelink[data-active='true'] {
+  padding: 6px 11px;
+  border-width: 2px;
+  border-color: var(--cyan);
+  color: var(--cyan);
+}
+
+.cn2b-stagelink__ordinal {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 19px;
+  block-size: 19px;
+  border: 1px solid var(--brd);
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.cn2b-stagelink[data-active='true'] .cn2b-stagelink__ordinal {
+  background: var(--cyan);
+  border-color: var(--cyan);
+  color: var(--on-accent);
+}
+
+.cn2b-stagelink__icon { display: inline-flex; opacity: 0.7; }
+
+/* ── Operational summary strip (UX-1) ────────────────────────────────────── */
+.cn2b-summary {
+  padding: 12px 16px;
+  background: var(--surface2, var(--surface));
+  border: 1px solid var(--brd);
+  border-radius: 14px;
+  min-inline-size: 0;
+}
+
+.cn2b-summary__grid {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 10px 18px;
+  min-inline-size: 0;
+}
+
+.cn2b-summary__cell { display: flex; flex-direction: column; gap: 2px; min-inline-size: 0; }
+.cn2b-summary__label { font-size: 0.7rem; opacity: 0.72; text-align: start; }
+
+.cn2b-summary__value {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  text-align: start;
+}
+
+/* ── Workflow stages (UX-1) ──────────────────────────────────────────────── */
+/* A stage is a LABELLED GROUP of the panels that were always here, not a tab:
+   all six stay mounted, so moving between them loads nothing and unloads
+   nothing. The section is a scroll/focus target, never a tab stop. */
+.cn2b-stage {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-inline-size: 0;
+  scroll-margin-block-start: 12px;
+}
+
+.cn2b-stage:focus { outline: none; }
+.cn2b-stage:focus-visible { outline: 2px solid var(--cyan); outline-offset: 4px; }
+
+.cn2b-stage__title {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+
+/* A hairline that runs out to the edge of the stage, so the grouping reads as
+   a section break without another box around the panels. */
+.cn2b-stage__title::after {
+  content: '';
+  flex: 1 1 auto;
+  block-size: 1px;
+  background: var(--brd);
+}
+
+.cn2b-stage__ordinal {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 22px;
+  block-size: 22px;
+  border: 1px solid var(--brd);
+  border-radius: 999px;
+  background: var(--surface2, var(--surface));
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.cn2b-stage__body {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(10px, 1.2vw, 14px);
+  min-inline-size: 0;
 }
 
 /* ── Panels ──────────────────────────────────────────────────────────────── */
@@ -147,6 +359,7 @@
 .cn2b-input:focus-visible,
 .cn2b-file:focus-visible,
 .cn2b-session:focus-visible,
+.cn2b-stagelink:focus-visible,
 .cn2b input[type='checkbox']:focus-visible {
   outline: 2px solid var(--cyan);
   outline-offset: 2px;
@@ -327,6 +540,14 @@
   .cn2b-panel__body { padding: 11px 12px; }
   .cn2b-table { font-size: 0.76rem; }
   .cn2b-table th, .cn2b-table td { padding: 6px 7px; }
-  .cn2b-header { flex-direction: column; align-items: stretch; }
+  .cn2b-header { flex-direction: column; align-items: stretch; padding: 12px; }
   .cn2b-actions .cn2b-btn { flex: 1 1 auto; }
+
+  /* UX-1 — the rail stays one swipeable row rather than wrapping into a block
+     that pushes the first stage off the first screen. Touch height is kept. */
+  .cn2b-summary { padding: 11px 12px; }
+  .cn2b-summary__grid { grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr)); }
+  .cn2b-stagelink { font-size: 0.75rem; padding: 7px 10px; }
+  .cn2b-stagelink[data-active='true'] { padding: 6px 9px; }
+  .cn2b-stage__title { font-size: 0.74rem; }
 }
