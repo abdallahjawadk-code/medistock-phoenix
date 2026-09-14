@@ -80,11 +80,16 @@ describe('192 · registration and file hygiene', () => {
     // CN-2B / Finding-1 corrective (213): the Central Needs beneficiary-
     // column-mapping layer. It is now the reviewed successor.
     const NEXT_21 = '213_phoenix_central_needs_beneficiary_column_mapping.sql';
+    // M214: the Central Needs readiness-RPC transaction-mode correction — that
+    // one function's volatility (STABLE -> VOLATILE), no body, grant or
+    // search_path change, and no anonymous-surface privilege at all, so what
+    // 192 asserts is unaffected; listed to keep this successor guard exhaustive.
+    const NEXT_22 = '214_phoenix_central_needs_review_readiness_volatility.sql';
     expect(REVIEWED_MIGRATION_FILES.filter(f => f.startsWith('212_'))).toEqual([NEXT_20]);
-    expect(getMaximumReviewedMigrationNumber()).toBe(213);
-    expect(getNextUnreviewedMigrationNumber()).toBe(214);
-    expect(REVIEWED_MIGRATION_FILES.slice(REVIEWED_MIGRATION_FILES.indexOf(NAME) + 1)).toEqual([NEXT, NEXT_2, NEXT_3, NEXT_4, NEXT_5, NEXT_6, NEXT_7, NEXT_8, NEXT_9, NEXT_10, NEXT_11, NEXT_12, NEXT_13, NEXT_14, NEXT_15, NEXT_16, NEXT_17, NEXT_18, NEXT_19, NEXT_20, NEXT_21]);
-    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1]).toBe(NEXT_21);
+    expect(getMaximumReviewedMigrationNumber()).toBe(214);
+    expect(getNextUnreviewedMigrationNumber()).toBe(215);
+    expect(REVIEWED_MIGRATION_FILES.slice(REVIEWED_MIGRATION_FILES.indexOf(NAME) + 1)).toEqual([NEXT, NEXT_2, NEXT_3, NEXT_4, NEXT_5, NEXT_6, NEXT_7, NEXT_8, NEXT_9, NEXT_10, NEXT_11, NEXT_12, NEXT_13, NEXT_14, NEXT_15, NEXT_16, NEXT_17, NEXT_18, NEXT_19, NEXT_20, NEXT_21, NEXT_22]);
+    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1]).toBe(NEXT_22);
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^193_/.test(f))).toEqual([NEXT]);
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^194_/.test(f))).toEqual([NEXT_2]);
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^195_/.test(f))).toEqual([NEXT_3]);
@@ -102,9 +107,10 @@ describe('192 · registration and file hygiene', () => {
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^211_/.test(f))).toEqual([NEXT_19]);
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^212_/.test(f))).toEqual([NEXT_20]);
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^213_/.test(f))).toEqual([NEXT_21]);
-    // The ceiling is now 213; `[2-9]\d\d` would match the ceiling itself, so
+    expect(REVIEWED_MIGRATION_FILES.filter(f => /^214_/.test(f))).toEqual([NEXT_22]);
+    // The ceiling is now 214; `[2-9]\d\d` would match the ceiling itself, so
     // this asserts numerically that nothing sits ABOVE it.
-    expect(REVIEWED_MIGRATION_FILES.filter(f => Number(f.slice(0, 3)) > 213)).toHaveLength(0);
+    expect(REVIEWED_MIGRATION_FILES.filter(f => Number(f.slice(0, 3)) > 214)).toHaveLength(0);
     expect(isReviewedMigrationFile('211_unreviewed_test_migration.sql')).toBe(false);
   });
 
@@ -120,11 +126,11 @@ describe('192 · registration and file hygiene', () => {
   });
 
   it('edits no historical migration — it is self-contained', () => {
-    // 203-213 (material-dispensing-suspension through the CN-2B/213
-    // beneficiary-column-mapping corrective) are newer chain members and do
-    // not edit M192, so this count moves by exactly nine more.
+    // 203-214 (material-dispensing-suspension through the M214 readiness-RPC
+    // volatility correction) are newer chain members and do not edit M192, so
+    // this count moves by exactly ten more.
     const others = readdirSync(MIGRATIONS_DIR).filter(f => f.endsWith('.sql') && f !== NAME);
-    expect(others).toHaveLength(212);
+    expect(others).toHaveLength(213);
   });
 });
 

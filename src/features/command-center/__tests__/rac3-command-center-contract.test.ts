@@ -406,7 +406,13 @@ describe('RAC-3 · I) no backend or migration change', () => {
     // EXACT filename, exactly as M200-M212 were. RAC-3's own subject (the
     // command centre) remains untouched by it.
     const M213 = 'supabase/migrations/213_phoenix_central_needs_beneficiary_column_mapping.sql';
-    const ALLOWED_SQL = [M200, M201, M202, M203, M204, M205, M206, M207, M208, M209, M210, M211, M212, M213];
+    // M214: the Central Needs readiness-RPC transaction-mode correction — it
+    // advances that one function's volatility (STABLE -> VOLATILE) and changes
+    // no body, grant or search_path. Registered by EXACT filename, exactly as
+    // M200-M213 were, so this guard still fails closed for any OTHER migration
+    // or supabase/ file. RAC-3's own subject (the command centre) is untouched.
+    const M214 = 'supabase/migrations/214_phoenix_central_needs_review_readiness_volatility.sql';
+    const ALLOWED_SQL = [M200, M201, M202, M203, M204, M205, M206, M207, M208, M209, M210, M211, M212, M213, M214];
     const changed = execSync(
       'git diff --name-only b707f073d60b4cc61205c35003ab491f3aed7468',
       { cwd: process.cwd(), encoding: 'utf8' },

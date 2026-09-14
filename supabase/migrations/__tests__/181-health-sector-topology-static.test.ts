@@ -89,12 +89,17 @@ describe('181 registration and shape', () => {
       // column-mapping layer. It is now the reviewed successor; 213's own
       // static suite owns the ceiling assertions from here on.
       '213_phoenix_central_needs_beneficiary_column_mapping.sql',
+      // M214: the Central Needs readiness-RPC transaction-mode correction. It
+      // advances that one function's volatility (STABLE -> VOLATILE) and
+      // changes no body, grant or search_path, so nothing 181 asserts moves.
+      // It is now the reviewed ceiling.
+      '214_phoenix_central_needs_review_readiness_volatility.sql',
     ];
     const i = REVIEWED_MIGRATION_FILES.indexOf(NAME);
     expect(REVIEWED_MIGRATION_FILES.slice(i + 1)).toEqual(SUCCESSORS);
-    // The ceiling is now 213; `[2-9]\d\d` would match it, so this asserts
+    // The ceiling is now 214; `[2-9]\d\d` would match it, so this asserts
     // numerically that nothing sits ABOVE the ceiling.
-    expect(REVIEWED_MIGRATION_FILES.filter(f => Number(f.slice(0, 3)) > 213)).toHaveLength(0);
+    expect(REVIEWED_MIGRATION_FILES.filter(f => Number(f.slice(0, 3)) > 214)).toHaveLength(0);
   });
 
   it('is a single transaction, manual-apply only, through Supabase.apply_migration', () => {

@@ -230,6 +230,10 @@ export const REVIEWED_MIGRATION_FILES: readonly string[] = Object.freeze([
   // via a direct PostgREST call bypassing the UI). It moves no stock,
   // creates no transfer and adds no corridor, route or dispatch SQL at all.
   '213_phoenix_central_needs_beneficiary_column_mapping.sql',
+  // M214: transaction-mode correction for the Central Needs readiness RPC.
+  // Body, authorization, grants and search_path are unchanged; only the
+  // function volatility is advanced from STABLE to VOLATILE.
+  '214_phoenix_central_needs_review_readiness_volatility.sql',
 ]);
 
 const REVIEWED_SET: ReadonlySet<string> = new Set(REVIEWED_MIGRATION_FILES);

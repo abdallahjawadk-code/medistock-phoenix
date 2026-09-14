@@ -288,6 +288,13 @@ run('E7-2 · Stage-E application wiring (dynamic)',()=>{
       // at 171" assertion above is unaffected. Listed here so this guard stays
       // exhaustive.
       '213_phoenix_central_needs_beneficiary_column_mapping.sql',
+      // M214: the Central Needs readiness-RPC transaction-mode correction. It
+      // advances that one function's volatility (STABLE -> VOLATILE) and
+      // changes no body, grant or search_path. It adds no migration numbered
+      // <= 171 and no corridor, route or dispatch SQL at all — so "Stage E
+      // still ends at 171" remains true. Listed here so this guard stays
+      // exhaustive and still fails closed on any unlisted new file.
+      '214_phoenix_central_needs_review_readiness_volatility.sql',
     ];
     it('Stage E still ends at 171 — E7-2 introduced no new SQL',()=>{
       const files=readdirSync(join(__dirname,'..')).filter(f=>/^\d{3}_.*\.sql$/.test(f));
