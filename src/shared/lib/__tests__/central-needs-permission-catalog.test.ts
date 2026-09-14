@@ -459,16 +459,72 @@ describe('G. the server stays the boundary and the client fails closed', () => {
     expect(sqlCode(M211)).toMatch(/CREATE OR REPLACE FUNCTION public\._phoenix_central_needs_role_eligible_v1\(\)/);
   });
 
-  it('the client reads capabilities from EFFECTIVE permissions, never from a role name', () => {
+  it('the CentralNeedsScreen ACTION capabilities stay driven by EFFECTIVE permissions, never a role name', () => {
+    // central_needs.import / .edit / .approve are unaffected by
+    // PHX-DEFECT-2026-09-14-CENTRAL-NEEDS-SUPERADMIN-FRONTEND-AUTH-PARITY,
+    // which corrects only the screen-23 NAVIGATION/ACCESS projection below.
+    // These action gates must never gain a role-name shortcut.
     const screen = code(read('src/features/central-needs/CentralNeedsScreen.tsx'));
     expect(screen).toContain("myPermissions.has('central_needs.import')");
     expect(screen).toContain("myPermissions.has('central_needs.edit')");
     expect(screen).toContain("myPermissions.has('central_needs.approve')");
     expect(screen).not.toMatch(/role\s*===\s*'super_admin'\s*\|\|\s*myPermissions\.has\('central_needs/);
+  });
+
+  /**
+   * PHX-DEFECT-2026-09-14-CENTRAL-NEEDS-SUPERADMIN-FRONTEND-AUTH-PARITY.
+   *
+   * The screen-23 branch used to be capability-only, which disagreed with
+   * phoenix_status_center_authorized's unconditional super_admin bypass
+   * (migration 092, proved in section F above) and hid the ROUTE from a
+   * super_admin whose real, RPC-answered effective set is empty — which it
+   * always is, since 209 ships central_needs.* with zero role defaults. The
+   * gate is now role-first for exactly the two roles 211's
+   * _phoenix_central_needs_role_eligible_v1() names (also proved in section
+   * F): super_admin unconditionally, central_warehouse_manager only with the
+   * key. Asserted BEHAVIORALLY through isScreenAuthorized — the actual
+   * decision the route guard, nav surfaces and command palette all share —
+   * so this cannot be satisfied by a structural rewrite that leaves the real
+   * decision wrong.
+   */
+  it('screen-23 access matches the canonical role/permission matrix', () => {
+    const perms = (...keys: string[]) => new Set(keys);
+
+    // super_admin: admitted by role alone, exactly like
+    // phoenix_status_center_authorized — with or without the key.
+    expect(isScreenAuthorized(CENTRAL_NEEDS_SCREEN, 'super_admin', perms())).toBe(true);
+    expect(isScreenAuthorized(CENTRAL_NEEDS_SCREEN, 'super_admin', perms('central_needs.view'))).toBe(true);
+
+    // central_warehouse_manager: gated on the effective permission, exactly
+    // like the server's per-key phoenix_profile_has_permission lookup for
+    // every non-super_admin actor.
+    expect(isScreenAuthorized(CENTRAL_NEEDS_SCREEN, 'central_warehouse_manager', perms())).toBe(false);
+    expect(isScreenAuthorized(CENTRAL_NEEDS_SCREEN, 'central_warehouse_manager', perms('central_needs.view'))).toBe(true);
+
+    // Every other operational role stays refused even holding the key:
+    // eligibility here is role-first, mirroring 211's
+    // _phoenix_central_needs_role_eligible_v1() allow-list (section F above).
+    // health_center_manager is additionally facility-scoped and never even
+    // reaches this branch (refused earlier by the allow-list).
+    for (const role of ['institution_admin', 'warehouse_officer', 'outlet_officer', 'health_center_manager']) {
+      expect(isScreenAuthorized(CENTRAL_NEEDS_SCREEN, role, perms('central_needs.view')), role).toBe(false);
+    }
+  });
+
+  it('the screen-23 branch source names both eligible roles, found without an arbitrary fixed-length slice', () => {
+    // A source-structure check kept as defense in depth alongside the
+    // behavioral assertions above — bounded by the NEXT branch in the
+    // function rather than a fixed character count, so a longer or
+    // restructured branch can never be silently truncated out of the check.
     const access = code(read('src/shared/authz/screen-access.ts'));
-    const branch = access.slice(access.indexOf('if (screen === CENTRAL_NEEDS_SCREEN)'), access.indexOf('if (screen === CENTRAL_NEEDS_SCREEN)') + 120);
+    const start = access.indexOf('if (screen === CENTRAL_NEEDS_SCREEN)');
+    expect(start).toBeGreaterThan(-1);
+    const nextBranch = access.indexOf('if (screen === 17)', start);
+    expect(nextBranch, 'the next branch after screen 23').toBeGreaterThan(start);
+    const branch = access.slice(start, nextBranch);
+    expect(branch).toContain("'super_admin'");
+    expect(branch).toContain("'central_warehouse_manager'");
     expect(branch).toContain('permissions.has(CENTRAL_NEEDS_VIEW_PERMISSION)');
-    expect(branch).not.toContain('super_admin');
   });
 
   it('AppContext fails closed: a silent RPC yields an EMPTY set; the role fallback runs only after the RPC ANSWERED without a permission map', () => {
@@ -488,10 +544,12 @@ describe('G. the server stays the boundary and the client fails closed', () => {
     // And for every non-super_admin role that fallback carries no Central Needs key (F above).
   });
 
-  it('an empty effective set is refused by the screen gate for every role, super_admin included', () => {
+  it('an empty effective set is refused by the screen gate for every role EXCEPT super_admin, which the server also admits unconditionally', () => {
     for (const role of [...OFFICIAL_ROLES, ...LEGACY_AUTHORIZATION_ROLES, 'hospital_admin']) {
+      if (role === 'super_admin') continue;
       expect(isScreenAuthorized(CENTRAL_NEEDS_SCREEN, role, new Set()), role).toBe(false);
     }
+    expect(isScreenAuthorized(CENTRAL_NEEDS_SCREEN, 'super_admin', new Set())).toBe(true);
   });
 });
 

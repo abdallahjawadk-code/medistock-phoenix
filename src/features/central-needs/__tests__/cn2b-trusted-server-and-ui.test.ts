@@ -414,12 +414,13 @@ describe('CN-2B — corrective-pass invariants in the trusted finalizer', () => 
 describe('CN-2B — navigation authorization', () => {
   const perms = (...keys: string[]) => new Set(keys);
 
-  it('the screen is gated on central_needs.view', () => {
+  it('platform admin needs no grant; central warehouse manager needs central_needs.view', () => {
     expect(CENTRAL_NEEDS_SCREEN).toBe(23);
     expect(CENTRAL_NEEDS_VIEW_PERMISSION).toBe('central_needs.view');
     expect(isScreenAuthorized(23, 'central_warehouse_manager', perms('central_needs.view'))).toBe(true);
     expect(isScreenAuthorized(23, 'central_warehouse_manager', perms())).toBe(false);
-    expect(isScreenAuthorized(23, 'super_admin', perms())).toBe(false);
+    expect(isScreenAuthorized(23, 'super_admin', perms())).toBe(true);
+    expect(isScreenAuthorized(23, 'super_admin', perms('central_needs.view'))).toBe(true);
   });
 
   it('the one facility-scoped role is refused even holding the key', () => {
@@ -429,24 +430,13 @@ describe('CN-2B — navigation authorization', () => {
     expect(isScreenAuthorized(23, 'health_center_manager', perms())).toBe(false);
   });
 
-  it('outlet and warehouse officers are refused by the CAPABILITY, not by role name', () => {
-    // These roles are NOT facility-scoped, so they reach the capability gate and
-    // are refused there — exactly as the database refuses them. Migration 209
-    // ships every central_needs key with zero role defaults, so none of them
-    // holds one unless a person explicitly grants it for their own organization.
-    for (const role of ['outlet_officer', 'warehouse_officer']) {
-      expect(isScreenAuthorized(23, role, perms()), role).toBe(false);
-      expect(isScreenAuthorized(23, role, perms('dashboard.view', 'users.view')), role).toBe(false);
-    }
-    // No role name is hard-coded into this screen's decision.
-    const src = read('src/shared/authz/screen-access.ts');
-    const branch = src.slice(src.indexOf('if (screen === CENTRAL_NEEDS_SCREEN)'));
-    expect(branch.slice(0, 200)).not.toMatch(/outlet_officer|warehouse_officer|institution_admin/);
-  });
-
-  it('institution_admin needs the explicit key like anyone else', () => {
-    expect(isScreenAuthorized(23, 'institution_admin', perms())).toBe(false);
-    expect(isScreenAuthorized(23, 'institution_admin', perms('central_needs.view'))).toBe(true);
+  it.each([
+    'institution_admin', 'warehouse_officer', 'outlet_officer',
+    'health_center_manager', 'hospital_admin', 'viewer', 'unknown', '', null, undefined,
+  ])('refuses non-central role %s even with an explicit grant', (role) => {
+    expect(isScreenAuthorized(23, role, perms())).toBe(false);
+    expect(isScreenAuthorized(23, role, perms('central_needs.view'))).toBe(false);
+    expect(isScreenAuthorized(23, role, perms('central_needs.view', 'dashboard.view', 'users.view'))).toBe(false);
   });
 
   it('the screen is not added to the facility-safe allow-list', () => {

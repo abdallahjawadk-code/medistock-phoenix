@@ -185,22 +185,13 @@ describe('C) historical roles keep their exact previous menus', () => {
      * role loses a menu item it previously had.
      */
     if (screen === 22) return perms.has('dashboard.view');
-    /**
-     * CN-2B restates the oracle once more, for exactly the reason RAC-3 did:
-     * screen 23 (Central Needs) is a NEW surface with its OWN gate, so leaving
-     * the catch-all `return true` to cover it would assert that every
-     * historical role may reach it — the opposite of the rule.
-     *
-     * The rule is `central_needs.view`, read from effective permissions,
-     * mirroring the RLS predicate on every Central Needs table. The key is
-     * added to PERM_SETS below so this branch is exercised in BOTH states,
-     * rather than passing because the key is never present.
-     *
-     * This is not a widening: 23 did not exist before CN-2B, so no historical
-     * role loses a menu item it previously had. Migration 209 ships the key
-     * with zero role defaults, so in practice no role holds it yet.
-     */
-    if (screen === 23) return perms.has('central_needs.view');
+    // Annual Needs: platform admin, or an explicitly granted central manager.
+    // Other roles remain excluded even with the key (operational UI policy).
+    if (screen === 23) {
+      if (role === 'super_admin') return true;
+      if (role !== 'central_warehouse_manager') return false;
+      return perms.has('central_needs.view');
+    }
     return true;
   };
 
