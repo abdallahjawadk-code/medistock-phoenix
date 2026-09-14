@@ -193,11 +193,15 @@ export function CentralNeedsScreen() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   /**
-   * UX-2A — in-flight markers for the two reads this screen already performs.
-   * They distinguish "still loading" from "loaded and genuinely empty", which
-   * previously rendered identically. Neither adds a request.
+   * UX-2A — in-flight marker for the session read this screen already performs.
+   * It distinguishes "still loading" from "loaded and genuinely empty", which
+   * previously rendered identically. It adds no request.
+   *
+   * There is no matching flag for the revision reload any more: `dataRevisionId`
+   * below is strictly stronger, since it says not just whether a read is in
+   * flight but WHICH revision the committed evidence belongs to — which is the
+   * question every revision-scoped render site actually has to answer.
    */
-  const [revisionLoading, setRevisionLoading] = useState(false);
   const [sessionLoading, setSessionLoading] = useState(false);
   /**
    * FINDING C — the revision LIST is loading until its one existing read
@@ -205,6 +209,20 @@ export function CentralNeedsScreen() {
    * revisions" about a question that has not been answered yet.
    */
   const [revisionsLoading, setRevisionsLoading] = useState(true);
+  /**
+   * WHICH REVISION THE COMMITTED EVIDENCE ACTUALLY BELONGS TO.
+   *
+   * Clearing the old revision's state in an effect is too late: a passive
+   * effect runs AFTER the render that already carries the new `revisionId`, so
+   * for one commit the screen would show revision A's batches, sessions and
+   * review rows beneath revision B's header. On a provenance screen that
+   * single frame is a false attribution, so the guard has to hold DURING
+   * render, not after it.
+   *
+   * This is set only by a reload that both succeeded and is still the current
+   * generation, and is dropped to null the moment anything invalidates it.
+   */
+  const [dataRevisionId, setDataRevisionId] = useState<string | null>(null);
 
   const preview = useCentralNeedsPreview();
   const [pendingFile, setPendingFile] = useState<File | null>(null);
@@ -255,6 +273,8 @@ export function CentralNeedsScreen() {
   const resetRevisionScopedState = useCallback(() => {
     revisionReloadSeq.current += 1;
     sourceSearchSeq.current += 1;
+    // Nothing on screen may claim a revision until a reload proves which one.
+    setDataRevisionId(null);
     setSessions([]);
     setBatches([]);
     setOverrides([]);
@@ -334,6 +354,11 @@ export function CentralNeedsScreen() {
     setBeneficiaryColumns(nextBeneficiaryColumns);
     const completed = nextSessions.filter((s) => s.status === 'completed');
     setActiveSessionId((current) => (current && completed.some((s) => s.id === current) ? current : completed[0]?.id ?? null));
+    // Last, and only here: every read above succeeded and this is still the
+    // current generation, so the committed evidence now provably belongs to
+    // `id`. A rejected reload never reaches this line, so a failure leaves the
+    // identity null rather than mislabelling stale data.
+    setDataRevisionId(id);
   }, []);
 
   useEffect(() => {
@@ -343,15 +368,12 @@ export function CentralNeedsScreen() {
     // BEFORE the new reads start, so nothing from the old plan is ever on
     // screen under the new plan's header, not even for one frame.
     resetRevisionScopedState();
-    // UX-2A — the flag only records that the EXISTING reload is in flight, so
-    // "still loading" and "genuinely empty" stop looking identical. It adds no
-    // request and changes no result.
-    setRevisionLoading(true);
-    reloadRevision(revisionId)
-      .catch((e: unknown) => {
-        if (!cancelled) setError(e instanceof CentralNeedsError ? e.code : 'load_failed');
-      })
-      .finally(() => { if (!cancelled) setRevisionLoading(false); });
+    // The reload publishes `dataRevisionId` itself, and only on success while
+    // still current, so a failure leaves the evidence unattributed and the
+    // render gate keeps showing the waiting state rather than stale rows.
+    reloadRevision(revisionId).catch((e: unknown) => {
+      if (!cancelled) setError(e instanceof CentralNeedsError ? e.code : 'load_failed');
+    });
     return () => { cancelled = true; };
   }, [revisionId, reloadRevision, resetRevisionScopedState]);
 
@@ -556,8 +578,21 @@ export function CentralNeedsScreen() {
   // UX-1 — summary figures, every one of them counted off state already on
   // screen. A column counts as decided once a review decision exists for it,
   // whichever decision that was.
+  /**
+   * THE RENDER-TIME ATTRIBUTION GATE.
+   *
+   * Computed during render from the two identities, so it is already correct in
+   * the very first commit after `revisionId` changes — the render in which the
+   * effect has not run yet and the state below still holds the previous
+   * revision's evidence. Nothing revision-scoped may be presented unless the
+   * committed data provably belongs to the revision now selected.
+   */
+  const revisionDataReady = revisionId !== null && dataRevisionId === revisionId;
+
   const completedSessionCount = sessions.filter((s) => s.status === 'completed').length;
   const decidedColumnCount = beneficiaryColumns.filter((c) => c.decision !== null).length;
+  /** An unattributable figure is shown as unknown, never as a number. */
+  const metric = (value: number | string) => (revisionDataReady ? value : '—');
 
   /**
    * UX-1 — the content of each workflow stage, keyed by its canonical id.
@@ -676,7 +711,9 @@ export function CentralNeedsScreen() {
         )}
 
         <Panel titleKey="cn2b_panel_batches" icon="warehouse">
-          {revisionLoading && batches.length === 0 ? (
+          {!revisionDataReady ? (
+            /* Attribution gate: no batch may be shown under a revision the
+               committed data does not provably belong to. */
             <p className="cn2b-hint" role="status">{t('cn2b_revision_loading', lang)}</p>
           ) : batches.length === 0 ? (
             <PhoenixEmptyState title={t('cn2b_no_batches', lang)} />
@@ -765,7 +802,11 @@ export function CentralNeedsScreen() {
             <PhoenixEmptyState title={t('cn2b_source_search_empty', lang)} />
           )}
 
-          {sourceFiles.length === 0 && entryHits.length === 0 ? null : (
+          {/* Search hits are evidence OF a revision, so they pass the same
+              attribution gate: a hit found under the previous revision can
+              never render beneath the newly selected one, not even for the
+              single commit before the reset effect runs. */}
+          {!revisionDataReady || (sourceFiles.length === 0 && entryHits.length === 0) ? null : (
             <div className="cn2b-scroll">
               <table className="cn2b-table">
                 <caption className="cn2b-visually-hidden">{t('cn2b_panel_source_search', lang)}</caption>
@@ -798,7 +839,7 @@ export function CentralNeedsScreen() {
         </Panel>
 
         <Panel titleKey="cn2b_panel_sessions" icon="alerts">
-          {revisionLoading && sessions.length === 0 ? (
+          {!revisionDataReady ? (
             <p className="cn2b-hint" role="status">{t('cn2b_revision_loading', lang)}</p>
           ) : sessions.length === 0 ? (
             <PhoenixEmptyState title={t('cn2b_no_sessions', lang)} />
@@ -848,7 +889,9 @@ export function CentralNeedsScreen() {
       </>
     ),
 
-    review: sessionLoading ? (
+    review: !revisionDataReady ? (
+      <p className="cn2b-hint" role="status">{t('cn2b_revision_loading', lang)}</p>
+    ) : sessionLoading ? (
       <p className="cn2b-hint" role="status">{t('cn2b_session_loading', lang)}</p>
     ) : activeSessionId ? (
       <Panel titleKey="cn2b_panel_review" icon="editor">
@@ -866,7 +909,9 @@ export function CentralNeedsScreen() {
       <p className="cn2b-hint">{t('cn2b_stage_review_waiting', lang)}</p>
     ),
 
-    beneficiaries: revision ? (
+    beneficiaries: !revisionDataReady ? (
+      <p className="cn2b-hint" role="status">{t('cn2b_revision_loading', lang)}</p>
+    ) : revision ? (
       <Panel titleKey="cn2b_panel_beneficiary_columns" icon="editor">
         <CentralNeedsBeneficiaryColumnPanel
           lang={lang}
@@ -881,7 +926,9 @@ export function CentralNeedsScreen() {
       <p className="cn2b-hint">{t('cn2b_stage_revision_waiting', lang)}</p>
     ),
 
-    'need-lines': revision ? (
+    'need-lines': !revisionDataReady ? (
+      <p className="cn2b-hint" role="status">{t('cn2b_revision_loading', lang)}</p>
+    ) : revision ? (
       <Panel titleKey="cn2b_panel_need_lines" icon="editor">
         <CentralNeedsNeedLinePanel
           lang={lang}
@@ -900,7 +947,9 @@ export function CentralNeedsScreen() {
       <p className="cn2b-hint">{t('cn2b_stage_revision_waiting', lang)}</p>
     ),
 
-    readiness: (
+    readiness: !revisionDataReady ? (
+      <p className="cn2b-hint" role="status">{t('cn2b_revision_loading', lang)}</p>
+    ) : (
       <Panel titleKey="cn2b_panel_readiness" icon="alerts">
         {!readiness ? (
           <PhoenixEmptyState title={t('cn2b_readiness_unknown', lang)} />
@@ -973,7 +1022,7 @@ export function CentralNeedsScreen() {
               {revisionsLoading ? t('cn2b_revisions_loading', lang) : t('cn2b_no_revisions', lang)}
             </span>
           )}
-          {readiness && (readiness.ready ? <StateBadge state="ready" /> : <StateBadge state="incomplete" />)}
+          {revisionDataReady && readiness && (readiness.ready ? <StateBadge state="ready" /> : <StateBadge state="incomplete" />)}
         </div>
       </header>
 
@@ -981,11 +1030,11 @@ export function CentralNeedsScreen() {
 
       <section className="cn2b-summary" aria-label={t('cn2b_summary_label', lang)}>
         <dl className="cn2b-summary__grid">
-          <SummaryMetric labelKey="cn2b_sum_sessions" value={`${completedSessionCount}/${sessions.length}`} />
-          <SummaryMetric labelKey="cn2b_sum_batches" value={batches.length} />
-          <SummaryMetric labelKey="cn2b_sum_columns" value={`${decidedColumnCount}/${beneficiaryColumns.length}`} />
-          <SummaryMetric labelKey="cn2b_sum_need_lines" value={needLines.length} />
-          <SummaryMetric labelKey="cn2b_sum_blockers" value={readiness ? readiness.blockers.length : '—'} />
+          <SummaryMetric labelKey="cn2b_sum_sessions" value={metric(`${completedSessionCount}/${sessions.length}`)} />
+          <SummaryMetric labelKey="cn2b_sum_batches" value={metric(batches.length)} />
+          <SummaryMetric labelKey="cn2b_sum_columns" value={metric(`${decidedColumnCount}/${beneficiaryColumns.length}`)} />
+          <SummaryMetric labelKey="cn2b_sum_need_lines" value={metric(needLines.length)} />
+          <SummaryMetric labelKey="cn2b_sum_blockers" value={metric(readiness ? readiness.blockers.length : '—')} />
         </dl>
       </section>
 

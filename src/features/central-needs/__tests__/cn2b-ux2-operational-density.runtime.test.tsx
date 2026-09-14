@@ -3,7 +3,7 @@ import '@testing-library/jest-dom/vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { T } from '@/shared/i18n/strings';
 import type {
   BeneficiaryColumnSummary, FieldOverride, ImportBatch, ImportSession,
@@ -650,6 +650,54 @@ describe('UX-2A corrective — revision-scoped isolation', () => {
     releaseSearch();
     await waitFor(() => expect(screen.queryByText('late-alpha.xlsx')).toBeNull());
     expect(searchState().dataset.phase).toBe('idle');
+  });
+
+  /**
+   * RENDER-TIME attribution, not post-effect cleanup.
+   *
+   * Clearing the previous revision's state inside an effect happens AFTER the
+   * render that already carries the new revisionId, so for one commit the old
+   * evidence sits under the new revision's header. `fireEvent`/`act` normally
+   * flush that effect before an assertion can observe it, which is exactly why
+   * the earlier transition tests cannot prove this.
+   *
+   * So this asserts on the render itself: the select is changed OUTSIDE act,
+   * with the effect deliberately not yet flushed, and the DOM is inspected in
+   * that window. A guard that lives only in an effect fails here; a guard
+   * evaluated during render passes.
+   */
+  it('does not render old revision evidence in the commit BEFORE the reset effect runs', async () => {
+    listPlanRevisions.mockResolvedValue([REVISION, REVISION_B]);
+    gateRevisionReads();
+
+    render(<CentralNeedsScreen />);
+    await waitFor(() => expect(listImportBatches).toHaveBeenCalledWith(REV));
+    release(REV);
+    await screen.findByText('ALPHA-2026.zip');
+    await waitFor(() => expect(visibleEntities()).toHaveLength(3));
+
+    const select = screen.getByLabelText(T.cn2b_revision.en) as HTMLSelectElement;
+    // Drive React's onChange WITHOUT act(), so the state update commits but the
+    // passive effect that resets revision-scoped state has not run yet.
+    const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!;
+    setter.call(select, REV_B);
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+
+    // The selection has moved to B...
+    expect((screen.getByLabelText(T.cn2b_revision.en) as HTMLSelectElement).value).toBe(REV_B);
+    // ...and in this very commit, nothing from A may be presented as B's.
+    expect(screen.queryByText('ALPHA-2026.zip'), 'A batch rendered under B').toBeNull();
+    expect(visibleEntities(), 'A review rows rendered under B').toHaveLength(0);
+    expect(document.querySelector('.cn2b-table--review')).toBeNull();
+
+    // And the counts refuse to attribute a number to an unproven revision.
+    const summary = screen.getByRole('region', { name: T.cn2b_summary_label.en });
+    expect(within(summary).getAllByText('—').length).toBeGreaterThan(0);
+
+    // Settle B so the test leaves no pending work behind.
+    await waitFor(() => expect(listImportBatches).toHaveBeenCalledWith(REV_B));
+    release(REV_B);
+    await screen.findByText('BRAVO-2027.zip');
   });
 
   it('reports a refused search as FAILED with its translated code, never as zero results', async () => {
