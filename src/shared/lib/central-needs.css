@@ -630,9 +630,217 @@
   white-space: nowrap;
 }
 
+/* ── UX-2B · Beneficiary mapping workspace ───────────────────────────────── */
+/* A real multi-institution workbook yields dozens to hundreds of physical
+   columns, so this is an operational review surface rather than a gallery of
+   cards: dense rows, evidence first, and nothing that widens the document.
+   Every inline-direction value is logical, so Arabic RTL is the same layout
+   mirrored rather than a second stylesheet. */
+
+.cn2b-bc-summary {
+  margin: 0 0 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  padding: 9px 12px;
+  border: 1px solid var(--brd);
+  border-radius: 11px;
+  background: var(--surface2, var(--surface));
+  min-inline-size: 0;
+}
+
+.cn2b-bc-summary__cell { display: flex; align-items: baseline; gap: 6px; min-inline-size: 0; }
+.cn2b-bc-summary dt { font-size: 0.71rem; opacity: 0.72; }
+
+.cn2b-bc-summary dd {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.cn2b-bc-summary dd[data-bc-count='unresolved'] { color: var(--warn); }
+.cn2b-bc-summary dd[data-bc-count='blocking'] { color: var(--danger); }
+.cn2b-bc-summary dd[data-bc-count='visible'] { color: var(--cyan); }
+
+/* Toolbar: a searchbox, toggle buttons and a checkbox — deliberately no text
+   input and no select, so a read-only revision still exposes nothing that
+   could be mistaken for a mutation control. */
+.cn2b-bc-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-block-end: 10px;
+  min-inline-size: 0;
+}
+
+.cn2b-bc-toolbar__grow { flex: 1 1 14rem; min-inline-size: 0; }
+
+.cn2b-bc-input {
+  padding: 5px 8px;
+  border: 1px solid var(--brd);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.79rem;
+  min-inline-size: 0;
+  max-inline-size: 100%;
+}
+
+.cn2b-bc-segmented { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+
+.cn2b-bc-segbtn {
+  padding: 5px 10px;
+  border: 1px solid var(--brd);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.cn2b-bc-segbtn[data-active='true'] {
+  padding: 4px 9px;
+  border-width: 2px;
+  border-color: var(--cyan);
+  color: var(--cyan);
+}
+
+.cn2b-bc-check { display: inline-flex; align-items: center; gap: 6px; font-size: 0.76rem; }
+
+.cn2b-bc-input:focus-visible,
+.cn2b-bc-segbtn:focus-visible,
+.cn2b-bc-check input:focus-visible,
+.cn2b-bc-select:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+}
+
+.cn2b-bc-rows { display: flex; flex-direction: column; gap: 7px; min-inline-size: 0; }
+
+/* One physical column. Evidence, state and action read as three bands. */
+.cn2b-bc-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border: 1px solid var(--brd);
+  border-radius: var(--r3);
+  min-inline-size: 0;
+}
+
+/* A still-blocking column carries a weight cue as well as its written label. */
+.cn2b-bc-row[data-blocking] { border-inline-start: 3px solid var(--danger); }
+.cn2b-bc-row[data-suggested] { background: color-mix(in srgb, var(--cyan) 4%, transparent); }
+
+.cn2b-bc__evidence { flex: 1 1 18rem; min-inline-size: 0; }
+
+/* A long filename or an Arabic header stays readable: it wraps rather than
+   being truncated to the point the source evidence is lost. */
+.cn2b-bc__ident { font-size: 0.79rem; font-weight: 600; overflow-wrap: anywhere; }
+.cn2b-bc__counts { font-size: 0.74rem; opacity: 0.72; overflow-wrap: anywhere; }
+.cn2b-bc__path { font-size: 0.7rem; opacity: 0.6; overflow-wrap: anywhere; }
+.cn2b-bc__hint { font-size: 0.71rem; opacity: 0.82; }
+
+.cn2b-bc__state { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; min-inline-size: 0; }
+
+.cn2b-bc__badge {
+  font-size: 0.7rem;
+  padding: 2px 8px;
+  border: 1px solid var(--brd);
+  border-radius: 999px;
+  background: var(--chip);
+  white-space: nowrap;
+}
+
+.cn2b-bc__badge[data-state='unresolved'] { border-style: dashed; color: var(--warn); }
+.cn2b-bc__badge[data-state='beneficiary'] { border-width: 2px; color: var(--ok); }
+.cn2b-bc__badge[data-state='non_beneficiary'] { border-style: dotted; }
+
+.cn2b-bc__org { font-size: 0.75rem; font-weight: 600; overflow-wrap: anywhere; }
+.cn2b-bc__blocks { font-size: 0.7rem; font-weight: 700; color: var(--danger); }
+
+.cn2b-bc__action { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-inline-size: 0; }
+
+.cn2b-bc-select {
+  font-size: 0.78rem;
+  padding: 4px 6px;
+  border: 1px solid var(--brd);
+  border-radius: var(--r2);
+  background: var(--surface);
+  color: var(--text);
+  max-inline-size: 100%;
+}
+
+/* A correction states what it replaces beside what it proposes. */
+.cn2b-bc__change {
+  flex: 1 1 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  padding: 4px 8px;
+  border: 1px dashed var(--brd);
+  border-radius: 9px;
+  font-size: 0.73rem;
+}
+
+.cn2b-bc__change-from { opacity: 0.75; }
+.cn2b-bc__change-to { font-weight: 700; color: var(--cyan); }
+.cn2b-bc__change-arrow { opacity: 0.6; }
+
+.cn2b-bc-empty, .cn2b-bc-readonly { margin: 8px 0; font-size: 0.79rem; opacity: 0.8; }
+.cn2b-bc-readonly { padding-inline-start: 9px; border-inline-start: 3px solid var(--brd); }
+.cn2b-bc-error { margin-block-end: 10px; font-size: 0.78rem; color: var(--danger); }
+
+/* Group apply — the second, explicit step. */
+.cn2b-bc-group {
+  margin-block-start: 14px;
+  padding: 12px;
+  border: 1px solid var(--brd);
+  border-radius: var(--r3);
+  background: var(--chip);
+  min-inline-size: 0;
+}
+
+.cn2b-bc-group__title { margin-block-end: 6px; font-size: 0.82rem; font-weight: 700; }
+.cn2b-bc-group__scope { margin-block-end: 6px; font-size: 0.75rem; }
+.cn2b-bc-group__proposed { margin-block-end: 4px; font-size: 0.78rem; font-weight: 600; }
+.cn2b-bc-group__label { margin-block-end: 4px; font-size: 0.75rem; opacity: 0.85; overflow-wrap: anywhere; }
+.cn2b-bc-group__reason { margin-block-end: 6px; font-size: 0.75rem; font-style: italic; overflow-wrap: anywhere; }
+
+.cn2b-bc-group__list {
+  margin: 0 0 10px;
+  padding-inline-start: 18px;
+  font-size: 0.74rem;
+  opacity: 0.8;
+  max-block-size: 140px;
+  overflow-y: auto;
+}
+
+.cn2b-bc-group__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
 /* ── Mobile ──────────────────────────────────────────────────────────────── */
 @media (max-width: 720px) {
   .cn2b-panel__body { padding: 11px 12px; }
+
+  /* UX-2B — toolbar controls stack rather than shrink into unusable slivers,
+     and the row becomes a single readable column. Nothing widens the page. */
+  .cn2b-bc-toolbar__grow { flex: 1 1 100%; }
+  .cn2b-bc-toolbar .cn2b-bc-input { flex: 1 1 100%; }
+  .cn2b-bc-segmented { inline-size: 100%; }
+  .cn2b-bc-segbtn { flex: 1 1 auto; min-block-size: 38px; }
+  .cn2b-bc-row { flex-direction: column; align-items: stretch; }
+  .cn2b-bc__action { inline-size: 100%; }
+  .cn2b-bc-select { inline-size: 100%; }
+  .cn2b-bc-summary { gap: 6px 12px; }
   .cn2b-table { font-size: 0.76rem; }
   .cn2b-table th, .cn2b-table td { padding: 6px 7px; }
   .cn2b-header { flex-direction: column; align-items: stretch; padding: 12px; }

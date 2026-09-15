@@ -2045,6 +2045,36 @@ export const T: Dict = {
   cn2b_beneficiary_column_apply_to_matching: { ar: 'تطبيق على __N__ عمود مطابق', en: 'Apply to __N__ matching columns' },
   cn2b_beneficiary_column_group_scope_note: { ar: 'تُشمل الأعمدة غير المحسومة فقط — لا تُغيَّر الأعمدة المُراجَعة جماعيًا أبدًا.', en: 'Only unresolved columns are included — reviewed columns are never changed in bulk.' },
 
+  /* UX-2B — the beneficiary-mapping workspace. Presentation only: these label
+     counts of the server's own states and local view filters. Every string is
+     deliberately distinct from the three persisted state labels above, so a
+     filter control can never be mistaken for a column's review state. */
+  cn2b_bc_sum_total: { ar: 'إجمالي الأعمدة', en: 'Total columns' },
+  cn2b_bc_sum_unresolved: { ar: 'بانتظار الحسم', en: 'Awaiting decision' },
+  cn2b_bc_sum_beneficiary: { ar: 'أعمدة مستفيد', en: 'Beneficiary columns' },
+  cn2b_bc_sum_non_beneficiary: { ar: 'أعمدة غير مستفيد', en: 'Non-beneficiary columns' },
+  cn2b_bc_sum_blocking: { ar: 'تمنع التقديم', en: 'Blocking submission' },
+  cn2b_bc_sum_visible: { ar: 'المعروضة الآن', en: 'Shown now' },
+  cn2b_bc_filter_search: { ar: 'تصفية الأعمدة', en: 'Filter columns' },
+  cn2b_bc_filter_search_hint: { ar: 'ملف، ورقة، عنوان، رقم عمود، مؤسسة أو سبب', en: 'File, sheet, header, column number, institution or reason' },
+  cn2b_bc_filter_state_label: { ar: 'تصفية حسب حالة المراجعة', en: 'Filter by review state' },
+  cn2b_bc_filter_state_all: { ar: 'كل الحالات', en: 'All states' },
+  cn2b_bc_filter_state_unresolved: { ar: 'غير المحسومة فقط', en: 'Awaiting decision only' },
+  cn2b_bc_filter_state_beneficiary: { ar: 'المستفيدة فقط', en: 'Beneficiary only' },
+  cn2b_bc_filter_state_non_beneficiary: { ar: 'غير المستفيدة فقط', en: 'Non-beneficiary only' },
+  cn2b_bc_filter_blocking_only: { ar: 'التي تمنع التقديم فقط', en: 'Blocking submission only' },
+  cn2b_bc_filter_institution: { ar: 'ابحث عن مؤسسة في القائمة', en: 'Find an institution in the list' },
+  cn2b_bc_filter_institution_hint: { ar: 'الاسم العربي أو الإنجليزي أو الرمز', en: 'Arabic name, English name or code' },
+  cn2b_bc_filter_clear: { ar: 'مسح التصفية', en: 'Clear filters' },
+  cn2b_bc_empty_no_columns: { ar: 'لا توجد أعمدة مرشحة في هذه المراجعة بعد.', en: 'This revision carries no candidate columns yet.' },
+  cn2b_bc_empty_filtered: { ar: 'لا يوجد عمود مطابق لهذه التصفية. التصفية عرض فقط ولم تُغيّر أي قرار.', en: 'No column matches these filters. Filtering is display only and changed no decision.' },
+  cn2b_bc_read_only: { ar: 'هذه المراجعة غير قابلة للتعديل — العرض فقط.', en: 'This revision is not editable — view only.' },
+  cn2b_bc_current: { ar: 'الحالي', en: 'Current' },
+  cn2b_bc_proposed: { ar: 'المقترح', en: 'Proposed' },
+  cn2b_bc_group_proposed: { ar: 'القرار المقترح', en: 'Proposed decision' },
+  cn2b_bc_group_label: { ar: 'عنوان المجموعة', en: 'Group header' },
+  cn2b_bc_group_none_left: { ar: 'روجعت كل الأعمدة المرشَّحة أثناء فتح هذا التأكيد — لم يبقَ ما يُطبَّق.', en: 'Every candidate column was reviewed while this confirmation was open — nothing is left to apply.' },
+
   /* CN-2B corrective pass: the annual-plan workflow, the field-override
      editor and the bounded source-evidence search. */
   cn2b_plan_year: { ar: 'سنة الخطة', en: 'Plan year' },
