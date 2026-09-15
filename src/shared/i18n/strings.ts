@@ -2073,6 +2073,7 @@ export const T: Dict = {
   cn2b_bc_proposed: { ar: 'المقترح', en: 'Proposed' },
   cn2b_bc_group_proposed: { ar: 'القرار المقترح', en: 'Proposed decision' },
   cn2b_bc_group_label: { ar: 'عنوان المجموعة', en: 'Group header' },
+  cn2b_bc_group_none_left: { ar: 'روجعت كل الأعمدة المرشَّحة أثناء فتح هذا التأكيد — لم يبقَ ما يُطبَّق.', en: 'Every candidate column was reviewed while this confirmation was open — nothing is left to apply.' },
 
   /* CN-2B corrective pass: the annual-plan workflow, the field-override
      editor and the bounded source-evidence search. */

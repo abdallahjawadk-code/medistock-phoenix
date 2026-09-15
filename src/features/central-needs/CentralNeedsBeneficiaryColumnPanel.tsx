@@ -240,6 +240,24 @@ export function CentralNeedsBeneficiaryColumnPanel({
       || o.code.toLowerCase().includes(q));
   };
 
+  /**
+   * THE TARGETS A GROUP CONFIRMATION ACTUALLY COVERS, derived from live props.
+   *
+   * `groupConfirm.keys` is the envelope captured when the preview opened, and
+   * it is never widened. But a column inside that envelope can be reviewed by
+   * someone else while the preview sits open, and the write has always
+   * re-filtered those out. Deriving the preview from the same rule keeps the
+   * count and the list the reviewer confirms identical to the mutation that
+   * executes — previously the preview kept showing the original envelope while
+   * the write silently applied to fewer columns.
+   *
+   *   ORIGINAL ENVELOPE ∩ STILL-UNRESOLVED = what is displayed AND written.
+   */
+  const groupTargets = useMemo(
+    () => (groupConfirm ? columns.filter((c) => groupConfirm.keys.includes(keyOf(c)) && c.decision === null) : []),
+    [columns, groupConfirm],
+  );
+
   function clearFilters() {
     setTextFilter('');
     setStateFilter('all');
@@ -281,6 +299,14 @@ export function CentralNeedsBeneficiaryColumnPanel({
     if (!groupConfirm) return;
     // Re-filter at write time: a column reviewed meanwhile is never overwritten by a group apply.
     const targets = columns.filter((c) => groupConfirm.keys.includes(keyOf(c)) && c.decision === null);
+    // Nothing left to apply — every captured column was reviewed while this
+    // confirmation was open. Close the preview rather than calling the RPC with
+    // an empty mapping set; the pending choices stay, so the reviewer can see
+    // the new state and decide again.
+    if (targets.length === 0) {
+      setGroupConfirm(null);
+      return;
+    }
     const mappingReason = groupConfirm.reason || t('cn2b_beneficiary_column_initial_reason', lang);
     void write(targets.map((c) => mappingFor(c, groupConfirm.choice)), mappingReason, groupConfirm.keys);
   }
@@ -525,8 +551,10 @@ export function CentralNeedsBeneficiaryColumnPanel({
 
       {groupConfirm && (
         <div className="cn2b-bc-group">
-          <div className="cn2b-bc-group__title">
-            {t('cn2b_beneficiary_column_apply_to_matching', lang).replace('__N__', String(groupConfirm.keys.length))}
+          {/* The count states what WILL be written, recomputed from live props,
+              never the envelope captured when the preview opened. */}
+          <div className="cn2b-bc-group__title" data-testid="cn2b-bc-group-count">
+            {t('cn2b_beneficiary_column_apply_to_matching', lang).replace('__N__', String(groupTargets.length))}
           </div>
           <div className="cn2b-bc-group__scope">{t('cn2b_beneficiary_column_group_scope_note', lang)}</div>
           <div className="cn2b-bc-group__proposed" data-testid="cn2b-bc-group-proposed">
@@ -540,15 +568,23 @@ export function CentralNeedsBeneficiaryColumnPanel({
           {groupConfirm.reason && (
             <div className="cn2b-bc-group__reason">{groupConfirm.reason}</div>
           )}
-          <ul className="cn2b-bc-group__list">
-            {columns.filter((c) => groupConfirm.keys.includes(keyOf(c))).map((c) => (
+          {/* The same live set, listed. A column reviewed while this preview is
+              open leaves the list, so nothing is shown as a target that the
+              write would then skip. */}
+          <ul className="cn2b-bc-group__list" data-testid="cn2b-bc-group-list">
+            {groupTargets.map((c) => (
               <li key={keyOf(c)}>
                 {c.originalFilename ?? c.importSessionId} · {c.sheetName ?? `#${c.sheetIndex}`} · #{c.columnIndex}
               </li>
             ))}
           </ul>
+          {groupTargets.length === 0 && (
+            <p className="cn2b-bc-empty" data-empty="group-none-left">{t('cn2b_bc_group_none_left', lang)}</p>
+          )}
           <div className="cn2b-bc-group__actions">
-            <PhoenixButton size="sm" variant="primary" disabled={busy} onClick={confirmGroup}>
+            {/* Nothing left to apply is not executable: the RPC is never called
+                with an empty mapping set. */}
+            <PhoenixButton size="sm" variant="primary" disabled={busy || groupTargets.length === 0} onClick={confirmGroup}>
               {t('cn2b_beneficiary_column_confirm', lang)}
             </PhoenixButton>
             <PhoenixButton size="sm" variant="ghost" disabled={busy} onClick={() => setGroupConfirm(null)}>

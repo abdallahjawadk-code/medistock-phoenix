@@ -386,29 +386,107 @@ describe('UX-2B — group apply preview', () => {
     expect(within(row1).queryByRole('button', { name: 'Apply to 3 matching columns' })).toBeNull();
   });
 
-  it('re-filters at write time, so a column reviewed meanwhile is not overwritten', () => {
+  /**
+   * CONFIRMATION INTEGRITY, not just write safety.
+   *
+   * The write has always re-filtered reviewed columns out. The defect this
+   * pins is that the PREVIEW did not: it kept displaying the envelope captured
+   * when it opened, so a reviewer could confirm "3 columns", listing 1, 2 and 3,
+   * while the mutation that actually executed touched only 1 and 3. What is
+   * confirmed and what is written must be the same set.
+   */
+  // queryAll, not getAll: an empty target list is a legitimate state here.
+  const groupList = () => within(screen.getByTestId('cn2b-bc-group-list')).queryAllByRole('listitem')
+    .map((li) => Number((li.textContent!.match(/#(\d+)$/) ?? [])[1]));
+
+  const reviewColumnTwo = (rerender: (ui: React.ReactElement) => void) => rerender(
+    <CentralNeedsBeneficiaryColumnPanel
+      lang="en" planRevisionId="rev-1" editable columns={[
+        col(1, { sourceFieldName: 'قطاع كوثى' }),
+        beneficiaryCol(2, HOSPITAL_B, { sourceFieldName: 'قطاع كوثى' }),
+        col(3, { sourceFieldName: 'قطاع كوثى' }),
+      ]} activeCareInstitutions={ORGS} onChanged={() => {}}
+    />,
+  );
+
+  it('keeps the preview count and list aligned with what the write will actually do', () => {
     const { rerender } = renderPanel('en', { columns: siblings() });
     const row1 = rowFor(1);
     chooseIn(row1, HOSPITAL_A);
     fireEvent.click(within(row1).getByRole('button', { name: 'Apply to 3 matching columns' }));
 
-    // Column 2 is reviewed by someone else while the preview is open.
+    // D — the preview opens on all three captured columns.
+    expect(screen.getByTestId('cn2b-bc-group-count')).toHaveTextContent('Apply to 3 matching columns');
+    expect(groupList()).toEqual([1, 2, 3]);
+
+    // E — column 2 is reviewed by someone else while the preview stays open.
+    reviewColumnTwo(rerender);
+
+    // F/G — BEFORE confirming, the preview must already say what it will do.
+    expect(screen.getByTestId('cn2b-bc-group-count'), 'the confirmed count must match the write')
+      .toHaveTextContent('Apply to 2 matching columns');
+    expect(groupList(), 'a column that can no longer be a target must leave the list').toEqual([1, 3]);
+    expect(setBeneficiaryColumns).not.toHaveBeenCalled();
+
+    // H/I — and the write matches exactly what was displayed.
+    const previewPane = screen.getByRole('button', { name: 'Cancel' }).parentElement as HTMLElement;
+    fireEvent.click(within(previewPane).getByRole('button', { name: T.cn2b_beneficiary_column_confirm.en }));
+    const { mappings } = setBeneficiaryColumns.mock.calls[0][0];
+    expect(mappings.map((m: { columnIndex: number }) => m.columnIndex).sort()).toEqual([1, 3]);
+  });
+
+  it('never widens beyond the captured envelope when a new matching column appears', () => {
+    const { rerender } = renderPanel('en', { columns: siblings() });
+    const row1 = rowFor(1);
+    chooseIn(row1, HOSPITAL_A);
+    fireEvent.click(within(row1).getByRole('button', { name: 'Apply to 3 matching columns' }));
+
+    // A fourth unresolved sibling arrives after the preview was authorized.
     rerender(
       <CentralNeedsBeneficiaryColumnPanel
         lang="en" planRevisionId="rev-1" editable columns={[
-          col(1, { sourceFieldName: 'قطاع كوثى' }),
-          beneficiaryCol(2, HOSPITAL_B, { sourceFieldName: 'قطاع كوثى' }),
-          col(3, { sourceFieldName: 'قطاع كوثى' }),
+          ...siblings(), col(4, { sourceFieldName: 'قطاع كوثى' }),
         ]} activeCareInstitutions={ORGS} onChanged={() => {}}
       />,
     );
 
+    expect(groupList(), 'column 4 was never authorized by this preview').toEqual([1, 2, 3]);
     const previewPane = screen.getByRole('button', { name: 'Cancel' }).parentElement as HTMLElement;
     fireEvent.click(within(previewPane).getByRole('button', { name: T.cn2b_beneficiary_column_confirm.en }));
+    expect(setBeneficiaryColumns.mock.calls[0][0].mappings.map((m: { columnIndex: number }) => m.columnIndex).sort())
+      .toEqual([1, 2, 3]);
+  });
 
-    const { mappings } = setBeneficiaryColumns.mock.calls[0][0];
-    expect(mappings.map((m: { columnIndex: number }) => m.columnIndex).sort(), 'column 2 was reviewed meanwhile')
-      .toEqual([1, 3]);
+  it('J — writes nothing at all when every captured column is reviewed before confirmation', () => {
+    const { rerender } = renderPanel('en', { columns: siblings() });
+    const row1 = rowFor(1);
+    chooseIn(row1, HOSPITAL_A);
+    fireEvent.click(within(row1).getByRole('button', { name: 'Apply to 3 matching columns' }));
+
+    // All three are reviewed while the confirmation sits open.
+    rerender(
+      <CentralNeedsBeneficiaryColumnPanel
+        lang="en" planRevisionId="rev-1" editable columns={[
+          beneficiaryCol(1, HOSPITAL_B, { sourceFieldName: 'قطاع كوثى' }),
+          beneficiaryCol(2, HOSPITAL_B, { sourceFieldName: 'قطاع كوثى' }),
+          nonBeneficiaryCol(3, { sourceFieldName: 'قطاع كوثى' }),
+        ]} activeCareInstitutions={ORGS} onChanged={() => {}}
+      />,
+    );
+
+    expect(screen.getByTestId('cn2b-bc-group-count')).toHaveTextContent('Apply to 0 matching columns');
+    expect(groupList()).toEqual([]);
+    expect(screen.getByText(T.cn2b_bc_group_none_left.en)).toBeInTheDocument();
+
+    const previewPane = screen.getByRole('button', { name: 'Cancel' }).parentElement as HTMLElement;
+    const confirm = within(previewPane).getByRole('button', { name: T.cn2b_beneficiary_column_confirm.en });
+    expect(confirm, 'an empty target set must not be executable').toBeDisabled();
+    fireEvent.click(confirm);
+    expect(setBeneficiaryColumns, 'never call the RPC with an empty mapping set').not.toHaveBeenCalled();
+
+    // No reviewed column was resurrected by any of this.
+    expect(within(rowFor(1)).getByTestId('cn2b-bc-state')).toHaveTextContent(T.cn2b_beneficiary_column_state_beneficiary.en);
+    expect(within(rowFor(3)).getByTestId('cn2b-bc-state')).toHaveTextContent(T.cn2b_beneficiary_column_state_non_beneficiary.en);
   });
 });
 
