@@ -106,6 +106,8 @@ import { centralNeedsErrorText } from './central-needs.i18n';
 interface Props {
   lang: 'ar' | 'en';
   planRevisionId: string;
+  /** Shared Stage 3/5 Work Session; used only to reset session-local draft UI after a confirmed switch. */
+  workSessionId?: string | null;
   /** Mapping may only change while the revision is still editable. */
   editable: boolean;
   /** Dispositions of the active session; only 'mapped' rows can feed a line. */
@@ -126,6 +128,8 @@ interface Props {
   beneficiaryColumns: BeneficiaryColumnSummary[];
   /** Reload the revision after anything changed, or after a stale refusal. */
   onChanged: () => void;
+  /** UX-3R Package B: exposes only local busy/dirty presentation state to the parent session guard. */
+  onActivityChange?: (activity: { busy: boolean; dirty: boolean; failed: boolean }) => void;
 }
 
 /** A plain non-negative decimal. No exponent, no sign, no thousands separator. */
@@ -261,8 +265,8 @@ function sourceValueText(record: SourceRecord): string | null {
 }
 
 export function CentralNeedsNeedLinePanel({
-  lang, planRevisionId, editable, dispositions, records, overrides, needLines, claimedSources,
-  beneficiaryColumns, onChanged,
+  lang, planRevisionId, workSessionId, editable, dispositions, records, overrides, needLines, claimedSources,
+  beneficiaryColumns, onChanged, onActivityChange,
 }: Props) {
   const domId = useId();
   const [institutions, setInstitutions] = useState<OrgRow[]>([]);
@@ -288,6 +292,38 @@ export function CentralNeedsNeedLinePanel({
   const [textFilter, setTextFilter] = useState('');
   const [evidenceFilter, setEvidenceFilter] = useState<EvidenceFilter>('all');
   const filtersActive = textFilter.trim() !== '' || evidenceFilter !== 'all';
+
+
+  const dirty = Object.keys(designated).length > 0
+    || reason.trim() !== ''
+    || preview !== null
+    || deletingLineId !== null
+    || deleteReason.trim() !== ''
+    || conversionRequired
+    || unit !== 'box'
+    || sourceUnitText.trim() !== ''
+    || targetWarehouseId !== '';
+
+  useEffect(() => {
+    onActivityChange?.({ busy, dirty, failed: error !== null });
+  }, [busy, dirty, error, onActivityChange]);
+
+  /** A confirmed revision/session switch discards only local, unpersisted editor state. */
+  useEffect(() => {
+    setUnit('box');
+    setConversionRequired(false);
+    setSourceUnitText('');
+    setTargetWarehouseId('');
+    setReason('');
+    setDesignated({});
+    setPreview(null);
+    setError(null);
+    setNotice(null);
+    setDeletingLineId(null);
+    setDeleteReason('');
+    setTextFilter('');
+    setEvidenceFilter('all');
+  }, [planRevisionId, workSessionId]);
 
   // Only a live care institution may be a beneficiary — the same rule the
   // server enforces, surfaced early so the list never offers an invalid choice.

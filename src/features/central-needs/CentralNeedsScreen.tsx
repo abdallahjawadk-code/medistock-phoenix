@@ -59,6 +59,12 @@ import {
   type CentralNeedsStageId,
 } from './CentralNeedsWorkflowNav';
 import {
+  deriveCentralNeedsStageProgress,
+  recommendedCentralNeedsStage,
+  stageProgressLabelKey,
+  summarizeSessionBlockers,
+} from './CentralNeedsWorkspaceState';
+import {
   CentralNeedsError,
   abandonImportSession,
   approveRevision,
@@ -95,6 +101,7 @@ import {
 import type { ArchiveParseResult, FileParseResult } from './import/contract.ts';
 
 type Busy = null | 'verifying' | 'submitting' | 'approving' | 'rejecting' | 'abandoning' | 'opening';
+type ChildActivity = { busy: boolean; dirty: boolean; failed: boolean };
 
 /** A revision label is never a bare "#1" — revision numbers restart per plan year. */
 function revisionLabel(r: PlanRevision, lang: Parameters<typeof t>[1]): string {
@@ -121,21 +128,6 @@ function Panel({ titleKey, icon, children }: { titleKey: string; icon: Parameter
   );
 }
 
-/**
- * UX-1 — one operational number, read from state the screen has ALREADY
- * loaded. No metric here triggers a read of its own: a summary that fetched
- * would be a second source of truth for a fact the panels below already show.
- */
-function SummaryMetric({ labelKey, value }: { labelKey: string; value: string | number }) {
-  const { lang } = useApp();
-  return (
-    <div className="cn2b-summary__cell">
-      <dt className="cn2b-summary__label">{t(labelKey, lang)}</dt>
-      <dd className="cn2b-summary__value">{value}</dd>
-    </div>
-  );
-}
-
 /** One of the four exact status words, never improvised. */
 function StateBadge({ state }: { state: 'provisional' | 'verified' | 'incomplete' | 'ready' }) {
   const { lang } = useApp();
@@ -153,6 +145,77 @@ function blockerLabel(blocker: string, lang: Parameters<typeof t>[1]): string {
   const key = `cn2b_blocker_${blocker}`;
   const text = t(key, lang);
   return text === key ? blocker : text;
+}
+
+
+function WorkSessionSelector({
+  lang,
+  sessions,
+  activeSessionId,
+  blockerSummary,
+  sessionEntryById,
+  disabled,
+  onChange,
+}: {
+  lang: Parameters<typeof t>[1];
+  sessions: ImportSession[];
+  activeSessionId: string | null;
+  blockerSummary: ReturnType<typeof summarizeSessionBlockers>;
+  sessionEntryById: ReadonlyMap<string, { archiveEntryPath: string | null; containerFilename: string }>;
+  disabled: boolean;
+  onChange: (id: string) => void;
+}) {
+  const [query, setQuery] = useState('');
+  const completed = sessions.filter((session) => session.status === 'completed');
+  const normalizedQuery = query.trim().toLowerCase();
+  const rows = completed.map((session, index) => {
+    const entry = sessionEntryById.get(session.id);
+    const sourceLabel = entry?.archiveEntryPath
+      || entry?.containerFilename
+      || `${t('cn2b_session_unbatched_fallback', lang)} · ${session.startedAt}`;
+    const blockers = blockerSummary.bySession.get(session.id) ?? 0;
+    const blockerText = blockers === 0
+      ? t('cn2b_session_no_attributed_blockers', lang)
+      : `${t('cn2b_session_blockers', lang)}: ${blockers}`;
+    const label = `${sourceLabel} · ${t('cn2b_sess_completed', lang)} · ${t('cn2b_work_session', lang)} ${index + 1}/${completed.length} · ${blockerText}`;
+    return { session, label };
+  });
+  const visibleRows = normalizedQuery === ''
+    ? rows
+    : rows.filter(({ session, label }) => session.id === activeSessionId || label.toLowerCase().includes(normalizedQuery));
+
+  return (
+    <section className="cn2b-work-session" aria-label={t('cn2b_work_session', lang)}>
+      <label className="cn2b-field">
+        <span className="cn2b-field__label">{t('cn2b_work_session_search', lang)}</span>
+        <input
+          className="cn2b-input"
+          type="search"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder={t('cn2b_work_session_search', lang)}
+        />
+      </label>
+      <label className="cn2b-field">
+        <span className="cn2b-field__label">{t('cn2b_work_session', lang)}</span>
+        <select
+          className="cn2b-select"
+          value={activeSessionId ?? ''}
+          disabled={disabled || completed.length === 0}
+          onChange={(event) => event.target.value && onChange(event.target.value)}
+        >
+          {completed.length === 0 && <option value="">{t('cn2b_work_session_none', lang)}</option>}
+          {visibleRows.map(({ session, label }) => <option key={session.id} value={session.id}>{label}</option>)}
+        </select>
+      </label>
+      {disabled && <p className="cn2b-work-session__meta">{t('cn2b_work_session_switch_blocked', lang)}</p>}
+      {blockerSummary.unattributed > 0 && (
+        <p className="cn2b-work-session__meta" role="status">
+          {t('cn2b_unattributed_blockers', lang)}: {blockerSummary.unattributed}
+        </p>
+      )}
+    </section>
+  );
 }
 
 export function CentralNeedsScreen() {
@@ -189,6 +252,23 @@ export function CentralNeedsScreen() {
   const [careInstitutions, setCareInstitutions] = useState<OrgRow[]>([]);
   const [readiness, setReadiness] = useState<ReviewReadiness | null>(null);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [activeStage, setActiveStage] = useState<CentralNeedsStageId>('plan');
+  const stageWasChosen = useRef(false);
+  /**
+   * UX-3R §7.2 - the initial stage is a DECISION that needs the revision and
+   * its readiness. Until it resolves the workspace renders its loading state;
+   * painting Stage 1 first and jumping when readiness lands is what §7 forbids.
+   */
+  const [initialStageResolved, setInitialStageResolved] = useState(false);
+  const [revisionReloading, setRevisionReloading] = useState(false);
+  /** UX-3R §6.3 rule 0 — readiness re-read after a confirmed Stage 3 write is pending. */
+  const [readinessRefreshing, setReadinessRefreshing] = useState(false);
+  const [reviewActivity, setReviewActivity] = useState<ChildActivity>({ busy: false, dirty: false, failed: false });
+  const [beneficiaryActivity, setBeneficiaryActivity] = useState<ChildActivity>({ busy: false, dirty: false, failed: false });
+  const [needLineActivity, setNeedLineActivity] = useState<ChildActivity>({ busy: false, dirty: false, failed: false });
+  const [backgroundResult, setBackgroundResult] = useState<{ stage: CentralNeedsStageId; failed: boolean } | null>(null);
+  const previousChildBusy = useRef<Record<'review' | 'beneficiaries' | 'need-lines', boolean>>({ review: false, beneficiaries: false, 'need-lines': false });
+  const previousParentBusyStage = useRef<CentralNeedsStageId | null>(null);
   const [busy, setBusy] = useState<Busy>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -233,6 +313,8 @@ export function CentralNeedsScreen() {
   const [sourceQuery, setSourceQuery] = useState('');
   const [sourceFiles, setSourceFiles] = useState<SourceFile[]>([]);
   const [entryHits, setEntryHits] = useState<Array<{ id: string; archiveEntryPath: string | null; entrySha256: string; containerFilename: string; entryOrdinal: number }>>([]);
+  /** UX-3R — trusted batch-entry labels for the shared Work Session selector. */
+  const [sessionEntries, setSessionEntries] = useState<Array<{ importSessionId: string; archiveEntryPath: string | null; containerFilename: string }>>([]);
   /**
    * UX-2A — the four states a bounded evidence search can actually be in.
    *
@@ -262,6 +344,7 @@ export function CentralNeedsScreen() {
 
   const revision = useMemo(() => revisions.find((r) => r.id === revisionId) ?? null, [revisions, revisionId]);
   const isDraft = revision?.status === 'draft';
+  const revisionDataReady = revisionId !== null && dataRevisionId === revisionId;
 
   /**
    * FINDINGS A + B — everything below is scoped to ONE revision, so a revision
@@ -283,6 +366,20 @@ export function CentralNeedsScreen() {
     setClaimedSources([]);
     setBeneficiaryColumns([]);
     setActiveSessionId(null);
+    setSessionEntries([]);
+    setPendingFile(null);
+    preview.reset();
+    setReviewActivity({ busy: false, dirty: false, failed: false });
+    setBeneficiaryActivity({ busy: false, dirty: false, failed: false });
+    setNeedLineActivity({ busy: false, dirty: false, failed: false });
+    setBackgroundResult(null);
+    previousChildBusy.current = { review: false, beneficiaries: false, 'need-lines': false };
+    previousParentBusyStage.current = null;
+    setActiveStage('plan');
+    stageWasChosen.current = false;
+    setInitialStageResolved(false);
+    setRevisionReloading(false);
+    setReadinessRefreshing(false);
     setRecords([]);
     setDispositions([]);
     setSourceQuery('');
@@ -290,7 +387,7 @@ export function CentralNeedsScreen() {
     setEntryHits([]);
     setSourceSearchError(null);
     setSourceSearchPhase('idle');
-  }, []);
+  }, [preview.reset]);
 
   // --- loading -------------------------------------------------------------
 
@@ -326,39 +423,43 @@ export function CentralNeedsScreen() {
   }, [organizationId]);
 
   const reloadRevision = useCallback(async (id: string) => {
-    // FINDING B — claim this reload's generation BEFORE awaiting. The same six
-    // reads run, in the same order; only the right to commit them is gated.
     const seq = (revisionReloadSeq.current += 1);
-    const [nextSessions, nextBatches, nextOverrides, nextReadiness, nextLineage, nextBeneficiaryColumns] =
-      await Promise.all([
-        listImportSessions(id),
-        listImportBatches(id),
-        listOverrides(id),
-        fetchReviewReadiness(id),
-        // Revision-wide, through the exact-decimal read: a line's provenance may
-        // span every import session of the revision.
-        listNeedLineLineage(id),
-        // (213) Revision-wide too: a physical column's mapping is not scoped
-        // to whichever import session happens to be on screen.
-        listBeneficiaryColumns(id),
-      ]);
-    // A newer reload started while this one was in flight: its answer is the
-    // current one, and this late reply is discarded rather than overwriting it.
-    if (seq !== revisionReloadSeq.current) return;
-    setSessions(nextSessions);
-    setBatches(nextBatches);
-    setOverrides(nextOverrides);
-    setReadiness(nextReadiness);
-    setNeedLines(nextLineage.needLines);
-    setClaimedSources(nextLineage.sources);
-    setBeneficiaryColumns(nextBeneficiaryColumns);
-    const completed = nextSessions.filter((s) => s.status === 'completed');
-    setActiveSessionId((current) => (current && completed.some((s) => s.id === current) ? current : completed[0]?.id ?? null));
-    // Last, and only here: every read above succeeded and this is still the
-    // current generation, so the committed evidence now provably belongs to
-    // `id`. A rejected reload never reaches this line, so a failure leaves the
-    // identity null rather than mislabelling stale data.
-    setDataRevisionId(id);
+    setRevisionReloading(true);
+    try {
+      const [nextSessions, nextBatches, nextOverrides, nextReadiness, nextLineage, nextBeneficiaryColumns, nextSessionEntries] =
+        await Promise.all([
+          listImportSessions(id),
+          listImportBatches(id),
+          listOverrides(id),
+          fetchReviewReadiness(id),
+          listNeedLineLineage(id),
+          listBeneficiaryColumns(id),
+          // Existing bounded revision query; label enrichment is presentation-only and fails soft.
+          searchBatchEntries(id, '', 500).catch(() => []),
+        ]);
+      if (seq !== revisionReloadSeq.current) return;
+      setSessions(nextSessions);
+      setBatches(nextBatches);
+      setOverrides(nextOverrides);
+      setReadiness(nextReadiness);
+      setNeedLines(nextLineage.needLines);
+      setClaimedSources(nextLineage.sources);
+      setBeneficiaryColumns(nextBeneficiaryColumns);
+      setSessionEntries(nextSessionEntries.map((entry) => ({
+        importSessionId: entry.importSessionId,
+        archiveEntryPath: entry.archiveEntryPath,
+        containerFilename: entry.containerFilename,
+      })));
+      const completed = nextSessions.filter((session) => session.status === 'completed');
+      setActiveSessionId((current) => (
+        current && completed.some((session) => session.id === current)
+          ? current
+          : completed[0]?.id ?? null
+      ));
+      setDataRevisionId(id);
+    } finally {
+      if (seq === revisionReloadSeq.current) setRevisionReloading(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -437,8 +538,21 @@ export function CentralNeedsScreen() {
     }
   }, [lang, revisionId, reloadRevision]);
 
+  const sourceDraftDirty = pendingFile !== null || preview.state.phase !== 'idle';
+  const revisionDraftDirty = sourceDraftDirty || reviewActivity.dirty || beneficiaryActivity.dirty || needLineActivity.dirty;
+  const revisionContextBusy = busy !== null || reviewActivity.busy || beneficiaryActivity.busy || needLineActivity.busy;
+
+  const confirmRevisionContextDiscard = useCallback((): boolean => {
+    if (revisionContextBusy) {
+      window.alert(t('cn2b_revision_context_change_blocked', lang));
+      return false;
+    }
+    if (!revisionDraftDirty) return true;
+    return window.confirm(t('cn2b_revision_context_change_confirm', lang));
+  }, [revisionContextBusy, revisionDraftDirty, lang]);
+
   const onOpenRevision = useCallback(async (openNext: boolean) => {
-    if (!organizationId) return;
+    if (!organizationId || !confirmRevisionContextDiscard()) return;
     setBusy('opening');
     setError(null);
     setNotice(null);
@@ -453,7 +567,7 @@ export function CentralNeedsScreen() {
     } finally {
       setBusy(null);
     }
-  }, [organizationId, planYear]);
+  }, [organizationId, planYear, confirmRevisionContextDiscard]);
 
   // I — search runs against the selected revision only; RLS is the boundary.
   const onSearchSource = useCallback(async (q: string) => {
@@ -563,9 +677,104 @@ export function CentralNeedsScreen() {
   }, []);
 
   const onDispositionsChanged = useCallback(async () => {
-    if (activeSessionId) setDispositions(await listDispositions(activeSessionId));
-    if (revisionId) setReadiness(await fetchReviewReadiness(revisionId));
+    // UX-3R §6.3 rule 0 — a confirmed Stage 3 write may change server readiness, so no
+    // previous completion may stand until the re-read answers. The reads are unchanged.
+    if (revisionId) setReadinessRefreshing(true);
+    try {
+      if (activeSessionId) setDispositions(await listDispositions(activeSessionId));
+      if (revisionId) setReadiness(await fetchReviewReadiness(revisionId));
+    } finally {
+      if (revisionId) setReadinessRefreshing(false);
+    }
   }, [activeSessionId, revisionId]);
+
+  const stageProgress = useMemo(() => deriveCentralNeedsStageProgress({
+    hasRevision: revision !== null,
+    revisionStatus: revision?.status ?? null,
+    revisionDataReady,
+    refreshing: revisionReloading || readinessRefreshing,
+    readiness,
+  }), [readiness, revision, revisionDataReady, revisionReloading, readinessRefreshing]);
+
+  const recommendedStage = useMemo(
+    () => recommendedCentralNeedsStage(revision !== null, stageProgress),
+    [revision, stageProgress],
+  );
+
+  const sessionBlockers = useMemo(() => summarizeSessionBlockers(readiness), [readiness]);
+  const sessionEntryById = useMemo(
+    () => new Map(sessionEntries.map((entry) => [entry.importSessionId, entry])),
+    [sessionEntries],
+  );
+  const sessionSwitchBlocked = sessionLoading
+    || reviewActivity.busy
+    || needLineActivity.busy;
+  const sessionDraftDirty = reviewActivity.dirty || needLineActivity.dirty;
+  const busyStage: CentralNeedsStageId | null = reviewActivity.busy ? 'review'
+    : beneficiaryActivity.busy ? 'beneficiaries'
+      : needLineActivity.busy ? 'need-lines'
+        : (busy === 'verifying' || busy === 'abandoning') ? 'source'
+          : busy === 'opening' ? 'plan'
+            : (busy === 'submitting' || busy === 'approving' || busy === 'rejecting') ? 'readiness'
+              : null;
+
+  const onStageChange = useCallback((id: CentralNeedsStageId) => {
+    stageWasChosen.current = true;
+    setInitialStageResolved(true);
+    setActiveStage(id);
+    setBackgroundResult((current) => current?.stage === id ? null : current);
+  }, []);
+
+  const onWorkSessionChange = useCallback((id: string) => {
+    if (sessionSwitchBlocked || id === activeSessionId) return;
+    if (sessionDraftDirty && !window.confirm(t('cn2b_work_session_change_confirm', lang))) return;
+    setReviewActivity({ busy: false, dirty: false, failed: false });
+    setNeedLineActivity({ busy: false, dirty: false, failed: false });
+    setActiveSessionId(id);
+  }, [activeSessionId, lang, sessionDraftDirty, sessionSwitchBlocked]);
+
+  useEffect(() => {
+    if (stageWasChosen.current) return;
+    if (revisionId === null) {
+      // §7.1 - "no revision exists" is only KNOWN once the revision list has
+      // answered. While it is still being asked this is the §7.2 loading state,
+      // not Stage 1 (FINDING C: still asking is not the same answer as none).
+      if (revisionsLoading) return;
+      setActiveStage('plan');
+      setInitialStageResolved(true);
+      return;
+    }
+    // §7.2 - hold the loading state until this revision readiness answers.
+    if (!revisionDataReady || revisionReloading) return;
+    setActiveStage(recommendedStage);
+    setInitialStageResolved(true);
+    // Resume once from server-backed progress; later readiness changes must not move the stage under the operator.
+    stageWasChosen.current = true;
+  }, [recommendedStage, revisionDataReady, revisionId, revisionReloading, revisionsLoading]);
+
+  useEffect(() => {
+    const activities = { review: reviewActivity, beneficiaries: beneficiaryActivity, 'need-lines': needLineActivity } as const;
+    for (const stage of ['review', 'beneficiaries', 'need-lines'] as const) {
+      const wasBusy = previousChildBusy.current[stage];
+      const activity = activities[stage];
+      if (wasBusy && !activity.busy && activeStage !== stage) {
+        setBackgroundResult({ stage, failed: activity.failed });
+      }
+      previousChildBusy.current[stage] = activity.busy;
+    }
+  }, [activeStage, beneficiaryActivity, needLineActivity, reviewActivity]);
+
+  useEffect(() => {
+    const parentStage = (busy === 'verifying' || busy === 'abandoning') ? 'source'
+      : busy === 'opening' ? 'plan'
+        : (busy === 'submitting' || busy === 'approving' || busy === 'rejecting') ? 'readiness'
+          : null;
+    const previous = previousParentBusyStage.current;
+    if (previous && !parentStage && activeStage !== previous) {
+      setBackgroundResult({ stage: previous, failed: error !== null });
+    }
+    previousParentBusyStage.current = parentStage;
+  }, [activeStage, busy, error]);
 
   // --- render --------------------------------------------------------------
 
@@ -578,21 +787,7 @@ export function CentralNeedsScreen() {
   // UX-1 — summary figures, every one of them counted off state already on
   // screen. A column counts as decided once a review decision exists for it,
   // whichever decision that was.
-  /**
-   * THE RENDER-TIME ATTRIBUTION GATE.
-   *
-   * Computed during render from the two identities, so it is already correct in
-   * the very first commit after `revisionId` changes — the render in which the
-   * effect has not run yet and the state below still holds the previous
-   * revision's evidence. Nothing revision-scoped may be presented unless the
-   * committed data provably belongs to the revision now selected.
-   */
-  const revisionDataReady = revisionId !== null && dataRevisionId === revisionId;
-
-  const completedSessionCount = sessions.filter((s) => s.status === 'completed').length;
-  const decidedColumnCount = beneficiaryColumns.filter((c) => c.decision !== null).length;
-  /** An unattributable figure is shown as unknown, never as a number. */
-  const metric = (value: number | string) => (revisionDataReady ? value : '—');
+  const completedSessionCount = sessions.filter((session) => session.status === 'completed').length;
 
   /**
    * UX-1 — the content of each workflow stage, keyed by its canonical id.
@@ -610,7 +805,12 @@ export function CentralNeedsScreen() {
           <select
             className="cn2b-select"
             value={revisionId ?? ''}
-            onChange={(e) => setRevisionId(e.target.value || null)}
+            onChange={(e) => {
+              const next = e.target.value || null;
+              if (next === revisionId) return;
+              if (!confirmRevisionContextDiscard()) return;
+              setRevisionId(next);
+            }}
           >
             {/* FINDING C — while the list is still being read, say so. Only a
                 RESOLVED empty list may claim there are no revisions. */}
@@ -878,8 +1078,8 @@ export function CentralNeedsScreen() {
                       className="cn2b-session"
                       data-active={s.id === activeSessionId}
                       aria-pressed={s.id === activeSessionId}
-                      disabled={s.status !== 'completed'}
-                      onClick={() => setActiveSessionId(s.id)}
+                      disabled={s.status !== 'completed' || sessionSwitchBlocked}
+                      onClick={() => onWorkSessionChange(s.id)}
                     >
                       <span className="cn2b-session__status" data-status={s.status}>
                         {t(`cn2b_sess_${s.status}`, lang)}
@@ -906,22 +1106,36 @@ export function CentralNeedsScreen() {
 
     review: !revisionDataReady ? (
       <p className="cn2b-hint" role="status">{t('cn2b_revision_loading', lang)}</p>
-    ) : sessionLoading ? (
-      <p className="cn2b-hint" role="status">{t('cn2b_session_loading', lang)}</p>
-    ) : activeSessionId ? (
-      <Panel titleKey="cn2b_panel_review" icon="editor">
-        <CentralNeedsDispositionTable
-          importSessionId={activeSessionId}
-          records={records}
-          dispositions={dispositions}
-          overrides={overrides}
-          organizationId={organizationId}
-          canEdit={canEdit && isDraft}
-          onChanged={() => void onDispositionsChanged()}
-        />
-      </Panel>
     ) : (
-      <p className="cn2b-hint">{t('cn2b_stage_review_waiting', lang)}</p>
+      <>
+        <WorkSessionSelector
+          lang={lang}
+          sessions={sessions}
+          activeSessionId={activeSessionId}
+          blockerSummary={sessionBlockers}
+          sessionEntryById={sessionEntryById}
+          disabled={sessionSwitchBlocked}
+          onChange={onWorkSessionChange}
+        />
+        {sessionLoading ? (
+          <p className="cn2b-hint" role="status">{t('cn2b_session_loading', lang)}</p>
+        ) : activeSessionId ? (
+          <Panel titleKey="cn2b_panel_review" icon="editor">
+            <CentralNeedsDispositionTable
+              importSessionId={activeSessionId}
+              records={records}
+              dispositions={dispositions}
+              overrides={overrides}
+              organizationId={organizationId}
+              canEdit={canEdit && isDraft}
+              onChanged={() => void onDispositionsChanged()}
+              onActivityChange={setReviewActivity}
+            />
+          </Panel>
+        ) : (
+          <p className="cn2b-hint">{t('cn2b_stage_review_waiting', lang)}</p>
+        )}
+      </>
     ),
 
     beneficiaries: !revisionDataReady ? (
@@ -935,6 +1149,7 @@ export function CentralNeedsScreen() {
           columns={beneficiaryColumns}
           activeCareInstitutions={careInstitutions}
           onChanged={() => void reloadRevision(revision.id)}
+          onActivityChange={setBeneficiaryActivity}
         />
       </Panel>
     ) : (
@@ -944,20 +1159,33 @@ export function CentralNeedsScreen() {
     'need-lines': !revisionDataReady ? (
       <p className="cn2b-hint" role="status">{t('cn2b_revision_loading', lang)}</p>
     ) : revision ? (
-      <Panel titleKey="cn2b_panel_need_lines" icon="editor">
-        <CentralNeedsNeedLinePanel
+      <>
+        <WorkSessionSelector
           lang={lang}
-          planRevisionId={revision.id}
-          editable={canEdit && isDraft}
-          dispositions={dispositions}
-          records={records}
-          overrides={overrides}
-          beneficiaryColumns={beneficiaryColumns}
-          needLines={needLines}
-          claimedSources={claimedSources}
-          onChanged={() => void reloadRevision(revision.id)}
+          sessions={sessions}
+          activeSessionId={activeSessionId}
+          blockerSummary={sessionBlockers}
+          sessionEntryById={sessionEntryById}
+          disabled={sessionSwitchBlocked}
+          onChange={onWorkSessionChange}
         />
-      </Panel>
+        <Panel titleKey="cn2b_panel_need_lines" icon="editor">
+          <CentralNeedsNeedLinePanel
+            lang={lang}
+            planRevisionId={revision.id}
+            workSessionId={activeSessionId}
+            editable={canEdit && isDraft}
+            dispositions={dispositions}
+            records={records}
+            overrides={overrides}
+            beneficiaryColumns={beneficiaryColumns}
+            needLines={needLines}
+            claimedSources={claimedSources}
+            onChanged={() => void reloadRevision(revision.id)}
+            onActivityChange={setNeedLineActivity}
+          />
+        </Panel>
+      </>
     ) : (
       <p className="cn2b-hint">{t('cn2b_stage_revision_waiting', lang)}</p>
     ),
@@ -1041,20 +1269,60 @@ export function CentralNeedsScreen() {
         </div>
       </header>
 
-      <CentralNeedsWorkflowNav lang={lang} />
+      <CentralNeedsWorkflowNav
+        lang={lang}
+        activeStage={initialStageResolved ? activeStage : null}
+        stageProgress={stageProgress}
+        busyStage={busyStage}
+        resultStage={backgroundResult?.stage ?? null}
+        onStageChange={onStageChange}
+      />
 
-      <section className="cn2b-summary" aria-label={t('cn2b_summary_label', lang)}>
-        <dl className="cn2b-summary__grid">
-          <SummaryMetric labelKey="cn2b_sum_sessions" value={metric(`${completedSessionCount}/${sessions.length}`)} />
-          <SummaryMetric labelKey="cn2b_sum_batches" value={metric(batches.length)} />
-          <SummaryMetric labelKey="cn2b_sum_columns" value={metric(`${decidedColumnCount}/${beneficiaryColumns.length}`)} />
-          <SummaryMetric labelKey="cn2b_sum_need_lines" value={metric(needLines.length)} />
-          <SummaryMetric labelKey="cn2b_sum_blockers" value={metric(readiness ? readiness.blockers.length : '—')} />
-        </dl>
+      <section className="cn2b-guidance" aria-live="polite">
+        {!initialStageResolved ? (
+          /* §7.2 - until the initial stage is decided the strip says it is
+             loading rather than naming Stage 1 as the current task. */
+          <span className="cn2b-guidance__state">{t('cn2b_workspace_loading', lang)}</span>
+        ) : (
+          <>
+            <span className="cn2b-guidance__label">{t('cn2b_current_task', lang)}</span>
+            <strong className="cn2b-guidance__task">
+              {t(CENTRAL_NEEDS_STAGES.find((stage) => stage.id === activeStage)?.titleKey ?? 'cn2b_stage_plan', lang)}
+            </strong>
+            <span className="cn2b-guidance__state">
+              {t(stageProgressLabelKey(stageProgress[activeStage]), lang)}
+            </span>
+            {recommendedStage !== activeStage && (
+              <>
+                <span className="cn2b-guidance__label">{t('cn2b_recommended_task', lang)}</span>
+                <span className="cn2b-guidance__state">
+                  {t(CENTRAL_NEEDS_STAGES.find((stage) => stage.id === recommendedStage)?.titleKey ?? 'cn2b_stage_plan', lang)}
+                </span>
+              </>
+            )}
+          </>
+        )}
       </section>
+
+      {backgroundResult && (
+        <p className="cn2b-background-result" role={backgroundResult.failed ? 'alert' : 'status'}>
+          {t(backgroundResult.failed ? 'cn2b_background_failed' : 'cn2b_background_result', lang)} —{' '}
+          {t(CENTRAL_NEEDS_STAGES.find((stage) => stage.id === backgroundResult.stage)?.titleKey ?? 'cn2b_stage_plan', lang)}
+        </p>
+      )}
 
       {error && <PhoenixErrorState message={centralNeedsErrorText(error, lang)} />}
       {notice && <p className="cn2b-notice" role="status">{t(notice, lang)}</p>}
+
+      {!initialStageResolved && (
+        /* §7.2 - the workspace loading state. The six stage wrappers below
+           stay mounted (§4.3); none of them is painted yet. The guidance strip
+           above is the page's ONE polite status region (§4.3) and already
+           announces this, so the placeholder is visual only. */
+        <p className="cn2b-workspace-loading cn2b-hint">
+          {t('cn2b_workspace_loading', lang)}
+        </p>
+      )}
 
       {CENTRAL_NEEDS_STAGES.map((stage, index) => (
         <section
@@ -1062,6 +1330,8 @@ export function CentralNeedsScreen() {
           id={stageDomId(stage.id)}
           className="cn2b-stage"
           data-stage={stage.id}
+          data-active={initialStageResolved && stage.id === activeStage}
+          hidden={!initialStageResolved || stage.id !== activeStage}
           aria-labelledby={stageTitleDomId(stage.id)}
           /* Not a tab stop — a scroll target the navigator can focus, so a
              keyboard user lands inside the stage they asked for. */

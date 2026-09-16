@@ -213,30 +213,126 @@ describe('Phase A7.2 premium living auth & welcome signature contract', () => {
 
   // The copy fix is a MARKETING-COPY change on two screens only. Operational
   // central-warehouse terminology is business vocabulary and stays exactly as
-  // it is — this guards against a careless global search-and-replace.
+  // it is - this guards against a careless global search-and-replace.
+  //
+  // STAGE-E-E7-2 already established that this guard never meant "the
+  // dictionary may not grow": a later, separately-reviewed phase added the
+  // Stage-E outlet-corridor vocabulary to the same file. It was then expressed
+  // as a whole-file "zero deletions in strings.ts" proxy. That proxy cannot
+  // tell the thing A7.2.2 exists to catch - an operational central-warehouse
+  // term being rewritten - from an authorized edit to an unrelated key, so it
+  // also vetoed the owner-adopted UX-3R stage terminology.
+  //
+  // The guard is therefore stated as the invariant it always meant:
+  //
+  //   (a) every protected operational term is still present in the file;
+  //   (b) no REMOVED line carried a protected central-warehouse term;
+  //   (c) no dictionary KEY disappeared, so a removal or a rename is still
+  //       caught wherever in the file it happens.
+  //
+  // The ONLY freedom this adds is a value edit to a key that carries no
+  // protected term - precisely the freedom the proxy wrongly denied. A global
+  // search-and-replace over the central-warehouse vocabulary still fails (b),
+  // and deleting or renaming any key still fails (c).
+
+  /** Operational central-warehouse vocabulary - the subject A7.2.2 protects. */
+  const PROTECTED_CENTRAL_TERMS = [
+    'مخازن قسم الصيدلة (مركزي)',
+    'المصدر (مركزي)',
+    'مشتريات مركزية',
+    'استرجاع مركزي',
+    // The stem itself, so a rewrite of ANY operational central term is caught,
+    // not only the four named above.
+    'مركزي',
+  ] as const;
+
+  const DICTIONARY_KEY = /^\s*([A-Za-z_$][\w$]*)\s*:/;
+  const dictionaryKeys = (source: string): Set<string> => new Set(
+    source.split('\n')
+      .map((line) => DICTIONARY_KEY.exec(line)?.[1])
+      .filter((key): key is string => key !== undefined),
+  );
+
+  /**
+   * Pure, so the distinction A7.2.2 draws is provable from fixtures instead of
+   * from whatever happens to sit in the working tree today.
+   */
+  const auditStringsChange = (removedLines: string[], before: string, after: string) => {
+    const afterKeys = dictionaryKeys(after);
+    return {
+      removedProtectedTerms: removedLines.filter(
+        (line) => PROTECTED_CENTRAL_TERMS.some((term) => line.includes(term)),
+      ),
+      removedKeys: [...dictionaryKeys(before)].filter((key) => !afterKeys.has(key)),
+    };
+  };
+
   it('operational central-warehouse terminology outside Login/Welcome is untouched (A7.2.2)', () => {
     expect(strings).toContain('مخازن قسم الصيدلة (مركزي)');
     expect(strings).toContain('المصدر (مركزي)');
     expect(strings).toContain('مشتريات مركزية');
     expect(strings).toContain('استرجاع مركزي');
-    // STAGE-E-E7-2: a still later, separately-reviewed phase adds the Stage-E
-    // outlet-corridor vocabulary (organization kind, clinical context, routes,
-    // provisioning, replenishment, reversal, and the canonical RPC-rejection
-    // messages) to this file. This guard's purpose is that the EXISTING
-    // operational terminology asserted above stays untouched — not that the
-    // dictionary may never grow. A single-file watch cannot exclude itself, so
-    // the check is narrowed to exactly that purpose: the diff must be purely
-    // ADDITIVE. Zero deletions proves no existing key was edited, renamed or
-    // removed, which is a stricter reading of "untouched" than the previous
-    // blanket no-diff.
-    let numstat = '';
+
+    let diff = '';
+    let head = '';
     try {
-      numstat = execSync('git diff --numstat HEAD -- src/shared/i18n/strings.ts', { cwd: ROOT, encoding: 'utf8' });
-    } catch { /* ignore */ }
-    const deletions = numstat.trim()
-      ? Number(numstat.trim().split('\n')[0].split('\t')[1])
-      : 0;
-    expect(deletions).toBe(0);
+      const options = { cwd: ROOT, encoding: 'utf8' as const, maxBuffer: 64 * 1024 * 1024 };
+      diff = execSync('git diff HEAD -- src/shared/i18n/strings.ts', options);
+      head = execSync('git show HEAD:src/shared/i18n/strings.ts', options);
+    } catch { /* fall through to the no-git case below */ }
+    if (head === '') {
+      // No git context (e.g. an exported source tree). The presence assertions
+      // above are the whole guard in that case, exactly as they were before.
+      return;
+    }
+
+    const removedLines = diff.split('\n').filter((line) => line.startsWith('-') && !line.startsWith('---'));
+    const audit = auditStringsChange(removedLines, head, strings);
+    expect(audit.removedProtectedTerms, 'an operational central-warehouse term was removed or rewritten').toEqual([]);
+    expect(audit.removedKeys, 'a dictionary key was removed or renamed').toEqual([]);
+  });
+
+  // The distinction above is the whole point of the correction, so it is
+  // proved directly rather than inferred from today's working tree.
+  describe('the A7.2.2 strings guard itself', () => {
+    const HEAD_FIXTURE = [
+      'export const T = {',
+      "  cn2b_stage_plan: { ar: 'الخطة والمراجعة', en: 'Plan' },",
+      "  cn2b_revision: { ar: 'المراجعة', en: 'Revision' },",
+      "  wh_central_source: { ar: 'المصدر (مركزي)', en: 'Source (central)' },",
+      "  wh_central_purchases: { ar: 'مشتريات مركزية', en: 'Central purchases' },",
+      '};',
+    ].join('\n');
+
+    it('ALLOWS the owner-adopted UX-3R terminology rename', () => {
+      const after = HEAD_FIXTURE
+        .replace("{ ar: 'الخطة والمراجعة', en: 'Plan' }", "{ ar: 'الخطة والإصدار', en: 'Plan and revision' }")
+        .replace("{ ar: 'المراجعة', en: 'Revision' }", "{ ar: 'الإصدار', en: 'Revision' }");
+      const removed = [
+        "-  cn2b_stage_plan: { ar: 'الخطة والمراجعة', en: 'Plan' },",
+        "-  cn2b_revision: { ar: 'المراجعة', en: 'Revision' },",
+      ];
+      const audit = auditStringsChange(removed, HEAD_FIXTURE, after);
+      expect(audit.removedProtectedTerms).toEqual([]);
+      expect(audit.removedKeys).toEqual([]);
+    });
+
+    it('REJECTS a global replacement that rewrites operational central-warehouse terminology', () => {
+      const after = HEAD_FIXTURE.replace("ar: 'المصدر (مركزي)'", "ar: 'المصدر (قسم الصيدلة)'");
+      const removed = ["-  wh_central_source: { ar: 'المصدر (مركزي)', en: 'Source (central)' },"];
+      const audit = auditStringsChange(removed, HEAD_FIXTURE, after);
+      expect(audit.removedProtectedTerms).toHaveLength(1);
+    });
+
+    it('REJECTS the removal or rename of any dictionary key', () => {
+      const removedLine = "  cn2b_revision: { ar: 'المراجعة', en: 'Revision' },\n";
+      const audit = auditStringsChange(
+        [`-${removedLine.trimEnd()}`],
+        HEAD_FIXTURE,
+        HEAD_FIXTURE.replace(removedLine, ''),
+      );
+      expect(audit.removedKeys).toEqual(['cn2b_revision']);
+    });
   });
 
   // ─── 3. No fabricated data, no invented functionality ──────────────────────

@@ -224,6 +224,8 @@ describe('UX-1 — the six workflow stages', () => {
       expect(ids(), stage.id).toEqual(before);
     }
     expect(before).toHaveLength(6);
+    const active = [...container.querySelectorAll<HTMLElement>('section.cn2b-stage')].filter((section) => !section.hidden);
+    expect(active).toHaveLength(1);
   });
 
   it('renders all six stages even with no revision, no session and no permissions at all', async () => {
@@ -247,7 +249,7 @@ describe('UX-1 — the workflow navigator', () => {
     const nav = screen.getByRole('navigation', { name: T.cn2b_workflow_label.en });
     expect(nav.querySelector('ol')).not.toBeNull();
 
-    const buttons = within(nav).getAllByRole('button');
+    const buttons = within(nav).getAllByRole('button').filter((button) => Boolean(button.dataset.stage));
     expect(buttons).toHaveLength(6);
     buttons.forEach((button, index) => {
       // A real <button type="button"> — never a clickable div, and never a
@@ -272,15 +274,17 @@ describe('UX-1 — the workflow navigator', () => {
     const nav = screen.getByRole('navigation', { name: T.cn2b_workflow_label.en });
     const current = () => within(nav).getAllByRole('button').filter((b) => b.getAttribute('aria-current') === 'step');
 
-    expect(current()).toHaveLength(1);
-    expect(current()[0].dataset.stage).toBe('plan');
+    await waitFor(() => {
+      expect(current()).toHaveLength(1);
+      expect(current()[0].dataset.stage).toBe('review');
+    });
 
     fireEvent.click(within(nav).getByRole('button', { name: new RegExp(T.cn2b_stage_readiness.en, 'i') }));
     expect(current()).toHaveLength(1);
     expect(current()[0].dataset.stage).toBe('readiness');
   });
 
-  it('sends focus and scroll to the CORRECT stage section, not merely to some section', async () => {
+  it('focuses the chosen mounted stage without page-scroll navigation', async () => {
     await renderWorkspace();
     const nav = screen.getByRole('navigation', { name: T.cn2b_workflow_label.en });
 
@@ -288,11 +292,11 @@ describe('UX-1 — the workflow navigator', () => {
       scrollIntoView.mockClear();
       fireEvent.click(within(nav).getByRole('button', { name: new RegExp(T[stage.titleKey].en, 'i') }));
 
-      // The stage section is focused — the section carries tabIndex -1 for
-      // exactly this, so a keyboard user continues INSIDE the chosen stage.
-      expect(document.activeElement, stage.id).toBe(document.getElementById(stageDomId(stage.id)));
+      await waitFor(() => {
+        expect(document.activeElement, stage.id).toBe(document.getElementById(stageDomId(stage.id)));
+      });
       expect(document.activeElement, stage.id).toHaveAttribute('tabindex', '-1');
-      expect(scrollIntoView, stage.id).toHaveBeenCalledTimes(1);
+      expect(scrollIntoView, stage.id).not.toHaveBeenCalled();
     }
   });
 });
@@ -334,6 +338,9 @@ describe('UX-1 — the existing panels survive the regrouping', () => {
 
   it('keeps the server-computed readiness verdict and its blockers exactly as before', async () => {
     await renderWorkspace();
+    const nav = screen.getByRole('navigation', { name: T.cn2b_workflow_label.en });
+    fireEvent.click(within(nav).getByRole('button', { name: new RegExp(T.cn2b_stage_readiness.en, 'i') }));
+
     // Completeness is still the SERVER's answer, projected verbatim.
     expect(await screen.findByText(T.cn2b_readiness_blocked.en)).toBeInTheDocument();
     expect(screen.getAllByText(T.cn2b_state_incomplete.en).length).toBeGreaterThan(0);
@@ -341,29 +348,31 @@ describe('UX-1 — the existing panels survive the regrouping', () => {
     expect(screen.getByRole('button', { name: T.cn2b_submit.en })).toBeDisabled();
   });
 
-  it('summarises only figures already on screen, and adds no read of its own', async () => {
+  it('projects server readiness into stage-local progress and stage switching adds no read', async () => {
     await renderWorkspace();
-    const summary = screen.getByRole('region', { name: T.cn2b_summary_label.en });
+    const nav = screen.getByRole('navigation', { name: T.cn2b_workflow_label.en });
+    const stageButton = (id: string) => within(nav).getAllByRole('button').find((button) => button.dataset.stage === id)!;
 
-    /** The value rendered beside one summary label, never "some cell says X". */
-    const metric = (labelKey: string) => {
-      const label = within(summary).getByText(T[labelKey].en);
-      return label.closest('.cn2b-summary__cell')?.querySelector('.cn2b-summary__value')?.textContent;
+    await waitFor(() => expect(stageButton('review')).toHaveAttribute('aria-current', 'step'));
+    expect(stageButton('source')).toHaveAttribute('data-progress', 'complete');
+    expect(stageButton('review')).toHaveAttribute('data-progress', 'needs-action');
+    expect(stageButton('beneficiaries')).toHaveAttribute('data-progress', 'waiting');
+    expect(stageButton('need-lines')).toHaveAttribute('data-progress', 'waiting');
+    expect(stageButton('readiness')).toHaveAttribute('data-progress', 'not-ready');
+
+    const before = {
+      sessions: listImportSessions.mock.calls.length,
+      batches: listImportBatches.mock.calls.length,
+      columns: listBeneficiaryColumns.mock.calls.length,
+      readiness: fetchReviewReadiness.mock.calls.length,
+      lineage: listNeedLineLineage.mock.calls.length,
     };
-
-    expect(metric('cn2b_sum_sessions')).toBe('1/1');        // one completed session, of one
-    expect(metric('cn2b_sum_batches')).toBe('1');
-    expect(metric('cn2b_sum_columns')).toBe('1/1');         // one decided column, of one
-    expect(metric('cn2b_sum_need_lines')).toBe('0');
-    expect(metric('cn2b_sum_blockers')).toBe('1');          // the server's blocker, counted not judged
-
-    // The strip is rendered from state the panels already loaded: the revision
-    // reads happened ONCE each, exactly as before UX-1.
-    expect(listImportSessions).toHaveBeenCalledTimes(1);
-    expect(listImportBatches).toHaveBeenCalledTimes(1);
-    expect(listBeneficiaryColumns).toHaveBeenCalledTimes(1);
-    expect(fetchReviewReadiness).toHaveBeenCalledTimes(1);
-    expect(listNeedLineLineage).toHaveBeenCalledTimes(1);
+    for (const stage of CENTRAL_NEEDS_STAGES) fireEvent.click(stageButton(stage.id));
+    expect(listImportSessions).toHaveBeenCalledTimes(before.sessions);
+    expect(listImportBatches).toHaveBeenCalledTimes(before.batches);
+    expect(listBeneficiaryColumns).toHaveBeenCalledTimes(before.columns);
+    expect(fetchReviewReadiness).toHaveBeenCalledTimes(before.readiness);
+    expect(listNeedLineLineage).toHaveBeenCalledTimes(before.lineage);
   });
 });
 
@@ -373,7 +382,10 @@ describe('UX-1 — the existing panels survive the regrouping', () => {
 describe('UX-1 — Annual Needs actions stay permission-driven', () => {
   it('offers import and edit actions only to the effective keys that always gated them', async () => {
     await renderWorkspace();
+    let nav = screen.getByRole('navigation', { name: T.cn2b_workflow_label.en });
+    fireEvent.click(within(nav).getByRole('button', { name: new RegExp(T.cn2b_stage_source.en, 'i') }));
     expect(screen.getByLabelText(T.cn2b_choose_file.en)).toBeInTheDocument();
+    fireEvent.click(within(nav).getByRole('button', { name: new RegExp(T.cn2b_stage_plan.en, 'i') }));
     expect(screen.getByRole('button', { name: T.cn2b_open_draft.en })).toBeInTheDocument();
 
     cleanup();
@@ -381,11 +393,15 @@ describe('UX-1 — Annual Needs actions stay permission-driven', () => {
     loadRevision();
     appState.myPermissions = new Set();
     await renderWorkspace();
+    nav = screen.getByRole('navigation', { name: T.cn2b_workflow_label.en });
 
     // No role is supplied to this render AT ALL — nothing but the empty
     // effective set could admit these, and it does not.
+    fireEvent.click(within(nav).getByRole('button', { name: new RegExp(T.cn2b_stage_source.en, 'i') }));
     expect(screen.queryByLabelText(T.cn2b_choose_file.en)).toBeNull();
+    fireEvent.click(within(nav).getByRole('button', { name: new RegExp(T.cn2b_stage_plan.en, 'i') }));
     expect(screen.queryByRole('button', { name: T.cn2b_open_draft.en })).toBeNull();
+    fireEvent.click(within(nav).getByRole('button', { name: new RegExp(T.cn2b_stage_readiness.en, 'i') }));
     expect(screen.queryByRole('button', { name: T.cn2b_submit.en })).toBeNull();
   });
 
@@ -393,6 +409,8 @@ describe('UX-1 — Annual Needs actions stay permission-driven', () => {
     appState.myPermissions = new Set(['central_needs.approve']);
     loadRevision({ ...REVISION, status: 'submitted' });
     await renderWorkspace();
+    let nav = screen.getByRole('navigation', { name: T.cn2b_workflow_label.en });
+    fireEvent.click(within(nav).getByRole('button', { name: new RegExp(T.cn2b_stage_readiness.en, 'i') }));
     expect(screen.getByRole('button', { name: T.cn2b_approve.en })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: T.cn2b_reject.en })).toBeInTheDocument();
 
@@ -401,6 +419,8 @@ describe('UX-1 — Annual Needs actions stay permission-driven', () => {
     loadRevision({ ...REVISION, status: 'submitted' });
     appState.myPermissions = new Set(['central_needs.edit']);
     await renderWorkspace();
+    nav = screen.getByRole('navigation', { name: T.cn2b_workflow_label.en });
+    fireEvent.click(within(nav).getByRole('button', { name: new RegExp(T.cn2b_stage_readiness.en, 'i') }));
     expect(screen.queryByRole('button', { name: T.cn2b_approve.en })).toBeNull();
     expect(screen.queryByRole('button', { name: T.cn2b_reject.en })).toBeNull();
   });
@@ -451,7 +471,7 @@ describe('UX-1 — Arabic RTL and English LTR are the same shell', () => {
     const { container: ltr } = await renderWorkspace();
     const ltrStages = [...ltr.querySelectorAll<HTMLElement>('section.cn2b-stage')].map((s) => s.dataset.stage);
     const ltrButtons = within(screen.getByRole('navigation', { name: T.cn2b_workflow_label.en }))
-      .getAllByRole('button').map((b) => b.dataset.stage);
+      .getAllByRole('button').filter((b) => Boolean(b.dataset.stage)).map((b) => b.dataset.stage);
 
     cleanup();
     vi.clearAllMocks();
@@ -463,7 +483,7 @@ describe('UX-1 — Arabic RTL and English LTR are the same shell', () => {
     expect([...rtl.querySelectorAll<HTMLElement>('section.cn2b-stage')].map((s) => s.dataset.stage))
       .toEqual(ltrStages);
     const arabicNav = screen.getByRole('navigation', { name: T.cn2b_workflow_label.ar });
-    expect(within(arabicNav).getAllByRole('button').map((b) => b.dataset.stage)).toEqual(ltrButtons);
+    expect(within(arabicNav).getAllByRole('button').filter((b) => Boolean(b.dataset.stage)).map((b) => b.dataset.stage)).toEqual(ltrButtons);
     expect(within(arabicNav).getByText(T.cn2b_stage_readiness.ar)).toBeInTheDocument();
   });
 
@@ -480,7 +500,7 @@ describe('UX-1 — Arabic RTL and English LTR are the same shell', () => {
     const css = read('src/shared/lib/central-needs.css');
     expect(css).not.toMatch(/(^|[\s;{])(margin-left|margin-right|padding-left|padding-right|left|right)\s*:/m);
     for (const selector of [
-      '.cn2b-workflow__list', '.cn2b-stagelink', '.cn2b-stage__title', '.cn2b-summary__grid',
+      '.cn2b-workflow__list', '.cn2b-stagelink', '.cn2b-stage__title', '.cn2b-guidance', '.cn2b-work-session',
     ]) expect(css, selector).toContain(selector);
     // The rail scrolls inside itself; the document must never widen for it.
     expect(css).toMatch(/\.cn2b-workflow__list\s*\{[^}]*overflow-x:\s*auto/);
@@ -497,6 +517,13 @@ describe('UX-1 — Arabic RTL and English LTR are the same shell', () => {
       'cn2b_sum_sessions', 'cn2b_sum_batches', 'cn2b_sum_columns',
       'cn2b_sum_need_lines', 'cn2b_sum_blockers',
       'cn2b_stage_review_waiting', 'cn2b_stage_revision_waiting',
+      'cn2b_stage_of', 'cn2b_show_stages', 'cn2b_hide_stages',
+      'cn2b_stage_state_context', 'cn2b_stage_state_complete', 'cn2b_stage_state_needs_action',
+      'cn2b_stage_state_waiting', 'cn2b_stage_state_unknown', 'cn2b_stage_state_refreshing',
+      'cn2b_stage_state_not_ready', 'cn2b_stage_state_ready', 'cn2b_stage_state_submitted', 'cn2b_stage_state_approved',
+      'cn2b_stage_operation_running', 'cn2b_stage_result_new', 'cn2b_current_task', 'cn2b_recommended_task',
+      'cn2b_work_session', 'cn2b_work_session_search', 'cn2b_work_session_change_confirm',
+      'cn2b_workspace_loading',
     ];
     for (const key of keys) {
       expect(T[key], key).toBeDefined();
@@ -508,5 +535,131 @@ describe('UX-1 — Arabic RTL and English LTR are the same shell', () => {
     // existing completeness check reads the screen, not this new module.
     const nav = read('src/features/central-needs/CentralNeedsWorkflowNav.tsx');
     for (const [, key] of nav.matchAll(/'(cn2b_[a-z0-9_]+)'/g)) expect(T[key], key).toBeDefined();
+  });
+});
+
+// ============================================================================
+// G. UX-3R v1.0.2 §7 — default stage selection and the initial loading state.
+// ============================================================================
+describe('UX-3R §7 — default stage selection', () => {
+  /** Stage sections are always mounted (§4.3); only one may be VISIBLE. */
+  const visibleStages = () => [...document.querySelectorAll<HTMLElement>('section.cn2b-stage')]
+    .filter((section) => !section.hasAttribute('hidden'))
+    .map((section) => section.dataset.stage);
+
+  const navButton = (id: string) =>
+    within(screen.getByRole('navigation', { name: T.cn2b_workflow_label.en }))
+      .getAllByRole('button').find((button) => button.dataset.stage === id)!;
+
+  const workspaceLoading = () => document.querySelector('.cn2b-workspace-loading');
+
+  it('renders the workspace loading state instead of painting Stage 1 first (§7.2)', async () => {
+    let releaseReadiness!: (value: ReviewReadiness) => void;
+    fetchReviewReadiness.mockImplementation(() => new Promise((resolve) => { releaseReadiness = resolve; }));
+
+    render(<CentralNeedsScreen />);
+    await waitFor(() => expect(listBeneficiaryColumns).toHaveBeenCalledWith(REV));
+
+    // NOTHING is painted yet, so there is nothing to visually jump away from
+    // when readiness lands. Stage 1 in particular must not be shown and then
+    // replaced — that jump is exactly what §7.2 forbids.
+    expect(visibleStages()).toEqual([]);
+    expect(workspaceLoading()).not.toBeNull();
+    expect(workspaceLoading()).toHaveTextContent(T.cn2b_workspace_loading.en);
+    // §4.3 - the page owns ONE polite status region. The guidance strip is it,
+    // so the workspace placeholder must not announce the same text a second time.
+    expect(workspaceLoading()).not.toHaveAttribute('role');
+    expect(document.querySelector('.cn2b-guidance')).toHaveAttribute('aria-live', 'polite');
+    expect(document.querySelector('.cn2b-guidance')).toHaveTextContent(T.cn2b_workspace_loading.en);
+    // §4.3 still holds: every stage subtree stays mounted while hidden.
+    expect(document.querySelectorAll('section.cn2b-stage')).toHaveLength(6);
+
+    releaseReadiness(READINESS);
+    // READINESS carries target_entity_without_disposition, so Review is the
+    // first stage that needs action.
+    await waitFor(() => expect(visibleStages()).toEqual(['review']));
+    expect(workspaceLoading()).toBeNull();
+  });
+
+  it('never paints Stage 1 while the revision list itself is still loading (§7.1 vs §7.2)', async () => {
+    // "No revision exists" is only KNOWN once the revision list has answered.
+    // Until then the screen is still loading, so Stage 1 must not be painted and
+    // then replaced. A real-browser DOM timeline caught exactly that transient
+    // paint, so this test records every painted state rather than sampling one.
+    const painted: string[] = [];
+    const observer = new MutationObserver(() => {
+      const current = visibleStages().join(',');
+      if (painted[painted.length - 1] !== current) painted.push(current);
+    });
+    observer.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['hidden'] });
+
+    let releaseRevisions!: (rows: PlanRevision[]) => void;
+    listPlanRevisions.mockImplementation(() => new Promise((resolve) => { releaseRevisions = resolve; }));
+    try {
+      render(<CentralNeedsScreen />);
+      await waitFor(() => expect(listPlanRevisions).toHaveBeenCalled());
+      expect(visibleStages()).toEqual([]);
+      expect(workspaceLoading()).not.toBeNull();
+
+      releaseRevisions([REVISION]);
+      await waitFor(() => expect(visibleStages()).toEqual(['review']));
+    } finally {
+      observer.disconnect();
+    }
+    expect(
+      painted.filter((state) => state.split(',').includes('plan')),
+      `painted sequence: ${JSON.stringify(painted)}`,
+    ).toEqual([]);
+  });
+
+  it('opens Stage 1 immediately when no revision exists, with no loading state (§7.1)', async () => {
+    listPlanRevisions.mockResolvedValue([]);
+    render(<CentralNeedsScreen />);
+    await waitFor(() => expect(listPlanRevisions).toHaveBeenCalled());
+    await waitFor(() => expect(visibleStages()).toEqual(['plan']));
+    expect(workspaceLoading()).toBeNull();
+  });
+
+  it('opens the first Stage 2–5 that needs action (§7.3)', async () => {
+    fetchReviewReadiness.mockResolvedValue({
+      ...READINESS,
+      blockers: [{ blocker: 'beneficiary_column_review_required', detail: `session=${SESSION_ID} sheet=0 column=5` }],
+    } as ReviewReadiness);
+    await renderWorkspace();
+    await waitFor(() => expect(visibleStages()).toEqual(['beneficiaries']));
+  });
+
+  it('opens Stage 6 when the server reports the draft ready (§7.3)', async () => {
+    fetchReviewReadiness.mockResolvedValue({ ...READINESS, ready: true, blockers: [] } as ReviewReadiness);
+    await renderWorkspace();
+    await waitFor(() => expect(visibleStages()).toEqual(['readiness']));
+  });
+
+  it('never hijacks a stage the operator chose while readiness was still loading (§7.5)', async () => {
+    let releaseReadiness!: (value: ReviewReadiness) => void;
+    fetchReviewReadiness.mockImplementation(() => new Promise((resolve) => { releaseReadiness = resolve; }));
+
+    render(<CentralNeedsScreen />);
+    await waitFor(() => expect(listBeneficiaryColumns).toHaveBeenCalledWith(REV));
+
+    fireEvent.click(navButton('need-lines'));
+    await waitFor(() => expect(visibleStages()).toEqual(['need-lines']));
+
+    releaseReadiness(READINESS);
+    // The recommendation becomes visible on the navigator, but it does not move
+    // the operator off the stage they asked for.
+    await waitFor(() => expect(navButton('review').dataset.progress).toBe('needs-action'));
+    expect(visibleStages()).toEqual(['need-lines']);
+  });
+
+  it('does not move keyboard focus when it chooses the initial stage (§7.4)', async () => {
+    await renderWorkspace();
+    await waitFor(() => expect(visibleStages()).toEqual(['review']));
+    // Automatic selection is silent for a keyboard user.
+    expect(document.activeElement).toBe(document.body);
+
+    // An EXPLICIT navigation still moves focus into the requested stage.
+    fireEvent.click(navButton('need-lines'));
+    await waitFor(() => expect(document.activeElement?.id).toBe(stageDomId('need-lines')));
   });
 });

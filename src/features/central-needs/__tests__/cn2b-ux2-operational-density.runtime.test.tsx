@@ -173,6 +173,8 @@ function loadAll() {
 async function renderWorkbench() {
   const view = render(<CentralNeedsScreen />);
   await waitFor(() => expect(listSourceRecords).toHaveBeenCalledWith(SESSION_ID));
+  const nav = screen.getByRole('navigation', { name: T.cn2b_workflow_label.en });
+  fireEvent.click(within(nav).getByRole('button', { name: new RegExp(T.cn2b_stage_review.en, 'i') }));
   // The entity id appears twice per row (the visually-hidden checkbox label and
   // the row header code), so wait on the painted table rather than on the text.
   await waitFor(() => expect(visibleEntities()).toHaveLength(3));
@@ -354,6 +356,48 @@ describe('UX-2A — bulk disposition still previews before it confirms', () => {
 });
 
 // ============================================================================
+// UX-3R Package B — a confirmed Stage 3 write never leaves an old ✓ standing.
+// ============================================================================
+describe('UX-3R Package B — stage progress after a confirmed Stage 3 write', () => {
+  const progressOf = (id: string) =>
+    within(screen.getByRole('navigation', { name: T.cn2b_workflow_label.en }))
+      .getAllByRole('button').find((b) => b.dataset.stage === id)?.dataset.progress;
+
+  it('shows refreshing, never a stale complete, while readiness is re-read, then projects the server answer', async () => {
+    await renderWorkbench();
+    // Before the write the server reports no blocker, so every workflow stage is complete.
+    await waitFor(() => expect(progressOf('review')).toBe('complete'));
+
+    let releaseReadiness!: () => void;
+    fetchReviewReadiness.mockImplementation(() => new Promise((resolve) => {
+      releaseReadiness = () => resolve({
+        ...READINESS,
+        blockers: [{ blocker: 'target_entity_without_disposition', detail: `session=${SESSION_ID} target_entity=x` }],
+      });
+    }));
+    setRecordDisposition.mockResolvedValue(undefined);
+
+    fireEvent.click(screen.getByRole('checkbox', { name: ROW_UNDECIDED }));
+    fireEvent.change(screen.getByLabelText(T.cn2b_bulk_reason.en), { target: { value: 'Not a dispensable material' } });
+    fireEvent.click(screen.getByRole('button', { name: T.cn2b_bulk_preview.en }));
+    fireEvent.click(screen.getByRole('button', { name: T.cn2b_bulk_confirm.en }));
+
+    await waitFor(() => expect(setRecordDisposition).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(fetchReviewReadiness).toHaveBeenCalledTimes(2));
+    // The write is confirmed but the server has not answered yet: no stage may keep its old ✓.
+    for (const id of ['source', 'review', 'beneficiaries', 'need-lines']) {
+      expect(progressOf(id), `${id} kept a stale completion during readback`).toBe('refreshing');
+    }
+
+    releaseReadiness();
+    await waitFor(() => expect(progressOf('review')).toBe('needs-action'));
+    expect(progressOf('source')).toBe('complete');
+    expect(progressOf('beneficiaries')).toBe('waiting');
+    expect(progressOf('need-lines')).toBe('waiting');
+  });
+});
+
+// ============================================================================
 // E. The source-search toolbar names its four states.
 // ============================================================================
 describe('UX-2A — source search state model', () => {
@@ -398,6 +442,9 @@ describe('UX-2A — source search state model', () => {
 
   it('clears back to NOT STARTED and writes nothing', async () => {
     await renderWorkbench();
+    // UX-3R: the evidence search lives in the Source stage, which must be the active stage to be operable.
+    const nav = screen.getByRole('navigation', { name: T.cn2b_workflow_label.en });
+    fireEvent.click(within(nav).getByRole('button', { name: new RegExp(T.cn2b_stage_source.en, 'i') }));
     searchSourceFiles.mockResolvedValue([{ id: 'f1', originalFilename: 'needs-2026.xlsx', fileHash: 'a'.repeat(64) }]);
     searchBatchEntries.mockResolvedValue([]);
     fireEvent.change(screen.getByLabelText(T.cn2b_source_search.en), { target: { value: 'needs' } });
@@ -698,9 +745,16 @@ describe('UX-2A corrective — revision-scoped isolation', () => {
     expect(visibleEntities(), 'A review rows rendered under B').toHaveLength(0);
     expect(document.querySelector('.cn2b-table--review')).toBeNull();
 
-    // And the counts refuse to attribute a number to an unproven revision.
-    const summary = screen.getByRole('region', { name: T.cn2b_summary_label.en });
-    expect(within(summary).getAllByText('—').length).toBeGreaterThan(0);
+    // And no progress is attributed to an unproven revision. UX-3R replaced the global
+    // summary counts with the server-readiness stage projection in the navigator, so the
+    // same render-time guard is asserted there: A's readiness must not paint B's stages.
+    const nav = screen.getByRole('navigation', { name: T.cn2b_workflow_label.en });
+    for (const id of ['source', 'review', 'beneficiaries', 'need-lines', 'readiness']) {
+      const button = within(nav).getAllByRole('button').find((b) => b.dataset.stage === id);
+      expect(button, `${id} stage button`).toBeDefined();
+      expect(['unknown', 'refreshing'], `${id} progress attributed under an unproven revision`)
+        .toContain(button!.dataset.progress);
+    }
 
     // Settle B so the test leaves no pending work behind.
     await waitFor(() => expect(listImportBatches).toHaveBeenCalledWith(REV_B));

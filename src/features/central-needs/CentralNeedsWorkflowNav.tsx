@@ -1,21 +1,19 @@
 /**
- * UX-1 — the Annual Needs workflow navigator.
+ * UX-3R Package B — controlled Annual Needs task navigator.
  *
- * PRESENTATION ONLY. This module holds no business truth, reads no service,
- * and decides no authorization. It exists so the six workflow stages are
- * declared ONCE, in order, and the navigator and the workspace sections are
- * driven by that same declaration — a stage can therefore never appear in the
- * rail and be missing from the page, or drift out of order between the two.
+ * The parent owns the selected/open stage. The rail never decides progress,
+ * authorization, or readiness: it only renders the server-backed presentation
+ * state supplied by CentralNeedsScreen.
  *
- * WHY IT NAVIGATES RATHER THAN SWITCHES. Every stage stays mounted; this rail
- * scrolls and focuses, it does not swap content in and out. Conditional
- * unmounting would change which data each panel loads and when, which is a
- * behavioural change this UX pass is deliberately not making. Reaching a stage
- * is a scroll, never a route — application routing is untouched.
+ * All six stage subtrees stay mounted in the page. Only the selected stage is
+ * visually/semantically active; switching stages is presentation state, never
+ * a route and never business completion.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { t, type Lang } from '@/shared/i18n/strings';
 import { PhoenixIcon, type PhoenixIconName } from '@/shared/ui/PhoenixIcon';
+import type { CentralNeedsStageProgressMap } from './CentralNeedsWorkspaceState';
+import { stageProgressLabelKey } from './CentralNeedsWorkspaceState';
 
 export type CentralNeedsStageId =
   | 'plan'
@@ -27,19 +25,10 @@ export type CentralNeedsStageId =
 
 export interface CentralNeedsStage {
   readonly id: CentralNeedsStageId;
-  /** An explicit dictionary key, never a composed one, so the bilingual
-   *  completeness check can see every label this surface can render. */
   readonly titleKey: string;
   readonly icon: PhoenixIconName;
 }
 
-/**
- * THE six stages, in the order of the trust story the screen tells:
- * SOURCE → PARSER EVIDENCE → CANONICAL MAPPING → MANUAL OVERRIDE → REVIEW
- * STATE. Plan first because nothing can be imported into a revision that was
- * never opened; readiness last because the server computes it from everything
- * above it.
- */
 export const CENTRAL_NEEDS_STAGES: readonly CentralNeedsStage[] = [
   { id: 'plan', titleKey: 'cn2b_stage_plan', icon: 'reports' },
   { id: 'source', titleKey: 'cn2b_stage_source', icon: 'warehouse' },
@@ -49,103 +38,110 @@ export const CENTRAL_NEEDS_STAGES: readonly CentralNeedsStage[] = [
   { id: 'readiness', titleKey: 'cn2b_stage_readiness', icon: 'check' },
 ];
 
-/** The DOM id of a stage section — one spelling, shared by the rail and the page. */
 export function stageDomId(id: CentralNeedsStageId): string {
   return `cn2b-stage-${id}`;
 }
 
-/** The DOM id of a stage's heading, for `aria-labelledby`. */
 export function stageTitleDomId(id: CentralNeedsStageId): string {
   return `${stageDomId(id)}-title`;
 }
 
-/**
- * Marks whichever stage currently occupies the top of the reading area.
- *
- * Deliberately guarded rather than required: IntersectionObserver is absent in
- * the jsdom test environment and in any non-browser render, and a navigator
- * that throws there would be a worse outcome than one that simply highlights
- * the stage last chosen. Clicking always sets the active stage directly, so
- * the indicator is correct with or without the observer.
- */
-function useActiveStage(): [CentralNeedsStageId, (id: CentralNeedsStageId) => void] {
-  const [active, setActive] = useState<CentralNeedsStageId>(CENTRAL_NEEDS_STAGES[0].id);
-  /** Set by a click; suppresses observer churn while a smooth scroll is in flight. */
-  const pinnedUntil = useRef(0);
+interface Props {
+  lang: Lang;
+  activeStage: CentralNeedsStageId | null;
+  stageProgress: CentralNeedsStageProgressMap;
+  busyStage?: CentralNeedsStageId | null;
+  resultStage?: CentralNeedsStageId | null;
+  onStageChange: (id: CentralNeedsStageId) => void;
+}
 
-  useEffect(() => {
-    if (typeof IntersectionObserver === 'undefined' || typeof document === 'undefined') return;
-    const sections = CENTRAL_NEEDS_STAGES
-      .map((stage) => document.getElementById(stageDomId(stage.id)))
-      .filter((el): el is HTMLElement => el !== null);
-    if (sections.length === 0) return;
+export function CentralNeedsWorkflowNav({
+  lang,
+  activeStage,
+  stageProgress,
+  busyStage = null,
+  resultStage = null,
+  onStageChange,
+}: Props) {
+  const [mobileExpanded, setMobileExpanded] = useState(false);
+  const activeIndex = CENTRAL_NEEDS_STAGES.findIndex((stage) => stage.id === activeStage);
+  const active = CENTRAL_NEEDS_STAGES[activeIndex] ?? CENTRAL_NEEDS_STAGES[0];
 
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (Date.now() < pinnedUntil.current) return;
-        const visible = entries
-          .filter((e) => e.isIntersecting)
-          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
-        if (!visible) return;
-        const id = visible.target.id.replace('cn2b-stage-', '') as CentralNeedsStageId;
-        if (CENTRAL_NEEDS_STAGES.some((s) => s.id === id)) setActive(id);
-      },
-      // Bias towards the top of the reading area: a stage counts as current
-      // once its heading reaches the upper third, not when its last row leaves.
-      { rootMargin: '0px 0px -66% 0px', threshold: 0 },
-    );
-    for (const section of sections) observer.observe(section);
-    return () => observer.disconnect();
+  const focusStage = useCallback((id: CentralNeedsStageId) => {
+    if (typeof document === 'undefined') return;
+    const run = () => document.getElementById(stageDomId(id))?.focus?.({ preventScroll: true });
+    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(run);
+    else queueMicrotask(run);
   }, []);
 
   const choose = useCallback((id: CentralNeedsStageId) => {
-    pinnedUntil.current = Date.now() + 900;
-    setActive(id);
-  }, []);
-
-  return [active, choose];
-}
-
-/**
- * The six-stage rail. Horizontal on desktop, horizontally scrollable on a
- * phone — never wider than its container, so the document itself never gains a
- * horizontal scrollbar.
- */
-export function CentralNeedsWorkflowNav({ lang }: { lang: Lang }) {
-  const [active, choose] = useActiveStage();
-
-  const goToStage = useCallback((id: CentralNeedsStageId) => {
-    choose(id);
-    if (typeof document === 'undefined') return;
-    const section = document.getElementById(stageDomId(id));
-    if (!section) return;
-    // Focus first, so a keyboard user lands in the stage they asked for; the
-    // section carries tabIndex -1 for exactly this reason and is not a tab stop.
-    section.focus?.({ preventScroll: true });
-    section.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
-  }, [choose]);
+    onStageChange(id);
+    setMobileExpanded(false);
+    focusStage(id);
+  }, [focusStage, onStageChange]);
 
   return (
     <nav className="cn2b-workflow" aria-label={t('cn2b_workflow_label', lang)}>
-      <ol className="cn2b-workflow__list">
-        {CENTRAL_NEEDS_STAGES.map((stage, index) => (
-          <li key={stage.id} className="cn2b-workflow__item">
-            <button
-              type="button"
-              className="cn2b-stagelink"
-              data-stage={stage.id}
-              data-active={stage.id === active}
-              aria-current={stage.id === active ? 'step' : undefined}
-              onClick={() => goToStage(stage.id)}
-            >
-              <span className="cn2b-stagelink__ordinal" aria-hidden="true">{index + 1}</span>
-              <span className="cn2b-stagelink__icon" aria-hidden="true">
-                <PhoenixIcon name={stage.icon} size={14} />
-              </span>
-              <span className="cn2b-stagelink__label">{t(stage.titleKey, lang)}</span>
-            </button>
-          </li>
-        ))}
+      <button
+        type="button"
+        className="cn2b-workflow__mobile-toggle"
+        aria-label={mobileExpanded ? t('cn2b_hide_stages', lang) : t('cn2b_show_stages', lang)}
+        aria-expanded={mobileExpanded}
+        aria-controls="cn2b-workflow-stages"
+        onClick={() => setMobileExpanded((value) => !value)}
+      >
+        {activeStage === null ? (
+          /* §7.2 - no stage is chosen yet, so the toggle must not announce one. */
+          <strong>{t('cn2b_workspace_loading', lang)}</strong>
+        ) : (
+          <>
+            <span>{t('cn2b_stage_of', lang)} {activeIndex + 1}/{CENTRAL_NEEDS_STAGES.length}</span>
+            <strong>{t(active.titleKey, lang)}</strong>
+          </>
+        )}
+        <span>{mobileExpanded ? t('cn2b_hide_stages', lang) : t('cn2b_show_stages', lang)}</span>
+      </button>
+
+      <ol
+        id="cn2b-workflow-stages"
+        className="cn2b-workflow__list"
+        data-mobile-expanded={mobileExpanded}
+      >
+        {CENTRAL_NEEDS_STAGES.map((stage, index) => {
+          const isActive = activeStage !== null && stage.id === activeStage;
+          const progress = stageProgress[stage.id];
+          const operationRunning = busyStage === stage.id;
+          const hasNewResult = resultStage === stage.id && !operationRunning;
+          return (
+            <li key={stage.id} className="cn2b-workflow__item">
+              <button
+                type="button"
+                className="cn2b-stagelink"
+                data-stage={stage.id}
+                data-active={isActive}
+                data-progress={progress}
+                data-operation={operationRunning ? 'running' : hasNewResult ? 'result' : undefined}
+                aria-current={isActive ? 'step' : undefined}
+                onClick={() => choose(stage.id)}
+              >
+                <span className="cn2b-stagelink__ordinal" aria-hidden="true">{index + 1}</span>
+                <span className="cn2b-stagelink__icon" aria-hidden="true">
+                  <PhoenixIcon name={stage.icon} size={14} />
+                </span>
+                <span className="cn2b-stagelink__copy">
+                  <span className="cn2b-stagelink__label">{t(stage.titleKey, lang)}</span>
+                  <span className="cn2b-stagelink__progress">
+                    {operationRunning
+                      ? t('cn2b_stage_operation_running', lang)
+                      : hasNewResult
+                        ? t('cn2b_stage_result_new', lang)
+                        : t(stageProgressLabelKey(progress), lang)}
+                  </span>
+                </span>
+              </button>
+            </li>
+          );
+        })}
       </ol>
     </nav>
   );

@@ -92,6 +92,21 @@ async function horizontalOverflow(page: Page) {
   }));
 }
 
+
+/** UX-3R exposes one stage at a time; tests navigate to the surface they exercise. */
+async function showStage(page: Page, id: 'plan' | 'source' | 'review' | 'beneficiaries' | 'need-lines' | 'readiness') {
+  const button = page.locator(`.cn2b-stagelink[data-stage="${id}"]`);
+  if (!(await button.isVisible())) {
+    const toggle = page.locator('.cn2b-workflow__mobile-toggle');
+    if (await toggle.isVisible()) await toggle.click();
+  }
+  await button.click();
+  await expect.poll(
+    () => page.locator(`section.cn2b-stage[data-stage="${id}"]:not([hidden])`).count(),
+    { timeout: 10000 },
+  ).toBe(1);
+}
+
 beforeAll(async () => {
   server = await createServer({
     root: ROOT,
@@ -168,8 +183,10 @@ describe('CN-2B · review surface (real browser)', () => {
   it('renders the authoritatively-verified session and the server-computed INCOMPLETE state', async () => {
     const { context, page } = await open();
     try {
+      await showStage(page, 'source');
       await expect.poll(() => page.getByText('AUTHORITATIVELY VERIFIED').count(), { timeout: 20000 })
         .toBeGreaterThan(0);
+      await showStage(page, 'readiness');
       // Completeness comes from the server's own predicate, projected verbatim.
       expect(await page.getByText('INCOMPLETE').count()).toBeGreaterThan(0);
       expect(await page.getByText('A row has no explicit decision').count()).toBeGreaterThan(0);
@@ -184,6 +201,7 @@ describe('CN-2B · review surface (real browser)', () => {
   it('shows source and effective value as SEPARATE columns, with provenance', async () => {
     const { context, page } = await open();
     try {
+      await showStage(page, 'review');
       await expect.poll(() => page.locator('.cn2b-table--review').count(), { timeout: 20000 }).toBeGreaterThan(0);
       for (const heading of ['Source value', 'Effective value', 'Provenance', 'Decision']) {
         expect(await page.getByRole('columnheader', { name: heading }).count(), heading).toBeGreaterThan(0);
@@ -200,6 +218,7 @@ describe('CN-2B · review surface (real browser)', () => {
   it('renders a markup-looking cell as TEXT and a formula verbatim, never evaluated', async () => {
     const { context, page } = await open();
     try {
+      await showStage(page, 'review');
       await expect.poll(() => page.locator('.cn2b-table--review').count(), { timeout: 20000 }).toBeGreaterThan(0);
       // The literal characters are on screen; no <b> element was created from data.
       expect(await page.getByText('<b>Ibuprofen 400mg</b>').count()).toBeGreaterThan(0);
@@ -214,6 +233,7 @@ describe('CN-2B · review surface (real browser)', () => {
   it('shows both explicit decisions and leaves undecided rows visibly undecided', async () => {
     const { context, page } = await open();
     try {
+      await showStage(page, 'review');
       await expect.poll(() => page.locator('.cn2b-decision').count(), { timeout: 20000 }).toBeGreaterThan(0);
       expect(await page.locator(".cn2b-decision[data-decision='mapped']").count()).toBe(1);
       expect(await page.locator(".cn2b-decision[data-decision='not_applicable']").count()).toBe(1);
@@ -230,6 +250,7 @@ describe('CN-2B · disposition interaction and reason validation (real browser)'
   it('“mark not applicable” stays disabled until a reason is typed', async () => {
     const { context, page } = await open();
     try {
+      await showStage(page, 'review');
       await expect.poll(() => page.getByRole('button', { name: 'Mark not applicable' }).count(), { timeout: 20000 })
         .toBeGreaterThan(0);
       const button = page.getByRole('button', { name: 'Mark not applicable' }).first();
@@ -249,6 +270,7 @@ describe('CN-2B · disposition interaction and reason validation (real browser)'
   it('a bulk action states its exact count and requires a second confirmation', async () => {
     const { context, page } = await open();
     try {
+      await showStage(page, 'review');
       await expect.poll(() => page.getByRole('button', { name: 'Preview effect' }).count(), { timeout: 20000 })
         .toBeGreaterThan(0);
       const preview = page.getByRole('button', { name: 'Preview effect' }).first();
@@ -278,6 +300,7 @@ describe('CN-2B · upload selection and PROVISIONAL preview (real Web Worker)', 
   it('parses a real ZIP through the production worker and labels the result provisional', async () => {
     const { context, page } = await open();
     try {
+      await showStage(page, 'source');
       await expect.poll(() => page.locator("input[type='file']").count(), { timeout: 20000 }).toBeGreaterThan(0);
 
       await page.locator("input[type='file']").setInputFiles({
@@ -321,6 +344,7 @@ describe('CN-2B · annual plan and revision workflow (real browser)', () => {
   it('offers a plan year and an explicit "open annual draft" action', async () => {
     const { context, page } = await open();
     try {
+      await showStage(page, 'plan');
       await expect.poll(() => page.getByLabel('Plan year').count(), { timeout: 20000 }).toBe(1);
       const year = page.getByLabel('Plan year');
       expect(await year.inputValue()).toMatch(/^20\d\d$/);
@@ -354,6 +378,7 @@ describe('CN-2B · annual plan and revision workflow (real browser)', () => {
   it('offers "open next revision" only for a CLOSED revision', async () => {
     const { context, page } = await open();
     try {
+      await showStage(page, 'plan');
       await expect.poll(() => page.getByLabel('Plan year').count(), { timeout: 20000 }).toBe(1);
       // The draft is selected first: superseding is not offered.
       expect(await page.getByRole('button', { name: 'Open next revision' }).count()).toBe(0);
@@ -369,6 +394,20 @@ describe('CN-2B · annual plan and revision workflow (real browser)', () => {
             }
           }
         });
+      // UX-3R §7 - a stage choice belongs to its revision ("Never restore a
+      // stage choice from another revision"), so switching revision re-runs the
+      // default selection behind the workspace loading state (§7.2). This test
+      // used to find the Stage 1 action only inside the Stage 1 flash that §7.2
+      // removes. Wait for the NEW revision to settle, prove the default selection
+      // re-ran, then open Stage 1 explicitly - the same step this test already
+      // takes above - where the supersede action lives.
+      await expect.poll(async () => (
+        (await page.locator('.cn2b-revchip').first().innerText()).includes('2025')
+        && await page.locator('.cn2b-workspace-loading').count() === 0
+        && await page.locator('section.cn2b-stage:not([hidden])').count() === 1
+      ), { timeout: 20000 }).toBe(true);
+      expect(await page.locator('section.cn2b-stage[data-stage="plan"]:not([hidden])').count()).toBe(0);
+      await showStage(page, 'plan');
       await expect.poll(() => page.getByRole('button', { name: 'Open next revision' }).count(), { timeout: 10000 })
         .toBe(1);
     } finally {
@@ -381,6 +420,7 @@ describe('CN-2B · field override editor (real browser)', () => {
   it('opens beside the source value and keeps it visible', async () => {
     const { context, page } = await open();
     try {
+      await showStage(page, 'review');
       await expect.poll(() => page.getByRole('button', { name: 'Override', exact: true }).count(), { timeout: 20000 })
         .toBeGreaterThan(0);
       await page.getByRole('button', { name: 'Override', exact: true }).first().click();
@@ -395,6 +435,7 @@ describe('CN-2B · field override editor (real browser)', () => {
   it('REQUIRES a reason before the override can be saved', async () => {
     const { context, page } = await open();
     try {
+      await showStage(page, 'review');
       await expect.poll(() => page.getByRole('button', { name: 'Override', exact: true }).count(), { timeout: 20000 })
         .toBeGreaterThan(0);
       await page.getByRole('button', { name: 'Override', exact: true }).first().click();
@@ -415,6 +456,7 @@ describe('CN-2B · field override editor (real browser)', () => {
   it('states the value KIND explicitly so nothing is silently coerced', async () => {
     const { context, page } = await open();
     try {
+      await showStage(page, 'review');
       await expect.poll(() => page.getByRole('button', { name: 'Override', exact: true }).count(), { timeout: 20000 })
         .toBeGreaterThan(0);
       await page.getByRole('button', { name: 'Override', exact: true }).first().click();
@@ -439,6 +481,7 @@ describe('CN-2B · field override editor (real browser)', () => {
   it('is a distinct control from the not-applicable disposition', async () => {
     const { context, page } = await open();
     try {
+      await showStage(page, 'review');
       await expect.poll(() => page.getByRole('button', { name: 'Override', exact: true }).count(), { timeout: 20000 })
         .toBeGreaterThan(0);
       // Two different reasons, two different controls, two different RPCs.
@@ -456,6 +499,7 @@ describe('CN-2B · source evidence search (real browser)', () => {
   it('lists the revision\'s own source evidence and filters it', async () => {
     const { context, page } = await open();
     try {
+      await showStage(page, 'source');
       await expect.poll(() => page.getByLabel('Search', { exact: true }).count(), { timeout: 20000 }).toBe(1);
       const search = page.getByLabel('Search', { exact: true });
       await search.fill('');
@@ -479,6 +523,7 @@ describe('CN-2B · source evidence search (real browser)', () => {
   it('search is scoped to the revision and shows fingerprints, not raw locators', async () => {
     const { context, page } = await open();
     try {
+      await showStage(page, 'source');
       await expect.poll(() => page.getByLabel('Search', { exact: true }).count(), { timeout: 20000 }).toBe(1);
       await page.getByLabel('Search', { exact: true }).fill('');
       await page.waitForTimeout(1500);
@@ -497,6 +542,7 @@ describe('CN-2B · Arabic RTL, English LTR, mobile and keyboard', () => {
       await expect.poll(() => page.locator('.cn2b').count(), { timeout: 20000 }).toBeGreaterThan(0);
       const direction = await page.locator('.cn2b').first().evaluate(el => getComputedStyle(el).direction);
       expect(direction).toBe('rtl');
+      await showStage(page, 'source');
       expect(await page.getByText('الاحتياج السنوي').count()).toBeGreaterThan(0);
       expect(await page.getByText('موثّق رسميًا').count()).toBeGreaterThan(0);
     } finally {
@@ -534,6 +580,7 @@ describe('CN-2B · Arabic RTL, English LTR, mobile and keyboard', () => {
   it('keeps the wide review table scrolling inside its own container', async () => {
     const { context, page } = await open({ viewport: { width: 375, height: 812 } });
     try {
+      await showStage(page, 'review');
       await expect.poll(() => page.locator('.cn2b-scroll').count(), { timeout: 20000 }).toBeGreaterThan(0);
       const overflowX = await page.locator('.cn2b-scroll').first().evaluate(el => getComputedStyle(el).overflowX);
       expect(overflowX).toBe('auto');
@@ -563,11 +610,10 @@ describe('CN-2B · Arabic RTL, English LTR, mobile and keyboard', () => {
       // Focus reached CN-2B's own controls, not just the shell.
       expect([...seen].some(t => t.includes('cn2b'))).toBe(true);
 
-      const outline = await page.evaluate(() => {
-        const el = document.querySelector('.cn2b-btn') as HTMLElement | null;
-        if (!el) return null;
-        el.focus();
-        const s = getComputedStyle(el);
+      const reviewStageButton = page.locator('.cn2b-stagelink[data-stage="review"]');
+      await reviewStageButton.focus();
+      const outline = await reviewStageButton.evaluate((el) => {
+        const s = getComputedStyle(el as HTMLElement);
         return { width: s.outlineWidth, style: s.outlineStyle };
       });
       expect(outline).not.toBeNull();
