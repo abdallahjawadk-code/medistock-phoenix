@@ -81,6 +81,13 @@ vi.mock('../central-needs.service', async () => {
 
 const { CentralNeedsScreen } = await import('../CentralNeedsScreen');
 
+
+function showStage(id: 'beneficiaries' | 'need-lines') {
+  const button = document.querySelector<HTMLButtonElement>(`.cn2b-stagelink[data-stage="${id}"]`);
+  expect(button, id).not.toBeNull();
+  fireEvent.click(button!);
+}
+
 const ORGS: OrgRow[] = [
   { id: HOSPITAL_A, name: 'Beneficiary Hospital', name_ar: 'مستشفى المنتفع', code: 'ha', status: 'active', organizationKind: 'care_institution' },
 ] as unknown as OrgRow[];
@@ -141,11 +148,13 @@ describe('CentralNeedsScreen — beneficiary-column mapping reaches the need-lin
     expect(listBeneficiaryColumns).toHaveBeenCalledTimes(1);
 
     // 2. The Need-Line panel's candidate is UNRESOLVED (column not yet confirmed).
+    showStage('need-lines');
     const candidate = await screen.findByTestId('cn2b-nl-candidate');
     expect(candidate).toHaveAttribute('data-beneficiary-resolved', 'false');
     expect(within(candidate).getByTestId('cn2b-nl-candidate-unmapped')).toBeInTheDocument();
 
     // 3. The Beneficiary Column panel shows the SAME physical column, unconfirmed.
+    showStage('beneficiaries');
     expect(screen.getByText(/#5$/)).toBeInTheDocument();
 
     // 4. Confirm it in the (real, unmocked) column panel — this is the ONLY
@@ -173,6 +182,7 @@ describe('CentralNeedsScreen — beneficiary-column mapping reaches the need-lin
 
     // 6. The Need-Line panel's candidate — never told anything directly by
     // this test — now resolves the SAME beneficiary the column panel confirmed.
+    showStage('need-lines');
     await waitFor(() => {
       const c = screen.getByTestId('cn2b-nl-candidate');
       expect(c).toHaveAttribute('data-beneficiary-resolved', 'true');
@@ -189,6 +199,7 @@ describe('CentralNeedsScreen — beneficiary-column mapping reaches the need-lin
 
     setupReload([CONFIRMED_COLUMN]);
     setBeneficiaryColumns.mockResolvedValue({ confirmed: [] });
+    showStage('beneficiaries');
     const columnRow = screen.getByText(/#5$/).parentElement!.parentElement as HTMLElement;
     fireEvent.change(within(columnRow).getByRole('combobox'), { target: { value: HOSPITAL_A } });
     fireEvent.click(within(columnRow).getByRole('button', { name: 'Confirm' }));

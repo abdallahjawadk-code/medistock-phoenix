@@ -62,7 +62,7 @@
  * The decision semantics, the reason contract, the group-apply scope rule and
  * the write-time re-filter are untouched.
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { t } from '@/shared/i18n/strings';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
 import { PhoenixButton } from '@/shared/ui/PhoenixButton';
@@ -86,6 +86,8 @@ interface Props {
   /** Active organizations only — eligibility (care_institution + active) is still re-checked server-side. */
   activeCareInstitutions: OrgRow[];
   onChanged: () => void;
+  /** UX-3R Package B: revision-context guard sees local pending/busy presentation state only. */
+  onActivityChange?: (activity: { busy: boolean; dirty: boolean; failed: boolean }) => void;
 }
 
 type ColumnKey = string; // `${importSessionId}:${sheetIndex}:${columnIndex}`
@@ -146,7 +148,7 @@ function mappingFor(col: BeneficiaryColumnSummary, choice: string): SetBeneficia
 }
 
 export function CentralNeedsBeneficiaryColumnPanel({
-  lang, planRevisionId, editable, columns, activeCareInstitutions, onChanged,
+  lang, planRevisionId, editable, columns, activeCareInstitutions, onChanged, onActivityChange,
 }: Props) {
   const [pendingChoice, setPendingChoice] = useState<Record<ColumnKey, string>>({});
   const [pendingReason, setPendingReason] = useState<Record<ColumnKey, string>>({});
@@ -166,6 +168,27 @@ export function CentralNeedsBeneficiaryColumnPanel({
   const [blockingOnly, setBlockingOnly] = useState(false);
   /** Narrows the picker's option list so a human can find one institution among many. */
   const [institutionQuery, setInstitutionQuery] = useState('');
+
+
+  const dirty = Object.keys(pendingChoice).length > 0
+    || Object.values(pendingReason).some((reason) => reason.trim() !== '')
+    || groupConfirm !== null;
+
+  useEffect(() => {
+    onActivityChange?.({ busy, dirty, failed: error !== null });
+  }, [busy, dirty, error, onActivityChange]);
+
+  /** Revision changes must never carry a pending beneficiary decision forward. */
+  useEffect(() => {
+    setPendingChoice({});
+    setPendingReason({});
+    setGroupConfirm(null);
+    setError(null);
+    setTextFilter('');
+    setStateFilter('all');
+    setBlockingOnly(false);
+    setInstitutionQuery('');
+  }, [planRevisionId]);
 
   const filtersActive = textFilter.trim() !== '' || stateFilter !== 'all' || blockingOnly;
 

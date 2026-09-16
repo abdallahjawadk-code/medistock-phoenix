@@ -22,7 +22,7 @@
  * therefore states exactly how many entities it will change and requires a
  * second, explicit confirmation before any RPC is called.
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
@@ -46,6 +46,8 @@ interface Props {
   organizationId: string;
   canEdit: boolean;
   onChanged: () => void;
+  /** UX-3R Package B: session switching must not silently discard local work. */
+  onActivityChange?: (activity: { busy: boolean; dirty: boolean; failed: boolean }) => void;
 }
 
 interface EntityGroup {
@@ -136,6 +138,7 @@ export function CentralNeedsDispositionTable({
   overrides,
   canEdit,
   onChanged,
+  onActivityChange,
 }: Props) {
   const { lang } = useApp();
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
@@ -152,6 +155,33 @@ export function CentralNeedsDispositionTable({
   const [overrideRaw, setOverrideRaw] = useState('');
   const [overrideReason, setOverrideReason] = useState('');
   const [overrideNote, setOverrideNote] = useState('');
+
+
+  const dirty = selected.size > 0
+    || bulkReason.trim() !== ''
+    || bulkPreview !== null
+    || overrideFor !== null
+    || overrideRaw !== ''
+    || overrideReason.trim() !== ''
+    || overrideNote.trim() !== '';
+
+  useEffect(() => {
+    onActivityChange?.({ busy, dirty, failed: error !== null });
+  }, [busy, dirty, error, onActivityChange]);
+
+  /** A confirmed Work Session change discards only session-local draft UI. */
+  useEffect(() => {
+    setSelected(new Set());
+    setBulkReason('');
+    setBulkPreview(null);
+    setItemQuery('');
+    setItems([]);
+    setError(null);
+    setOverrideFor(null);
+    setOverrideRaw('');
+    setOverrideReason('');
+    setOverrideNote('');
+  }, [importSessionId]);
 
   const groups = useMemo<EntityGroup[]>(() => {
     const byEntity = new Map<string, EntityGroup>();
