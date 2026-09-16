@@ -54,6 +54,11 @@ beforeAll(async () => {
   mkdirSync(EVIDENCE, { recursive: true });
   server = await createServer({
     root: ROOT,
+    // Own optimizer cache. Vite deletes and rebuilds `node_modules/.vite/deps`
+    // whenever a server starts with a different optimizer config, and this one
+    // pre-bundles `xlsx`; sharing the default cache with the plain browser
+    // suites made each side serve "504 Outdated Optimize Dep" to the other.
+    cacheDir: join(ROOT, 'node_modules', '.vite-ux3r-package-b-visual'),
     logLevel: 'error',
     server: { host: '127.0.0.1', port: 0, strictPort: false },
     optimizeDeps: { include: ['xlsx'] },
