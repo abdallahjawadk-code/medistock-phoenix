@@ -99,6 +99,7 @@ import {
   type SourceRecord,
 } from './central-needs.service';
 import type { ArchiveParseResult, FileParseResult } from './import/contract.ts';
+import { CentralNeedsSimpleWorkspace } from './simple/CentralNeedsSimpleWorkspace';
 
 type Busy = null | 'verifying' | 'submitting' | 'approving' | 'rejecting' | 'abandoning' | 'opening';
 type ChildActivity = { busy: boolean; dirty: boolean; failed: boolean };
@@ -236,6 +237,20 @@ export function CentralNeedsScreen() {
   const canImport = myPermissions.has('central_needs.import');
   const canEdit = myPermissions.has('central_needs.edit');
   const canApprove = myPermissions.has('central_needs.approve');
+
+  /**
+   * Simple/Advanced presentation switch. Both modes read and write the SAME
+   * state declared below — switching this never touches any of it.
+   *
+   * Defaults to 'advanced' in THIS build: every existing runtime test in
+   * this feature renders `<CentralNeedsScreen />` and asserts against the
+   * six-stage workspace immediately, per the owner task's own requirement
+   * that existing tests stay green without being rewritten. Making Simple
+   * Mode the normal employee's landing view is a follow-up presentation
+   * decision (and a one-line default-flip) for a separately authorized
+   * task — see CORPUS-CONTRACT.md / the final report's open findings.
+   */
+  const [mode, setMode] = useState<'simple' | 'advanced'>('advanced');
 
   const [revisions, setRevisions] = useState<PlanRevision[]>([]);
   const [revisionId, setRevisionId] = useState<string | null>(null);
@@ -1266,9 +1281,51 @@ export function CentralNeedsScreen() {
             </span>
           )}
           {revisionDataReady && readiness && (readiness.ready ? <StateBadge state="ready" /> : <StateBadge state="incomplete" />)}
+          {/*
+            Simple/Advanced is presentation only — see the `mode` state
+            declaration. Neither branch reloads or recomputes any of the
+            state declared above; switching only changes which JSX renders.
+          */}
+          <button
+            type="button"
+            className="cn2b-btn"
+            data-testid="cn2b-mode-toggle"
+            onClick={() => setMode((m) => (m === 'simple' ? 'advanced' : 'simple'))}
+          >
+            {mode === 'simple' ? t('cn2b_simple_switch_to_advanced', lang) : t('cn2b_simple_switch_to_simple', lang)}
+          </button>
         </div>
       </header>
 
+      {mode === 'simple' ? (
+        <CentralNeedsSimpleWorkspace
+          lang={lang}
+          planYear={planYear}
+          onPlanYearChange={setPlanYear}
+          revisionsLoading={revisionsLoading}
+          revision={revision}
+          isDraft={isDraft}
+          revisionDataReady={revisionDataReady}
+          canImport={canImport}
+          canEdit={canEdit}
+          busy={busy !== null}
+          onOpenRevision={(openNext) => void onOpenRevision(openNext)}
+          preview={preview.state}
+          pendingFile={pendingFile}
+          onPickFile={onPickFile}
+          onVerify={() => void onVerify()}
+          error={error}
+          readiness={readiness}
+          beneficiaryColumns={beneficiaryColumns}
+          careInstitutions={careInstitutions}
+          records={records}
+          dispositions={dispositions}
+          activeSessionId={activeSessionId}
+          onChanged={() => void reloadRevision(revisionId as string)}
+          onSwitchToAdvanced={() => setMode('advanced')}
+        />
+      ) : (
+      <>
       <CentralNeedsWorkflowNav
         lang={lang}
         activeStage={initialStageResolved ? activeStage : null}
@@ -1344,6 +1401,8 @@ export function CentralNeedsScreen() {
           <div className="cn2b-stage__body">{stageBody[stage.id]}</div>
         </section>
       ))}
+      </>
+      )}
     </div>
   );
 }

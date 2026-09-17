@@ -16,9 +16,16 @@ export type CentralNeedsStageProgress =
 export type CentralNeedsStageProgressMap =
   Readonly<Record<CentralNeedsStageId, CentralNeedsStageProgress>>;
 
-const WORKFLOW_STAGES = ['source', 'review', 'beneficiaries', 'need-lines'] as const;
+export const WORKFLOW_STAGES = ['source', 'review', 'beneficiaries', 'need-lines'] as const;
 
-const BLOCKERS_BY_STAGE: Readonly<Record<(typeof WORKFLOW_STAGES)[number], ReadonlySet<string>>> = {
+/**
+ * Exported so a second presentation (e.g. Simple Mode's plain-language
+ * readiness summary) can categorize the SAME known blocker codes without a
+ * second, silently-divergent copy of this vocabulary. Any code absent from
+ * this map must still be treated as unknown/fail-closed by every consumer —
+ * see `KNOWN_BLOCKERS` below — never assumed complete.
+ */
+export const BLOCKERS_BY_STAGE: Readonly<Record<(typeof WORKFLOW_STAGES)[number], ReadonlySet<string>>> = {
   source: new Set([
     'no_finalized_import',
     'import_session_still_open',
@@ -42,7 +49,7 @@ const BLOCKERS_BY_STAGE: Readonly<Record<(typeof WORKFLOW_STAGES)[number], Reado
   ]),
 };
 
-const KNOWN_BLOCKERS = new Set(
+export const KNOWN_BLOCKERS = new Set(
   WORKFLOW_STAGES.flatMap((stage) => [...BLOCKERS_BY_STAGE[stage]]),
 );
 
