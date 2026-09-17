@@ -3699,6 +3699,113 @@ export const T: Dict = {
      safe answer is to offer the same action inside the guide's own surface,
      not to open a hole in the blocking layer. */
   guide_change_app_language: { ar: 'تغيير لغة البرنامج',          en: 'Change application language' },
+
+  /* ── Annual Needs — Simple Mode (owner task: "Simple Annual Needs — Corpus
+     Contract + Local Implementation"). Arabic-first per the task's own
+     mockups; the existing six-stage workspace keeps its cn2b_* copy above
+     unchanged as Advanced/Audit Mode. ── */
+  cn2b_simple_switch_to_advanced: { ar: 'الوضع المتقدم', en: 'Advanced mode' },
+  cn2b_simple_switch_to_simple:   { ar: 'الوضع البسيط',  en: 'Simple mode' },
+
+  cn2b_simple_title:      { ar: 'الاحتياج السنوي', en: 'Annual Needs' },
+  cn2b_simple_year_label: { ar: 'السنة',            en: 'Year' },
+  cn2b_simple_already_approved: {
+    ar: 'هذا الاحتياج معتمد مسبقاً. هل تريد إنشاء نسخة تصحيح جديدة؟',
+    en: 'This annual need is already approved. Create a new correction revision?',
+  },
+  cn2b_simple_create_correction: { ar: 'إنشاء نسخة تصحيح جديدة', en: 'Create a correction revision' },
+  cn2b_simple_start:             { ar: 'بدء',                     en: 'Start' },
+  cn2b_simple_no_import_permission: { ar: 'ليست لديك صلاحية الاستيراد', en: 'You do not have import permission' },
+  cn2b_simple_upload_button: { ar: 'رفع ملف الاحتياج', en: 'Upload the needs file' },
+  cn2b_simple_analyzing:     { ar: 'جاري التحليل...',    en: 'Analyzing…' },
+
+  cn2b_simple_file_read:   { ar: '✓ تمت قراءة الملف', en: '✓ File read successfully' },
+
+  /* Scope honesty: `listBeneficiaryColumns` is revision-wide while
+     `listSourceRecords`/`listDispositions` are keyed by import session, so the
+     summary states each metric's own scope instead of implying one total. */
+  cn2b_simple_scope_session_title: {
+    ar: 'ملخص جلسة العمل الحالية (الملف الحالي)',
+    en: 'Summary of the current work session (this file)',
+  },
+  cn2b_simple_scope_this_session: { ar: '— في هذا الملف فقط', en: '— this file only' },
+  cn2b_simple_scope_whole_revision: { ar: '— في كامل الاحتياج السنوي', en: '— across the whole annual need' },
+  cn2b_simple_scope_session_note: {
+    ar: 'أعداد المواد والكميات أعلاه تخص جلسة الاستيراد الحالية فقط، وليست مجموع الاحتياج السنوي بالكامل. الملف الواحد قد يُنتج عدة جلسات — استخدم الوضع المتقدم لمراجعة كل جلسة.',
+    en: 'The material and quantity figures above cover the current import session only — they are not whole-annual-need totals. One archive can produce many sessions; use Advanced mode to review each session.',
+  },
+
+  cn2b_simple_institutions: { ar: 'المؤسسات', en: 'Institutions' },
+  cn2b_simple_materials:    { ar: 'المواد',    en: 'Materials' },
+  cn2b_simple_quantities:   { ar: 'الكميات',   en: 'Quantities' },
+  cn2b_simple_items_need_review: { ar: 'تبقى __N__ عناصر تحتاج مراجعة', en: '__N__ items still need review' },
+  cn2b_simple_review_button:     { ar: 'مراجعة __N__ عناصر',            en: 'Review __N__ items' },
+  cn2b_simple_continue:          { ar: 'متابعة',                        en: 'Continue' },
+  cn2b_simple_view_details:      { ar: 'عرض التفاصيل',                  en: 'View details' },
+  cn2b_simple_advanced_options:  { ar: 'خيارات متقدمة',                 en: 'Advanced options' },
+  cn2b_simple_back_to_summary:   { ar: 'الرجوع إلى الملخص',             en: 'Back to summary' },
+
+  cn2b_simple_reviewing_institutions: { ar: 'مراجعة المؤسسات', en: 'Reviewing institutions' },
+  cn2b_simple_reviewing_materials:    { ar: 'مراجعة المواد',    en: 'Reviewing materials' },
+  cn2b_simple_found_in_file:          { ar: 'وجدنا في الملف:',  en: 'Found in the file:' },
+  cn2b_simple_unnamed_column:         { ar: 'عمود بدون اسم',    en: 'Unnamed column' },
+
+  cn2b_simple_matching_institution: { ar: 'المؤسسة المقابلة في البرنامج:', en: 'Matching institution in the system:' },
+  cn2b_simple_correct:              { ar: 'صحيح',                          en: 'Correct' },
+  cn2b_simple_choose_another_institution: { ar: 'اختيار مؤسسة أخرى', en: 'Choose another institution' },
+  cn2b_simple_not_an_institution:         { ar: 'ليست مؤسسة',        en: 'Not an institution' },
+  cn2b_simple_multiple_matches: {
+    ar: 'هناك أكثر من مؤسسة مطابقة — الرجاء الاختيار.',
+    en: 'More than one institution matches exactly — please choose.',
+  },
+  cn2b_simple_no_match: {
+    ar: 'لم نجد مؤسسة مطابقة تماماً — الرجاء الاختيار.',
+    en: 'No exact match was found — please choose.',
+  },
+  cn2b_simple_choose_institution: { ar: 'اختيار المؤسسة', en: 'Choose institution' },
+  cn2b_simple_search_institution: { ar: 'بحث عن مؤسسة',   en: 'Search institutions' },
+  cn2b_simple_non_beneficiary_reason_hint: {
+    ar: 'الرجاء كتابة سبب اعتبار هذا العمود ليس مؤسسة مستفيدة.',
+    en: 'Please state why this column is not a beneficiary institution.',
+  },
+  cn2b_simple_confirm_not_an_institution: { ar: 'تأكيد: ليست مؤسسة', en: 'Confirm: not an institution' },
+
+  cn2b_simple_matching_material:  { ar: 'المادة المقابلة في البرنامج:', en: 'Matching material in the system:' },
+  cn2b_simple_approved_unit_label: { ar: 'الوحدة المعتمدة في البرنامج', en: 'Approved unit in the system' },
+  cn2b_simple_choose_another_material: { ar: 'اختيار مادة أخرى', en: 'Choose another material' },
+  cn2b_simple_not_a_material:          { ar: 'ليست مادة',        en: 'Not a material' },
+  cn2b_simple_choose_material:         { ar: 'اختيار المادة',    en: 'Choose material' },
+  cn2b_simple_search_material:         { ar: 'بحث عن مادة',      en: 'Search materials' },
+  cn2b_simple_not_a_material_reason_hint: {
+    ar: 'الرجاء كتابة سبب اعتبار هذا الصف ليس مادة.',
+    en: 'Please state why this row is not a material.',
+  },
+  cn2b_simple_confirm_not_a_material: { ar: 'تأكيد: ليست مادة', en: 'Confirm: not a material' },
+  cn2b_simple_no_evidence: { ar: 'لا توجد بيانات لهذا الصف', en: 'No data found for this row' },
+  cn2b_simple_source_unit_label: { ar: 'الوحدة في الملف', en: 'Unit in the file' },
+  cn2b_simple_unit_needs_review: { ar: '⚠ تحتاج مراجعة الوحدة', en: '⚠ Unit needs review' },
+
+  cn2b_simple_reviewed_all: { ar: 'تمت مراجعة كل العناصر', en: 'All items reviewed' },
+  cn2b_simple_confirm_quantities: {
+    ar: 'اعتماد الكميات كما وردت في Excel',
+    en: 'Approve quantities exactly as imported from Excel',
+  },
+  cn2b_simple_confirm_quantities_disabled_note: {
+    ar: 'هذا الإجراء غير مُفعّل بعد في هذا الإصدار — يتطلب إثباتاً مستقلاً لعقد الوحدات ومصدر الكميات في هذا الأرشيف أولاً.',
+    en: 'This action is not enabled in this build yet — it requires independent proof of this archive’s unit and quantity-lineage contract first.',
+  },
+  cn2b_simple_readiness_clear: {
+    ar: 'لا توجد عناصر إضافية تحتاج مراجعة حالياً.',
+    en: 'No further items currently need review.',
+  },
+  cn2b_simple_blocker_source:      { ar: 'هناك ملفات مستوردة لم تكتمل معالجتها بعد', en: 'Some imported files have not finished processing yet' },
+  cn2b_simple_blocker_beneficiary: { ar: 'تبقت مؤسسات تحتاج تحديد',                  en: 'Institutions still need to be identified' },
+  cn2b_simple_blocker_material:    { ar: 'تبقت مواد تحتاج مطابقة',                    en: 'Materials still need to be matched' },
+  cn2b_simple_blocker_need_line:   { ar: 'تبقت كميات تحتاج اعتماد',                    en: 'Quantities still need approval' },
+  cn2b_simple_blocker_unknown:     { ar: 'توجد عناصر تحتاج مراجعة متقدمة',            en: 'Some items need advanced review' },
+
+  cn2b_simple_cancel:     { ar: 'إلغاء',    en: 'Cancel' },
+  cn2b_simple_no_results: { ar: 'لا نتائج', en: 'No results' },
 };
 
 export function t(key: string, lang: Lang): string {

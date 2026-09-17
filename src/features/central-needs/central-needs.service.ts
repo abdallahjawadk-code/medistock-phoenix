@@ -1025,6 +1025,15 @@ export async function requestSourceDownload(batchId: string): Promise<{ url: str
 export interface CentralItemOption {
   id: string;
   name: string;
+  /**
+   * The item's own registered canonical unit (`central_items.unit`, NOT
+   * NULL). Additive field for Simple Mode's material card, which shows this
+   * ALONGSIDE — never in place of — the workbook's own unit text. Reading an
+   * already-canonical, super-admin-controlled field is not the same as
+   * inferring a unit from workbook text, and nothing here writes it back or
+   * treats it as the source unit.
+   */
+  unit: string;
 }
 
 /**
@@ -1035,10 +1044,10 @@ export interface CentralItemOption {
 export async function searchCentralItems(query: string, limit = 25): Promise<CentralItemOption[]> {
   const { data, error } = await supabase
     .from('central_items')
-    .select('id, name')
+    .select('id, name, unit')
     .ilike('name', `%${query}%`)
     .order('name', { ascending: true })
     .limit(limit);
   if (error) fail(error);
-  return (data ?? []).map((r) => ({ id: r.id as string, name: r.name as string }));
+  return (data ?? []).map((r) => ({ id: r.id as string, name: r.name as string, unit: r.unit as string }));
 }

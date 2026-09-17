@@ -108,8 +108,14 @@ const STATE_FILTERS: ReadonlyArray<{ value: StateFilter; labelKey: string }> = [
   { value: 'non_beneficiary', labelKey: 'cn2b_bc_filter_state_non_beneficiary' },
 ];
 
-/** Exact, case-sensitive-after-trim match against name/name_ar/code — never fuzzy. */
-function exactMatchSuggestion(label: string | null, orgs: OrgRow[]): OrgRow[] {
+/**
+ * Exact, case-sensitive-after-trim match against name/name_ar/code — never
+ * fuzzy. Exported so Simple Mode's institution card can reuse this EXACT
+ * matching rule rather than keeping a second, potentially-diverging copy —
+ * "workbook text is evidence, not authority" must mean the same thing in
+ * every surface that shows a suggestion.
+ */
+export function exactMatchSuggestion(label: string | null, orgs: OrgRow[]): OrgRow[] {
   if (!label) return [];
   const trimmed = label.trim();
   if (!trimmed) return [];
@@ -130,11 +136,14 @@ const decisionOf = (choice: string): BeneficiaryColumnDecision =>
  * Finding 2: changing an existing decision, and any "not a beneficiary"
  * decision, needs a human-entered reason. Only a first beneficiary
  * confirmation of an unresolved column may use the initial-confirmation reason.
+ * Exported so Simple Mode's institution card asks for a reason under the
+ * exact same rule, not a second copy of it.
  */
-const reasonRequiredFor = (col: BeneficiaryColumnSummary, choice: string): boolean =>
+export const reasonRequiredFor = (col: BeneficiaryColumnSummary, choice: string): boolean =>
   choice === NON_BENEFICIARY_CHOICE || col.decision !== null;
 
-function mappingFor(col: BeneficiaryColumnSummary, choice: string): SetBeneficiaryColumnsInput {
+/** Exported for the same reason as `reasonRequiredFor` above. */
+export function mappingFor(col: BeneficiaryColumnSummary, choice: string): SetBeneficiaryColumnsInput {
   return {
     importSessionId: col.importSessionId,
     sheetIndex: col.sheetIndex,
