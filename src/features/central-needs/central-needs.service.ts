@@ -432,19 +432,91 @@ export async function listBatchEntries(batchId: string): Promise<ImportBatchEntr
   }));
 }
 
+// PostgREST's own configured `max_rows` (see supabase/config.toml) silently
+// truncates any unpaginated select — this is what pagination exists to fix.
+// 500 is only the REQUESTED range size; correctness below does NOT depend on
+// the server actually honoring it. A response shorter than requested is
+// advanced past (by its own actual length, not by 500) rather than treated
+// as end-of-data, so this stays correct even if some server-side cap ever
+// returns fewer rows per page than requested — see PAGINATION-CONTRACT.md in
+// the CN2A-B2-PAGINATION-PREIMPLEMENT evidence bundle for the full page-size
+// rationale.
+const SOURCE_RECORDS_PAGE_SIZE = 500;
+
+interface SourceRecordRow {
+  id: string;
+  import_session_id: string;
+  record_ordinal: number;
+  target_entity: string;
+  field_name: string;
+  source_values: unknown;
+  source_provenance: unknown;
+}
+
 export async function listSourceRecords(importSessionId: string): Promise<SourceRecord[]> {
-  const { data, error } = await supabase
-    .from('central_needs_source_records')
-    .select('id, import_session_id, record_ordinal, target_entity, field_name, source_values, source_provenance')
-    .eq('import_session_id', importSessionId)
-    .order('record_ordinal', { ascending: true });
-  if (error) fail(error);
-  return (data ?? []).map((r) => ({
-    id: r.id as string,
-    importSessionId: r.import_session_id as string,
-    recordOrdinal: r.record_ordinal as number,
-    targetEntity: r.target_entity as string,
-    fieldName: r.field_name as string,
+  const rows: SourceRecordRow[] = [];
+  let offset = 0;
+
+  // Fail-closed completeness, validated per row as each page arrives rather
+  // than after every page has been fetched. The sole INSERT path (M210)
+  // assigns record_ordinal via `WITH ORDINALITY` under
+  // UNIQUE(import_session_id, record_ordinal), so a completed session's
+  // retrieved ordinals are structurally exactly {1..N} — never sort a
+  // malformed response silently into shape; any gap, duplicate, or
+  // out-of-order ordinal throws instead of ever returning a partial or
+  // corrupted dataset. Validating immediately (rather than waiting for the
+  // whole fetch to finish) is also what lets the fetch loop below carry NO
+  // fixed page-count ceiling: a backend that never returns a genuinely
+  // empty page — whether because it is legitimately huge or because it is
+  // replaying the same page forever — is stopped by this check, on the
+  // very first ordinal that repeats or fails to advance by exactly one,
+  // not by an arbitrary page-count guess that a large-enough real dataset
+  // could otherwise exceed.
+  const seenOrdinals = new Set<number>();
+  let expectedOrdinal = 1;
+
+  for (;;) {
+    const { data, error } = await supabase
+      .from('central_needs_source_records')
+      .select('id, import_session_id, record_ordinal, target_entity, field_name, source_values, source_provenance')
+      .eq('import_session_id', importSessionId)
+      .order('record_ordinal', { ascending: true })
+      .range(offset, offset + SOURCE_RECORDS_PAGE_SIZE - 1);
+    if (error) fail(error);
+    const batch = (data ?? []) as SourceRecordRow[];
+    // A genuinely empty page is the one response shape that cannot mean
+    // "more data, capped short" — see the PAGE_SIZE comment above.
+    if (batch.length === 0) break;
+
+    for (const row of batch) {
+      const ordinal = row.record_ordinal;
+      if (seenOrdinals.has(ordinal)) {
+        throw new CentralNeedsError(
+          'source_records_duplicate_ordinal',
+          `duplicate record_ordinal ${ordinal} for import session ${importSessionId}`,
+        );
+      }
+      seenOrdinals.add(ordinal);
+      if (ordinal !== expectedOrdinal) {
+        throw new CentralNeedsError(
+          expectedOrdinal === 1 ? 'source_records_ordinal_gap_at_start' : 'source_records_ordinal_gap',
+          `expected record_ordinal ${expectedOrdinal}, got ${ordinal} for import session ${importSessionId}`,
+        );
+      }
+      rows.push(row);
+      expectedOrdinal += 1;
+    }
+    // Advance by what was ACTUALLY returned, not by the requested size —
+    // see the PAGE_SIZE comment above.
+    offset += batch.length;
+  }
+
+  return rows.map((r) => ({
+    id: r.id,
+    importSessionId: r.import_session_id,
+    recordOrdinal: r.record_ordinal,
+    targetEntity: r.target_entity,
+    fieldName: r.field_name,
     sourceValues: (r.source_values ?? {}) as Record<string, unknown>,
     sourceProvenance: (r.source_provenance as Record<string, unknown> | null) ?? null,
   }));

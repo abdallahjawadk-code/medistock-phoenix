@@ -17,6 +17,7 @@ import {
   type CellEvidence,
   type CellPresence,
   type CellValueType,
+  type ColumnHeaderEvidence,
   type Diagnostic,
   type DiagnosticCode,
   type DuplicateHeaderGroup,
@@ -410,6 +411,81 @@ export function detectFamily(evidence: WorkbookEvidence): FamilyDetection {
 }
 
 // ---------------------------------------------------------------------------
+// B2 — column-anchor structural header evidence (see contract.ts's
+// `ColumnHeaderEvidence` doc comment). This is the same 2-row header-window
+// algorithm, with cross-column corroboration and merge-based resolution,
+// proven against the real corpus in the CN2A-COLUMN-ANCHOR-AUDIT evidence
+// bundle: a row only counts as a genuine second header row for a column when
+// that row is ALSO some OTHER column's own earliest header-window text —
+// this is what tells an ordinary data/divider row apart from a real second
+// header line without any keyword or business-meaning inference. Multi-row
+// candidates that a real Excel merge does not explain are left as multiple
+// candidates (ambiguity preserved, never collapsed to a guess).
+// ---------------------------------------------------------------------------
+
+const HEADER_EVIDENCE_WINDOW_ROWS = 2;
+
+function computeColumnHeaderEvidence(sheet: SheetEvidence): Map<number, ColumnHeaderEvidence[]> {
+  const result = new Map<number, ColumnHeaderEvidence[]>();
+  if (!sheet.usedRange) return result;
+  const startRow = sheet.usedRange.startRow;
+  const windowEndRow = startRow + HEADER_EVIDENCE_WINDOW_ROWS - 1;
+
+  // Every non-blank string cell inside the header window, grouped by column.
+  const byCol = new Map<number, Array<{ coordinate: A1Coordinate; text: string }>>();
+  for (const cell of sheet.cells) {
+    if (cell.presence !== 'value' || typeof cell.rawValue !== 'string') continue;
+    if (cell.coordinate.row < startRow || cell.coordinate.row > windowEndRow) continue;
+    if (cell.rawValue.trim() === '') continue;
+    const list = byCol.get(cell.coordinate.col) ?? [];
+    list.push({ coordinate: cell.coordinate, text: cell.rawValue });
+    byCol.set(cell.coordinate.col, list);
+  }
+  if (byCol.size === 0) return result;
+
+  // Real Excel merges whose row span touches the header window — used only
+  // to explain a multi-row candidate, never to invent header text.
+  const bandMerges: Array<{ range: string; rowStart: number; rowEnd: number; colStart: number; colEnd: number }> = [];
+  for (const rangeStr of sheet.mergedRanges) {
+    const range = XLSX.utils.decode_range(rangeStr);
+    if (range.e.c <= range.s.c) continue; // only multi-column merges explain a header band
+    if (range.s.r > windowEndRow || range.e.r < startRow) continue;
+    bandMerges.push({ range: rangeStr, rowStart: range.s.r, rowEnd: range.e.r, colStart: range.s.c, colEnd: range.e.c });
+  }
+
+  // Each column's own earliest (lowest-row) header-window text is what makes
+  // a row "some other column's own header row" for cross-corroboration.
+  const earliestRowByCol = new Map<number, number>();
+  for (const [col, entries] of byCol) {
+    let earliestRow = entries[0].coordinate.row;
+    for (const e of entries) if (e.coordinate.row < earliestRow) earliestRow = e.coordinate.row;
+    earliestRowByCol.set(col, earliestRow);
+  }
+  const headerGroupRows = new Set(earliestRowByCol.values());
+
+  for (const [col, entries] of byCol) {
+    const sortedEntries = [...entries].sort((a, b) => a.coordinate.row - b.coordinate.row);
+    const headerCandidateEntries = sortedEntries.filter((e) => headerGroupRows.has(e.coordinate.row));
+    // A column's own earliest row is always in headerGroupRows by
+    // construction, so this only falls back for defensive completeness.
+    const effectiveEntries = headerCandidateEntries.length > 0 ? headerCandidateEntries : [sortedEntries[0]];
+
+    const evidence: ColumnHeaderEvidence[] = effectiveEntries.map((e) => {
+      const mr = bandMerges.find(
+        (m) => e.coordinate.row >= m.rowStart && e.coordinate.row <= m.rowEnd && col >= m.colStart && col <= m.colEnd,
+      );
+      return {
+        coordinate: e.coordinate,
+        rawText: e.text,
+        ...(mr ? { mergedRange: mr.range } : {}),
+      };
+    });
+    result.set(col, evidence);
+  }
+  return result;
+}
+
+// ---------------------------------------------------------------------------
 // Source-record draft generation (generic mechanism — see contract.ts notes)
 // ---------------------------------------------------------------------------
 
@@ -429,6 +505,11 @@ function buildSourceRecords(
         headerByCol.set(cell.coordinate.col, cell.rawValue);
       }
     }
+    // B2: computed once per sheet, attached only to the first-emitted record
+    // for each physical column (proven identical to "lowest row" under this
+    // function's own row-major cell order — see ANCHOR-ALGORITHM.md).
+    const columnEvidence = computeColumnHeaderEvidence(sheet);
+    const anchoredColumns = new Set<number>();
     for (const cell of sheet.cells) {
       if (cell.coordinate.row === headerRow) continue; // header row itself is not a data record
       if (cell.presence !== 'value') continue;
@@ -441,6 +522,9 @@ function buildSourceRecords(
         ? headerText
         : `col:${cell.coordinate.col}`;
       const targetEntity = `sheet:${sheet.index}:row:${cell.coordinate.row}`;
+      // B2: "first emitted" per physical column, this loop's own order.
+      const isColumnAnchor = !anchoredColumns.has(cell.coordinate.col);
+      if (isColumnAnchor) anchoredColumns.add(cell.coordinate.col);
       const provenance: SourceProvenance = {
         fileFingerprintSha256: input.sha256,
         originalFilename: input.originalFilename,
@@ -452,6 +536,9 @@ function buildSourceRecords(
         sheetHidden: sheet.hidden,
         coordinate: cell.coordinate,
         extractedAt,
+        // Omitted on every record except the column's anchor — see
+        // ColumnHeaderEvidence's doc comment in contract.ts.
+        ...(isColumnAnchor ? { columnHeaderEvidence: columnEvidence.get(cell.coordinate.col) ?? [] } : {}),
       };
       records.push({
         targetEntity,
