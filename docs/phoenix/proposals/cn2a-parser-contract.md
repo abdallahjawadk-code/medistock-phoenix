@@ -79,9 +79,7 @@ correct output for a given input, so no semantic drift is possible.
    against a real ZIP archive containing a workbook plus a directory entry and
    a `~$` lock file (`__tests__/fixtures/synthetic-archive.zip`, a committed
    SYNTHETIC fixture). Both runtimes produced `ArchiveParseResult` documents
-   hashing identically to
-   `9f8f45badbff4aae00f6ee6784c9effb0e67a8741dd20786c35bad717e85eca6`
-   (8,025 masked bytes). Masks: `identity.runtime` at the archive level **and
+   hashing identically. Masks: `identity.runtime` at the archive level **and
    at each nested per-file result**, plus `sourceProvenance.extractedAt` —
    nothing else. Filenames, SHA-256 fingerprints, entry classifications
    (directory/lock-file exclusions), reconciliation counts, diagnostics and all
@@ -93,6 +91,28 @@ correct output for a given input, so no semantic drift is possible.
    was corrected on both sides and the comparison then passed. The parser was
    never at fault, but the failure was real and is recorded rather than
    quietly re-run until green.
+
+   | Contract version | Masked hash (SHA-256) | Masked bytes |
+   |---|---|---|
+   | 1.0.0 (original) | `9f8f45badbff4aae00f6ee6784c9effb0e67a8741dd20786c35bad717e85eca6` | 8,025 |
+   | 1.1.0 (B2 column-anchor evidence) | `c98bd6e6c22b64a985d7db15f85924c53fb1e004f269387c2b3f68de2c5bd76f` | 8,375 |
+
+   The 1.1.0 re-run reproduced the exact same procedure against the same
+   synthetic fixture. The hash changed for three additive reasons, not one:
+   `identity.contractVersion` moved `"1.0.0"` → `"1.1.0"` (unmasked — this
+   field is compared verbatim, by design, so a real contract-version bump is
+   meant to show up here), `sourceProvenance.parserVersion` changed with it
+   (it embeds the contract version, e.g. `"1.1.0/0.20.3"`), and
+   `SourceProvenance.columnHeaderEvidence` (present on 2 of the 8 records in
+   this fixture — one plain, one carrying a real `mergedRange`) is new,
+   additive content. None of the three is a parity regression:
+   `compareParsedResults(browser, node, 'archive').equal === true` both before
+   and after, and the masked JSON is still byte-for-byte identical between
+   runtimes at 1.1.0 — masking only `identity.runtime` and
+   `sourceProvenance.extractedAt`, exactly as before; the hash is not held
+   stable across a real, intentional contract-version bump, only across the
+   two documented runtime-only differences. The old 1.0.0 hash is kept above for history, not as a
+   live expectation — it will not reproduce against the current parser.
 
 Reproduce with `scripts/cn2a-zip-parity-node.ts` (Node side) and
 `scripts/cn2a-browser-evidence.html` served by the dev server (browser side).
@@ -219,6 +239,28 @@ actual columns is a larger effort than this contract-freeze pass could
 honestly complete against real workbook content without deeper, per-family
 domain analysis. Recorded here as an explicit scope boundary for CN-1B/a
 follow-up CN-2A increment, not silently left unstated.
+
+### 9a. B2 (1.1.0) — column-anchor structural header evidence
+
+`CN2A_CONTRACT_VERSION` moved `1.0.0` → `1.1.0`: `SourceProvenance` gained an
+optional `columnHeaderEvidence?: ColumnHeaderEvidence[]`, present only on the
+first-emitted `SourceRecord` for each physical `(sheetIndex, coordinate.col)`
+— never repeated per record, never a new record, never a new ordering. This
+is still the same generic mechanism described above: it records "this cell's
+text structurally relates to this physical column," never a business meaning
+(beneficiary/material/unit/conversion stay CN-2B/M213's job). Selection uses
+a 2-row header window with cross-column corroboration (a row only counts as a
+genuine second header row for a column when it is ALSO some other column's
+own earliest header-window text) and merge-based resolution via the sheet's
+own `mergedRanges`; an unresolved multi-row candidate is preserved as
+multiple candidates, never collapsed to a guess. Full design proof: the
+CN2A-COLUMN-ANCHOR-AUDIT-20260917 evidence bundle (`ANCHOR-ALGORITHM.md`,
+1,582 anchors over the real corpus, 0 duplicates, 0 missing). Re-verified
+fresh against the same real corpus at 1.1.0: `TOTAL_SOURCE_RECORDS=113,950`,
+`ANCHORS_CREATED=1,582`, `DUPLICATE_ANCHORS=0`, `MISSING_ANCHORS=0`, and a
+`fieldName`/`targetEntity`/`sourceValues` sequence identical to the pre-B2
+mechanism (see the CN2A-B2-PAGINATION-IMPLEMENTATION-20260917 evidence
+bundle, `B2-CORPUS-PROOF.json`).
 
 ## 10. What was verified, and how (see the accompanying verification report for full evidence)
 

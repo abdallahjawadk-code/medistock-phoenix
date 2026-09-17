@@ -35,6 +35,11 @@
  *    the browser Web Worker), MUST produce byte-identical JSON for every field
  *    in this contract except `SourceProvenance.extractedAt` and
  *    `ParserIdentity.runtime` (see "Runtime parity" below).
+ *  - `SourceProvenance.columnHeaderEvidence` (B2, 1.1.0) is additive to this
+ *    guarantee, not an exception to it: it is derived purely from already-
+ *    deterministic `SheetEvidence.cells`/`mergedRanges`, present only on the
+ *    anchor record for its physical column, and therefore byte-identical
+ *    between runtimes under the same rule as everything else in this list.
  *
  * Runtime parity:
  *  - The workbook-parsing semantics (SheetJS invocation, coordinate/provenance
@@ -59,7 +64,13 @@
  *    This parity is EMPIRICALLY VERIFIED, not merely argued: an actual ZIP
  *    archive containing a workbook was parsed through both runtimes and the
  *    two `ArchiveParseResult` JSON documents hash identically
- *    (SHA-256 9f8f45badbff4aae00f6ee6784c9effb0e67a8741dd20786c35bad717e85eca6)
+ *    (SHA-256 c98bd6e6c22b64a985d7db15f85924c53fb1e004f269387c2b3f68de2c5bd76f,
+ *    reverified at 1.1.0 — the hash moved for three additive reasons, not
+ *    one: the unmasked `identity.contractVersion` (1.0.0 -> 1.1.0),
+ *    `sourceProvenance.parserVersion` changing with it, and B2's additive
+ *    `columnHeaderEvidence`, itself derived purely from already-
+ *    deterministic shared-core data. None of the three breaks parity: the
+ *    two runtimes' masked JSON is still byte-for-byte identical)
  *    after masking only `identity.runtime` (archive level and each nested
  *    per-file result) and `sourceProvenance.extractedAt`. Filenames, SHA-256
  *    fingerprints, entry classifications, reconciliation counts, diagnostics
@@ -70,8 +81,19 @@
 // Identity and fingerprinting
 // ---------------------------------------------------------------------------
 
-/** This contract's own semantic version. Bump on any breaking shape change. */
-export const CN2A_CONTRACT_VERSION = '1.0.0';
+/**
+ * This contract's own semantic version. Bump on any breaking shape change.
+ *
+ * 1.0.0 -> 1.1.0 (MINOR): B2 column-anchor structural evidence
+ * (`SourceProvenance.columnHeaderEvidence`) — purely additive, present only
+ * on one deterministic anchor record per physical column, never repeated
+ * per record. `fieldName`, `targetEntity`, `sourceValues`, record
+ * cardinality/ordering, and every M209/M210/M213 contract this file
+ * documents are unchanged. See docs/phoenix/proposals/cn2a-parser-contract.md
+ * and the CN2A-COLUMN-ANCHOR-AUDIT and CN2A-B2-PAGINATION
+ * evidence bundles for the full design proof this shape is based on.
+ */
+export const CN2A_CONTRACT_VERSION = '1.1.0';
 
 /** Pinned SheetJS Community Edition identity (never the npm registry's stale 0.18.5). */
 export const SHEETJS_VERSION = '0.20.3';
@@ -309,6 +331,30 @@ export interface Diagnostic {
 // M209-compatible source evidence (draft only — CN-2A persists nothing)
 // ---------------------------------------------------------------------------
 
+/**
+ * B2 — one structural header candidate for a physical column, preserved
+ * verbatim. This is CN-2A's entire claim: "this cell's text structurally
+ * relates to this physical column." It is never "this means UNIT" or "this
+ * means BENEFICIARY" — CN-2A assigns no business/semantic authority to
+ * beneficiary identity, material identity, source-unit semantics, canonical
+ * units, or quantity conversion. That interpretation belongs to CN-2B/M213,
+ * which already treats header text as evidence, never authority (the same
+ * boundary `phoenix_central_needs_set_beneficiary_columns` already enforces
+ * with human confirmation).
+ *
+ * More than one entry for the same column means its own header could not be
+ * resolved to a single row (e.g. a therapeutic-category divider row
+ * coinciding with another column-region's real header row) — ambiguity is
+ * preserved as multiple candidates here, never collapsed to a guess.
+ */
+export interface ColumnHeaderEvidence {
+  coordinate: A1Coordinate;
+  /** Byte-verbatim header cell text — never trimmed, case-folded, normalized, or reformatted. */
+  rawText: string;
+  /** Set only when a real multi-column merge in the header band explains this entry. */
+  mergedRange?: string;
+}
+
 export interface SourceProvenance {
   fileFingerprintSha256: string;
   originalFilename: string;
@@ -320,6 +366,21 @@ export interface SourceProvenance {
   coordinate: A1Coordinate;
   /** ISO 8601 UTC timestamp of the parse run itself — never a business date extracted from the workbook. */
   extractedAt: string;
+  /**
+   * B2 — present ONLY on the first `SourceValueRecordDraft` emitted for this
+   * record's physical column `(sheetIndex, coordinate.col)` within this
+   * sheet (the "anchor" record, in existing emission order — proven
+   * identical to "lowest row index" for this column under this contract's
+   * own row-major determinism guarantee). Every other record sharing that
+   * column omits this field entirely — it is never repeated per record,
+   * which is the whole reason this is safe to add to a corpus whose real
+   * preview payload is already tens of megabytes.
+   *
+   * An anchor whose column carries no provable header-candidate text at all
+   * gets an empty array, `[]` — never a fabricated guess, and never simply
+   * omitted, so "no evidence" and "not the anchor" remain distinguishable.
+   */
+  columnHeaderEvidence?: ColumnHeaderEvidence[];
 }
 
 /**

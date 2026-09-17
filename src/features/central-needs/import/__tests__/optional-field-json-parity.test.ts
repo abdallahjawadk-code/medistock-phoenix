@@ -98,6 +98,32 @@ describe('CN-2A optional fields — absent means absent (never a key holding und
     }
   });
 
+  it('A3. B2: columnHeaderEvidence is present only on the first-emitted record per physical column', async () => {
+    const result = await parseWorkbookBytes(buildSyntheticWorkbook(), 'synthetic.xlsx', { runtime: 'node' });
+    const byCoordinate = (a1: string) =>
+      result.sourceRecords.find((r) => r.sourceProvenance.coordinate.a1 === a1)!;
+
+    // Column A (header "Item" at A1): A2 is the anchor, A3 is not.
+    const a2 = byCoordinate('A2');
+    expect(hasOwn(a2.sourceProvenance, 'columnHeaderEvidence')).toBe(true);
+    expect(a2.sourceProvenance.columnHeaderEvidence).toEqual([{ coordinate: { row: 0, col: 0, a1: 'A1' }, rawText: 'Item' }]);
+    const a3 = byCoordinate('A3');
+    expect(hasOwn(a3.sourceProvenance, 'columnHeaderEvidence')).toBe(false);
+
+    // Column B (header "Qty" at B1): B2 is the anchor, B3 is not.
+    const b2 = byCoordinate('B2');
+    expect(b2.sourceProvenance.columnHeaderEvidence).toEqual([{ coordinate: { row: 0, col: 1, a1: 'B1' }, rawText: 'Qty' }]);
+    expect(hasOwn(byCoordinate('B3').sourceProvenance, 'columnHeaderEvidence')).toBe(false);
+
+    // Column D has no header text anywhere in the window: its anchor (D2) still
+    // gets an explicit empty array, never a fabricated guess; D3 has none at all.
+    const d2 = byCoordinate('D2');
+    expect(hasOwn(d2.sourceProvenance, 'columnHeaderEvidence')).toBe(true);
+    expect(d2.sourceProvenance.columnHeaderEvidence).toEqual([]);
+    const d3 = byCoordinate('D3');
+    expect(hasOwn(d3.sourceProvenance, 'columnHeaderEvidence')).toBe(false);
+  });
+
   // ---- Test B -------------------------------------------------------------
   // THE GUARD. Asymmetric on purpose: JSON round-trip versus in-memory, exactly
   // as finalize-import compares the browser preview against the Node replay.
