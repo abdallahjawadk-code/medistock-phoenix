@@ -28,7 +28,9 @@ async function open(lang: 'ar' | 'en', viewport: { width: number; height: number
   const context = await browser.newContext({ viewport });
   const page = await context.newPage();
   await page.route('**/*.supabase.co/**', route => route.abort('blockedbyclient'));
-  const params = new URLSearchParams({ qa: '1', persona: 'super_admin', lang, scene: 'central-needs', org: 'qa-org-a1' });
+  // Simple Mode is the product default since the Simple UX visual convergence;
+  // this suite is Package B's ADVANCED evidence, so it lands there directly.
+  const params = new URLSearchParams({ qa: '1', persona: 'super_admin', lang, scene: 'central-needs', org: 'qa-org-a1', mode: 'advanced' });
   await page.goto(`${baseUrl}?${params}`, { waitUntil: 'networkidle' });
   // `.cn2b` is also carried by the pre-existing Need Lines PhoenixCard, so the
   // screen root is addressed exactly — matching the acceptance suite's idiom.

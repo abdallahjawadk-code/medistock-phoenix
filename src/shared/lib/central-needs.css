@@ -1406,3 +1406,874 @@
     grid-column: auto;
   }
 }
+
+/* ─── SIMPLE ANNUAL NEEDS — the default landing experience ────────────────
+   Owner task: "Simple UX Visual Activation & Convergence".
+
+   Presentation only, scoped to `.cn2b-simple`. Same palette tokens as the
+   rest of this file (tokens.css / phase-a-visual-convergence.css), logical
+   properties throughout, one layout mirrored for Arabic RTL and English LTR.
+
+   The shape of the page: ONE column, centred and spacious — a title block,
+   the six-step progress indicator, ONE task card for the current step, and
+   a quiet Advanced entry at the very end. No command header, no workflow
+   rail, no diagnostics: those belong to Advanced Mode and are not rendered
+   around this view. Every state (done / current / waiting / ready / needs
+   review) carries a text label or a shape as well as a hue (WCAG 1.4.1).
+   ────────────────────────────────────────────────────────────────────────── */
+
+.cn2b-simple {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(16px, 2vw, 24px);
+  inline-size: 100%;
+  max-inline-size: 860px;
+  margin-inline: auto;
+  min-inline-size: 0;
+  padding-block: clamp(4px, 1vw, 12px) 24px;
+}
+
+/* ── Title block ─────────────────────────────────────────────────────────── */
+.cn2b-simple-hero {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: start;
+}
+
+.cn2b-simple-title {
+  margin: 0;
+  font-size: clamp(1.55rem, 3vw, 2.1rem);
+  font-weight: 800;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  color: var(--t);
+}
+
+.cn2b-simple-tagline {
+  margin: 0;
+  font-size: clamp(0.95rem, 1.4vw, 1.05rem);
+  color: var(--t2);
+}
+
+/* ── Six-step progress indicator ─────────────────────────────────────────── */
+/* Informative only — there is nothing to click. "Step N of 6 · title" is the
+   one line a narrow screen keeps; the six labelled segments join it on wider
+   screens. */
+.cn2b-simple-stepper {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-inline-size: 0;
+}
+
+.cn2b-simple-stepper__summary {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 0.95rem;
+  color: var(--t2);
+}
+
+.cn2b-simple-stepper__count {
+  font-weight: 700;
+  color: var(--teal);
+  white-space: nowrap;
+}
+
+.cn2b-simple-stepper__current {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--t);
+}
+
+.cn2b-simple-stepper__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.cn2b-simple-stepper__item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-inline-size: 0;
+}
+
+.cn2b-simple-stepper__bar {
+  display: block;
+  block-size: 6px;
+  border-radius: 999px;
+  background: var(--brd);
+}
+
+.cn2b-simple-stepper__item[data-state='done'] .cn2b-simple-stepper__bar { background: var(--ok); }
+
+.cn2b-simple-stepper__item[data-state='current'] .cn2b-simple-stepper__bar {
+  background: linear-gradient(90deg, var(--phoenix-gold-2, var(--gold)), var(--phoenix-gold, var(--gold)));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--phoenix-gold, var(--gold)) 25%, transparent);
+}
+
+.cn2b-simple-stepper__label {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 0.78rem;
+  line-height: 1.3;
+  color: var(--t2);
+  min-inline-size: 0;
+}
+
+.cn2b-simple-stepper__item[data-state='current'] .cn2b-simple-stepper__label { color: var(--t); font-weight: 700; }
+.cn2b-simple-stepper__item[data-state='done'] .cn2b-simple-stepper__label { color: var(--ok); }
+
+.cn2b-simple-stepper__num {
+  flex: 0 0 auto;
+  inline-size: 18px;
+  block-size: 18px;
+  border-radius: 50%;
+  border: 1px solid currentColor;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.cn2b-simple-stepper__item[data-state='current'] .cn2b-simple-stepper__num {
+  background: var(--phoenix-gold, var(--gold));
+  color: var(--phoenix-gold-ink, #241A08);
+  border-color: transparent;
+}
+
+.cn2b-simple-stepper__item[data-state='done'] .cn2b-simple-stepper__num {
+  background: var(--ok);
+  color: #fff;
+  border-color: transparent;
+}
+
+.cn2b-simple-stepper__text { overflow-wrap: anywhere; }
+
+/* ── The task card ───────────────────────────────────────────────────────── */
+.cn2b-simple-card {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: clamp(20px, 3.2vw, 36px);
+  background: var(--s);
+  border: 1px solid var(--brd);
+  border-radius: 22px;
+  box-shadow: var(--sh-md);
+  min-inline-size: 0;
+}
+
+.cn2b-simple-card--analyzing { align-items: center; text-align: center; }
+.cn2b-simple-card--outcome { align-items: flex-start; }
+
+.cn2b-simple-card__eyebrow {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--teal);
+}
+
+.cn2b-simple-card__eyebrow--ok { color: var(--ok); }
+
+.cn2b-simple-card__title {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: clamp(1.25rem, 2.2vw, 1.6rem);
+  font-weight: 800;
+  line-height: 1.3;
+  color: var(--t);
+}
+
+.cn2b-simple-card__lead {
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.6;
+  color: var(--t2);
+}
+
+.cn2b-simple-card__hint {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.55;
+  color: var(--t2);
+}
+
+.cn2b-simple-card__actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-block-start: 4px;
+}
+
+.cn2b-simple-card__actions .phoenix-button { min-inline-size: 0; max-inline-size: 100%; }
+
+/* Revision state chip — border treatment as well as hue, like .cn2b-revstatus. */
+.cn2b-simple-status {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border: 1px solid var(--brd);
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+
+.cn2b-simple-status[data-status='draft'] { border-style: dashed; color: var(--warn); background: var(--chipW); }
+.cn2b-simple-status[data-status='submitted'] { border-width: 2px; color: var(--cyan); }
+.cn2b-simple-status[data-status='approved'] { border-style: double; border-width: 3px; color: var(--ok); }
+.cn2b-simple-status[data-status='rejected'] { border-style: dotted; color: var(--danger); }
+.cn2b-simple-status[data-status='superseded'] { border-style: dotted; opacity: 0.75; }
+
+/* Notice and error strips — never hue alone: icon, weight and border. */
+.cn2b-simple-notice {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: var(--r2);
+  background: var(--chip);
+  border: 1px solid color-mix(in srgb, var(--ok) 40%, var(--brd));
+  color: var(--ok);
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+.cn2b-simple-error {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: var(--r2);
+  background: var(--chipD);
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--brd));
+  color: var(--danger);
+  font-size: 0.92rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+/* ── Step 1 — year and upload ────────────────────────────────────────────── */
+.cn2b-simple-year {
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.cn2b-simple-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-inline-size: 0;
+}
+
+.cn2b-simple-field__label {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--t2);
+}
+
+.cn2b-simple-input {
+  font: inherit;
+  font-size: 1rem;
+  color: var(--t);
+  background: var(--field, var(--s2));
+  border: 1px solid var(--brd);
+  border-radius: var(--r2);
+  padding-inline: 14px;
+  padding-block: 0;
+  min-block-size: var(--touch-target, 44px);
+  inline-size: 100%;
+  min-inline-size: 0;
+}
+
+.cn2b-simple-input--year {
+  inline-size: 150px;
+  font-size: 1.15rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.cn2b-simple-input:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+
+.cn2b-simple-permission {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: var(--r2);
+  background: var(--chipW);
+  border: 1px dashed color-mix(in srgb, var(--warn) 50%, var(--brd));
+  color: var(--t);
+  font-size: 0.95rem;
+  line-height: 1.55;
+}
+
+.cn2b-simple-permission strong { color: var(--warn); }
+
+.cn2b-simple-dropzone {
+  position: relative;
+  border: 2px dashed color-mix(in srgb, var(--teal) 45%, var(--brd));
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--teal) 5%, var(--s));
+  min-inline-size: 0;
+  transition: border-color 0.16s ease, background-color 0.16s ease;
+}
+
+.cn2b-simple-dropzone[data-dragging='true'] {
+  border-color: var(--teal);
+  background: color-mix(in srgb, var(--teal) 12%, var(--s));
+}
+
+.cn2b-simple-dropzone[data-disabled='true'] { opacity: 0.6; }
+
+.cn2b-simple-dropzone[data-has-file='true'] {
+  border-style: solid;
+  border-color: color-mix(in srgb, var(--ok) 55%, var(--brd));
+  background: color-mix(in srgb, var(--ok) 6%, var(--s));
+}
+
+/* The real <input type="file"> stays in the tab order; its label is the
+   visible target, so focus lands on a control with a name and a ring. */
+.cn2b-simple-dropzone__input {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  opacity: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.cn2b-simple-dropzone__input:focus-visible + .cn2b-simple-dropzone__target {
+  outline: 2px solid var(--cyan);
+  outline-offset: 4px;
+  border-radius: 16px;
+}
+
+.cn2b-simple-dropzone__target {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-align: center;
+  padding: clamp(28px, 5vw, 48px) 20px;
+  min-block-size: 180px;
+  cursor: pointer;
+}
+
+.cn2b-simple-dropzone[data-disabled='true'] .cn2b-simple-dropzone__target { cursor: not-allowed; }
+
+.cn2b-simple-dropzone__icon {
+  flex: 0 0 auto;
+  inline-size: 64px;
+  block-size: 64px;
+  border-radius: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--chip);
+  color: var(--teal);
+}
+
+.cn2b-simple-dropzone__icon[data-ready='true'] {
+  background: color-mix(in srgb, var(--ok) 14%, transparent);
+  color: var(--ok);
+}
+
+.cn2b-simple-dropzone__title {
+  font-size: clamp(1rem, 1.6vw, 1.15rem);
+  font-weight: 700;
+  color: var(--t);
+}
+
+.cn2b-simple-dropzone__types { font-size: 0.85rem; color: var(--t2); }
+
+.cn2b-simple-dropzone__picked {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 18px 20px;
+}
+
+.cn2b-simple-dropzone__picked .cn2b-simple-dropzone__icon {
+  inline-size: 52px;
+  block-size: 52px;
+  border-radius: 14px;
+}
+
+.cn2b-simple-dropzone__picked-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1 1 200px;
+  min-inline-size: 0;
+}
+
+.cn2b-simple-dropzone__picked-label { font-size: 0.82rem; font-weight: 700; color: var(--ok); }
+
+.cn2b-simple-dropzone__filename {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--t);
+  overflow-wrap: anywhere;
+}
+
+.cn2b-simple-trust {
+  margin: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 0.85rem;
+  line-height: 1.55;
+  color: var(--t2);
+}
+
+/* ── Step 2 — analyzing ──────────────────────────────────────────────────── */
+/* Activity is shown, progress is not invented: an indeterminate bar and a
+   spinner, plus the phases the props actually justify. No percentage. */
+.cn2b-simple-spinner {
+  inline-size: 56px;
+  block-size: 56px;
+  border-radius: 50%;
+  border: 4px solid var(--chip);
+  border-block-start-color: var(--teal);
+  animation: cn2b-simple-spin 1s linear infinite;
+}
+
+@keyframes cn2b-simple-spin { to { transform: rotate(360deg); } }
+
+.cn2b-simple-analyzing__status {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.cn2b-simple-progressbar {
+  inline-size: min(100%, 420px);
+  block-size: 8px;
+  border-radius: 999px;
+  background: var(--chip);
+  overflow: hidden;
+}
+
+.cn2b-simple-progressbar > span {
+  display: block;
+  inline-size: 40%;
+  block-size: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--teal), var(--cyan));
+  animation: cn2b-simple-slide 1.4s ease-in-out infinite;
+}
+
+@keyframes cn2b-simple-slide {
+  0% { transform: translateX(-120%); }
+  100% { transform: translateX(270%); }
+}
+
+.cn2b-simple-phases {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  inline-size: min(100%, 420px);
+  text-align: start;
+}
+
+.cn2b-simple-phase {
+  display: grid;
+  grid-template-columns: 28px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--r2);
+  border: 1px solid var(--brd);
+  background: var(--s2);
+  color: var(--t2);
+}
+
+.cn2b-simple-phase[data-state='active'] {
+  border-color: color-mix(in srgb, var(--teal) 55%, var(--brd));
+  background: color-mix(in srgb, var(--teal) 7%, var(--s));
+  color: var(--t);
+}
+
+.cn2b-simple-phase[data-state='done'] { color: var(--ok); }
+
+.cn2b-simple-phase__mark {
+  inline-size: 26px;
+  block-size: 26px;
+  border-radius: 50%;
+  border: 1px solid currentColor;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.cn2b-simple-phase[data-state='done'] .cn2b-simple-phase__mark { background: var(--ok); color: #fff; border-color: transparent; }
+.cn2b-simple-phase[data-state='active'] .cn2b-simple-phase__mark { background: var(--teal); color: #fff; border-color: transparent; }
+
+.cn2b-simple-phase__text { font-weight: 600; }
+.cn2b-simple-phase__state { font-size: 0.78rem; font-weight: 700; letter-spacing: 0.03em; }
+
+/* ── Step 3 — summary ────────────────────────────────────────────────────── */
+.cn2b-simple-stats {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+/* dt (label) precedes dd (value) in the markup; the value sits on top visually. */
+.cn2b-simple-stat {
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 4px;
+  padding: 16px;
+  border-radius: 16px;
+  background: var(--s2);
+  border: 1px solid var(--brd);
+  min-inline-size: 0;
+}
+
+.cn2b-simple-stat__value {
+  margin: 0;
+  font-size: clamp(1.8rem, 3.5vw, 2.4rem);
+  font-weight: 800;
+  line-height: 1.1;
+  color: var(--t);
+  font-variant-numeric: tabular-nums;
+}
+
+.cn2b-simple-stat__label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--t);
+}
+
+.cn2b-simple-stat__scope { font-size: 0.76rem; font-weight: 500; color: var(--t2); }
+
+.cn2b-simple-review-count {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: var(--r2);
+  background: var(--chipW);
+  border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--brd));
+  color: var(--t);
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.cn2b-simple-review-count svg { flex: 0 0 auto; color: var(--warn); }
+.cn2b-simple-review-count[data-empty='true'] { background: var(--chip); border-color: color-mix(in srgb, var(--ok) 45%, var(--brd)); }
+.cn2b-simple-review-count[data-empty='true'] svg { color: var(--ok); }
+
+/* ── Steps 4 and 5 — one decision at a time ──────────────────────────────── */
+.cn2b-simple-review-head { display: flex; flex-direction: column; gap: 4px; }
+
+.cn2b-simple-progress {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: var(--t);
+}
+
+.cn2b-simple-progress__count {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--teal);
+  background: var(--chip);
+  border: 1px solid var(--brd);
+  border-radius: 999px;
+  padding: 2px 10px;
+}
+
+.cn2b-simple-review-head__hint { margin: 0; font-size: 0.9rem; line-height: 1.55; color: var(--t2); }
+.cn2b-simple-review-foot { display: flex; justify-content: flex-start; }
+
+/* "Found in the file" — evidence, visually distinct from the system's match. */
+.cn2b-simple-evidence {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px 18px;
+  border-radius: 16px;
+  background: var(--s2);
+  border: 1px solid var(--brd);
+  border-inline-start: 4px solid var(--teal);
+}
+
+.cn2b-simple-evidence__text {
+  margin: 0;
+  font-size: clamp(1.2rem, 2.2vw, 1.55rem);
+  font-weight: 800;
+  line-height: 1.35;
+  color: var(--t);
+  overflow-wrap: anywhere;
+}
+
+.cn2b-simple-evidence__meta { margin: 0; font-size: 0.8rem; color: var(--t2); overflow-wrap: anywhere; }
+.cn2b-simple-evidence__list { margin: 0; display: flex; flex-direction: column; gap: 6px; }
+
+.cn2b-simple-evidence__row {
+  display: grid;
+  grid-template-columns: minmax(90px, 32%) 1fr;
+  gap: 10px;
+  align-items: baseline;
+  min-inline-size: 0;
+}
+
+/* Workbook text is wrapped in <bdi> (its own bidi isolation, direction from
+   content) while the block keeps the page's start edge, so Latin and Arabic
+   values sit in one column. */
+.cn2b-simple-evidence__field { font-size: 0.8rem; font-weight: 700; color: var(--t2); overflow-wrap: anywhere; }
+.cn2b-simple-evidence__value { margin: 0; font-size: 1.05rem; font-weight: 700; color: var(--t); overflow-wrap: anywhere; }
+
+.cn2b-simple-unit {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding-block-start: 6px;
+  border-block-start: 1px dashed var(--brd);
+  font-size: 0.9rem;
+  color: var(--t);
+}
+
+.cn2b-simple-unit__label { font-weight: 700; color: var(--t2); }
+
+.cn2b-simple-unit__warn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--chipW);
+  color: var(--warn);
+  font-weight: 700;
+}
+
+/* "Matching … in the system" — the suggestion awaiting an explicit decision. */
+.cn2b-simple-match {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 16px 18px;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--ok) 7%, var(--s));
+  border: 1px solid color-mix(in srgb, var(--ok) 40%, var(--brd));
+  border-inline-start: 4px solid var(--ok);
+}
+
+.cn2b-simple-match__label {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: var(--ok);
+}
+
+.cn2b-simple-match__name {
+  margin: 0;
+  font-size: clamp(1.15rem, 2vw, 1.4rem);
+  font-weight: 800;
+  color: var(--t);
+  overflow-wrap: anywhere;
+}
+
+.cn2b-simple-match__meta { margin: 0; font-size: 0.85rem; color: var(--t2); }
+
+.cn2b-simple-match--none {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  background: var(--s2);
+  border-color: var(--brd);
+  border-inline-start-color: var(--warn);
+  color: var(--t);
+  font-size: 0.95rem;
+}
+
+.cn2b-simple-readonly { margin: 0; }
+
+.cn2b-simple-card__picker,
+.cn2b-simple-card__reason { display: flex; flex-direction: column; gap: 10px; }
+
+.cn2b-simple-card__picker-list {
+  list-style: none;
+  margin: 0;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-block-size: 300px;
+  overflow-y: auto;
+  border: 1px solid var(--brd);
+  border-radius: var(--r2);
+  background: var(--s2);
+}
+
+.cn2b-simple-option {
+  inline-size: 100%;
+  justify-content: flex-start !important;
+  text-align: start;
+  white-space: normal !important;
+}
+
+.cn2b-simple-option__meta { color: var(--t2); font-size: 0.82rem; }
+.cn2b-simple-card__empty { padding: 10px; color: var(--t2); font-size: 0.9rem; }
+
+/* ── Step 6 — outcome ────────────────────────────────────────────────────── */
+.cn2b-simple-outcome__mark {
+  inline-size: 64px;
+  block-size: 64px;
+  border-radius: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--chipW);
+  color: var(--warn);
+}
+
+.cn2b-simple-outcome__mark[data-ready='true'] {
+  background: color-mix(in srgb, var(--ok) 14%, transparent);
+  color: var(--ok);
+}
+
+.cn2b-simple-blockers {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  inline-size: 100%;
+}
+
+.cn2b-simple-blockers li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: var(--r2);
+  background: var(--chipW);
+  border: 1px solid color-mix(in srgb, var(--warn) 40%, var(--brd));
+  color: var(--t);
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.cn2b-simple-blockers svg { flex: 0 0 auto; color: var(--warn); margin-block-start: 3px; }
+
+.cn2b-simple-handoff {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px 20px;
+  border-radius: 16px;
+  background: var(--s2);
+  border: 1px solid var(--brd);
+  inline-size: 100%;
+}
+
+.cn2b-simple-handoff__text { margin: 0; font-size: 1rem; font-weight: 600; line-height: 1.55; color: var(--t); }
+
+.cn2b-simple-unavailable {
+  inline-size: 100%;
+  padding: 8px 14px;
+  border: 1px dashed var(--brd);
+  border-radius: var(--r2);
+  color: var(--t2);
+  font-size: 0.88rem;
+}
+
+.cn2b-simple-unavailable > summary { cursor: pointer; font-weight: 600; padding-block: 6px; }
+.cn2b-simple-unavailable__body { display: flex; flex-direction: column; gap: 8px; padding-block: 6px 8px; }
+
+/* ── The quiet Advanced entry ────────────────────────────────────────────── */
+.cn2b-simple-footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-block: 14px 0;
+  border-block-start: 1px solid var(--brd);
+}
+
+.cn2b-simple-footer__hint {
+  flex: 1 1 240px;
+  min-inline-size: 0;
+  font-size: 0.82rem;
+  color: var(--t2);
+}
+
+.cn2b-simple .phoenix-button:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .cn2b-simple-spinner,
+  .cn2b-simple-progressbar > span { animation: none; }
+}
+
+/* ── Narrow screens (320–720px): one column, full-width actions, the step
+   line carries the labels the segments drop. Nothing widens the document. */
+@media (max-width: 720px) {
+  .cn2b-simple { gap: 14px; padding-block-end: 12px; }
+  .cn2b-simple-card { padding: 18px 16px; border-radius: 18px; gap: 14px; }
+  .cn2b-simple-stepper__list { gap: 5px; }
+  .cn2b-simple-stepper__label { display: none; }
+  .cn2b-simple-stats { grid-template-columns: 1fr; }
+
+  .cn2b-simple-stat {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 14px;
+  }
+
+  .cn2b-simple-card__actions { flex-direction: column; align-items: stretch; }
+
+  .cn2b-simple-card__actions .phoenix-button {
+    inline-size: 100%;
+    min-block-size: var(--touch-target, 44px);
+    white-space: normal !important;
+  }
+
+  .cn2b-simple-year { flex-direction: column; align-items: stretch; }
+  .cn2b-simple-input--year { inline-size: 100%; }
+  .cn2b-simple-dropzone__target { padding: 24px 14px; min-block-size: 150px; }
+  .cn2b-simple-dropzone__picked { flex-direction: column; align-items: flex-start; }
+  .cn2b-simple-evidence__row { grid-template-columns: 1fr; gap: 2px; }
+  .cn2b-simple-footer { flex-direction: column; align-items: flex-start; }
+}

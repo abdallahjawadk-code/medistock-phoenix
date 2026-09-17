@@ -62,6 +62,10 @@ const FORBIDDEN = [
   // The allowlist decides which write RPCs the harness can answer locally, so
   // its absence from dist/ is as important as the fixture rows themselves.
   'QA_MUTATION_OUTCOMES',
+  // Simple Annual Needs scene variants and the never-settling read sentinel.
+  'qaCentralNeedsOverlay',
+  'QA_CENTRAL_NEEDS_VARIANTS',
+  'PHOENIX_VISUAL_QA_PENDING_FOREVER',
   'QA-RET-0001',
   'QA-SHP-0001',
   'QA-INT-77',

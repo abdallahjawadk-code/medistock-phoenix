@@ -141,7 +141,7 @@ afterEach(() => cleanup());
 describe('CentralNeedsScreen — beneficiary-column mapping reaches the need-line panel (213)', () => {
   it('feeds the SAME listBeneficiaryColumns() read into both panels, and a confirmed mapping change reloads both', async () => {
     setupReload([UNCONFIRMED_COLUMN]);
-    render(<CentralNeedsScreen />);
+    render(<CentralNeedsScreen initialMode="advanced" />);
 
     // 1. Initial load reads beneficiary columns for the revision.
     await waitFor(() => expect(listBeneficiaryColumns).toHaveBeenCalledWith(REV));
@@ -192,7 +192,7 @@ describe('CentralNeedsScreen — beneficiary-column mapping reaches the need-lin
 
   it('reloads dispositions/need-lines/readiness together with beneficiary columns on every change — one shared revision reload, not a beneficiary-only patch', async () => {
     setupReload([UNCONFIRMED_COLUMN]);
-    render(<CentralNeedsScreen />);
+    render(<CentralNeedsScreen initialMode="advanced" />);
     await waitFor(() => expect(listBeneficiaryColumns).toHaveBeenCalledTimes(1));
     expect(fetchReviewReadiness).toHaveBeenCalledTimes(1);
     expect(listNeedLineLineage).toHaveBeenCalledTimes(1);

@@ -80,6 +80,10 @@ async function open(options: OpenOptions = {}) {
 
   const params = new URLSearchParams({ qa: '1', persona, lang, scene });
   if (org) params.set('org', org);
+  // Simple Mode is the product default since the Simple UX visual convergence.
+  // Every case here exercises the ADVANCED six-stage surface, so the harness
+  // is asked to paint it first (the new Simple suite covers the default entry).
+  params.set('mode', 'advanced');
   await page.goto(`${baseUrl}?${params.toString()}`, { waitUntil: 'networkidle' });
   return { context, page };
 }

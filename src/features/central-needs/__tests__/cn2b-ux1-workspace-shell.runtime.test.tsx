@@ -162,7 +162,7 @@ function loadRevision(revision: PlanRevision = REVISION) {
 
 /** Waits for the first revision-scoped read, i.e. a fully painted workspace. */
 async function renderWorkspace() {
-  const view = render(<CentralNeedsScreen />);
+  const view = render(<CentralNeedsScreen initialMode="advanced" />);
   await waitFor(() => expect(listBeneficiaryColumns).toHaveBeenCalledWith(REV));
   return view;
 }
@@ -231,7 +231,7 @@ describe('UX-1 — the six workflow stages', () => {
   it('renders all six stages even with no revision, no session and no permissions at all', async () => {
     appState.myPermissions = new Set();
     listPlanRevisions.mockResolvedValue([]);
-    const { container } = render(<CentralNeedsScreen />);
+    const { container } = render(<CentralNeedsScreen initialMode="advanced" />);
     await waitFor(() => expect(listPlanRevisions).toHaveBeenCalled());
 
     const sections = [...container.querySelectorAll<HTMLElement>('section.cn2b-stage')];
@@ -557,7 +557,7 @@ describe('UX-3R §7 — default stage selection', () => {
     let releaseReadiness!: (value: ReviewReadiness) => void;
     fetchReviewReadiness.mockImplementation(() => new Promise((resolve) => { releaseReadiness = resolve; }));
 
-    render(<CentralNeedsScreen />);
+    render(<CentralNeedsScreen initialMode="advanced" />);
     await waitFor(() => expect(listBeneficiaryColumns).toHaveBeenCalledWith(REV));
 
     // NOTHING is painted yet, so there is nothing to visually jump away from
@@ -596,7 +596,7 @@ describe('UX-3R §7 — default stage selection', () => {
     let releaseRevisions!: (rows: PlanRevision[]) => void;
     listPlanRevisions.mockImplementation(() => new Promise((resolve) => { releaseRevisions = resolve; }));
     try {
-      render(<CentralNeedsScreen />);
+      render(<CentralNeedsScreen initialMode="advanced" />);
       await waitFor(() => expect(listPlanRevisions).toHaveBeenCalled());
       expect(visibleStages()).toEqual([]);
       expect(workspaceLoading()).not.toBeNull();
@@ -614,7 +614,7 @@ describe('UX-3R §7 — default stage selection', () => {
 
   it('opens Stage 1 immediately when no revision exists, with no loading state (§7.1)', async () => {
     listPlanRevisions.mockResolvedValue([]);
-    render(<CentralNeedsScreen />);
+    render(<CentralNeedsScreen initialMode="advanced" />);
     await waitFor(() => expect(listPlanRevisions).toHaveBeenCalled());
     await waitFor(() => expect(visibleStages()).toEqual(['plan']));
     expect(workspaceLoading()).toBeNull();
@@ -639,7 +639,7 @@ describe('UX-3R §7 — default stage selection', () => {
     let releaseReadiness!: (value: ReviewReadiness) => void;
     fetchReviewReadiness.mockImplementation(() => new Promise((resolve) => { releaseReadiness = resolve; }));
 
-    render(<CentralNeedsScreen />);
+    render(<CentralNeedsScreen initialMode="advanced" />);
     await waitFor(() => expect(listBeneficiaryColumns).toHaveBeenCalledWith(REV));
 
     fireEvent.click(navButton('need-lines'));

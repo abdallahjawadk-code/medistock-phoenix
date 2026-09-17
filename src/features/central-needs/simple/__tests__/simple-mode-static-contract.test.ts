@@ -311,17 +311,97 @@ describe('Simple Mode — the summary is ordered before review, and is navigatio
   });
 });
 
-describe('Advanced Mode is untouched by the Simple Mode corrections', () => {
-  it('CentralNeedsScreen still defaults to advanced and still renders the six-stage workspace', () => {
-    const screenSrc = code('src/features/central-needs/CentralNeedsScreen.tsx');
-    expect(screenSrc).toMatch(/useState<'simple' \| 'advanced'>\('advanced'\)/);
-    expect(screenSrc).toMatch(/<CentralNeedsWorkflowNav/);
-    expect(screenSrc).toMatch(/CENTRAL_NEEDS_STAGES/);
+/**
+ * Owner decision ("Simple UX Visual Activation & Convergence"): Simple Mode is
+ * the DEFAULT product experience; the Advanced six-stage workspace survives
+ * intact as the secondary, expert entry. The earlier "defaults to advanced"
+ * assertion is obsolete by that decision and is replaced, not deleted.
+ */
+describe('Simple Mode is the default; Advanced Mode survives as the secondary entry', () => {
+  const screenPath = 'src/features/central-needs/CentralNeedsScreen.tsx';
+
+  it('CentralNeedsScreen seeds its mode from initialMode, whose default is simple — never advanced', () => {
+    const screenSrc = code(screenPath);
+    expect(screenSrc).toMatch(/useState<'simple' \| 'advanced'>\(initialMode\)/);
+    expect(screenSrc).toMatch(/initialMode = 'simple'/);
+    expect(screenSrc).not.toMatch(/useState<'simple' \| 'advanced'>\('advanced'\)/);
   });
 
-  it('the Simple workspace is still an additive branch, not a replacement', () => {
-    const screenSrc = code('src/features/central-needs/CentralNeedsScreen.tsx');
-    expect(screenSrc).toMatch(/mode === 'simple' \?/);
-    expect(screenSrc).toMatch(/<CentralNeedsSimpleWorkspace/);
+  it('the six-stage Advanced workspace is still rendered by the screen, inside the advanced branch only', () => {
+    const screenSrc = code(screenPath);
+    expect(screenSrc).toMatch(/<CentralNeedsWorkflowNav/);
+    expect(screenSrc).toMatch(/CENTRAL_NEEDS_STAGES\.map/);
+    // The Simple branch renders ONLY the Simple workspace; the Advanced command
+    // header, rail and stage sections are all on the other side of the ternary.
+    const simpleBranch = screenSrc.slice(screenSrc.indexOf("mode === 'simple' ? ("), screenSrc.indexOf(') : (', screenSrc.indexOf("mode === 'simple' ? (")));
+    expect(simpleBranch).toMatch(/<CentralNeedsSimpleWorkspace/);
+    expect(simpleBranch).not.toMatch(/cn2b-header|CentralNeedsWorkflowNav|cn2b-stage|cn2b-guidance/);
+  });
+
+  it('switching mode is presentation only — the screen never reloads or resets state on a mode change', () => {
+    const screenSrc = code(screenPath);
+    // The two switch sites call setMode with a literal and nothing else.
+    expect(screenSrc).toMatch(/onSwitchToAdvanced=\{\(\) => setMode\('advanced'\)\}/);
+    expect(screenSrc).toMatch(/onClick=\{\(\) => setMode\('simple'\)\}/);
+    // No effect keyed on `mode` exists, so a mode change can trigger no read.
+    expect(screenSrc).not.toMatch(/\[[^\]]*\bmode\b[^\]]*\]\s*\)/);
+  });
+
+  it('the Simple workspace receives human-readable error and notice text, never a raw code or dictionary key', () => {
+    const screenSrc = code(screenPath);
+    expect(screenSrc).toMatch(/error=\{error \? centralNeedsErrorText\(error, lang\) : null\}/);
+    expect(screenSrc).toMatch(/notice=\{notice \? t\(notice, lang\) : null\}/);
+  });
+});
+
+describe('Simple Mode shell — six steps, one task, Advanced demoted (visual convergence)', () => {
+  const workspacePath = `${SIMPLE_DIR}/CentralNeedsSimpleWorkspace.tsx`;
+
+  it('the workspace owns the page heading and renders the six-step progress indicator on every step', () => {
+    const src = code(workspacePath);
+    expect(src).toMatch(/<h1 className="cn2b-simple-title">/);
+    expect(src).toMatch(/<SimpleStepper lang=\{lang\} step=\{step\} \/>/);
+    const stepper = code(`${SIMPLE_DIR}/SimpleStepper.tsx`);
+    for (const id of ['upload', 'analyzing', 'summary', 'review-institution', 'review-material', 'pending']) {
+      expect(stepper, id).toContain(`id: '${id}'`);
+    }
+    // The indicator is informative only: no click handler can jump steps.
+    expect(stepper).not.toMatch(/onClick/);
+  });
+
+  it('the Advanced entry is a single quiet footer control, not a toggle at the top of the page', () => {
+    const src = code(workspacePath);
+    const footerAt = src.indexOf('<footer className="cn2b-simple-footer">');
+    const heroAt = src.indexOf('<header className="cn2b-simple-hero">');
+    expect(footerAt).toBeGreaterThan(heroAt);
+    const hero = src.slice(heroAt, src.indexOf('</header>', heroAt));
+    expect(hero).not.toMatch(/onSwitchToAdvanced/);
+    expect(src.slice(footerAt)).toMatch(/data-testid="cn2b-simple-advanced-link"/);
+  });
+
+  it('the analyzing step shows only phases the props justify and never a fabricated percentage', () => {
+    const src = code(workspacePath);
+    expect(src).toMatch(/preview\.phase === 'parsing'[\s\S]*?phases: \['active', 'waiting', 'waiting'\]/);
+    expect(src).toMatch(/activity === 'verifying'[\s\S]*?phases: \['done', 'active', 'waiting'\]/);
+    expect(src).not.toMatch(/%/);
+    expect(src).not.toMatch(/aria-valuenow/);
+  });
+
+  it('step 6 never claims completion: readiness text is the server verdict and the handoff goes to Advanced', () => {
+    const src = code(workspacePath);
+    const pending = src.slice(src.indexOf("step === 'pending'"), src.indexOf('<footer className="cn2b-simple-footer">'));
+    expect(pending).toMatch(/readinessSummary\.ready\s*\?\s*t\('cn2b_simple_final_server_ready'/);
+    expect(pending).toMatch(/cn2b_simple_readiness_unknown/);
+    expect(pending).toMatch(/cn2b-simple-continue-advanced/);
+    expect(pending).not.toMatch(/ready:\s*true/);
+    const strings = read('src/shared/i18n/strings.ts');
+    expect(strings).not.toMatch(/cn2b_simple_[a-z_]+:\s*\{[^}]*كل شيء جاهز/);
+  });
+
+  it('the upload surface reuses the same accept list and the same onPickFile handler as Advanced Mode', () => {
+    const zone = code(`${SIMPLE_DIR}/SimpleUploadZone.tsx`);
+    expect(zone).toContain("'.xlsx,.xls,.csv,.zip'");
+    expect(zone).toMatch(/onPickFile\(e\.target\.files\?\.\[0\] \?\? null\)/);
+    expect(zone).not.toMatch(/requestUploadTicket|uploadToStaging|finalizeImport|\.rpc\(/);
   });
 });

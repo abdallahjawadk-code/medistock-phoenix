@@ -36,7 +36,9 @@
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { QA_HARNESS_MARKER } from './qaConfig';
-import { QA_FIXTURES, QA_MUTATION_OUTCOMES, QA_FEFO_LIVE_PROOF_DISPATCH_HEADER, type QaRow } from './qaData';
+import {
+  QA_FIXTURES, QA_MUTATION_OUTCOMES, QA_FEFO_LIVE_PROOF_DISPATCH_HEADER, QA_PENDING_FOREVER, type QaRow,
+} from './qaData';
 import { qaAnswerExtraScopedPermission, qaScopeTopologyRows } from './qaScopes';
 
 export interface QaResult {
@@ -137,17 +139,28 @@ class QaQueryBuilder implements PromiseLike<QaResult> {
  * services actually use (`.from`, `.rpc`); the unused Supabase API is not
  * implemented because the harness never exercises it.
  */
-export function createQaFixtureClient(profileId?: string): SupabaseClient {
+/**
+ * `overlay` — SIMPLE ANNUAL NEEDS scene variants (see qaCentralNeedsOverlay in
+ * qaData.ts). A table or `rpc:` key present in the overlay answers INSTEAD of
+ * the same key in QA_FIXTURES; every other key is untouched. Still SELECT-only:
+ * an overlay can only change what a read answers, never let a write through.
+ * The one special value, QA_PENDING_FOREVER, makes that read never resolve so
+ * the real screen holds its own loading state for a screenshot.
+ */
+export function createQaFixtureClient(profileId?: string, overlay: Record<string, unknown> = {}): SupabaseClient {
   const client = {
     from(table: string) {
-      const rows = QA_FIXTURES[table];
+      const rows = Object.prototype.hasOwnProperty.call(overlay, table) ? overlay[table] : QA_FIXTURES[table];
       return new QaQueryBuilder(Array.isArray(rows) ? (rows as QaRow[]) : []);
     },
     rpc(name: string, args?: Record<string, unknown>) {
       QA_RPC_CALLS.push({ name, args: args ?? {} });
       // Read RPCs registered in fixtures return their data (an array OR an
-      // object, matching the real RPC's schema).
-      const fixture = QA_FIXTURES[`rpc:${name}`];
+      // object, matching the real RPC's schema). A scene-variant overlay
+      // answers first, and may hold the read open forever.
+      const key = `rpc:${name}`;
+      const fixture = Object.prototype.hasOwnProperty.call(overlay, key) ? overlay[key] : QA_FIXTURES[key];
+      if (fixture === QA_PENDING_FOREVER) return new Promise<QaResult>(() => { /* deliberately never settles */ });
       if (fixture !== undefined) return Promise.resolve(ok(fixture));
 
       /**

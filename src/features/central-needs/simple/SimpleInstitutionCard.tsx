@@ -15,8 +15,8 @@
  */
 import { useMemo, useState } from 'react';
 import { t } from '@/shared/i18n/strings';
-import { PhoenixCard } from '@/shared/ui/PhoenixCard';
 import { PhoenixButton } from '@/shared/ui/PhoenixButton';
+import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import type { OrgRow } from '@/shared/supabase/services/organizations.service';
 import {
   exactMatchSuggestion,
@@ -106,26 +106,39 @@ export function SimpleInstitutionCard({ lang, planRevisionId, editable, column, 
   }
 
   return (
-    <PhoenixCard className="cn2b-simple-card" data-testid="cn2b-simple-institution-card">
-      <p className="cn2b-simple-card__eyebrow">{t('cn2b_simple_found_in_file', lang)}</p>
-      <h3 className="cn2b-simple-card__evidence" data-testid="cn2b-simple-institution-evidence">
-        {column.sourceFieldName ?? t('cn2b_simple_unnamed_column', lang)}
-      </h3>
+    <section className="cn2b-simple-card cn2b-simple-card--review" data-testid="cn2b-simple-institution-card" aria-labelledby="cn2b-simple-institution-evidence">
+      <div className="cn2b-simple-evidence">
+        <p className="cn2b-simple-card__eyebrow">
+          <PhoenixIcon name="file" size={14} inline aria-hidden="true" /> {t('cn2b_simple_found_in_file', lang)}
+        </p>
+        <h2 className="cn2b-simple-evidence__text" id="cn2b-simple-institution-evidence" data-testid="cn2b-simple-institution-evidence">
+          <bdi>{column.sourceFieldName ?? t('cn2b_simple_unnamed_column', lang)}</bdi>
+        </h2>
+        {(column.originalFilename || column.sheetName) && (
+          <p className="cn2b-simple-evidence__meta">
+            <bdi>{column.originalFilename ?? ''}{column.originalFilename && column.sheetName ? ' · ' : ''}{column.sheetName ?? ''}</bdi>
+          </p>
+        )}
+      </div>
 
-      {error && <div className="cn2b-simple-card__error" role="alert">{error}</div>}
+      {error && (
+        <div className="cn2b-simple-error" role="alert">
+          <PhoenixIcon name="warning" size={16} inline aria-hidden="true" /> {error}
+        </div>
+      )}
 
       {/* Read-only: the evidence and any exact match stay visible, every control does not. */}
       {!editable && (
         <>
           {singleSuggestion && (
-            <>
-              <p className="cn2b-simple-card__label">{t('cn2b_simple_matching_institution', lang)}</p>
-              <p className="cn2b-simple-card__match" data-testid="cn2b-simple-institution-suggestion">
-                {orgLabel(singleSuggestion)}
+            <div className="cn2b-simple-match">
+              <p className="cn2b-simple-match__label">{t('cn2b_simple_matching_institution', lang)}</p>
+              <p className="cn2b-simple-match__name" data-testid="cn2b-simple-institution-suggestion">
+                <bdi>{orgLabel(singleSuggestion)}</bdi>
               </p>
-            </>
+            </div>
           )}
-          <p className="cn2b-bc-readonly" data-empty="read-only" data-testid="cn2b-simple-institution-read-only">
+          <p className="cn2b-bc-readonly cn2b-simple-readonly" data-empty="read-only" data-testid="cn2b-simple-institution-read-only">
             {t('cn2b_bc_read_only', lang)}
           </p>
         </>
@@ -133,12 +146,14 @@ export function SimpleInstitutionCard({ lang, planRevisionId, editable, column, 
 
       {editable && singleSuggestion && !picker.open && !showNonBeneficiaryReason && (
         <>
-          <p className="cn2b-simple-card__label">{t('cn2b_simple_matching_institution', lang)}</p>
-          <p className="cn2b-simple-card__match" data-testid="cn2b-simple-institution-suggestion">
-            {orgLabel(singleSuggestion)}
-          </p>
+          <div className="cn2b-simple-match">
+            <p className="cn2b-simple-match__label">{t('cn2b_simple_matching_institution', lang)}</p>
+            <p className="cn2b-simple-match__name" data-testid="cn2b-simple-institution-suggestion">
+              <bdi>{orgLabel(singleSuggestion)}</bdi>
+            </p>
+          </div>
           <div className="cn2b-simple-card__actions">
-            <PhoenixButton type="button" variant="primary" disabled={busy} onClick={confirmSuggestion}>
+            <PhoenixButton type="button" variant="primary" size="lg" disabled={busy} onClick={confirmSuggestion}>
               {t('cn2b_simple_correct', lang)}
             </PhoenixButton>
             <PhoenixButton type="button" variant="secondary" disabled={busy} onClick={() => setPicker({ open: true, query: '' })}>
@@ -153,13 +168,14 @@ export function SimpleInstitutionCard({ lang, planRevisionId, editable, column, 
 
       {editable && !singleSuggestion && !picker.open && !showNonBeneficiaryReason && (
         <>
-          <p className="cn2b-simple-card__hint" data-testid="cn2b-simple-institution-no-suggestion">
+          <div className="cn2b-simple-match cn2b-simple-match--none" data-testid="cn2b-simple-institution-no-suggestion">
+            <PhoenixIcon name="info" size={16} inline aria-hidden="true" />{' '}
             {suggestions.length > 1
               ? t('cn2b_simple_multiple_matches', lang)
               : t('cn2b_simple_no_match', lang)}
-          </p>
+          </div>
           <div className="cn2b-simple-card__actions">
-            <PhoenixButton type="button" variant="primary" disabled={busy} onClick={() => setPicker({ open: true, query: '' })}>
+            <PhoenixButton type="button" variant="primary" size="lg" disabled={busy} onClick={() => setPicker({ open: true, query: '' })}>
               {t('cn2b_simple_choose_institution', lang)}
             </PhoenixButton>
             <PhoenixButton type="button" variant="ghost" disabled={busy} onClick={() => setShowNonBeneficiaryReason(true)}>
@@ -182,7 +198,7 @@ export function SimpleInstitutionCard({ lang, planRevisionId, editable, column, 
           <ul className="cn2b-simple-card__picker-list">
             {pickerOptions.map((o) => (
               <li key={o.id}>
-                <PhoenixButton type="button" variant="ghost" disabled={busy} onClick={() => confirmPicked(o.id)}>
+                <PhoenixButton type="button" variant="ghost" className="cn2b-simple-option" disabled={busy} onClick={() => confirmPicked(o.id)}>
                   {orgLabel(o)}
                 </PhoenixButton>
               </li>
@@ -219,6 +235,6 @@ export function SimpleInstitutionCard({ lang, planRevisionId, editable, column, 
           </div>
         </div>
       )}
-    </PhoenixCard>
+    </section>
   );
 }

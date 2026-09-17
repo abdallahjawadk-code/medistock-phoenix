@@ -3701,56 +3701,126 @@ export const T: Dict = {
   guide_change_app_language: { ar: 'تغيير لغة البرنامج',          en: 'Change application language' },
 
   /* ── Annual Needs — Simple Mode (owner task: "Simple Annual Needs — Corpus
-     Contract + Local Implementation"). Arabic-first per the task's own
-     mockups; the existing six-stage workspace keeps its cn2b_* copy above
-     unchanged as Advanced/Audit Mode. ── */
-  cn2b_simple_switch_to_advanced: { ar: 'الوضع المتقدم', en: 'Advanced mode' },
-  cn2b_simple_switch_to_simple:   { ar: 'الوضع البسيط',  en: 'Simple mode' },
+     Contract + Local Implementation"; visual convergence: "Simple UX Visual
+     Activation & Convergence"). Arabic-first per the task's own mockups; the
+     existing six-stage workspace keeps its cn2b_* copy above unchanged as the
+     Advanced options. Simple Mode is the DEFAULT landing view; Advanced is the
+     secondary, expert entry. ── */
+  cn2b_simple_switch_to_advanced: { ar: 'خيارات متقدمة',   en: 'Advanced options' },
+  cn2b_simple_switch_to_simple:   { ar: 'الواجهة البسيطة', en: 'Simple view' },
 
   cn2b_simple_title:      { ar: 'الاحتياج السنوي', en: 'Annual Needs' },
+  cn2b_simple_tagline:    { ar: 'واجهة بسيطة · نتائج دقيقة', en: 'Simple interface · precise results' },
   cn2b_simple_year_label: { ar: 'السنة',            en: 'Year' },
+
+  /* Six-step progress indicator. The step is DERIVED from current props (see
+     CentralNeedsSimpleWorkspace's derivedStep) — these are labels only. */
+  cn2b_simple_progress_label:    { ar: 'تقدم العمل',              en: 'Progress' },
+  cn2b_simple_step_of:           { ar: 'الخطوة __N__ من 6',        en: 'Step __N__ of 6' },
+  cn2b_simple_step_upload:       { ar: 'اختر السنة وارفع الملف',   en: 'Choose the year and upload the file' },
+  cn2b_simple_step_analyzing:    { ar: 'جاري التحليل',             en: 'Analyzing' },
+  cn2b_simple_step_summary:      { ar: 'ملخص واضح',                en: 'Clear summary' },
+  cn2b_simple_step_institutions: { ar: 'راجع المؤسسات',            en: 'Review institutions' },
+  cn2b_simple_step_materials:    { ar: 'راجع المواد',              en: 'Review materials' },
+  cn2b_simple_step_outcome:      { ar: 'النتيجة والخطوة التالية',  en: 'Outcome and next step' },
+
+  /* Step 1 — upload. */
   cn2b_simple_already_approved: {
     ar: 'هذا الاحتياج معتمد مسبقاً. هل تريد إنشاء نسخة تصحيح جديدة؟',
     en: 'This annual need is already approved. Create a new correction revision?',
   },
   cn2b_simple_create_correction: { ar: 'إنشاء نسخة تصحيح جديدة', en: 'Create a correction revision' },
-  cn2b_simple_start:             { ar: 'بدء',                     en: 'Start' },
+  cn2b_simple_closed_notice: {
+    ar: 'هذا الإصدار مغلق ولا يمكن تعديله. لإجراء تصحيح، أنشئ نسخة تصحيح جديدة.',
+    en: 'This revision is closed and cannot be edited. To make a correction, create a new correction revision.',
+  },
+  cn2b_simple_closed_status:     { ar: 'حالة الاحتياج الحالي',    en: 'Current status of this need' },
+  cn2b_simple_year_choose:       { ar: 'اختر سنة الاحتياج',       en: 'Choose the needs year' },
+  cn2b_simple_year_hint: {
+    ar: 'تُفتح مسودة السنة المحددة، أو تُستخدم المسودة المفتوحة إن وُجدت. لا يُنشأ شيء تلقائياً.',
+    en: 'Opens the draft for the chosen year, or reuses the one already open. Nothing is created automatically.',
+  },
+  cn2b_simple_start:             { ar: 'بدء العمل على هذه السنة', en: 'Start working on this year' },
+  cn2b_simple_draft_open:        { ar: 'مسودة سنة __YEAR__ مفتوحة', en: 'The __YEAR__ draft is open' },
   cn2b_simple_no_import_permission: { ar: 'ليست لديك صلاحية الاستيراد', en: 'You do not have import permission' },
-  cn2b_simple_upload_button: { ar: 'رفع ملف الاحتياج', en: 'Upload the needs file' },
-  cn2b_simple_analyzing:     { ar: 'جاري التحليل...',    en: 'Analyzing…' },
+  cn2b_simple_no_import_permission_hint: {
+    ar: 'يمكنك متابعة حالة الاحتياج الحالي فقط. اطلب صلاحية الاستيراد من مدير النظام.',
+    en: 'You can only follow the current need. Ask your administrator for import permission.',
+  },
+  cn2b_simple_upload_title:    { ar: 'ارفع ملف الاحتياج السنوي',         en: 'Upload the annual needs file' },
+  cn2b_simple_upload_hint:     { ar: 'اسحب الملف إلى هنا أو اضغط للاختيار', en: 'Drag the file here or click to choose' },
+  cn2b_simple_upload_types:    { ar: 'الأنواع المدعومة: XLS · XLSX · CSV · ZIP', en: 'Supported types: XLS · XLSX · CSV · ZIP' },
+  cn2b_simple_upload_selected: { ar: 'الملف المحدد',                     en: 'Selected file' },
+  cn2b_simple_upload_ready:    { ar: 'الملف جاهز للرفع',                  en: 'File ready to upload' },
+  cn2b_simple_upload_change:   { ar: 'اختيار ملف آخر',                    en: 'Choose another file' },
+  cn2b_simple_upload_button:   { ar: 'رفع ملف الاحتياج',                  en: 'Upload the needs file' },
+  cn2b_simple_trust_note: {
+    ar: 'يُحفظ الملف الأصلي كما هو، ولا تُعدَّل أي قيمة تلقائياً. كل قرار يحتاج تأكيدك.',
+    en: 'The original file is kept exactly as uploaded and no value is changed automatically. Every decision needs your confirmation.',
+  },
 
-  cn2b_simple_file_read:   { ar: '✓ تمت قراءة الملف', en: '✓ File read successfully' },
+  /* Step 2 — analyzing. Only phases that are actually happening are shown. */
+  cn2b_simple_analyzing:       { ar: 'جاري قراءة الملف وتحليل البيانات...', en: 'Reading the file and analyzing the data…' },
+  cn2b_simple_analyzing_note:  { ar: 'قد يستغرق ذلك لحظات. لا تُغلق الصفحة.', en: 'This may take a moment. Please keep this page open.' },
+  cn2b_simple_working:         { ar: 'جاري تنفيذ العملية...',               en: 'Working…' },
+  cn2b_simple_preparing:       { ar: 'جاري تجهيز بيانات الاحتياج...',        en: 'Preparing the needs data…' },
+  cn2b_simple_processing_status: { ar: 'حالة المعالجة',                    en: 'Processing status' },
+  cn2b_simple_phase_read:      { ar: 'قراءة الملف',    en: 'Reading the file' },
+  cn2b_simple_phase_analyze:   { ar: 'تحليل البيانات', en: 'Analyzing the data' },
+  cn2b_simple_phase_prepare:   { ar: 'تجهيز المراجعة', en: 'Preparing the review' },
+  cn2b_simple_phase_done:      { ar: 'تم',             en: 'Done' },
+  cn2b_simple_phase_active:    { ar: 'جارٍ',           en: 'In progress' },
+  cn2b_simple_phase_waiting:   { ar: 'بانتظار',        en: 'Waiting' },
+
+  /* Step 3 — summary. */
+  cn2b_simple_file_read:   { ar: 'تمت قراءة الملف بنجاح', en: 'File read successfully' },
 
   /* Scope honesty: `listBeneficiaryColumns` is revision-wide while
      `listSourceRecords`/`listDispositions` are keyed by import session, so the
      summary states each metric's own scope instead of implying one total. */
   cn2b_simple_scope_session_title: {
-    ar: 'ملخص جلسة العمل الحالية (الملف الحالي)',
-    en: 'Summary of the current work session (this file)',
+    ar: 'ملخص جلسة العمل الحالية — الملف الحالي',
+    en: 'Summary of the current work session — this file',
   },
-  cn2b_simple_scope_this_session: { ar: '— في هذا الملف فقط', en: '— this file only' },
-  cn2b_simple_scope_whole_revision: { ar: '— في كامل الاحتياج السنوي', en: '— across the whole annual need' },
+  cn2b_simple_scope_this_session: { ar: 'في هذا الملف فقط', en: 'this file only' },
+  cn2b_simple_scope_whole_revision: { ar: 'في كامل الاحتياج السنوي', en: 'across the whole annual need' },
   cn2b_simple_scope_session_note: {
-    ar: 'أعداد المواد والكميات أعلاه تخص جلسة الاستيراد الحالية فقط، وليست مجموع الاحتياج السنوي بالكامل. الملف الواحد قد يُنتج عدة جلسات — استخدم الوضع المتقدم لمراجعة كل جلسة.',
-    en: 'The material and quantity figures above cover the current import session only — they are not whole-annual-need totals. One archive can produce many sessions; use Advanced mode to review each session.',
+    ar: 'أعداد المواد والكميات أعلاه تخص جلسة الاستيراد الحالية فقط، وليست مجموع الاحتياج السنوي بالكامل. الملف الواحد قد يُنتج عدة جلسات — استخدم الخيارات المتقدمة لمراجعة كل جلسة.',
+    en: 'The material and quantity figures above cover the current import session only — they are not whole-annual-need totals. One archive can produce many sessions; use the advanced options to review each session.',
   },
 
   cn2b_simple_institutions: { ar: 'المؤسسات', en: 'Institutions' },
   cn2b_simple_materials:    { ar: 'المواد',    en: 'Materials' },
   cn2b_simple_quantities:   { ar: 'الكميات',   en: 'Quantities' },
-  cn2b_simple_items_need_review: { ar: 'تبقى __N__ عناصر تحتاج مراجعة', en: '__N__ items still need review' },
-  cn2b_simple_review_button:     { ar: 'مراجعة __N__ عناصر',            en: 'Review __N__ items' },
-  cn2b_simple_continue:          { ar: 'متابعة',                        en: 'Continue' },
-  cn2b_simple_view_details:      { ar: 'عرض التفاصيل',                  en: 'View details' },
-  cn2b_simple_advanced_options:  { ar: 'خيارات متقدمة',                 en: 'Advanced options' },
-  cn2b_simple_back_to_summary:   { ar: 'الرجوع إلى الملخص',             en: 'Back to summary' },
+  cn2b_simple_review_items_title: { ar: 'العناصر التي تحتاج مراجعة', en: 'Items that need review' },
+  cn2b_simple_items_need_review: { ar: 'العناصر التي تحتاج مراجعتك: __N__', en: 'Items awaiting your review: __N__' },
+  cn2b_simple_nothing_to_review: { ar: 'لا توجد عناصر تحتاج مراجعة في هذا الملف.', en: 'Nothing in this file needs review.' },
+  cn2b_simple_review_button:     { ar: 'مراجعة العناصر (__N__)',           en: 'Review items (__N__)' },
+  cn2b_simple_continue:          { ar: 'متابعة',                            en: 'Continue' },
+  cn2b_simple_view_details:      { ar: 'عرض التفاصيل',                      en: 'View details' },
+  cn2b_simple_advanced_options:  { ar: 'خيارات متقدمة',                     en: 'Advanced options' },
+  cn2b_simple_advanced_hint: {
+    ar: 'للمستخدمين الخبراء: المراحل الست، الأدلة الفنية، جلسات العمل، وسطور الاحتياج.',
+    en: 'For expert users: the six stages, technical evidence, work sessions and need lines.',
+  },
+  cn2b_simple_back_to_summary:   { ar: 'الرجوع إلى الملخص',                 en: 'Back to summary' },
 
+  /* Steps 4 and 5 — one decision at a time. */
   cn2b_simple_reviewing_institutions: { ar: 'مراجعة المؤسسات', en: 'Reviewing institutions' },
   cn2b_simple_reviewing_materials:    { ar: 'مراجعة المواد',    en: 'Reviewing materials' },
-  cn2b_simple_found_in_file:          { ar: 'وجدنا في الملف:',  en: 'Found in the file:' },
+  cn2b_simple_remaining:              { ar: 'المتبقي',          en: 'Remaining' },
+  cn2b_simple_institution_step_hint: {
+    ar: 'أكّد أن هذا العمود يمثل المؤسسة الصحيحة في البرنامج. لا يُعتمد أي تطابق تلقائياً.',
+    en: 'Confirm that this column is the right institution in the system. No match is accepted automatically.',
+  },
+  cn2b_simple_material_step_hint: {
+    ar: 'أكّد المادة المقابلة في البرنامج لهذا الصف. وحدة البرنامج تُعرض للاطلاع فقط ولا تُعدّ دليلاً على وحدة الملف.',
+    en: 'Confirm the matching material in the system for this row. The system unit is shown for context only and is never proof of the file’s unit.',
+  },
+  cn2b_simple_found_in_file:          { ar: 'وجدنا في الملف',   en: 'Found in the file' },
   cn2b_simple_unnamed_column:         { ar: 'عمود بدون اسم',    en: 'Unnamed column' },
 
-  cn2b_simple_matching_institution: { ar: 'المؤسسة المقابلة في البرنامج:', en: 'Matching institution in the system:' },
+  cn2b_simple_matching_institution: { ar: 'المؤسسة المقابلة في البرنامج', en: 'Matching institution in the system' },
   cn2b_simple_correct:              { ar: 'صحيح',                          en: 'Correct' },
   cn2b_simple_choose_another_institution: { ar: 'اختيار مؤسسة أخرى', en: 'Choose another institution' },
   cn2b_simple_not_an_institution:         { ar: 'ليست مؤسسة',        en: 'Not an institution' },
@@ -3770,7 +3840,7 @@ export const T: Dict = {
   },
   cn2b_simple_confirm_not_an_institution: { ar: 'تأكيد: ليست مؤسسة', en: 'Confirm: not an institution' },
 
-  cn2b_simple_matching_material:  { ar: 'المادة المقابلة في البرنامج:', en: 'Matching material in the system:' },
+  cn2b_simple_matching_material:  { ar: 'المادة المقابلة في البرنامج', en: 'Matching material in the system' },
   cn2b_simple_approved_unit_label: { ar: 'الوحدة المعتمدة في البرنامج', en: 'Approved unit in the system' },
   cn2b_simple_choose_another_material: { ar: 'اختيار مادة أخرى', en: 'Choose another material' },
   cn2b_simple_not_a_material:          { ar: 'ليست مادة',        en: 'Not a material' },
@@ -3783,9 +3853,28 @@ export const T: Dict = {
   cn2b_simple_confirm_not_a_material: { ar: 'تأكيد: ليست مادة', en: 'Confirm: not a material' },
   cn2b_simple_no_evidence: { ar: 'لا توجد بيانات لهذا الصف', en: 'No data found for this row' },
   cn2b_simple_source_unit_label: { ar: 'الوحدة في الملف', en: 'Unit in the file' },
-  cn2b_simple_unit_needs_review: { ar: '⚠ تحتاج مراجعة الوحدة', en: '⚠ Unit needs review' },
+  cn2b_simple_unit_needs_review: { ar: 'تحتاج مراجعة الوحدة', en: 'Unit needs review' },
 
-  cn2b_simple_reviewed_all: { ar: 'تمت مراجعة كل العناصر', en: 'All items reviewed' },
+  /* Step 6 — outcome. Readiness is the SERVER's verdict, reproduced; nothing
+     here claims completion the server has not confirmed. */
+  cn2b_simple_reviewed_all: { ar: 'تمت مراجعة المؤسسات والمواد', en: 'Institutions and materials reviewed' },
+  cn2b_simple_final_handoff: {
+    ar: 'يتطلب إكمال سطور الاحتياج الانتقال إلى الخيارات المتقدمة.',
+    en: 'Completing the need lines requires the advanced options.',
+  },
+  cn2b_simple_final_continue_advanced: { ar: 'إكمال في الخيارات المتقدمة', en: 'Continue in advanced options' },
+  cn2b_simple_final_server_ready: {
+    ar: 'أكّد الخادم أن هذا الاحتياج جاهز للمراجعة. يتم الإرسال من الخيارات المتقدمة.',
+    en: 'The server confirms this need is ready for review. Submission is done from the advanced options.',
+  },
+  cn2b_simple_final_server_pending: {
+    ar: 'حسب الخادم، ما زالت هذه الخطوات مطلوبة قبل الإرسال:',
+    en: 'According to the server, these steps remain before submission:',
+  },
+  cn2b_simple_readiness_unknown: {
+    ar: 'لم يُحدَّد وضع الجاهزية بعد.',
+    en: 'Readiness has not been determined yet.',
+  },
   cn2b_simple_confirm_quantities: {
     ar: 'اعتماد الكميات كما وردت في Excel',
     en: 'Approve quantities exactly as imported from Excel',

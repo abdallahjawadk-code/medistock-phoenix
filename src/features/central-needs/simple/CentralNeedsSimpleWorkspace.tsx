@@ -1,6 +1,7 @@
 /**
  * Annual Needs — Simple Mode (owner task: "Simple Annual Needs — Corpus
- * Contract + Local Implementation").
+ * Contract + Local Implementation"; then "Simple UX Visual Activation &
+ * Convergence", which made this the DEFAULT landing view of الاحتياج السنوي).
  *
  * Presentation-only. Every write goes through the SAME canonical RPCs
  * Advanced Mode already uses (`setBeneficiaryColumns`, `setRecordDisposition`,
@@ -9,20 +10,29 @@
  * Mode read and write the SAME persisted business state — this component
  * introduces no second source of truth and no client-side readiness.
  *
+ * THE SHELL. This component owns the whole Simple page: the title block, the
+ * six-step progress indicator, ONE main task card for the current step, and
+ * the quiet "Advanced options" entry at the end. The Advanced command header,
+ * workflow rail, diagnostics and six stage sections are rendered by the
+ * parent screen ONLY in Advanced Mode — none of them wraps this view.
+ *
  * HARD BOUNDARY (owner task section 16): this component NEVER calls
  * `setNeedLine`. The final "quantities as imported" action is always
  * disabled here — automatic bulk NeedLine persistence is out of scope for
  * this task, pending independent proof of the corpus's unit-lineage
- * contract (see CORPUS-CONTRACT.md).
+ * contract (see CORPUS-CONTRACT.md). Step 6 therefore hands the human to
+ * the Advanced options honestly instead of claiming completion.
  */
 import { useMemo, useState } from 'react';
 import { t } from '@/shared/i18n/strings';
 import { PhoenixButton } from '@/shared/ui/PhoenixButton';
-import { PhoenixCard } from '@/shared/ui/PhoenixCard';
+import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import type { OrgRow } from '@/shared/supabase/services/organizations.service';
 import type { PreviewState } from '../useCentralNeedsPreview';
 import { SimpleInstitutionCard } from './SimpleInstitutionCard';
 import { SimpleMaterialCard } from './SimpleMaterialCard';
+import { SimpleStepper } from './SimpleStepper';
+import { SimpleUploadZone } from './SimpleUploadZone';
 import { summarizeSimpleReadiness } from './simpleReadiness';
 import { computeSimpleCounts } from './simpleCounts';
 import type {
@@ -30,6 +40,13 @@ import type {
 } from '../central-needs.service';
 
 type SimpleStep = 'upload' | 'analyzing' | 'summary' | 'review-institution' | 'review-material' | 'pending';
+
+/**
+ * WHAT the parent screen is busy with, verbatim from its own `Busy` state.
+ * Used only to label the analyzing step truthfully — a revision being opened
+ * is not "analyzing a file", and the step must not say it is.
+ */
+type SimpleActivity = null | 'verifying' | 'submitting' | 'approving' | 'rejecting' | 'abandoning' | 'opening';
 
 interface Props {
   lang: 'ar' | 'en';
@@ -49,12 +66,16 @@ interface Props {
    */
   canEdit: boolean;
   busy: boolean;
+  activity: SimpleActivity;
   onOpenRevision: (openNext: boolean) => void;
   preview: PreviewState;
   pendingFile: File | null;
   onPickFile: (file: File | null) => void;
   onVerify: () => void;
+  /** Already translated for a human by the parent (`centralNeedsErrorText`). */
   error: string | null;
+  /** Already translated by the parent. */
+  notice: string | null;
 
   readiness: ReviewReadiness | null;
   beneficiaryColumns: BeneficiaryColumnSummary[];
@@ -68,7 +89,7 @@ interface Props {
 
 export function CentralNeedsSimpleWorkspace({
   lang, planYear, onPlanYearChange, revisionsLoading, revision, isDraft, revisionDataReady,
-  canImport, canEdit, busy, onOpenRevision, preview, pendingFile, onPickFile, onVerify, error,
+  canImport, canEdit, busy, activity, onOpenRevision, preview, pendingFile, onPickFile, onVerify, error, notice,
   readiness, beneficiaryColumns, careInstitutions, records, dispositions, activeSessionId,
   onChanged, onSwitchToAdvanced,
 }: Props) {
@@ -139,6 +160,11 @@ export function CentralNeedsSimpleWorkspace({
     if (revisionClosed) return 'upload';
     if (preview.phase === 'parsing' || busy) return 'analyzing';
     if (!revisionDataReady) return 'analyzing';
+    // An open draft with NO completed import session has nothing analysed yet:
+    // the task is still to upload the file. `activeSessionId` is the screen's
+    // own answer to "is there a completed session" (reloadRevision publishes the
+    // first completed one, or null) — read here, never recomputed.
+    if (activeSessionId === null) return 'upload';
     // Defect 4: the analysis summary is presented once per analyzed dataset,
     // BEFORE item-by-item review. This gates navigation only — readiness,
     // blockers and every unresolved item remain exactly what the server says,
@@ -147,7 +173,7 @@ export function CentralNeedsSimpleWorkspace({
     if (unresolvedColumns.length > 0) return 'review-institution';
     if (undispositionedEntities.length > 0) return 'review-material';
     return 'pending';
-  }, [revision, revisionClosed, preview.phase, busy, revisionDataReady, summaryAcknowledged,
+  }, [revision, revisionClosed, preview.phase, busy, revisionDataReady, activeSessionId, summaryAcknowledged,
       unresolvedColumns.length, undispositionedEntities.length]);
 
   /**
@@ -167,16 +193,67 @@ export function CentralNeedsSimpleWorkspace({
 
   const dir = lang === 'ar' ? 'rtl' : 'ltr';
 
+  /**
+   * Step 2's phases, each shown ONLY with a state the props actually justify.
+   *   * a browser-side parse in flight → "reading the file" is the live phase;
+   *   * the authoritative verify in flight (`activity === 'verifying'`) → the
+   *     file was read (verify needs a ready preview) and the server analysis
+   *     is the live phase; "preparing the review" is still waiting because the
+   *     screen only publishes the reloaded data once verify has fully returned;
+   *   * a plain revision data reload (nothing else in flight) → only the
+   *     preparation phase is live; nothing claims a file was read just now;
+   *   * any other parent operation → a generic "working" status, no phases.
+   */
+  const analyzing = useMemo(() => {
+    if (preview.phase === 'parsing') {
+      return { titleKey: 'cn2b_simple_analyzing', phases: ['active', 'waiting', 'waiting'] as const };
+    }
+    if (activity === 'verifying') {
+      return { titleKey: 'cn2b_simple_analyzing', phases: ['done', 'active', 'waiting'] as const };
+    }
+    if (busy) return { titleKey: 'cn2b_simple_working', phases: null };
+    return { titleKey: 'cn2b_simple_preparing', phases: null };
+  }, [preview.phase, activity, busy]);
+
+  const previewReady = preview.phase === 'ready';
+
   return (
     <div className="cn2b-simple" dir={dir} data-testid="cn2b-simple-workspace" data-step={step}>
-      {step === 'upload' && (
-        <PhoenixCard className="cn2b-simple-card" data-testid="cn2b-simple-upload">
-          <h2 className="cn2b-simple-hero-title">{t('cn2b_simple_title', lang)}</h2>
+      {/* The page identity. Simple Mode owns the screen's h1 — the Advanced
+          command header is not rendered around this view. */}
+      <header className="cn2b-simple-hero">
+        <h1 className="cn2b-simple-title">{t('cn2b_simple_title', lang)}</h1>
+        <p className="cn2b-simple-tagline">{t('cn2b_simple_tagline', lang)}</p>
+      </header>
 
+      <SimpleStepper lang={lang} step={step} />
+
+      {notice && (
+        <p className="cn2b-simple-notice" role="status" data-testid="cn2b-simple-notice">
+          <PhoenixIcon name="check" size={16} inline aria-hidden="true" /> {notice}
+        </p>
+      )}
+      {error && step !== 'upload' && (
+        <div className="cn2b-simple-error" role="alert" data-testid="cn2b-simple-error">
+          <PhoenixIcon name="warning" size={16} inline aria-hidden="true" /> {error}
+        </div>
+      )}
+
+      {step === 'upload' && (
+        <section className="cn2b-simple-card" data-testid="cn2b-simple-upload" aria-labelledby="cn2b-simple-upload-title">
           {revisionClosed ? (
             <>
-              <p className="cn2b-simple-card__label" data-testid="cn2b-simple-closed-notice">
-                {t('cn2b_simple_already_approved', lang)}
+              <p className="cn2b-simple-card__eyebrow">{t('cn2b_simple_closed_status', lang)}</p>
+              <h2 className="cn2b-simple-card__title" id="cn2b-simple-upload-title">
+                <span className="cn2b-simple-status" data-status={revision!.status}>
+                  {t(`cn2b_revstatus_${revision!.status}`, lang)}
+                </span>
+                <span>{revision!.planYear ?? planYear}</span>
+              </h2>
+              <p className="cn2b-simple-card__lead" data-testid="cn2b-simple-closed-notice">
+                {revision!.status === 'approved'
+                  ? t('cn2b_simple_already_approved', lang)
+                  : t('cn2b_simple_closed_notice', lang)}
               </p>
               {/*
                 A closed revision is superseded ONLY by this explicit click —
@@ -184,83 +261,149 @@ export function CentralNeedsSimpleWorkspace({
                 handler Advanced Mode uses, with openNext=true, exactly once.
               */}
               {canImport ? (
-                <PhoenixButton
-                  type="button" variant="primary" disabled={revisionsLoading || busy}
-                  data-testid="cn2b-simple-create-correction"
-                  onClick={() => onOpenRevision(true)}
-                >
-                  {t('cn2b_simple_create_correction', lang)}
-                </PhoenixButton>
+                <div className="cn2b-simple-card__actions">
+                  <PhoenixButton
+                    type="button" variant="primary" size="lg" disabled={revisionsLoading || busy}
+                    data-testid="cn2b-simple-create-correction"
+                    onClick={() => onOpenRevision(true)}
+                  >
+                    {t('cn2b_simple_create_correction', lang)}
+                  </PhoenixButton>
+                </div>
               ) : (
                 <p className="cn2b-simple-card__hint">{t('cn2b_simple_no_import_permission', lang)}</p>
               )}
             </>
-          ) : (
+          ) : !revision ? (
             <>
-              <p className="cn2b-simple-card__label">
-                {t('cn2b_simple_year_label', lang)}: {planYear}
-              </p>
-              {canImport && !revision && (
-                <div className="cn2b-simple-card__actions">
-                  <input
-                    type="number"
-                    className="cn2b-simple-input"
-                    aria-label={t('cn2b_plan_year', lang)}
-                    value={planYear}
-                    onChange={(e) => onPlanYearChange(Number(e.target.value) || planYear)}
-                  />
+              <p className="cn2b-simple-card__eyebrow">{t('cn2b_simple_step_upload', lang)}</p>
+              <h2 className="cn2b-simple-card__title" id="cn2b-simple-upload-title">{t('cn2b_simple_year_choose', lang)}</h2>
+              <p className="cn2b-simple-card__lead">{t('cn2b_simple_year_hint', lang)}</p>
+              {canImport ? (
+                <div className="cn2b-simple-year">
+                  <label className="cn2b-simple-field">
+                    <span className="cn2b-simple-field__label">{t('cn2b_plan_year', lang)}</span>
+                    <input
+                      type="number"
+                      className="cn2b-simple-input cn2b-simple-input--year"
+                      inputMode="numeric"
+                      min={2000}
+                      max={2100}
+                      value={planYear}
+                      onChange={(e) => onPlanYearChange(Number(e.target.value) || planYear)}
+                    />
+                  </label>
                   <PhoenixButton
-                    type="button" variant="primary" disabled={revisionsLoading || busy}
+                    type="button" variant="primary" size="lg" disabled={revisionsLoading || busy}
                     data-testid="cn2b-simple-start"
                     onClick={() => onOpenRevision(false)}
                   >
                     {t('cn2b_simple_start', lang)}
                   </PhoenixButton>
                 </div>
+              ) : (
+                <div className="cn2b-simple-permission" role="status">
+                  <PhoenixIcon name="lock" size={18} inline aria-hidden="true" />
+                  <span>
+                    <strong>{t('cn2b_simple_no_import_permission', lang)}</strong>
+                    <br />{t('cn2b_simple_no_import_permission_hint', lang)}
+                  </span>
+                </div>
               )}
-              {canImport && revision && isDraft && (
+            </>
+          ) : (
+            <>
+              <p className="cn2b-simple-card__eyebrow">
+                <span className="cn2b-simple-status" data-status="draft">{t('cn2b_revstatus_draft', lang)}</span>
+                {' '}{t('cn2b_simple_draft_open', lang).replace('__YEAR__', String(revision.planYear ?? planYear))}
+              </p>
+              <h2 className="cn2b-simple-card__title" id="cn2b-simple-upload-title">{t('cn2b_simple_upload_title', lang)}</h2>
+              {canImport && isDraft ? (
                 <>
-                  <label className="cn2b-simple-card__actions">
-                    <input
-                      type="file"
-                      accept=".xlsx,.xls,.csv,.zip"
-                      data-testid="cn2b-simple-file-input"
-                      onChange={(e) => onPickFile(e.target.files?.[0] ?? null)}
-                    />
-                  </label>
-                  {pendingFile && (
-                    <PhoenixButton
-                      type="button" variant="primary" disabled={preview.phase !== 'ready' || busy}
-                      onClick={onVerify}
-                    >
-                      {t('cn2b_simple_upload_button', lang)}
-                    </PhoenixButton>
-                  )}
+                  <SimpleUploadZone
+                    lang={lang}
+                    pendingFile={pendingFile}
+                    previewReady={previewReady}
+                    disabled={busy}
+                    onPickFile={onPickFile}
+                  />
                   {preview.phase === 'failed' && (
-                    <p className="cn2b-simple-card__error" role="alert">
+                    <div className="cn2b-simple-error" role="alert" data-testid="cn2b-simple-preview-failed">
+                      <PhoenixIcon name="warning" size={16} inline aria-hidden="true" />{' '}
                       {t('cn2b_preview_failed', lang)} ({preview.reason})
-                    </p>
+                    </div>
                   )}
+                  {pendingFile && (
+                    <div className="cn2b-simple-card__actions">
+                      <PhoenixButton
+                        type="button" variant="primary" size="lg" disabled={!previewReady || busy}
+                        data-testid="cn2b-simple-upload-submit"
+                        onClick={onVerify}
+                      >
+                        {t('cn2b_simple_upload_button', lang)}
+                      </PhoenixButton>
+                    </div>
+                  )}
+                  {error && (
+                    <div className="cn2b-simple-error" role="alert" data-testid="cn2b-simple-error">
+                      <PhoenixIcon name="warning" size={16} inline aria-hidden="true" /> {error}
+                    </div>
+                  )}
+                  <p className="cn2b-simple-trust">
+                    <PhoenixIcon name="lock" size={15} inline aria-hidden="true" /> {t('cn2b_simple_trust_note', lang)}
+                  </p>
                 </>
-              )}
-              {!canImport && (
-                <p className="cn2b-simple-card__hint">{t('cn2b_simple_no_import_permission', lang)}</p>
+              ) : (
+                <div className="cn2b-simple-permission" role="status">
+                  <PhoenixIcon name="lock" size={18} inline aria-hidden="true" />
+                  <span>
+                    <strong>{t('cn2b_simple_no_import_permission', lang)}</strong>
+                    <br />{t('cn2b_simple_no_import_permission_hint', lang)}
+                  </span>
+                </div>
               )}
             </>
           )}
-          {error && <div className="cn2b-simple-card__error" role="alert">{error}</div>}
-        </PhoenixCard>
+          {error && !(canImport && isDraft && !revisionClosed) && (
+            <div className="cn2b-simple-error" role="alert" data-testid="cn2b-simple-error">
+              <PhoenixIcon name="warning" size={16} inline aria-hidden="true" /> {error}
+            </div>
+          )}
+        </section>
       )}
 
       {step === 'analyzing' && (
-        <PhoenixCard className="cn2b-simple-card" data-testid="cn2b-simple-analyzing">
-          <p role="status">{t('cn2b_simple_analyzing', lang)}</p>
-        </PhoenixCard>
+        <section className="cn2b-simple-card cn2b-simple-card--analyzing" data-testid="cn2b-simple-analyzing" aria-labelledby="cn2b-simple-analyzing-title">
+          <div className="cn2b-simple-spinner" aria-hidden="true" />
+          <div role="status" aria-live="polite" className="cn2b-simple-analyzing__status">
+            <h2 className="cn2b-simple-card__title" id="cn2b-simple-analyzing-title">{t(analyzing.titleKey, lang)}</h2>
+            <p className="cn2b-simple-card__lead">{t('cn2b_simple_analyzing_note', lang)}</p>
+          </div>
+          <div className="cn2b-simple-progressbar" aria-hidden="true"><span /></div>
+          {analyzing.phases && (
+            <ol className="cn2b-simple-phases" aria-label={t('cn2b_simple_processing_status', lang)} data-testid="cn2b-simple-phases">
+              {(['cn2b_simple_phase_read', 'cn2b_simple_phase_analyze', 'cn2b_simple_phase_prepare'] as const).map((key, i) => {
+                const state = analyzing.phases[i];
+                return (
+                  <li key={key} className="cn2b-simple-phase" data-state={state}>
+                    <span className="cn2b-simple-phase__mark" aria-hidden="true">
+                      {state === 'done' ? <PhoenixIcon name="check" size={14} /> : i + 1}
+                    </span>
+                    <span className="cn2b-simple-phase__text">{t(key, lang)}</span>
+                    <span className="cn2b-simple-phase__state">{t(`cn2b_simple_phase_${state}`, lang)}</span>
+                  </li>
+                );
+              })}
+            </ol>
+          )}
+        </section>
       )}
 
       {step === 'summary' && (
-        <PhoenixCard className="cn2b-simple-card" data-testid="cn2b-simple-summary">
-          <p data-testid="cn2b-simple-summary-read">{t('cn2b_simple_file_read', lang)}</p>
+        <section className="cn2b-simple-card" data-testid="cn2b-simple-summary" aria-labelledby="cn2b-simple-summary-title">
+          <p className="cn2b-simple-card__eyebrow cn2b-simple-card__eyebrow--ok" data-testid="cn2b-simple-summary-read">
+            <PhoenixIcon name="check" size={15} inline aria-hidden="true" /> {t('cn2b_simple_file_read', lang)}
+          </p>
           {/*
             SCOPE HONESTY (Director finding 3). These counts do NOT share one
             scope, so neither may be presented as a whole-revision total:
@@ -273,44 +416,53 @@ export function CentralNeedsSimpleWorkspace({
             A revision-wide material/quantity total would need a read this
             build does not have, so each metric states its own scope instead.
           */}
-          <h3 className="cn2b-simple-card__label" data-testid="cn2b-simple-summary-scope-title">
+          <h2 className="cn2b-simple-card__title" id="cn2b-simple-summary-title" data-testid="cn2b-simple-summary-scope-title">
             {t('cn2b_simple_scope_session_title', lang)}
-          </h3>
-          <dl className="cn2b-simple-summary-grid">
-            <div>
-              <dt>
-                {t('cn2b_simple_institutions', lang)}{' '}
-                <span className="cn2b-simple-card__hint" data-testid="cn2b-simple-scope-institutions">
+          </h2>
+          <dl className="cn2b-simple-stats">
+            <div className="cn2b-simple-stat">
+              <dt className="cn2b-simple-stat__label">
+                {t('cn2b_simple_institutions', lang)}
+                <span className="cn2b-simple-stat__scope" data-testid="cn2b-simple-scope-institutions">
                   {t('cn2b_simple_scope_whole_revision', lang)}
                 </span>
               </dt>
-              <dd data-testid="cn2b-simple-count-institutions">{counts.institutionsConfirmed}</dd>
+              <dd className="cn2b-simple-stat__value" data-testid="cn2b-simple-count-institutions">{counts.institutionsConfirmed}</dd>
             </div>
-            <div>
-              <dt>
-                {t('cn2b_simple_materials', lang)}{' '}
-                <span className="cn2b-simple-card__hint" data-testid="cn2b-simple-scope-materials">
+            <div className="cn2b-simple-stat">
+              <dt className="cn2b-simple-stat__label">
+                {t('cn2b_simple_materials', lang)}
+                <span className="cn2b-simple-stat__scope" data-testid="cn2b-simple-scope-materials">
                   {t('cn2b_simple_scope_this_session', lang)}
                 </span>
               </dt>
-              <dd data-testid="cn2b-simple-count-materials">{counts.materialsMapped}</dd>
+              <dd className="cn2b-simple-stat__value" data-testid="cn2b-simple-count-materials">{counts.materialsMapped}</dd>
             </div>
-            <div>
-              <dt>
-                {t('cn2b_simple_quantities', lang)}{' '}
-                <span className="cn2b-simple-card__hint" data-testid="cn2b-simple-scope-quantities">
+            <div className="cn2b-simple-stat">
+              <dt className="cn2b-simple-stat__label">
+                {t('cn2b_simple_quantities', lang)}
+                <span className="cn2b-simple-stat__scope" data-testid="cn2b-simple-scope-quantities">
                   {t('cn2b_simple_scope_this_session', lang)}
                 </span>
               </dt>
-              <dd data-testid="cn2b-simple-count-quantities">{counts.quantityCandidateCount}</dd>
+              <dd className="cn2b-simple-stat__value" data-testid="cn2b-simple-count-quantities">{counts.quantityCandidateCount}</dd>
             </div>
           </dl>
           <p className="cn2b-simple-card__hint" data-testid="cn2b-simple-summary-scope-note">
             {t('cn2b_simple_scope_session_note', lang)}
           </p>
-          <p data-testid="cn2b-simple-review-remaining">
-            {t('cn2b_simple_items_need_review', lang).replace('__N__', String(counts.reviewItemCount))}
-          </p>
+          <div
+            className="cn2b-simple-review-count"
+            data-empty={counts.reviewItemCount === 0}
+            data-testid="cn2b-simple-review-remaining"
+          >
+            <PhoenixIcon name={counts.reviewItemCount > 0 ? 'clipboard' : 'check'} size={20} aria-hidden="true" />
+            <span>
+              {counts.reviewItemCount > 0
+                ? t('cn2b_simple_items_need_review', lang).replace('__N__', String(counts.reviewItemCount))
+                : t('cn2b_simple_nothing_to_review', lang)}
+            </span>
+          </div>
           <div className="cn2b-simple-card__actions">
             {/*
               The single control that leaves the summary. It is always offered,
@@ -318,7 +470,7 @@ export function CentralNeedsSimpleWorkspace({
               summary must be passable, never a dead end.
             */}
             <PhoenixButton
-              type="button" variant="primary"
+              type="button" variant="primary" size="lg"
               data-testid="cn2b-simple-review-start"
               onClick={goToReview}
             >
@@ -326,21 +478,20 @@ export function CentralNeedsSimpleWorkspace({
                 ? t('cn2b_simple_review_button', lang).replace('__N__', String(counts.reviewItemCount))
                 : t('cn2b_simple_continue', lang)}
             </PhoenixButton>
-            <PhoenixButton type="button" variant="secondary" onClick={onSwitchToAdvanced}>
-              {t('cn2b_simple_view_details', lang)}
-            </PhoenixButton>
-            <PhoenixButton type="button" variant="ghost" onClick={onSwitchToAdvanced}>
-              {t('cn2b_simple_advanced_options', lang)}
-            </PhoenixButton>
           </div>
-        </PhoenixCard>
+        </section>
       )}
 
       {step === 'review-institution' && unresolvedColumns[0] && (
         <>
-          <p className="cn2b-simple-progress" data-testid="cn2b-simple-institution-progress">
-            {t('cn2b_simple_reviewing_institutions', lang)} ({unresolvedColumns.length})
-          </p>
+          <div className="cn2b-simple-review-head">
+            <p className="cn2b-simple-progress" data-testid="cn2b-simple-institution-progress">
+              <PhoenixIcon name="hospital" size={16} inline aria-hidden="true" />
+              {' '}{t('cn2b_simple_reviewing_institutions', lang)}
+              {' '}<span className="cn2b-simple-progress__count">{t('cn2b_simple_remaining', lang)}: {unresolvedColumns.length}</span>
+            </p>
+            <p className="cn2b-simple-review-head__hint">{t('cn2b_simple_institution_step_hint', lang)}</p>
+          </div>
           <SimpleInstitutionCard
             lang={lang}
             planRevisionId={revision!.id}
@@ -349,17 +500,24 @@ export function CentralNeedsSimpleWorkspace({
             activeCareInstitutions={careInstitutions}
             onResolved={onChanged}
           />
-          <PhoenixButton type="button" variant="ghost" onClick={goToSummary}>
-            {t('cn2b_simple_back_to_summary', lang)}
-          </PhoenixButton>
+          <div className="cn2b-simple-review-foot">
+            <PhoenixButton type="button" variant="ghost" size="sm" onClick={goToSummary}>
+              {t('cn2b_simple_back_to_summary', lang)}
+            </PhoenixButton>
+          </div>
         </>
       )}
 
       {step === 'review-material' && undispositionedEntities[0] && activeSessionId && (
         <>
-          <p className="cn2b-simple-progress" data-testid="cn2b-simple-material-progress">
-            {t('cn2b_simple_reviewing_materials', lang)} ({undispositionedEntities.length})
-          </p>
+          <div className="cn2b-simple-review-head">
+            <p className="cn2b-simple-progress" data-testid="cn2b-simple-material-progress">
+              <PhoenixIcon name="package" size={16} inline aria-hidden="true" />
+              {' '}{t('cn2b_simple_reviewing_materials', lang)}
+              {' '}<span className="cn2b-simple-progress__count">{t('cn2b_simple_remaining', lang)}: {undispositionedEntities.length}</span>
+            </p>
+            <p className="cn2b-simple-review-head__hint">{t('cn2b_simple_material_step_hint', lang)}</p>
+          </div>
           <SimpleMaterialCard
             lang={lang}
             importSessionId={activeSessionId}
@@ -368,40 +526,101 @@ export function CentralNeedsSimpleWorkspace({
             fields={fieldsByEntity.get(undispositionedEntities[0]) ?? []}
             onResolved={onChanged}
           />
-          <PhoenixButton type="button" variant="ghost" onClick={goToSummary}>
-            {t('cn2b_simple_back_to_summary', lang)}
-          </PhoenixButton>
+          <div className="cn2b-simple-review-foot">
+            <PhoenixButton type="button" variant="ghost" size="sm" onClick={goToSummary}>
+              {t('cn2b_simple_back_to_summary', lang)}
+            </PhoenixButton>
+          </div>
         </>
       )}
 
       {step === 'pending' && (
-        <PhoenixCard className="cn2b-simple-card" data-testid="cn2b-simple-pending">
-          <p data-testid="cn2b-simple-pending-title">{t('cn2b_simple_reviewed_all', lang)}</p>
+        <section className="cn2b-simple-card cn2b-simple-card--outcome" data-testid="cn2b-simple-pending" aria-labelledby="cn2b-simple-pending-title">
+          <div className="cn2b-simple-outcome__mark" data-ready={readinessSummary?.ready === true} aria-hidden="true">
+            <PhoenixIcon name={readinessSummary?.ready ? 'check' : 'clipboard'} size={28} />
+          </div>
+          <h2 className="cn2b-simple-card__title" id="cn2b-simple-pending-title" data-testid="cn2b-simple-pending-title">
+            {t('cn2b_simple_reviewed_all', lang)}
+          </h2>
+          {/*
+            READINESS IS THE SERVER'S. Three honest cases, none synthesized:
+            the server said ready, the server listed blockers, or the server
+            has not answered yet. "كل شيء جاهز" is never shown from this file.
+          */}
+          {readinessSummary === null && (
+            <p className="cn2b-simple-card__lead" data-testid="cn2b-simple-readiness-unknown">
+              {t('cn2b_simple_readiness_unknown', lang)}
+            </p>
+          )}
           {readinessSummary && readinessSummary.messageKeys.length > 0 && (
-            <ul className="cn2b-simple-blockers" data-testid="cn2b-simple-readiness-messages">
-              {readinessSummary.messageKeys.map((key) => <li key={key}>{t(key, lang)}</li>)}
-            </ul>
+            <>
+              <p className="cn2b-simple-card__lead">{t('cn2b_simple_final_server_pending', lang)}</p>
+              <ul className="cn2b-simple-blockers" data-testid="cn2b-simple-readiness-messages">
+                {readinessSummary.messageKeys.map((key) => (
+                  <li key={key}>
+                    <PhoenixIcon name="warning" size={15} inline aria-hidden="true" /> {t(key, lang)}
+                  </li>
+                ))}
+              </ul>
+            </>
           )}
           {readinessSummary && readinessSummary.messageKeys.length === 0 && (
-            <p data-testid="cn2b-simple-readiness-clear">{t('cn2b_simple_readiness_clear', lang)}</p>
+            <p className="cn2b-simple-card__lead" data-testid="cn2b-simple-readiness-clear">
+              {readinessSummary.ready
+                ? t('cn2b_simple_final_server_ready', lang)
+                : t('cn2b_simple_readiness_clear', lang)}
+            </p>
           )}
+
+          <div className="cn2b-simple-handoff" data-testid="cn2b-simple-handoff">
+            <p className="cn2b-simple-handoff__text">{t('cn2b_simple_final_handoff', lang)}</p>
+            <div className="cn2b-simple-card__actions">
+              <PhoenixButton
+                type="button" variant="primary" size="lg"
+                data-testid="cn2b-simple-continue-advanced"
+                onClick={onSwitchToAdvanced}
+              >
+                {t('cn2b_simple_final_continue_advanced', lang)}
+              </PhoenixButton>
+            </div>
+          </div>
+
           {/*
             HARD BOUNDARY (owner task section 16): this action is always
             disabled in this build. Enabling it requires a separate,
             independently-authorized task once the corpus's source-unit and
             NeedLine-batch contract is proven — see CORPUS-CONTRACT.md.
           */}
-          <PhoenixButton type="button" variant="primary" disabled data-testid="cn2b-simple-confirm-quantities">
-            {t('cn2b_simple_confirm_quantities', lang)}
-          </PhoenixButton>
-          <p className="cn2b-simple-card__hint">{t('cn2b_simple_confirm_quantities_disabled_note', lang)}</p>
-          <PhoenixButton type="button" variant="ghost" onClick={onSwitchToAdvanced}>
-            {t('cn2b_simple_advanced_options', lang)}
-          </PhoenixButton>
-        </PhoenixCard>
+          <details className="cn2b-simple-unavailable">
+            <summary>{t('cn2b_simple_confirm_quantities', lang)}</summary>
+            <div className="cn2b-simple-unavailable__body">
+              <PhoenixButton type="button" variant="secondary" size="sm" disabled data-testid="cn2b-simple-confirm-quantities">
+                {t('cn2b_simple_confirm_quantities', lang)}
+              </PhoenixButton>
+              <p className="cn2b-simple-card__hint">{t('cn2b_simple_confirm_quantities_disabled_note', lang)}</p>
+            </div>
+          </details>
+        </section>
       )}
+
+      {/*
+        The Advanced entry: present on every step, visually secondary, at the
+        end. Switching is presentation only — the parent keeps every piece of
+        state; nothing is reloaded or reset by entering Advanced Mode.
+      */}
+      <footer className="cn2b-simple-footer">
+        <PhoenixButton
+          type="button" variant="ghost" size="sm"
+          data-testid="cn2b-simple-advanced-link"
+          onClick={onSwitchToAdvanced}
+        >
+          <PhoenixIcon name="settings" size={15} aria-hidden="true" />
+          {t('cn2b_simple_advanced_options', lang)}
+        </PhoenixButton>
+        <span className="cn2b-simple-footer__hint">{t('cn2b_simple_advanced_hint', lang)}</span>
+      </footer>
     </div>
   );
 }
 
-export type { SimpleStep };
+export type { SimpleStep, SimpleActivity };
