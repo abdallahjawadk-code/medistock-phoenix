@@ -725,3 +725,152 @@ export const QA_FIXTURES: Record<string, unknown> = {
     next_cursor: null,
   },
 };
+
+/* ── SIMPLE ANNUAL NEEDS — deterministic scene variants (DEV/TEST ONLY) ─────
+   `?scene=central-needs&cn=<variant>` overlays a FEW fixture tables / RPC
+   answers on top of QA_FIXTURES so every one of the six Simple steps
+   (upload · analyzing · summary · institution review · material review ·
+   outcome) can be rendered and photographed from the REAL product screen
+   without a live session. SELECT-only, same rules as everything above: no
+   write reaches anything, no RLS or permission is consulted, and the whole
+   module is tree-shaken from production builds
+   (tests/qa-harness-production-safety.test.ts).
+
+   The readiness answers below are still the SERVER's shape reproduced
+   verbatim — the harness never computes completeness. */
+export type QaCentralNeedsVariant =
+  | 'default' | 'fresh' | 'draft' | 'closed' | 'analyzing' | 'institution' | 'material' | 'reviewed' | 'ready';
+
+export const QA_CENTRAL_NEEDS_VARIANTS: readonly QaCentralNeedsVariant[] =
+  ['default', 'fresh', 'draft', 'closed', 'analyzing', 'institution', 'material', 'reviewed', 'ready'];
+
+/** An RPC answer that never arrives — holds the real screen in its loading state. */
+export const QA_PENDING_FOREVER = 'PHOENIX_VISUAL_QA_PENDING_FOREVER';
+
+/** Every fixture row decided — what makes the Simple outcome step reachable. */
+const CN2B_ALL_DECIDED: QaRow[] = [
+  ...(QA_FIXTURES.central_needs_record_mappings as QaRow[]),
+  {
+    id: 'qa-cn2b-map-3', import_session_id: CN2B_SESSION, target_entity: CN2B_ENTITIES[2],
+    decision: 'mapped', central_item_id: 'qa-ci-amox', decision_reason: null,
+    decided_at: '2026-09-01T09:02:00.000Z',
+  },
+  {
+    id: 'qa-cn2b-map-4', import_session_id: CN2B_SESSION, target_entity: CN2B_ENTITIES[3],
+    decision: 'not_applicable', central_item_id: null,
+    decision_reason: 'Footer note, not a dispensable material.',
+    decided_at: '2026-09-01T09:03:00.000Z',
+  },
+];
+
+/** The harness organizations, re-declared as ACTIVE CARE INSTITUTIONS so the institution step has eligible beneficiaries. */
+const CN2B_CARE_INSTITUTIONS: QaRow[] = (QA_FIXTURES.organizations as QaRow[]).map((o) => ({
+  ...o, organization_kind: 'care_institution', institution_class: 'hospital',
+}));
+
+export function qaCentralNeedsOverlay(variant: QaCentralNeedsVariant): Record<string, unknown> {
+  const revisions = QA_FIXTURES.central_needs_plan_revisions as QaRow[];
+  switch (variant) {
+    case 'fresh':
+      // No revision for this organization yet: Step 1 offers the year and "start".
+      return { central_needs_plan_revisions: [] };
+    case 'draft':
+      // The draft is open but nothing has been imported yet: Step 1 offers the
+      // file surface. The readiness answer is the server's own shape for that.
+      return {
+        central_needs_import_sessions: [],
+        central_needs_import_batches: [],
+        central_needs_import_batch_entries: [],
+        central_needs_source_files: [],
+        central_needs_source_records: [],
+        central_needs_record_mappings: [],
+        central_needs_field_overrides: [],
+        'rpc:phoenix_central_needs_review_readiness': {
+          ok: true, plan_revision_id: CN2B_REVISION, status: 'draft', ready: false,
+          blockers: [{ blocker: 'no_finalized_import', detail: null }],
+        },
+      };
+    case 'closed':
+      // Only the APPROVED 2025 revision exists: Step 1 offers the correction path.
+      return { central_needs_plan_revisions: revisions.filter((r) => r.status === 'approved') };
+    case 'analyzing':
+      // The revision reload never answers: Step 2, honestly "preparing".
+      return { 'rpc:phoenix_central_needs_review_readiness': QA_PENDING_FOREVER };
+    case 'institution':
+      // Two unresolved physical columns; the first is an EXACT name match of a
+      // care institution (so the confirm control is offered), the second is not.
+      return {
+        organizations: CN2B_CARE_INSTITUTIONS,
+        'rpc:phoenix_central_needs_list_beneficiary_columns': [
+          {
+            import_session_id: CN2B_SESSION, original_filename: 'qa-annual-needs.xls',
+            archive_entry_path: 'north/qa-annual-needs.xls', sheet_index: 0, sheet_name: 'Needs',
+            column_index: 3, source_field_name: 'QA · مستشفى الحلة التعليمي',
+            numeric_value_count: 12, zero_value_count: 1, nonzero_numeric_count: 11,
+            mapping_id: null, column_decision: null, beneficiary_organization_id: null,
+            mapping_reason: null, mapped_at: null, mapped_row_numeric_count: 11, review_required: true,
+          },
+          {
+            import_session_id: CN2B_SESSION, original_filename: 'qa-annual-needs.xls',
+            archive_entry_path: 'north/qa-annual-needs.xls', sheet_index: 0, sheet_name: 'Needs',
+            column_index: 4, source_field_name: 'الكمية المطلوبة',
+            numeric_value_count: 12, zero_value_count: 0, nonzero_numeric_count: 12,
+            mapping_id: null, column_decision: null, beneficiary_organization_id: null,
+            mapping_reason: null, mapped_at: null, mapped_row_numeric_count: 12, review_required: true,
+          },
+        ],
+        'rpc:phoenix_central_needs_review_readiness': {
+          ok: true, plan_revision_id: CN2B_REVISION, status: 'draft', ready: false,
+          blockers: [
+            { blocker: 'beneficiary_column_review_required', detail: `session=${CN2B_SESSION} column=3` },
+            { blocker: 'beneficiary_column_review_required', detail: `session=${CN2B_SESSION} column=4` },
+            { blocker: 'target_entity_without_disposition', detail: `session=${CN2B_SESSION} target_entity=${CN2B_ENTITIES[2]}` },
+          ],
+        },
+      };
+    case 'material':
+      // The first undecided row's name is an EXACT canonical-item match and it
+      // carries a real unit-headed field, so both the suggestion (with the
+      // system unit as context) and the workbook's own unit evidence render.
+      return {
+        // listSourceRecords fails closed unless record_ordinal is exactly 1..N,
+        // so the extra unit field is spliced in and every row renumbered.
+        central_needs_source_records: CN2B_SOURCE_RECORDS.flatMap((r) => {
+          if (r.id === 'qa-cn2b-rec-2-name') {
+            return [{ ...r, source_values: { value: 'Amoxicillin', valueType: 'string', isFormula: false, formula: null } }];
+          }
+          if (r.id === 'qa-cn2b-rec-2-qty') {
+            return [r, {
+              id: 'qa-cn2b-rec-2-unit', import_session_id: CN2B_SESSION, record_ordinal: 0,
+              target_entity: CN2B_ENTITIES[2], field_name: 'الوحدة',
+              source_values: { value: 'علبة', valueType: 'string', isFormula: false, formula: null },
+              source_provenance: cn2bProvenance(6, 3, 'D7'),
+            }];
+          }
+          return [r];
+        }).map((r, index) => ({ ...r, record_ordinal: index + 1 })),
+      };
+    case 'reviewed':
+      // Everything decided; the server still lists a need-line blocker: Step 6 hands off honestly.
+      return {
+        central_needs_record_mappings: CN2B_ALL_DECIDED,
+        'rpc:phoenix_central_needs_review_readiness': {
+          ok: true, plan_revision_id: CN2B_REVISION, status: 'draft', ready: false,
+          blockers: [
+            { blocker: 'mapped_target_entity_without_need_line', detail: `session=${CN2B_SESSION} target_entity=${CN2B_ENTITIES[0]}` },
+            { blocker: 'mapped_target_entity_without_need_line', detail: `session=${CN2B_SESSION} target_entity=${CN2B_ENTITIES[2]}` },
+          ],
+        },
+      };
+    case 'ready':
+      // Everything decided and the SERVER says ready: Step 6 reproduces that verdict.
+      return {
+        central_needs_record_mappings: CN2B_ALL_DECIDED,
+        'rpc:phoenix_central_needs_review_readiness': {
+          ok: true, plan_revision_id: CN2B_REVISION, status: 'draft', ready: true, blockers: [],
+        },
+      };
+    default:
+      return {};
+  }
+}

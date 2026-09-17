@@ -219,7 +219,18 @@ function WorkSessionSelector({
   );
 }
 
-export function CentralNeedsScreen() {
+interface CentralNeedsScreenProps {
+  /**
+   * Which presentation the screen paints FIRST. The product default is
+   * Simple Mode (Owner decision: "DEFAULT = SIMPLE, ADVANCED = SECONDARY");
+   * the Advanced six-stage workspace remains fully reachable from it. The
+   * prop exists so an expert entry point can open the Advanced workspace
+   * directly — it changes which JSX renders first and nothing else.
+   */
+  initialMode?: 'simple' | 'advanced';
+}
+
+export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScreenProps = {}) {
   const { lang, dir, activeOrgId, profile, myPermissions } = useApp();
   /**
    * The canonical organization scope, exactly as every other org-scoped screen
@@ -240,17 +251,17 @@ export function CentralNeedsScreen() {
 
   /**
    * Simple/Advanced presentation switch. Both modes read and write the SAME
-   * state declared below — switching this never touches any of it.
+   * state declared below — switching this never touches any of it: no
+   * reload, no reset, no second copy of anything.
    *
-   * Defaults to 'advanced' in THIS build: every existing runtime test in
-   * this feature renders `<CentralNeedsScreen />` and asserts against the
-   * six-stage workspace immediately, per the owner task's own requirement
-   * that existing tests stay green without being rewritten. Making Simple
-   * Mode the normal employee's landing view is a follow-up presentation
-   * decision (and a one-line default-flip) for a separately authorized
-   * task — see CORPUS-CONTRACT.md / the final report's open findings.
+   * SIMPLE IS THE DEFAULT (Owner task "Simple UX Visual Activation &
+   * Convergence"): the first stable paint of الاحتياج السنوي is the Simple
+   * workspace, with no Advanced render before it. The Advanced six-stage
+   * workspace is the secondary, expert entry — reachable from every Simple
+   * step through "Advanced options", and returnable from its own header.
+   * `initialMode` only seeds this state; it is never re-applied later.
    */
-  const [mode, setMode] = useState<'simple' | 'advanced'>('advanced');
+  const [mode, setMode] = useState<'simple' | 'advanced'>(initialMode);
 
   const [revisions, setRevisions] = useState<PlanRevision[]>([]);
   const [revisionId, setRevisionId] = useState<string | null>(null);
@@ -1254,7 +1265,46 @@ export function CentralNeedsScreen() {
   };
 
   return (
-    <div className="cn2b" dir={dir}>
+    <div className="cn2b" dir={dir} data-mode={mode}>
+      {mode === 'simple' ? (
+        /*
+          SIMPLE MODE — the default product experience. The workspace owns the
+          whole page (title, six-step progress, one task card, the quiet
+          Advanced entry). Nothing from the Advanced shell below wraps it: no
+          command header, no workflow rail, no diagnostics, no stage sections.
+          It receives the SAME state and the SAME handlers; the human-facing
+          error and notice text is translated here exactly as Advanced does.
+        */
+        <CentralNeedsSimpleWorkspace
+          lang={lang}
+          planYear={planYear}
+          onPlanYearChange={setPlanYear}
+          revisionsLoading={revisionsLoading}
+          revision={revision}
+          isDraft={isDraft}
+          revisionDataReady={revisionDataReady}
+          canImport={canImport}
+          canEdit={canEdit}
+          busy={busy !== null}
+          activity={busy}
+          onOpenRevision={(openNext) => void onOpenRevision(openNext)}
+          preview={preview.state}
+          pendingFile={pendingFile}
+          onPickFile={onPickFile}
+          onVerify={() => void onVerify()}
+          error={error ? centralNeedsErrorText(error, lang) : null}
+          notice={notice ? t(notice, lang) : null}
+          readiness={readiness}
+          beneficiaryColumns={beneficiaryColumns}
+          careInstitutions={careInstitutions}
+          records={records}
+          dispositions={dispositions}
+          activeSessionId={activeSessionId}
+          onChanged={() => void reloadRevision(revisionId as string)}
+          onSwitchToAdvanced={() => setMode('advanced')}
+        />
+      ) : (
+      <>
       {/*
         UX-1 command header. Every value below is the one the panels already
         show — the selected revision's own year, number and workflow status,
@@ -1282,7 +1332,7 @@ export function CentralNeedsScreen() {
           )}
           {revisionDataReady && readiness && (readiness.ready ? <StateBadge state="ready" /> : <StateBadge state="incomplete" />)}
           {/*
-            Simple/Advanced is presentation only — see the `mode` state
+            Back to the Simple view. Presentation only — see the `mode` state
             declaration. Neither branch reloads or recomputes any of the
             state declared above; switching only changes which JSX renders.
           */}
@@ -1290,42 +1340,13 @@ export function CentralNeedsScreen() {
             type="button"
             className="cn2b-btn"
             data-testid="cn2b-mode-toggle"
-            onClick={() => setMode((m) => (m === 'simple' ? 'advanced' : 'simple'))}
+            onClick={() => setMode('simple')}
           >
-            {mode === 'simple' ? t('cn2b_simple_switch_to_advanced', lang) : t('cn2b_simple_switch_to_simple', lang)}
+            {t('cn2b_simple_switch_to_simple', lang)}
           </button>
         </div>
       </header>
 
-      {mode === 'simple' ? (
-        <CentralNeedsSimpleWorkspace
-          lang={lang}
-          planYear={planYear}
-          onPlanYearChange={setPlanYear}
-          revisionsLoading={revisionsLoading}
-          revision={revision}
-          isDraft={isDraft}
-          revisionDataReady={revisionDataReady}
-          canImport={canImport}
-          canEdit={canEdit}
-          busy={busy !== null}
-          onOpenRevision={(openNext) => void onOpenRevision(openNext)}
-          preview={preview.state}
-          pendingFile={pendingFile}
-          onPickFile={onPickFile}
-          onVerify={() => void onVerify()}
-          error={error}
-          readiness={readiness}
-          beneficiaryColumns={beneficiaryColumns}
-          careInstitutions={careInstitutions}
-          records={records}
-          dispositions={dispositions}
-          activeSessionId={activeSessionId}
-          onChanged={() => void reloadRevision(revisionId as string)}
-          onSwitchToAdvanced={() => setMode('advanced')}
-        />
-      ) : (
-      <>
       <CentralNeedsWorkflowNav
         lang={lang}
         activeStage={initialStageResolved ? activeStage : null}

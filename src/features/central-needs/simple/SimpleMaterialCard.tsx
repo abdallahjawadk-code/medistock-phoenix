@@ -37,8 +37,8 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import { t } from '@/shared/i18n/strings';
-import { PhoenixCard } from '@/shared/ui/PhoenixCard';
 import { PhoenixButton } from '@/shared/ui/PhoenixButton';
+import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import {
   searchCentralItems,
   setRecordDisposition,
@@ -180,45 +180,58 @@ export function SimpleMaterialCard({ lang, importSessionId, editable, targetEnti
   }
 
   return (
-    <PhoenixCard className="cn2b-simple-card" data-testid="cn2b-simple-material-card">
-      <p className="cn2b-simple-card__eyebrow">{t('cn2b_simple_found_in_file', lang)}</p>
-      <ul className="cn2b-simple-card__evidence-list" data-testid="cn2b-simple-material-evidence">
-        {evidence.map((f) => (
-          <li key={f.fieldName}>
-            <span className="cn2b-simple-card__evidence-field">{f.fieldName}</span>
-            <span className="cn2b-simple-card__evidence-value">{f.text}</span>
-          </li>
-        ))}
-        {evidence.length === 0 && <li className="cn2b-simple-card__empty">{t('cn2b_simple_no_evidence', lang)}</li>}
-      </ul>
+    <section className="cn2b-simple-card cn2b-simple-card--review" data-testid="cn2b-simple-material-card" aria-label={t('cn2b_simple_reviewing_materials', lang)}>
+      <div className="cn2b-simple-evidence">
+        <p className="cn2b-simple-card__eyebrow">
+          <PhoenixIcon name="file" size={14} inline aria-hidden="true" /> {t('cn2b_simple_found_in_file', lang)}
+        </p>
+        <dl className="cn2b-simple-evidence__list" data-testid="cn2b-simple-material-evidence">
+          {evidence.map((f) => (
+            <div key={f.fieldName} className="cn2b-simple-evidence__row">
+              <dt className="cn2b-simple-evidence__field"><bdi>{f.fieldName}</bdi></dt>
+              <dd className="cn2b-simple-evidence__value"><bdi>{f.text}</bdi></dd>
+            </div>
+          ))}
+          {evidence.length === 0 && (
+            <div className="cn2b-simple-evidence__row">
+              <dd className="cn2b-simple-card__empty">{t('cn2b_simple_no_evidence', lang)}</dd>
+            </div>
+          )}
+        </dl>
+        <p className="cn2b-simple-unit" data-state={sourceUnitText ? 'known' : 'review'} data-testid="cn2b-simple-material-unit-row">
+          <span className="cn2b-simple-unit__label">{t('cn2b_simple_source_unit_label', lang)}:</span>{' '}
+          {sourceUnitText ?? (
+            <span className="cn2b-simple-unit__warn" data-testid="cn2b-simple-unit-needs-review">
+              <PhoenixIcon name="warning" size={14} inline aria-hidden="true" /> {t('cn2b_simple_unit_needs_review', lang)}
+            </span>
+          )}
+        </p>
+      </div>
 
-      <p className="cn2b-simple-card__label" data-testid="cn2b-simple-material-unit-row">
-        {t('cn2b_simple_source_unit_label', lang)}:{' '}
-        {sourceUnitText ?? (
-          <span className="cn2b-simple-card__warn" data-testid="cn2b-simple-unit-needs-review">
-            {t('cn2b_simple_unit_needs_review', lang)}
-          </span>
-        )}
-      </p>
-
-      {error && <div className="cn2b-simple-card__error" role="alert">{error}</div>}
+      {error && (
+        <div className="cn2b-simple-error" role="alert">
+          <PhoenixIcon name="warning" size={16} inline aria-hidden="true" /> {error}
+        </div>
+      )}
 
       {/* Read-only: the row's evidence and unit state stay visible, every control does not. */}
       {!editable && (
-        <p className="cn2b-bc-readonly" data-empty="read-only" data-testid="cn2b-simple-material-read-only">
+        <p className="cn2b-bc-readonly cn2b-simple-readonly" data-empty="read-only" data-testid="cn2b-simple-material-read-only">
           {t('cn2b_bc_read_only', lang)}
         </p>
       )}
 
       {editable && suggestion && !picking && !showNotApplicable && (
         <>
-          <p className="cn2b-simple-card__label">{t('cn2b_simple_matching_material', lang)}</p>
-          <p className="cn2b-simple-card__match" data-testid="cn2b-simple-material-suggestion">{suggestion.name}</p>
-          <p className="cn2b-simple-card__hint">
-            {t('cn2b_simple_approved_unit_label', lang)}: {suggestion.unit}
-          </p>
+          <div className="cn2b-simple-match">
+            <p className="cn2b-simple-match__label">{t('cn2b_simple_matching_material', lang)}</p>
+            <p className="cn2b-simple-match__name" data-testid="cn2b-simple-material-suggestion"><bdi>{suggestion.name}</bdi></p>
+            <p className="cn2b-simple-match__meta">
+              {t('cn2b_simple_approved_unit_label', lang)}: <bdi>{suggestion.unit}</bdi>
+            </p>
+          </div>
           <div className="cn2b-simple-card__actions">
-            <PhoenixButton type="button" variant="primary" disabled={busy} onClick={() => void mapTo(suggestion)}>
+            <PhoenixButton type="button" variant="primary" size="lg" disabled={busy} onClick={() => void mapTo(suggestion)}>
               {t('cn2b_simple_correct', lang)}
             </PhoenixButton>
             <PhoenixButton type="button" variant="secondary" disabled={busy} onClick={() => { setPicking(true); setQuery(''); }}>
@@ -233,7 +246,7 @@ export function SimpleMaterialCard({ lang, importSessionId, editable, targetEnti
 
       {editable && !suggestion && !picking && !showNotApplicable && (
         <div className="cn2b-simple-card__actions">
-          <PhoenixButton type="button" variant="primary" disabled={busy} onClick={() => { setPicking(true); setQuery(''); }}>
+          <PhoenixButton type="button" variant="primary" size="lg" disabled={busy} onClick={() => { setPicking(true); setQuery(''); }}>
             {t('cn2b_simple_choose_material', lang)}
           </PhoenixButton>
           <PhoenixButton type="button" variant="ghost" disabled={busy} onClick={() => setShowNotApplicable(true)}>
@@ -255,8 +268,8 @@ export function SimpleMaterialCard({ lang, importSessionId, editable, targetEnti
           <ul className="cn2b-simple-card__picker-list">
             {candidates.map((c) => (
               <li key={c.id}>
-                <PhoenixButton type="button" variant="ghost" disabled={busy} onClick={() => void mapTo(c)}>
-                  {c.name} <span className="cn2b-simple-card__hint">({c.unit})</span>
+                <PhoenixButton type="button" variant="ghost" className="cn2b-simple-option" disabled={busy} onClick={() => void mapTo(c)}>
+                  <bdi>{c.name}</bdi> <span className="cn2b-simple-option__meta">(<bdi>{c.unit}</bdi>)</span>
                 </PhoenixButton>
               </li>
             ))}
@@ -292,6 +305,6 @@ export function SimpleMaterialCard({ lang, importSessionId, editable, targetEnti
           </div>
         </div>
       )}
-    </PhoenixCard>
+    </section>
   );
 }

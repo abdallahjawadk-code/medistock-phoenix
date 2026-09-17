@@ -171,7 +171,7 @@ function loadAll() {
 
 /** Renders and waits until the review table has painted its three entities. */
 async function renderWorkbench() {
-  const view = render(<CentralNeedsScreen />);
+  const view = render(<CentralNeedsScreen initialMode="advanced" />);
   await waitFor(() => expect(listSourceRecords).toHaveBeenCalledWith(SESSION_ID));
   const nav = screen.getByRole('navigation', { name: T.cn2b_workflow_label.en });
   fireEvent.click(within(nav).getByRole('button', { name: new RegExp(T.cn2b_stage_review.en, 'i') }));
@@ -593,7 +593,7 @@ describe('UX-2A corrective — revision-scoped isolation', () => {
     let resolveList!: (rows: PlanRevision[]) => void;
     listPlanRevisions.mockImplementation(() => new Promise((r) => { resolveList = r; }));
 
-    render(<CentralNeedsScreen />);
+    render(<CentralNeedsScreen initialMode="advanced" />);
     await waitFor(() => expect(listPlanRevisions).toHaveBeenCalled());
 
     expect(screen.getAllByText(T.cn2b_revisions_loading.en).length).toBeGreaterThan(0);
@@ -608,7 +608,7 @@ describe('UX-2A corrective — revision-scoped isolation', () => {
     listPlanRevisions.mockResolvedValue([REVISION, REVISION_B]);
     gateRevisionReads();
 
-    render(<CentralNeedsScreen />);
+    render(<CentralNeedsScreen initialMode="advanced" />);
     await waitFor(() => expect(listImportBatches).toHaveBeenCalledWith(REV));
     release(REV);
     await screen.findByText('ALPHA-2026.zip');
@@ -633,7 +633,7 @@ describe('UX-2A corrective — revision-scoped isolation', () => {
     listPlanRevisions.mockResolvedValue([REVISION, REVISION_B]);
     gateRevisionReads();
 
-    render(<CentralNeedsScreen />);
+    render(<CentralNeedsScreen initialMode="advanced" />);
     await waitFor(() => expect(listImportBatches).toHaveBeenCalledWith(REV));
 
     // A is still open when B starts, and B answers first.
@@ -655,7 +655,7 @@ describe('UX-2A corrective — revision-scoped isolation', () => {
     searchSourceFiles.mockResolvedValue([{ id: 'f1', originalFilename: 'alpha-evidence.xlsx', fileHash: 'a'.repeat(64) }]);
     searchBatchEntries.mockResolvedValue([]);
 
-    render(<CentralNeedsScreen />);
+    render(<CentralNeedsScreen initialMode="advanced" />);
     await waitFor(() => expect(listImportBatches).toHaveBeenCalledWith(REV));
     release(REV);
     await screen.findByText('ALPHA-2026.zip');
@@ -688,7 +688,7 @@ describe('UX-2A corrective — revision-scoped isolation', () => {
     }));
     searchBatchEntries.mockResolvedValue([]);
 
-    render(<CentralNeedsScreen />);
+    render(<CentralNeedsScreen initialMode="advanced" />);
     await waitFor(() => expect(listImportBatches).toHaveBeenCalledWith(REV));
     release(REV);
     await screen.findByText('ALPHA-2026.zip');
@@ -725,7 +725,7 @@ describe('UX-2A corrective — revision-scoped isolation', () => {
     listPlanRevisions.mockResolvedValue([REVISION, REVISION_B]);
     gateRevisionReads();
 
-    render(<CentralNeedsScreen />);
+    render(<CentralNeedsScreen initialMode="advanced" />);
     await waitFor(() => expect(listImportBatches).toHaveBeenCalledWith(REV));
     release(REV);
     await screen.findByText('ALPHA-2026.zip');
@@ -778,7 +778,7 @@ describe('UX-2A corrective — revision-scoped isolation', () => {
     ]);
     searchBatchEntries.mockResolvedValue([]);
 
-    render(<CentralNeedsScreen />);
+    render(<CentralNeedsScreen initialMode="advanced" />);
     await waitFor(() => expect(listImportBatches).toHaveBeenCalledWith(REV));
     release(REV);
     await screen.findByText('ALPHA-2026.zip');

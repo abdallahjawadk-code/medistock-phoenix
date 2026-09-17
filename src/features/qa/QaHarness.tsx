@@ -27,6 +27,7 @@ import { QaAppProvider } from './QaAppProvider';
 import { QA_HARNESS_MARKER } from './qaConfig';
 import { QA_PERSONAS, qaPersona, type QaPersonaId } from './qaFixtures';
 import { createQaFixtureClient, QA_RPC_CALLS } from './qaFixtureClient';
+import { QA_CENTRAL_NEEDS_VARIANTS, qaCentralNeedsOverlay, type QaCentralNeedsVariant } from './qaData';
 
 type SceneId = 'shell' | 'states' | 'institutions' | 'welcome' | 'dashboard' | 'twin' | 'inventory' | 'outlet' | 'procurement' | 'status' | 'monthly' | 'reports' | 'statistics' | 'central-needs';
 
@@ -42,7 +43,14 @@ function readParams() {
   // Stand-in for the <PhoenixOrgScope /> click the harness cannot perform;
   // see buildQaAppState's `orgId`. Null (the default) keeps the persona's own.
   const org = q.get('org');
-  return { persona, lang, theme, scene, org };
+  // SIMPLE ANNUAL NEEDS — which deterministic central-needs data variant to
+  // overlay (see qaCentralNeedsOverlay), and which presentation the screen
+  // paints first. The product default is Simple; `mode=advanced` is what the
+  // pre-existing Advanced acceptance suites use to land where they always did.
+  const rawVariant = q.get('cn') as QaCentralNeedsVariant | null;
+  const cnVariant: QaCentralNeedsVariant = rawVariant && QA_CENTRAL_NEEDS_VARIANTS.includes(rawVariant) ? rawVariant : 'default';
+  const cnMode: 'simple' | 'advanced' = q.get('mode') === 'advanced' ? 'advanced' : 'simple';
+  return { persona, lang, theme, scene, org, cnVariant, cnMode };
 }
 
 // Install the network-free fixture client before any screen service runs. This
@@ -52,7 +60,10 @@ function readParams() {
 // IG-2: the client is told WHICH profile it is answering for, because migration
 // 191's scope topology is a per-profile read. It is used for nothing else, and
 // it grants nothing — see qaScopeTopologyRows.
-__installQaSupabaseClient(createQaFixtureClient(qaPersona(readParams().persona).profile.id));
+__installQaSupabaseClient(createQaFixtureClient(
+  qaPersona(readParams().persona).profile.id,
+  qaCentralNeedsOverlay(readParams().cnVariant),
+));
 
 // FEFO-OVERRIDE-DIALOG-CAPTURE: expose the fixture client's RPC call log for
 // the capture/verification tooling to read (`window.__phoenixQaRpcCalls`).
@@ -264,7 +275,7 @@ export function QaHarness() {
               </Suspense>
             ) : scene === 'central-needs' ? (
               <Suspense fallback={<PhoenixLoadingState />}>
-                <CentralNeedsScreen />
+                <CentralNeedsScreen initialMode={initial.cnMode} />
               </Suspense>
             ) : scene === 'statistics' ? (
               <Suspense fallback={<PhoenixLoadingState />}>

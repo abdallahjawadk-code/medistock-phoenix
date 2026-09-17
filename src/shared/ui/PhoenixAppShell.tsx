@@ -43,6 +43,11 @@ const SCREEN_TITLE_KEYS: Record<number, string> = {
   // Statistics page — the exact failure recorded for screen 18 above, caught
   // again here by owner review of the RAC-3 preview.
   22: 'rac3_nav',
+  // Screen 23 (Annual Needs / الاحتياج السنوي). Without this entry the topbar
+  // fell back to nav_decision_reports above the Annual Needs page — the same
+  // failure recorded for screens 18 and 22, caught this time by the Simple UX
+  // visual-convergence screenshot review. Same key the sidebar item uses.
+  23: 'cn2b_nav',
 };
 
 interface Props {
