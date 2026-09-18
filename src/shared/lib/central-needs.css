@@ -2277,3 +2277,319 @@
   .cn2b-simple-evidence__row { grid-template-columns: 1fr; gap: 2px; }
   .cn2b-simple-footer { flex-direction: column; align-items: flex-start; }
 }
+
+/* ── E1 Excel-First — read-only original workbook viewer ─────────────────────
+   A window onto parser evidence, not an editor. The chrome follows the app
+   direction; the grid element itself is pinned dir="ltr" in markup so column
+   A is always first, which is why its geometry below is written with logical
+   properties that resolve against that fixed direction. Every sheet cell sits
+   inside its own scroll container, so a wide sheet never widens the page. */
+.cn2b-xl {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-inline-size: 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--r3);
+  background: var(--surface2);
+}
+
+.cn2b-xl__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px 16px;
+}
+
+.cn2b-xl__identity { min-inline-size: 0; }
+.cn2b-xl__title { margin: 0; font-size: 1.05rem; font-weight: 700; color: var(--text); }
+
+.cn2b-xl__file {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+
+.cn2b-xl__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--chip);
+  color: var(--text);
+  font-size: 0.82rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.cn2b-xl__note,
+.cn2b-xl__empty { margin: 0; color: var(--muted); font-size: 0.86rem; line-height: 1.55; }
+
+.cn2b-xl__workbook { display: flex; flex-direction: column; gap: 6px; min-inline-size: 0; }
+.cn2b-xl__workbook-label { font-size: 0.84rem; color: var(--muted); }
+
+.cn2b-xl__select {
+  min-block-size: 38px;
+  max-inline-size: 100%;
+  padding-inline: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r2);
+  background: var(--field);
+  color: var(--text);
+  font: inherit;
+}
+
+.cn2b-xl__select:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+
+.cn2b-xl-tabs {
+  display: flex;
+  gap: 6px;
+  max-inline-size: 100%;
+  min-inline-size: 0;
+  overflow-x: auto;
+  padding-block-end: 4px;
+}
+
+.cn2b-xl-tab {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-inline-size: 260px;
+  min-block-size: 38px;
+  padding-inline: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+
+.cn2b-xl-tab[aria-selected='true'] {
+  border-width: 2px;
+  border-color: var(--cyan);
+  background: var(--chip);
+  font-weight: 700;
+}
+
+/* Hidden state is carried by the label and the dashed outline, not by colour alone. */
+.cn2b-xl-tab[data-visibility='hidden'],
+.cn2b-xl-tab[data-visibility='very_hidden'] { border-style: dashed; color: var(--muted); }
+
+.cn2b-xl-tab:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+.cn2b-xl-tab__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.cn2b-xl-tab__hidden {
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: var(--chipW);
+  color: var(--warn);
+  font-size: 0.74rem;
+  white-space: nowrap;
+}
+
+.cn2b-xl__panel { display: flex; flex-direction: column; gap: 12px; min-inline-size: 0; }
+
+.cn2b-xl__hidden-notice {
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px dashed var(--warn);
+  border-radius: 10px;
+  background: var(--chipW);
+  color: var(--text);
+  font-size: 0.86rem;
+}
+
+.cn2b-xl-grid {
+  position: relative;
+  block-size: clamp(280px, 58vh, 560px);
+  max-inline-size: 100%;
+  min-inline-size: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.cn2b-xl-grid:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+.cn2b-xl-grid__canvas { position: relative; }
+
+.cn2b-xl-grid__colheads {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 3;
+  background: var(--surface2);
+  border-block-end: 1px solid var(--line);
+}
+
+.cn2b-xl-grid__corner {
+  position: sticky;
+  inset-inline-start: 0;
+  z-index: 1;
+  background: var(--surface2);
+  border-inline-end: 1px solid var(--line);
+}
+
+.cn2b-xl-grid__rowheads {
+  position: sticky;
+  inset-inline-start: 0;
+  z-index: 2;
+  background: var(--surface2);
+  border-inline-end: 1px solid var(--line);
+}
+
+.cn2b-xl-grid__colhead,
+.cn2b-xl-grid__rowhead {
+  position: absolute;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.cn2b-xl-grid__colhead { inset-block-start: 0; border-inline-end: 1px solid var(--line); }
+.cn2b-xl-grid__rowhead { inset-inline-start: 0; border-block-end: 1px solid var(--line); }
+
+.cn2b-xl-grid__colhead[data-active='true'],
+.cn2b-xl-grid__rowhead[data-active='true'] { background: var(--chip); color: var(--text); font-weight: 700; }
+
+.cn2b-xl-grid__body { position: absolute; z-index: 1; }
+.cn2b-xl-grid__row { position: absolute; inset-inline-start: 0; }
+
+.cn2b-xl-cell {
+  position: absolute;
+  inset-block-start: 0;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  padding-inline: 6px;
+  overflow: hidden;
+  border-inline-end: 1px solid var(--line);
+  border-block-end: 1px solid var(--line);
+  color: var(--text);
+  font-size: 0.84rem;
+  cursor: cell;
+}
+
+.cn2b-xl-cell__text {
+  display: block;
+  inline-size: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: start;
+}
+
+.cn2b-xl-cell[data-value-type='number'] .cn2b-xl-cell__text,
+.cn2b-xl-cell[data-value-type='date'] .cn2b-xl-cell__text { text-align: end; font-variant-numeric: tabular-nums; }
+
+.cn2b-xl-cell[data-value-type='boolean'] .cn2b-xl-cell__text,
+.cn2b-xl-cell[data-value-type='error'] .cn2b-xl-cell__text { text-align: center; }
+
+.cn2b-xl-cell[data-value-type='error'] { color: var(--danger); font-weight: 600; }
+
+/* A merged region is one block drawn over the rows it spans. */
+.cn2b-xl-cell--merged { z-index: 1; background: var(--surface); }
+.cn2b-xl-cell--merged .cn2b-xl-cell__text { text-align: center; }
+
+/* A small corner mark, as Excel shows, for a cell that carries a comment. */
+.cn2b-xl-cell[data-comment='true']::after {
+  content: '';
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-end: 0;
+  inline-size: 6px;
+  block-size: 6px;
+  background: var(--warn);
+}
+
+.cn2b-xl-cell[data-selected='true'] {
+  z-index: 2;
+  outline: 2px solid var(--cyan);
+  outline-offset: -2px;
+  background: var(--hover);
+}
+
+.cn2b-xl-inspector {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-inline-size: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.cn2b-xl-inspector__title { margin: 0; font-size: 0.95rem; font-weight: 700; color: var(--text); }
+
+.cn2b-xl-inspector__list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 10px 18px;
+  margin: 0;
+}
+
+.cn2b-xl-inspector__item { display: flex; flex-direction: column; gap: 3px; min-inline-size: 0; }
+.cn2b-xl-inspector__item dt { font-size: 0.78rem; color: var(--muted); }
+.cn2b-xl-inspector__item dd { margin: 0; font-size: 0.92rem; color: var(--text); overflow-wrap: anywhere; }
+
+.cn2b-xl-inspector__value {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.86rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.cn2b-xl-inspector__coord { font-weight: 700; }
+.cn2b-xl-inspector__none { color: var(--muted); }
+.cn2b-xl-inspector__hint { display: block; margin-block-start: 3px; font-size: 0.78rem; color: var(--muted); line-height: 1.5; }
+.cn2b-xl-inspector__hidden-cell { display: inline-block; margin-inline-end: 10px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+.cn2b-xl-audit { border-block-start: 1px dashed var(--line); padding-block-start: 8px; }
+
+.cn2b-xl-audit > summary {
+  min-block-size: 30px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  font-size: 0.86rem;
+  color: var(--muted);
+}
+
+.cn2b-xl-audit > summary:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+.cn2b-xl-audit > .cn2b-xl-inspector__list { margin-block: 8px; }
+
+.cn2b-xl-audit__record {
+  margin: 0;
+  max-block-size: 240px;
+  overflow: auto;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--field);
+  font-size: 0.76rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  text-align: start;
+}
+
+/* Narrow screens: the grid keeps real spreadsheet widths and scrolls inside
+   its own box both ways; the inspector drops to a single column beneath it. */
+@media (max-width: 720px) {
+  .cn2b-xl { padding: 12px; }
+  .cn2b-xl-grid { block-size: clamp(260px, 62vh, 480px); }
+  .cn2b-xl-inspector__list { grid-template-columns: 1fr; }
+}
