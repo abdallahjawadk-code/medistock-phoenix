@@ -29,6 +29,7 @@ import { PhoenixButton } from '@/shared/ui/PhoenixButton';
 import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import type { OrgRow } from '@/shared/supabase/services/organizations.service';
 import type { PreviewState } from '../useCentralNeedsPreview';
+import { ExcelWorkbookViewer } from '../excel-first/ExcelWorkbookViewer';
 import { SimpleInstitutionCard } from './SimpleInstitutionCard';
 import { SimpleMaterialCard } from './SimpleMaterialCard';
 import { SimpleStepper } from './SimpleStepper';
@@ -348,6 +349,16 @@ export function CentralNeedsSimpleWorkspace({
                     <div className="cn2b-simple-error" role="alert" data-testid="cn2b-simple-error">
                       <PhoenixIcon name="warning" size={16} inline aria-hidden="true" /> {error}
                     </div>
+                  )}
+                  {/*
+                    E1 Excel-First — the original workbook, read-only, exactly
+                    as the browser preview above already parsed it. It is
+                    handed that preview's own result: no second parse, no
+                    write path, and nothing it shows changes what "upload"
+                    sends.
+                  */}
+                  {preview.phase === 'ready' && (
+                    <ExcelWorkbookViewer lang={lang} kind={preview.outcome.kind} result={preview.outcome.result} />
                   )}
                   <p className="cn2b-simple-trust">
                     <PhoenixIcon name="lock" size={15} inline aria-hidden="true" /> {t('cn2b_simple_trust_note', lang)}
