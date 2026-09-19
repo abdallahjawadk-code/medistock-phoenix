@@ -1295,6 +1295,7 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
           error={error ? centralNeedsErrorText(error, lang) : null}
           notice={notice ? t(notice, lang) : null}
           readiness={readiness}
+          batches={batches}
           beneficiaryColumns={beneficiaryColumns}
           careInstitutions={careInstitutions}
           records={records}
