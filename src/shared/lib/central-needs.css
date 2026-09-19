@@ -2222,6 +2222,51 @@
 .cn2b-simple-unavailable > summary { cursor: pointer; font-weight: 600; padding-block: 6px; }
 .cn2b-simple-unavailable__body { display: flex; flex-direction: column; gap: 8px; padding-block: 6px 8px; }
 
+/* ── E1.1 — the registered original source (auxiliary, NOT a task card) ─────
+   A supporting evidence surface beside the step's ONE task card. Its own block,
+   never .cn2b-simple-card: quieter chrome (no elevation, dashed hairline,
+   smaller type) so the task card stays the page's single primary surface. */
+.cn2b-stored-workbook {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: clamp(14px, 2vw, 20px);
+  background: var(--s2);
+  border: 1px dashed var(--brd);
+  border-radius: 16px;
+  min-inline-size: 0;
+}
+
+.cn2b-stored-workbook__eyebrow {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--ok);
+}
+
+.cn2b-stored-workbook__title { margin: 0; font-size: 1.05rem; font-weight: 800; line-height: 1.35; color: var(--t); }
+
+.cn2b-stored-workbook__lead,
+.cn2b-stored-workbook__hint { margin: 0; font-size: 0.85rem; line-height: 1.55; color: var(--t2); }
+
+.cn2b-stored-workbook__actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.cn2b-stored-workbook__actions .phoenix-button { min-inline-size: 0; max-inline-size: 100%; }
+
+@media (max-width: 720px) {
+  .cn2b-stored-workbook { padding: 14px 12px; }
+  .cn2b-stored-workbook__actions { flex-direction: column; align-items: stretch; }
+
+  .cn2b-stored-workbook__actions .phoenix-button {
+    inline-size: 100%;
+    min-block-size: var(--touch-target, 44px);
+    white-space: normal !important;
+  }
+}
+
 /* ── The quiet Advanced entry ────────────────────────────────────────────── */
 .cn2b-simple-footer {
   display: flex;

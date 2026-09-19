@@ -1010,11 +1010,18 @@ export async function finalizeImport(input: {
   };
 }
 
-export async function requestSourceDownload(batchId: string): Promise<{ url: string; originalFilename: string }> {
+export async function requestSourceDownload(batchId: string): Promise<{
+  url: string;
+  originalFilename: string;
+  containerKind: 'file' | 'zip';
+  containerSha256: string;
+}> {
   const payload = await authorizedFetch('/api/central-needs/source-download', { batchId });
   return {
     url: payload.url as string,
     originalFilename: payload.originalFilename as string,
+    containerKind: payload.containerKind as 'file' | 'zip',
+    containerSha256: payload.containerSha256 as string,
   };
 }
 

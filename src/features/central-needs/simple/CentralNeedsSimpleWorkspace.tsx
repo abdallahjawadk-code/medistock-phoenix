@@ -30,6 +30,7 @@ import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import type { OrgRow } from '@/shared/supabase/services/organizations.service';
 import type { PreviewState } from '../useCentralNeedsPreview';
 import { ExcelWorkbookViewer } from '../excel-first/ExcelWorkbookViewer';
+import { StoredWorkbookPanel } from './StoredWorkbookPanel';
 import { SimpleInstitutionCard } from './SimpleInstitutionCard';
 import { SimpleMaterialCard } from './SimpleMaterialCard';
 import { SimpleStepper } from './SimpleStepper';
@@ -37,7 +38,7 @@ import { SimpleUploadZone } from './SimpleUploadZone';
 import { summarizeSimpleReadiness } from './simpleReadiness';
 import { computeSimpleCounts } from './simpleCounts';
 import type {
-  BeneficiaryColumnSummary, PlanRevision, RecordDisposition, ReviewReadiness, SourceRecord,
+  BeneficiaryColumnSummary, ImportBatch, PlanRevision, RecordDisposition, ReviewReadiness, SourceRecord,
 } from '../central-needs.service';
 
 type SimpleStep = 'upload' | 'analyzing' | 'summary' | 'review-institution' | 'review-material' | 'pending';
@@ -79,6 +80,11 @@ interface Props {
   notice: string | null;
 
   readiness: ReviewReadiness | null;
+  /**
+   * E1.1: revision-scoped immutable source containers. Optional for backwards-
+   * compatible test harnesses; production always passes the loaded batches.
+   */
+  batches?: ImportBatch[];
   beneficiaryColumns: BeneficiaryColumnSummary[];
   careInstitutions: OrgRow[];
   records: SourceRecord[];
@@ -91,7 +97,7 @@ interface Props {
 export function CentralNeedsSimpleWorkspace({
   lang, planYear, onPlanYearChange, revisionsLoading, revision, isDraft, revisionDataReady,
   canImport, canEdit, busy, activity, onOpenRevision, preview, pendingFile, onPickFile, onVerify, error, notice,
-  readiness, beneficiaryColumns, careInstitutions, records, dispositions, activeSessionId,
+  readiness, batches = [], beneficiaryColumns, careInstitutions, records, dispositions, activeSessionId,
   onChanged, onSwitchToAdvanced,
 }: Props) {
   /**
@@ -228,6 +234,20 @@ export function CentralNeedsSimpleWorkspace({
       </header>
 
       <SimpleStepper lang={lang} step={step} />
+
+      {/*
+        E1.1 — once a source is authoritatively registered, the original
+        workbook remains available from every later Simple step. This is
+        deliberately OUTSIDE all `step === ...` branches, so moving from
+        upload to summary/institution/material review cannot unmount it.
+        It is an AUXILIARY source viewer with its own block class — never a
+        second `.cn2b-simple-card`: the page keeps exactly ONE task card.
+        `key` makes a revision switch destroy all transient signed-URL/bytes/
+        parser state before the next revision can render.
+      */}
+      {revisionDataReady && revision && batches.length > 0 && (
+        <StoredWorkbookPanel key={revision.id} lang={lang} batches={batches} />
+      )}
 
       {notice && (
         <p className="cn2b-simple-notice" role="status" data-testid="cn2b-simple-notice">
