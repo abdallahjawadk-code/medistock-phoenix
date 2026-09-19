@@ -16,20 +16,34 @@
  * AUXILIARY, NOT A TASK CARD. Simple Mode shows exactly ONE main task card for
  * the current step. This panel is a supporting evidence surface beside it, so
  * it carries its own `cn2b-stored-workbook` block and never `cn2b-simple-card`.
+ *
+ * E2-A — TRUSTED PHYSICAL SELECTION. Only after the bytes were verified and
+ * parsed does the panel read the batch's own entries (`listBatchEntries`, a
+ * read under the existing RLS) and ask `sourceIdentityBridge` to prove which
+ * entry each displayed workbook is. Proven: the viewer lets the human select a
+ * cell, a column or a rectangle, reported to `onSelectionChange` as physical
+ * coordinates plus that identity. Not proven (read failed, or any mismatch):
+ * the source stays visible exactly as in E1.1, and selection stays off — no
+ * guess, no fallback. Selection lives in React memory only and ends with the
+ * viewer, the batch or the revision.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { t } from '@/shared/i18n/strings';
 import { PhoenixButton } from '@/shared/ui/PhoenixButton';
 import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import {
+  listBatchEntries,
   requestSourceDownload,
   type ImportBatch,
 } from '../central-needs.service';
 import {
   detectContainerKind,
   useCentralNeedsPreview,
+  type PreviewOutcome,
 } from '../useCentralNeedsPreview';
-import { ExcelWorkbookViewer } from '../excel-first/ExcelWorkbookViewer';
+import { ExcelWorkbookViewer, type ViewerSelectionOptions } from '../excel-first/ExcelWorkbookViewer';
+import { bridgeSourceIdentity, type SourceIdentityResult } from '../excel-first/sourceIdentityBridge';
+import { selectionKey, type WorkbookSelection } from '../excel-first/workbookSelection';
 
 type StoredWorkbookError =
   | 'download_failed'
@@ -37,9 +51,17 @@ type StoredWorkbookError =
   | 'integrity_unavailable'
   | 'metadata_mismatch';
 
+/** The bridge's verdict for ONE parsed outcome; a read failure is a refusal too. */
+type SourceTrust = {
+  outcome: PreviewOutcome;
+  result: SourceIdentityResult | { ok: false; reason: 'entries_unavailable' };
+};
+
 interface Props {
   lang: 'ar' | 'en';
   batches: ImportBatch[];
+  /** E2-A: the human's physical selection in the trusted source, or null. Memory only. */
+  onSelectionChange?: (selection: WorkbookSelection | null) => void;
 }
 
 const normalizedSha = (sha: string): string => sha.trim().toLowerCase();
@@ -54,7 +76,7 @@ function expectedPreviewKind(batch: ImportBatch): 'file' | 'archive' {
   return batch.containerKind === 'zip' ? 'archive' : 'file';
 }
 
-export function StoredWorkbookPanel({ lang, batches }: Props) {
+export function StoredWorkbookPanel({ lang, batches, onSelectionChange }: Props) {
   const latestBatchId = batches.length > 0 ? batches[batches.length - 1].id : '';
   const [selectedBatchId, setSelectedBatchId] = useState(latestBatchId);
   const [downloading, setDownloading] = useState(false);
@@ -63,6 +85,9 @@ export function StoredWorkbookPanel({ lang, batches }: Props) {
   const operationSeq = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
   const preview = useCentralNeedsPreview();
+  /** The batch whose downloaded bytes passed metadata and SHA-256 verification, for the current open. */
+  const verifiedBatch = useRef<ImportBatch | null>(null);
+  const [trust, setTrust] = useState<SourceTrust | null>(null);
 
   const selectedBatch = useMemo(
     () => batches.find((batch) => batch.id === selectedBatchId) ?? (batches.length > 0 ? batches[batches.length - 1] : null),
@@ -77,6 +102,7 @@ export function StoredWorkbookPanel({ lang, batches }: Props) {
     operationSeq.current += 1;
     abortRef.current?.abort();
     abortRef.current = null;
+    verifiedBatch.current = null;
     setDownloading(false);
     setError(null);
     setIntegrityVerified(false);
@@ -88,10 +114,59 @@ export function StoredWorkbookPanel({ lang, batches }: Props) {
     abortRef.current?.abort();
   }, []);
 
+  // --- E2-A: prove the displayed workbooks' identity, then allow selection ---
+  const readyOutcome = preview.state.phase === 'ready' ? preview.state.outcome : null;
+
+  useEffect(() => {
+    const batch = verifiedBatch.current;
+    if (!readyOutcome || !batch) return undefined;
+    let cancelled = false;
+    listBatchEntries(batch.id).then(
+      (entries) => {
+        if (cancelled) return;
+        setTrust({
+          outcome: readyOutcome,
+          result: bridgeSourceIdentity({ batch, kind: readyOutcome.kind, result: readyOutcome.result, entries }),
+        });
+      },
+      () => {
+        if (!cancelled) setTrust({ outcome: readyOutcome, result: { ok: false, reason: 'entries_unavailable' } });
+      },
+    );
+    return () => { cancelled = true; };
+  }, [readyOutcome]);
+
+  // A verdict only ever applies to the outcome it was computed for.
+  const currentTrust = trust && readyOutcome && trust.outcome === readyOutcome ? trust.result : null;
+  const identities = currentTrust && currentTrust.ok ? currentTrust.identities : null;
+
+  const selectionListener = useRef(onSelectionChange);
+  useEffect(() => {
+    selectionListener.current = onSelectionChange;
+  });
+  const lastSelection = useRef('');
+  const forwardSelection = useCallback((selection: WorkbookSelection | null) => {
+    const key = selection ? selectionKey(selection) : '';
+    if (key === lastSelection.current) return;
+    lastSelection.current = key;
+    selectionListener.current?.(selection);
+  }, []);
+  // No proven identity (closed, re-opened, refused, another batch): no selection.
+  useEffect(() => {
+    if (!identities) forwardSelection(null);
+  }, [identities, forwardSelection]);
+  useEffect(() => () => forwardSelection(null), [forwardSelection]);
+
+  const viewerSelection = useMemo<ViewerSelectionOptions | undefined>(
+    () => (identities ? { identities, onChange: forwardSelection } : undefined),
+    [identities, forwardSelection],
+  );
+
   function closeViewer() {
     operationSeq.current += 1;
     abortRef.current?.abort();
     abortRef.current = null;
+    verifiedBatch.current = null;
     setDownloading(false);
     setError(null);
     setIntegrityVerified(false);
@@ -115,6 +190,7 @@ export function StoredWorkbookPanel({ lang, batches }: Props) {
     setDownloading(true);
     setError(null);
     setIntegrityVerified(false);
+    verifiedBatch.current = null;
     preview.reset();
 
     try {
@@ -163,6 +239,7 @@ export function StoredWorkbookPanel({ lang, batches }: Props) {
       }
 
       setIntegrityVerified(true);
+      verifiedBatch.current = selectedBatch;
       const file = new File([bytes], descriptor.originalFilename, {
         type: 'application/octet-stream',
         lastModified: 0,
@@ -193,7 +270,10 @@ export function StoredWorkbookPanel({ lang, batches }: Props) {
   const viewerOpen = preview.state.phase !== 'idle';
 
   return (
-    <section className="cn2b-stored-workbook" data-testid="cn2b-stored-workbook-panel" aria-labelledby="cn2b-stored-workbook-title">
+    <section className="cn2b-stored-workbook" data-testid="cn2b-stored-workbook-panel" aria-labelledby="cn2b-stored-workbook-title"
+      data-source-identity={readyOutcome ? (identities ? 'trusted' : currentTrust ? 'unproven' : 'pending') : undefined}
+      data-source-identity-reason={currentTrust && !currentTrust.ok ? currentTrust.reason : undefined}
+    >
       <p className="cn2b-stored-workbook__eyebrow">
         <PhoenixIcon name="file" size={15} inline aria-hidden="true" /> {t('cn2b_stored_workbook_persisted', lang)}
       </p>
@@ -276,6 +356,7 @@ export function StoredWorkbookPanel({ lang, batches }: Props) {
           lang={lang}
           kind={preview.state.outcome.kind}
           result={preview.state.outcome.result}
+          selection={viewerSelection}
         />
       )}
     </section>

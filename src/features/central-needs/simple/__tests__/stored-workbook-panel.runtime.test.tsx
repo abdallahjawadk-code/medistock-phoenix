@@ -33,30 +33,62 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import * as XLSX from 'xlsx';
 import type { ImportBatch } from '../../central-needs.service';
 
-const { backendAccess, authReads, parseRequested, workerLog } = vi.hoisted(() => ({
+const { backendAccess, authReads, entryReads, parseRequested, workerLog } = vi.hoisted(() => ({
   backendAccess: [] as string[],
   authReads: { count: 0 },
+  /** E2-A: the one read the panel may add — this batch's own entries, SELECT only. */
+  entryReads: [] as string[],
   parseRequested: vi.fn(),
   workerLog: { constructed: [] as string[], messages: [] as string[] },
 }));
 
-vi.mock('@/shared/supabase/client', () => ({
-  supabase: new Proxy({}, {
-    get: (_target, prop) => {
-      if (prop === 'auth') {
-        return {
-          getSession: async () => {
-            authReads.count += 1;
-            return { data: { session: { access_token: 'e11-test-token' } } };
-          },
-        };
-      }
-      if (typeof prop === 'symbol' || prop === 'then') return undefined;
-      backendAccess.push(String(prop));
+vi.mock('@/shared/supabase/client', () => {
+  /**
+   * E2-A: `listBatchEntries` is a read-only query. Only that exact chain on that
+   * exact table answers (with no rows, so selection stays off here — E1.1 is
+   * about viewing); any other table, verb or property is recorded as a
+   * backend access, exactly as before.
+   */
+  const entriesQuery = (table: string) => {
+    if (table !== 'central_needs_import_batch_entries') {
+      backendAccess.push(`from:${table}`);
       return undefined;
-    },
-  }),
-}));
+    }
+    const chain: Record<string, unknown> = {
+      select: (columns: string) => { entryReads.push(`select ${columns}`); return guarded; },
+      eq: (column: string, value: unknown) => { entryReads.push(`eq ${column}=${String(value)}`); return guarded; },
+      order: (column: string) => { entryReads.push(`order ${column}`); return guarded; },
+      then: (resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown) =>
+        Promise.resolve({ data: [], error: null }).then(resolve, reject),
+    };
+    const guarded: unknown = new Proxy(chain, {
+      get: (target, prop) => {
+        if (typeof prop === 'string' && prop in target) return target[prop];
+        backendAccess.push(`${table}.${String(prop)}`);
+        return undefined;
+      },
+    });
+    return guarded;
+  };
+  return {
+    supabase: new Proxy({}, {
+      get: (_target, prop) => {
+        if (prop === 'auth') {
+          return {
+            getSession: async () => {
+              authReads.count += 1;
+              return { data: { session: { access_token: 'e11-test-token' } } };
+            },
+          };
+        }
+        if (prop === 'from') return entriesQuery;
+        if (typeof prop === 'symbol' || prop === 'then') return undefined;
+        backendAccess.push(String(prop));
+        return undefined;
+      },
+    }),
+  };
+});
 
 vi.mock('../../import/parser-core', async () => {
   const actual = await vi.importActual<typeof import('../../import/parser-core')>('../../import/parser-core');
@@ -153,6 +185,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   backendAccess.length = 0;
   authReads.count = 0;
+  entryReads.length = 0;
   parseRequested.mockClear();
   workerLog.constructed.length = 0;
   workerLog.messages.length = 0;
@@ -554,6 +587,12 @@ describe('E1.1 — transient state: closing, revision switch, nothing persisted'
     expect(fetchStub.mock.calls.map(([url, init]) => `${init?.method} ${String(url)}`)).toEqual([
       `POST ${ENDPOINT}`,
       `GET ${SIGNED_URL}`,
+    ]);
+    // E2-A: the only database access is one SELECT of this batch's own entries.
+    expect(entryReads).toEqual([
+      'select id, batch_id, entry_ordinal, archive_entry_path, entry_sha256, import_session_id',
+      `eq batch_id=${b.id}`,
+      'order entry_ordinal',
     ]);
   });
 });

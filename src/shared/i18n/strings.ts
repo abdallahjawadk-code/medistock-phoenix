@@ -3926,7 +3926,9 @@ export const T: Dict = {
   cn2b_xl_sheet_very_hidden_notice:  { ar: 'هذه الورقة مخفية بالكامل في الملف الأصلي (لا يعرضها Excel حتى في قائمة إظهار الأوراق)، وتُعرض هنا للاطلاع فقط.', en: 'This sheet is very hidden in the original file (Excel does not even list it under Unhide) and is shown here for reference only.' },
   cn2b_xl_sheet_empty:               { ar: 'هذه الورقة فارغة.', en: 'This sheet is empty.' },
   cn2b_xl_grid_label:                { ar: 'خلايا الورقة', en: 'Sheet cells' },
-  cn2b_xl_cell_details:              { ar: 'تفاصيل الخلية', en: 'Cell details' },
+  /* E2-A — physical column selection (a coordinate, never a meaning). */
+  cn2b_xl_select_column:             { ar: 'تحديد العمود __COL__', en: 'Select column __COL__' },
+  cn2b_xl_cell_details:             { ar: 'تفاصيل الخلية', en: 'Cell details' },
   cn2b_xl_pick_cell:                 { ar: 'اختر خلية لعرض تفاصيلها.', en: 'Select a cell to see its details.' },
   cn2b_xl_cell:                      { ar: 'الخلية', en: 'Cell' },
   cn2b_xl_sheet:                     { ar: 'الورقة', en: 'Sheet' },
