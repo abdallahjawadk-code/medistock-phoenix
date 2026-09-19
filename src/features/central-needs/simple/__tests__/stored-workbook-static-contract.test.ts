@@ -48,12 +48,21 @@ describe('E1.1 persistent stored workbook contract', () => {
     expect(src).not.toMatch(/\.(insert|update|upsert|delete)\s*\(/);
     expect(src).not.toMatch(/\.(upload|uploadToSignedUrl|createSignedUploadUrl|remove|move|copy|updateBucket|emptyBucket|deleteBucket)\s*\(/);
 
-    // From the service layer it imports exactly the source-download read and the ImportBatch type.
+    // From the service layer it imports exactly the source-download read, the ImportBatch type —
+    // and, since E2-A, the batch-entry READ that proves which entry a displayed workbook is.
     const serviceImport = src.match(/import\s*\{([^}]*)\}\s*from\s*'\.\.\/central-needs\.service'/);
     expect(serviceImport).not.toBeNull();
     const imported = (serviceImport as RegExpMatchArray)[1].split(',').map((s) => s.trim()).filter(Boolean).sort();
-    expect(imported).toEqual(['requestSourceDownload', 'type ImportBatch']);
+    expect(imported).toEqual(['listBatchEntries', 'requestSourceDownload', 'type ImportBatch']);
     expect(src).not.toMatch(/\bauthorizedFetch\b/);
+    // E2-A: that added dependency is a pure SELECT of this batch's own entries — no write path.
+    const service = code('src/features/central-needs/central-needs.service.ts');
+    const listEntries = service.match(/export async function listBatchEntries\([\s\S]*?\n\}/);
+    expect(listEntries).not.toBeNull();
+    const body = (listEntries as RegExpMatchArray)[0];
+    expect(body).toMatch(/\.from\('central_needs_import_batch_entries'\)\s*\.select\(/);
+    expect(body).toMatch(/\.eq\('batch_id', batchId\)/);
+    expect(body).not.toMatch(/\.(insert|update|upsert|delete|rpc)\s*\(|\.storage\b/);
 
     // The only other network call is ONE GET of the signed URL the endpoint returned.
     const fetches = [...src.matchAll(/\bfetch\s*\(/g)];

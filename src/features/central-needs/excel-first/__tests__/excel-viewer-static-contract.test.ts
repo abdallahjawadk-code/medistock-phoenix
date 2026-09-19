@@ -25,7 +25,11 @@ const viewerFiles = readdirSync(join(ROOT, DIR))
   .filter((name) => /\.(ts|tsx)$/.test(name))
   .map((name) => `${DIR}/${name}`);
 
-/** Everything the viewer is allowed to depend on. Anything else is a scope change. */
+/**
+ * Everything the viewer is allowed to depend on. Anything else is a scope change.
+ * E2-A adds exactly one internal module, the pure selection contract; it is
+ * itself a file of this directory, so every guard below applies to it too.
+ */
 const ALLOWED_IMPORTS = new Set([
   'react',
   '@/shared/i18n/strings',
@@ -35,6 +39,7 @@ const ALLOWED_IMPORTS = new Set([
   './ExcelCellInspector',
   './ExcelSheetGrid',
   './ExcelSheetTabs',
+  './workbookSelection',
 ]);
 
 describe('E1 viewer — ONE PARSE: it consumes evidence and parses nothing', () => {
@@ -45,6 +50,9 @@ describe('E1 viewer — ONE PARSE: it consumes evidence and parses nothing', () 
       `${DIR}/ExcelSheetTabs.tsx`,
       `${DIR}/ExcelWorkbookViewer.tsx`,
       `${DIR}/excelViewerModel.ts`,
+      // E2-A: pure, framework-light, and under every read-only guard in this file.
+      `${DIR}/sourceIdentityBridge.ts`,
+      `${DIR}/workbookSelection.ts`,
     ]);
   });
 

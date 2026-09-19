@@ -42,6 +42,8 @@ const { svc, writes, panelLifecycle, backendAccess, workerMessages } = vi.hoiste
     uploadToStaging: vi.fn(),
     finalizeImport: vi.fn(),
     requestSourceDownload: vi.fn(),
+    /** E2-A: the read-only batch-entry query the panel makes after a verified parse. */
+    listBatchEntries: vi.fn(),
     getOrganizations: vi.fn(),
   },
   writes: {
@@ -210,6 +212,7 @@ function loadScreen(state: { sessions: ImportSession[]; batches: ImportBatch[] }
   svc.listSourceRecords.mockResolvedValue([RECORD]);
   svc.listDispositions.mockResolvedValue([] as RecordDisposition[]);
   svc.getOrganizations.mockResolvedValue([]);
+  svc.listBatchEntries.mockResolvedValue([]);
 }
 
 describe('E1.1 — the real screen: the stored source survives import, reset and refresh', () => {
