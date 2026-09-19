@@ -2568,6 +2568,34 @@
   background: var(--hover);
 }
 
+/* E2-A — physical selection, offered only when the source identity is proven.
+   A tint marks what is selected; the active cell keeps its outline. */
+.cn2b-xl-cell[data-in-selection='true'] { background: color-mix(in srgb, var(--cyan) 16%, var(--surface)); }
+.cn2b-xl-cell[data-in-selection='true'][data-selected='true'] { background: color-mix(in srgb, var(--cyan) 26%, var(--surface)); }
+
+.cn2b-xl-grid__colbutton {
+  inline-size: 100%;
+  block-size: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.cn2b-xl-grid__colbutton:hover { background: var(--hover); }
+.cn2b-xl-grid__colbutton:focus-visible { outline: 2px solid var(--cyan); outline-offset: -2px; }
+.cn2b-xl-grid__colhead[data-selected='true'] {
+  background: color-mix(in srgb, var(--cyan) 22%, var(--surface2));
+  color: var(--text);
+  font-weight: 700;
+}
+
 .cn2b-xl-inspector {
   display: flex;
   flex-direction: column;
