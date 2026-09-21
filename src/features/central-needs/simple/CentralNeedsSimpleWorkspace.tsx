@@ -30,7 +30,7 @@ import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import type { OrgRow } from '@/shared/supabase/services/organizations.service';
 import type { PreviewState } from '../useCentralNeedsPreview';
 import { ExcelWorkbookViewer } from '../excel-first/ExcelWorkbookViewer';
-import { StoredWorkbookPanel } from './StoredWorkbookPanel';
+import { StoredWorkbookMapping } from './StoredWorkbookMapping';
 import { SimpleInstitutionCard } from './SimpleInstitutionCard';
 import { SimpleMaterialCard } from './SimpleMaterialCard';
 import { SimpleStepper } from './SimpleStepper';
@@ -243,10 +243,11 @@ export function CentralNeedsSimpleWorkspace({
         It is an AUXILIARY source viewer with its own block class — never a
         second `.cn2b-simple-card`: the page keeps exactly ONE task card.
         `key` makes a revision switch destroy all transient signed-URL/bytes/
-        parser state before the next revision can render.
+        parser state — and the E2-B Sheet Mapping Profile draft built on it —
+        before the next revision can render.
       */}
       {revisionDataReady && revision && batches.length > 0 && (
-        <StoredWorkbookPanel key={revision.id} lang={lang} batches={batches} />
+        <StoredWorkbookMapping key={revision.id} lang={lang} batches={batches} />
       )}
 
       {notice && (

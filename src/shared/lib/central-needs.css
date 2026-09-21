@@ -2267,6 +2267,101 @@
   }
 }
 
+/* ── E2-B — Sheet Mapping Profile (auxiliary, NOT a task card) ─────────────
+   Sits under the registered source it maps. Same quiet chrome as the source
+   block; the roles are the human's declarations, shown as plain labels. */
+.cn2b-map {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: clamp(14px, 2vw, 20px);
+  background: var(--s2);
+  border: 1px dashed var(--brd);
+  border-radius: 16px;
+  min-inline-size: 0;
+}
+
+.cn2b-map__eyebrow {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--t2);
+}
+
+.cn2b-map__title { margin: 0; font-size: 1.05rem; font-weight: 800; line-height: 1.35; color: var(--t); }
+.cn2b-map__title:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; border-radius: 4px; }
+
+.cn2b-map__lead,
+.cn2b-map__hint { margin: 0; font-size: 0.85rem; line-height: 1.55; color: var(--t2); }
+
+.cn2b-map__context,
+.cn2b-map__roles { margin: 0; display: grid; gap: 8px; min-inline-size: 0; }
+
+.cn2b-map__pair,
+.cn2b-map__role {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  min-inline-size: 0;
+}
+
+.cn2b-map__pair dt,
+.cn2b-map__role-name { min-inline-size: 9em; font-size: 0.8rem; font-weight: 700; color: var(--t2); }
+
+.cn2b-map__pair dd,
+.cn2b-map__role-value {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+  font-weight: 700;
+  color: var(--t);
+}
+
+.cn2b-map__role {
+  padding: 8px 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.cn2b-map__unassigned { font-weight: 600; color: var(--t2); }
+
+.cn2b-map__actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.cn2b-map__actions .phoenix-button,
+.cn2b-map__role .phoenix-button { min-inline-size: 0; max-inline-size: 100%; }
+.cn2b-map .phoenix-button:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+
+.cn2b-map__status { margin: 0; font-size: 0.85rem; color: var(--ok); }
+
+.cn2b-map__alert {
+  margin: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 10px 12px;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--danger);
+  background: var(--chipD);
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--line));
+  border-radius: 12px;
+}
+
+@media (max-width: 720px) {
+  .cn2b-map { padding: 14px 12px; }
+  .cn2b-map__actions { flex-direction: column; align-items: stretch; }
+  .cn2b-map__actions .phoenix-button { inline-size: 100%; min-block-size: var(--touch-target, 44px); }
+}
+
 /* ── The quiet Advanced entry ────────────────────────────────────────────── */
 .cn2b-simple-footer {
   display: flex;
