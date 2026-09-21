@@ -94,7 +94,8 @@ describe('E2-C.18 — memory only', () => {
     expect(wrapper).toMatch(/const mapping = useWorkbookMapping\(\);/);
     expect(wrapper).toMatch(/onSelectionChange=\{mapping\.observeSelection\}/);
     expect([...wrapper.matchAll(/onSelectionChange=/g)]).toHaveLength(1);
-    expect(code(WORKSPACE)).toMatch(/<StoredWorkbookMapping key=\{revision\.id\} lang=\{lang\} batches=\{batches\} careInstitutions=\{careInstitutions\} \/>/);
+    // E2-D adds the revision id (identity only) for the local mapping approval; see e2d-mapping-approval-static-contract.
+    expect(code(WORKSPACE)).toMatch(/<StoredWorkbookMapping key=\{revision\.id\} lang=\{lang\} batches=\{batches\} careInstitutions=\{careInstitutions\} planRevisionId=\{revision\.id\} \/>/);
   });
 
   it('no hidden mutable module state in E2-C', () => {
@@ -162,7 +163,12 @@ describe('E2-C.19 — no new parser, no cell evidence, no inference', () => {
 
 describe('E2-C.20 — beneficiary identity is never the plan owner', () => {
   it('E2-C has no input for, and no reference to, the plan owner organization', () => {
-    for (const file of [...E2C_FILES, WRAPPER]) expect(code(file), file).not.toMatch(PLAN_OWNER);
+    for (const file of E2C_FILES) expect(code(file), file).not.toMatch(PLAN_OWNER);
+    // E2-D: the wrapper now carries the revision id for the LOCAL mapping approval — never any plan-owner
+    // organization — and hands it to E2-D only, never to an E2-C panel or hook.
+    const wrapper = code(WRAPPER);
+    expect(wrapper).not.toMatch(/\borganizationId\b|organization_id|activeOrgId|\bPlanRevision\b/);
+    expect(wrapper).not.toMatch(/<InstitutionMappingPanel[^>]*planRevisionId|useWorkbookMapping\([^)]*planRevisionId/);
   });
 
   it('the workspace hands E2-C its care institutions — the list the institution card already uses — and nothing else', () => {

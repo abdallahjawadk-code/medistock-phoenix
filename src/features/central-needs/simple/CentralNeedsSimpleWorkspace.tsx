@@ -246,9 +246,11 @@ export function CentralNeedsSimpleWorkspace({
         parser state — and the E2-B / E2-C mapping drafts built on it —
         before the next revision can render. E2-C's beneficiary choices are
         the same active care institutions the institution review card uses.
+        E2-D binds its LOCAL mapping approval to this revision's id only — it
+        never reads or changes the revision's status.
       */}
       {revisionDataReady && revision && batches.length > 0 && (
-        <StoredWorkbookMapping key={revision.id} lang={lang} batches={batches} careInstitutions={careInstitutions} />
+        <StoredWorkbookMapping key={revision.id} lang={lang} batches={batches} careInstitutions={careInstitutions} planRevisionId={revision.id} />
       )}
 
       {notice && (

@@ -2505,6 +2505,128 @@
   .cn2b-instmap__actions .phoenix-button { inline-size: 100%; min-block-size: var(--touch-target, 44px); }
 }
 
+/* ── E2-D — Mapping Approval Gate (auxiliary, NOT a task card) ─────────────
+   Sits after the institution mappings. A checklist, the blockers, and the
+   LOCAL approval bound to a SHA-256 fingerprint; it never looks like, or says,
+   that the Annual Needs revision was submitted or approved. */
+.cn2b-approve {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: clamp(14px, 2vw, 20px);
+  background: var(--s2);
+  border: 1px dashed var(--brd);
+  border-radius: 16px;
+  min-inline-size: 0;
+}
+
+.cn2b-approve__eyebrow {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--t2);
+}
+
+.cn2b-approve__title { margin: 0; font-size: 1.05rem; font-weight: 800; line-height: 1.35; color: var(--t); }
+.cn2b-approve__subtitle { margin: 0; font-size: 0.9rem; font-weight: 800; line-height: 1.35; color: var(--t); }
+.cn2b-approve__hint { margin: 0; font-size: 0.85rem; line-height: 1.55; color: var(--t2); }
+
+.cn2b-approve__disclaimer {
+  margin: 0;
+  padding: 8px 12px;
+  font-size: 0.85rem;
+  line-height: 1.55;
+  color: var(--t);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-inline-start: 3px solid var(--cyan);
+  border-radius: 10px;
+}
+
+.cn2b-approve__state { margin: 0; font-size: 0.9rem; font-weight: 800; color: var(--t); }
+.cn2b-approve[data-approval-status='blocked'] .cn2b-approve__state { color: var(--danger); }
+.cn2b-approve[data-approved='true'] .cn2b-approve__state { color: var(--ok); }
+
+.cn2b-approve__checklist { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; min-inline-size: 0; }
+.cn2b-approve__check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 6px 10px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  min-inline-size: 0;
+}
+.cn2b-approve__mark { display: inline-flex; justify-content: center; font-weight: 800; min-inline-size: 1.2em; }
+.cn2b-approve__check[data-met='true'] .cn2b-approve__mark { color: var(--ok); }
+.cn2b-approve__check[data-met='false'] .cn2b-approve__mark { color: var(--danger); }
+.cn2b-approve__check-label { flex: 1 1 12em; min-inline-size: 0; font-weight: 700; color: var(--t); overflow-wrap: anywhere; }
+.cn2b-approve__check-state { font-size: 0.78rem; font-weight: 700; color: var(--t2); }
+
+.cn2b-approve__blockers ul { margin: 4px 0 0; padding-inline-start: 1.2em; font-size: 0.85rem; line-height: 1.55; color: var(--t); }
+
+.cn2b-approve__stale {
+  margin: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 10px 12px;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--warn);
+  background: var(--chipW);
+  border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--line));
+  border-radius: 12px;
+}
+
+.cn2b-approve__fingerprint { margin: 0; font-size: 0.82rem; line-height: 1.5; color: var(--t2); overflow-wrap: anywhere; }
+.cn2b-approve__fingerprint code { font-size: 0.8rem; color: var(--t); word-break: break-all; }
+.cn2b-approve__fingerprint-label { font-weight: 700; }
+
+.cn2b-approve__approved {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid color-mix(in srgb, var(--ok) 45%, var(--line));
+  border-radius: 12px;
+}
+.cn2b-approve__approved:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+.cn2b-approve__approved-title { margin: 0; font-weight: 800; color: var(--ok); }
+
+.cn2b-approve__actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.cn2b-approve .phoenix-button { min-inline-size: 0; max-inline-size: 100%; }
+.cn2b-approve .phoenix-button:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+
+.cn2b-approve__evidence summary { cursor: pointer; font-size: 0.82rem; font-weight: 700; color: var(--t2); }
+.cn2b-approve__evidence summary:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; border-radius: 4px; }
+.cn2b-approve__evidence pre {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  max-block-size: 16em;
+  overflow: auto;
+  font-size: 0.75rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--t);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+@media (max-width: 720px) {
+  .cn2b-approve { padding: 14px 12px; }
+  .cn2b-approve__actions { flex-direction: column; align-items: stretch; }
+  .cn2b-approve__actions .phoenix-button { inline-size: 100%; min-block-size: var(--touch-target, 44px); }
+}
+
 /* ── The quiet Advanced entry ────────────────────────────────────────────── */
 .cn2b-simple-footer {
   display: flex;
