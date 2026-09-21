@@ -129,7 +129,9 @@ describe('E2-B.16 — scope', () => {
   it('exactly two roles, and no E2-C vocabulary anywhere in E2-B', () => {
     const domain = code(DOMAIN);
     expect(domain).toMatch(/export type MappingRole = 'national_code' \| 'material';/);
-    for (const file of E2B_FILES) {
+    // E2-C: the wrapper now composes both panels (see e2c-institution-mapping-static-contract);
+    // E2-B's own domain, hook and panel still name no E2-C concept.
+    for (const file of [DOMAIN, HOOK, PANEL]) {
       expect(code(file), file).not.toMatch(/institution|beneficiar|need_?line|needColumn|care_?facility|\bM213\b|anchor/i);
     }
   });
