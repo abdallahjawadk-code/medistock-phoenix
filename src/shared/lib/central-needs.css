@@ -2362,6 +2362,149 @@
   .cn2b-map__actions .phoenix-button { inline-size: 100%; min-block-size: var(--touch-target, 44px); }
 }
 
+/* ── E2-C — Institution Need mapping (auxiliary, NOT a task card) ──────────
+   Sits under the Sheet Mapping Profile with the same quiet chrome. One compact
+   editor for the entry being drafted, then the list of declared institutions;
+   each entry states its institution, its Excel coordinates and its validity. */
+.cn2b-instmap {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: clamp(14px, 2vw, 20px);
+  background: var(--s2);
+  border: 1px dashed var(--brd);
+  border-radius: 16px;
+  min-inline-size: 0;
+}
+
+.cn2b-instmap__eyebrow {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--t2);
+}
+
+.cn2b-instmap__title { margin: 0; font-size: 1.05rem; font-weight: 800; line-height: 1.35; color: var(--t); }
+.cn2b-instmap__subtitle { margin: 0; font-size: 0.95rem; font-weight: 800; line-height: 1.35; color: var(--t); }
+.cn2b-instmap__title:focus-visible,
+.cn2b-instmap__subtitle:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; border-radius: 4px; }
+
+.cn2b-instmap__lead,
+.cn2b-instmap__hint { margin: 0; font-size: 0.85rem; line-height: 1.55; color: var(--t2); }
+
+.cn2b-instmap__editor {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  min-inline-size: 0;
+}
+
+.cn2b-instmap__part {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  min-inline-size: 0;
+}
+
+.cn2b-instmap__part-name { margin: 0; min-inline-size: 12em; font-size: 0.8rem; font-weight: 700; color: var(--t2); }
+.cn2b-instmap__part-value { margin: 0; min-inline-size: 0; overflow-wrap: anywhere; font-weight: 700; color: var(--t); }
+.cn2b-instmap__part .nexus-field { flex: 1 1 18em; min-inline-size: 0; }
+.cn2b-instmap__part .cn2b-instmap__hint { flex: 1 1 100%; }
+.cn2b-instmap__unset { font-weight: 600; color: var(--t2); }
+
+.cn2b-instmap__actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.cn2b-instmap .phoenix-button { min-inline-size: 0; max-inline-size: 100%; }
+.cn2b-instmap .phoenix-button:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+
+.cn2b-instmap__list { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; min-inline-size: 0; }
+
+.cn2b-instmap__item {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  min-inline-size: 0;
+}
+.cn2b-instmap__item[data-valid='false'] { border-color: color-mix(in srgb, var(--danger) 45%, var(--line)); }
+.cn2b-instmap__item[data-editing='true'] { border-style: dashed; }
+
+.cn2b-instmap__item-name {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px 8px;
+  flex-wrap: wrap;
+  font-weight: 800;
+  color: var(--t);
+  overflow-wrap: anywhere;
+}
+.cn2b-instmap__code { font-size: 0.78rem; font-weight: 700; color: var(--t2); }
+
+.cn2b-instmap__facts { margin: 0; display: flex; flex-wrap: wrap; gap: 4px 18px; min-inline-size: 0; }
+.cn2b-instmap__fact { display: flex; gap: 6px; min-inline-size: 0; }
+.cn2b-instmap__fact dt { font-size: 0.8rem; font-weight: 700; color: var(--t2); }
+.cn2b-instmap__fact dd { margin: 0; font-weight: 700; color: var(--t); overflow-wrap: anywhere; }
+
+.cn2b-instmap__valid { margin: 0; font-size: 0.82rem; font-weight: 700; color: var(--ok); }
+
+.cn2b-instmap__problem {
+  margin: 0;
+  padding: 8px 10px;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: var(--danger);
+  background: var(--chipD);
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--line));
+  border-radius: 10px;
+}
+.cn2b-instmap__problem-title { margin: 0; font-weight: 700; }
+.cn2b-instmap__problems { margin: 4px 0 0; padding-inline-start: 1.2em; }
+
+.cn2b-instmap__item-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.cn2b-instmap__confirm {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--chipW);
+  border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--line));
+  border-radius: 12px;
+}
+.cn2b-instmap__confirm p { margin: 0; font-size: 0.85rem; line-height: 1.5; color: var(--t); }
+
+.cn2b-instmap__status { margin: 0; font-size: 0.85rem; color: var(--ok); }
+
+.cn2b-instmap__alert {
+  margin: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 10px 12px;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--danger);
+  background: var(--chipD);
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--line));
+  border-radius: 12px;
+}
+
+@media (max-width: 720px) {
+  .cn2b-instmap { padding: 14px 12px; }
+  .cn2b-instmap__part-name { min-inline-size: 0; flex: 1 1 100%; }
+  .cn2b-instmap__actions { flex-direction: column; align-items: stretch; }
+  .cn2b-instmap__actions .phoenix-button { inline-size: 100%; min-block-size: var(--touch-target, 44px); }
+}
+
 /* ── The quiet Advanced entry ────────────────────────────────────────────── */
 .cn2b-simple-footer {
   display: flex;

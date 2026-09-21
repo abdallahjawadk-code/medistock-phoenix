@@ -243,11 +243,12 @@ export function CentralNeedsSimpleWorkspace({
         It is an AUXILIARY source viewer with its own block class — never a
         second `.cn2b-simple-card`: the page keeps exactly ONE task card.
         `key` makes a revision switch destroy all transient signed-URL/bytes/
-        parser state — and the E2-B Sheet Mapping Profile draft built on it —
-        before the next revision can render.
+        parser state — and the E2-B / E2-C mapping drafts built on it —
+        before the next revision can render. E2-C's beneficiary choices are
+        the same active care institutions the institution review card uses.
       */}
       {revisionDataReady && revision && batches.length > 0 && (
-        <StoredWorkbookMapping key={revision.id} lang={lang} batches={batches} />
+        <StoredWorkbookMapping key={revision.id} lang={lang} batches={batches} careInstitutions={careInstitutions} />
       )}
 
       {notice && (

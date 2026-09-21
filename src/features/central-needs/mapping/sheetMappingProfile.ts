@@ -98,9 +98,10 @@ function keyOf(value: unknown): string | null {
  * The canonical E2-A selection this input describes, or null. The input is
  * rebuilt through E2-A's builders and accepted only if the rebuilt selection is
  * identical — so a hand-made object, an altered coordinate or an extra field is
- * refused, and the caller's object is never retained.
+ * refused, and the caller's object is never retained. Exported so E2-C accepts
+ * exactly the same trusted input rather than a second copy of this rule.
  */
-function canonicalSelection(input: unknown): WorkbookSelection | null {
+export function canonicalSelection(input: unknown): WorkbookSelection | null {
   if (!input || typeof input !== 'object') return null;
   const s = input as Record<string, unknown>;
   const source = (s.source ?? null) as WorkbookSourceIdentity | null;
