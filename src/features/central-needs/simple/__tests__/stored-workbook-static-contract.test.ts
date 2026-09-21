@@ -84,13 +84,20 @@ describe('E1.1 persistent stored workbook contract', () => {
   });
 
   it('is mounted outside the Simple step branches so upload -> summary/review does not remove it', () => {
+    // E2-B: the stored panel is mounted through StoredWorkbookMapping, which also
+    // holds the Sheet Mapping Profile draft, so both share the revision key.
     const workspace = code(WORKSPACE);
-    const mount = workspace.indexOf('<StoredWorkbookPanel');
+    const mount = workspace.indexOf('<StoredWorkbookMapping');
     const firstStep = workspace.indexOf("step === 'upload'");
     expect(mount).toBeGreaterThan(0);
     expect(firstStep).toBeGreaterThan(mount);
     expect(workspace).toMatch(/revisionDataReady && revision && batches\.length > 0/);
-    expect(workspace).toMatch(/<StoredWorkbookPanel key=\{revision\.id\}/);
+    expect(workspace).toMatch(/<StoredWorkbookMapping key=\{revision\.id\}/);
+    expect(workspace).not.toMatch(/<StoredWorkbookPanel\b/);
+    // The wrapper renders the real panel unconditionally, wired only through its selection bridge.
+    const wrapper = code('src/features/central-needs/simple/StoredWorkbookMapping.tsx');
+    expect(wrapper).toMatch(/<StoredWorkbookPanel lang=\{lang\} batches=\{batches\} onSelectionChange=\{mapping\.observeSelection\} \/>/);
+    expect([...wrapper.matchAll(/<StoredWorkbookPanel\b/g)]).toHaveLength(1);
   });
 
   it('F-2: is an auxiliary surface with its own block — never a second Simple task card', () => {
