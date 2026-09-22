@@ -37,6 +37,7 @@ import { SimpleStepper } from './SimpleStepper';
 import { SimpleUploadZone } from './SimpleUploadZone';
 import { summarizeSimpleReadiness } from './simpleReadiness';
 import { computeSimpleCounts } from './simpleCounts';
+import { deriveRevisionContext } from '../central-needs.revision-context';
 import type {
   BeneficiaryColumnSummary, ImportBatch, PlanRevision, RecordDisposition, ReviewReadiness, SourceRecord,
 } from '../central-needs.service';
@@ -139,9 +140,17 @@ export function CentralNeedsSimpleWorkspace({
     return m;
   }, [records]);
 
+  /**
+   * C1 — the selected revision's context, from the SAME `revision` the parent
+   * passes and the SAME pure derivation Advanced Mode uses. Its year is the
+   * revision's own plan year or nothing: `planYear` below is only the year
+   * typed for a first annual draft and never stands in for a revision's year.
+   */
+  const revisionContext = useMemo(() => deriveRevisionContext(revision), [revision]);
+
   // section 18 — a revision already submitted/approved is never silently
   // superseded. A human must explicitly choose to open a correction revision.
-  const revisionClosed = revision !== null && revision.status !== 'draft';
+  const revisionClosed = revisionContext.isClosed;
 
   /** Advanced Mode's own rule, verbatim: the edit permission AND a draft revision. */
   const canWrite = canEdit && isDraft;
@@ -231,6 +240,28 @@ export function CentralNeedsSimpleWorkspace({
       <header className="cn2b-simple-hero">
         <h1 className="cn2b-simple-title">{t('cn2b_simple_title', lang)}</h1>
         <p className="cn2b-simple-tagline">{t('cn2b_simple_tagline', lang)}</p>
+        {/*
+          C1 — WHICH plan and revision every action on this page affects,
+          stated from the selected revision itself: its plan year (or "—" when
+          the registry could not give one — never the calendar year), its
+          revision number and its status. Presentation only.
+        */}
+        {revision !== null && (
+          <p
+            className="cn2b-simple-tagline"
+            data-testid="cn2b-simple-revision-context"
+            data-plan-year={revisionContext.planYear ?? ''}
+            data-revision-number={revisionContext.revisionNumber ?? ''}
+            data-status={revisionContext.status ?? ''}
+          >
+            {t('cn2b_plan_year', lang)} <bdi>{revisionContext.planYear ?? '—'}</bdi>
+            {' · '}{t('cn2b_revision', lang)} {revisionContext.revisionNumber}
+            {' · '}
+            {/* Plain text on purpose: the task card keeps the one status chip
+                (`.cn2b-simple-status`), which the browser suite counts. */}
+            <span>{t(`cn2b_revstatus_${revisionContext.status}`, lang)}</span>
+          </p>
+        )}
       </header>
 
       <SimpleStepper lang={lang} step={step} />
@@ -273,7 +304,7 @@ export function CentralNeedsSimpleWorkspace({
                 <span className="cn2b-simple-status" data-status={revision!.status}>
                   {t(`cn2b_revstatus_${revision!.status}`, lang)}
                 </span>
-                <span>{revision!.planYear ?? planYear}</span>
+                <span>{revisionContext.planYear ?? '—'}</span>
               </h2>
               <p className="cn2b-simple-card__lead" data-testid="cn2b-simple-closed-notice">
                 {revision!.status === 'approved'
@@ -286,15 +317,24 @@ export function CentralNeedsSimpleWorkspace({
                 handler Advanced Mode uses, with openNext=true, exactly once.
               */}
               {canImport ? (
-                <div className="cn2b-simple-card__actions">
-                  <PhoenixButton
-                    type="button" variant="primary" size="lg" disabled={revisionsLoading || busy}
-                    data-testid="cn2b-simple-create-correction"
-                    onClick={() => onOpenRevision(true)}
-                  >
-                    {t('cn2b_simple_create_correction', lang)}
-                  </PhoenixButton>
-                </div>
+                <>
+                  <div className="cn2b-simple-card__actions">
+                    <PhoenixButton
+                      type="button" variant="primary" size="lg"
+                      disabled={revisionsLoading || busy || !revisionContext.correction.ok}
+                      data-testid="cn2b-simple-create-correction"
+                      onClick={() => onOpenRevision(true)}
+                    >
+                      {t('cn2b_simple_create_correction', lang)}
+                    </PhoenixButton>
+                  </div>
+                  {/* C1 — no trustworthy plan year, no correction: fail closed and say why. */}
+                  {!revisionContext.correction.ok && (
+                    <p className="cn2b-simple-card__hint" data-testid="cn2b-simple-correction-year-unavailable">
+                      {t('cn2b_err_revision_plan_year_unavailable', lang)}
+                    </p>
+                  )}
+                </>
               ) : (
                 <p className="cn2b-simple-card__hint">{t('cn2b_simple_no_import_permission', lang)}</p>
               )}
@@ -340,7 +380,7 @@ export function CentralNeedsSimpleWorkspace({
             <>
               <p className="cn2b-simple-card__eyebrow">
                 <span className="cn2b-simple-status" data-status="draft">{t('cn2b_revstatus_draft', lang)}</span>
-                {' '}{t('cn2b_simple_draft_open', lang).replace('__YEAR__', String(revision.planYear ?? planYear))}
+                {' '}{t('cn2b_simple_draft_open', lang).replace('__YEAR__', String(revisionContext.planYear ?? '—'))}
               </p>
               <h2 className="cn2b-simple-card__title" id="cn2b-simple-upload-title">{t('cn2b_simple_upload_title', lang)}</h2>
               {canImport && isDraft ? (
