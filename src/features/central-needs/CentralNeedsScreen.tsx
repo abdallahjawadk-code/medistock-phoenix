@@ -78,6 +78,7 @@ import {
   listOverrides,
   listPlanRevisions,
   listSourceRecords,
+  openCorrectionRevision,
   openPlanRevision,
   rejectRevision,
   searchBatchEntries,
@@ -99,10 +100,23 @@ import {
   type SourceRecord,
 } from './central-needs.service';
 import type { ArchiveParseResult, FileParseResult } from './import/contract.ts';
-import { deriveRevisionContext, findRegistryRevision } from './central-needs.revision-context';
+import { deriveRevisionContext, findRegistryRevision, newerRevisionOf } from './central-needs.revision-context';
+import { CentralNeedsRevisionHistory } from './CentralNeedsRevisionHistory';
 import { CentralNeedsSimpleWorkspace } from './simple/CentralNeedsSimpleWorkspace';
 
 type Busy = null | 'verifying' | 'submitting' | 'approving' | 'rejecting' | 'abandoning' | 'opening';
+
+/**
+ * C2 — server refusals of a correction that mean "the lifecycle moved since
+ * this screen read it". The registry is re-read so the person decides again on
+ * current facts; the correction is never retried automatically.
+ */
+const CORRECTION_STATE_MOVED: ReadonlySet<string> = new Set([
+  'central_needs_revision_stale',
+  'central_needs_correction_plan_mismatch',
+  'plan_revision_draft_already_open',
+  'plan_revision_still_in_review',
+]);
 type ChildActivity = { busy: boolean; dirty: boolean; failed: boolean };
 
 /** A revision label is never a bare "#1" — revision numbers restart per plan year. */
@@ -588,16 +602,17 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
   }, [revisionContextBusy, revisionDraftDirty, lang]);
 
   /**
-   * The one call site of `openPlanRevision`. It never chooses a year itself:
-   * each of the two intents below hands it the year that intent is about.
+   * The one call site of `openPlanRevision`: a NEW, first or current annual
+   * draft, for the explicit year the person typed. Never a correction — since
+   * C2 the server refuses a correction through this RPC.
    */
-  const requestPlanRevision = useCallback(async (targetYear: number, openNext: boolean) => {
+  const onOpenAnnualDraft = useCallback(async () => {
     if (!organizationId || !confirmRevisionContextDiscard()) return;
     setBusy('opening');
     setError(null);
     setNotice(null);
     try {
-      const opened = await openPlanRevision(organizationId, targetYear, openNext);
+      const opened = await openPlanRevision(organizationId, planYear, false);
       const rows = await listPlanRevisions(organizationId);
       setRevisions(rows);
       setRevisionId(opened.planRevisionId);
@@ -607,36 +622,86 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
     } finally {
       setBusy(null);
     }
-  }, [organizationId, confirmRevisionContextDiscard]);
-
-  /** A NEW, first or current annual draft: the explicit year the person typed. Never a correction. */
-  const onOpenAnnualDraft = useCallback(() => {
-    void requestPlanRevision(planYear, false);
-  }, [requestPlanRevision, planYear]);
+  }, [organizationId, planYear, confirmRevisionContextDiscard]);
 
   /**
-   * PD-1 — an explicit correction (the next revision after a closed one)
-   * targets the SELECTED revision's own plan year, and only that. The target
-   * comes from `revisionContext`, whose only input is the selected revision, so
-   * the draft-year input, the calendar and every other revision are out of
-   * reach. No trustworthy year means no request at all: fail closed, never
-   * guess. What the server then does to the previous revision is unchanged
-   * here (M210; the governed correction lifecycle is C2).
+   * C2 — the newest revision of the SELECTED revision's own plan, when it is
+   * newer than the selection. A correction can only follow the newest revision
+   * (the server's stale fence), so the action is withheld and the reason shown.
    */
-  const onOpenCorrection = useCallback(() => {
+  const newerRevision = useMemo(() => newerRevisionOf(revisions, revision), [revisions, revision]);
+
+  /**
+   * PD-1 + C2 — an explicit correction targets the SELECTED revision: its own
+   * plan year (`revisionContext`, whose only input is the selection, so the
+   * draft-year input, the calendar and every other revision are out of reach)
+   * and its own id as the expected newest revision the server fences on.
+   *
+   *   * No trustworthy year: no request at all (fail closed, never guess).
+   *   * A human reason is required before anything is sent.
+   *   * A stale or moved lifecycle is surfaced and the registry is re-read;
+   *     the request is NEVER retried silently.
+   *   * The approved revision stays in effect until the correction itself is
+   *     approved (M215); nothing here changes another revision.
+   */
+  const onOpenCorrection = useCallback(async () => {
     const target = revisionContext.correction;
     if (!target.ok) {
       setNotice(null);
       setError(target.reason);
       return;
     }
-    void requestPlanRevision(target.planYear, true);
-  }, [requestPlanRevision, revisionContext]);
+    if (newerRevision !== null) {
+      setNotice(null);
+      setError('correction_newer_revision_exists');
+      return;
+    }
+    if (!organizationId || !confirmRevisionContextDiscard()) return;
+
+    const entered = window.prompt(
+      t('cn2b_correction_reason_prompt', lang)
+        .replace('__YEAR__', String(target.planYear))
+        .replace('__N__', String(revisionContext.revisionNumber)),
+    );
+    // Cancel (null) — or an environment without a prompt (undefined) — sends nothing.
+    if (entered == null) return;
+    const reason = entered.trim();
+    if (reason === '') {
+      setNotice(null);
+      setError('correction_reason_required');
+      return;
+    }
+
+    setBusy('opening');
+    setError(null);
+    setNotice(null);
+    try {
+      const opened = await openCorrectionRevision(organizationId, target.planYear, target.revisionId, reason);
+      const rows = await listPlanRevisions(organizationId);
+      setRevisions(rows);
+      setRevisionId(opened.planRevisionId);
+      setNotice('cn2b_notice_correction_opened');
+    } catch (e: unknown) {
+      const code = e instanceof CentralNeedsError ? e.code : 'open_revision_failed';
+      setError(code);
+      if (CORRECTION_STATE_MOVED.has(code)) {
+        // Refresh the read model so the person decides again on current facts.
+        // Deliberately no retry: the refusal above is what they need to see.
+        try {
+          setRevisions(await listPlanRevisions(organizationId));
+        } catch {
+          /* the refusal already shown is the actionable message */
+        }
+      }
+    } finally {
+      setBusy(null);
+    }
+  }, [revisionContext, newerRevision, organizationId, confirmRevisionContextDiscard, lang]);
 
   /** The existing two-intent entry Simple Mode calls: `true` = correction, `false` = annual draft. */
   const onOpenRevision = useCallback((openNext: boolean) => {
-    if (openNext) onOpenCorrection();
-    else onOpenAnnualDraft();
+    if (openNext) void onOpenCorrection();
+    else void onOpenAnnualDraft();
   }, [onOpenCorrection, onOpenAnnualDraft]);
 
   // I — search runs against the selected revision only; RLS is the boundary.
@@ -896,11 +961,13 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
         </label>
 
         {/*
-          PD-1 — the next revision after a CLOSED one acts on the SELECTED
-          revision, so it sits with that revision and names that revision's own
-          plan year. The year input below never retargets it. A separate,
-          explicit action — never automatic, and never offered while a draft is
-          open. With no trustworthy plan year it is refused, and says why.
+          PD-1 + C2 — the correction after a CLOSED revision acts on the
+          SELECTED revision, so it sits with that revision and names its own
+          plan year and revision number. The year input below never retargets
+          it. A separate, explicit action — never automatic, never offered
+          while a draft is open, and asking for a reason before it is sent.
+          With no trustworthy plan year, or when a newer revision of the same
+          plan exists, it is withheld and says why.
         */}
         {canEdit && revisionContext.acceptsNextRevisionRequest && (
           <>
@@ -910,18 +977,36 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
                 className="cn2b-btn"
                 data-testid="cn2b-open-next-revision"
                 data-target-year={revisionContext.planYear ?? ''}
-                disabled={busy !== null || !revisionContext.correction.ok}
-                onClick={onOpenCorrection}
+                data-target-revision={revisionContext.revisionNumber ?? ''}
+                disabled={busy !== null || !revisionContext.correction.ok || newerRevision !== null}
+                onClick={() => void onOpenCorrection()}
               >
                 {revisionContext.planYear === null
                   ? t('cn2b_open_next_revision', lang)
-                  : t('cn2b_open_next_revision_for_year', lang).replace('__YEAR__', String(revisionContext.planYear))}
+                  : t('cn2b_open_next_revision_for_year', lang)
+                    .replace('__YEAR__', String(revisionContext.planYear))
+                    .replace('__N__', String(revisionContext.revisionNumber))}
               </button>
             </div>
             {!revisionContext.correction.ok && (
               <p className="cn2b-hint">{t('cn2b_err_revision_plan_year_unavailable', lang)}</p>
             )}
+            {revisionContext.correction.ok && newerRevision !== null && (
+              <p className="cn2b-hint" data-testid="cn2b-correction-newer-revision">
+                {t('cn2b_correction_newer_revision_exists', lang).replace('__N__', String(newerRevision.revisionNumber))}
+              </p>
+            )}
+            <p className="cn2b-hint">{t('cn2b_correction_keeps_effective', lang)}</p>
           </>
+        )}
+
+        {organizationId !== null && revisionContext.planYear !== null && (
+          <CentralNeedsRevisionHistory
+            key={`${organizationId}:${revisionContext.planYear}`}
+            lang={lang}
+            organizationId={organizationId}
+            planYear={revisionContext.planYear}
+          />
         )}
 
         {canEdit && (
@@ -949,7 +1034,7 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
                 type="button"
                 className="cn2b-btn cn2b-btn--primary"
                 disabled={busy !== null || !Number.isFinite(planYear)}
-                onClick={onOpenAnnualDraft}
+                onClick={() => void onOpenAnnualDraft()}
               >
                 {t('cn2b_open_draft', lang)}
               </button>
@@ -1352,6 +1437,7 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
           busy={busy !== null}
           activity={busy}
           onOpenRevision={(openNext) => void onOpenRevision(openNext)}
+          newerRevisionNumber={newerRevision?.revisionNumber ?? null}
           preview={preview.state}
           pendingFile={pendingFile}
           onPickFile={onPickFile}

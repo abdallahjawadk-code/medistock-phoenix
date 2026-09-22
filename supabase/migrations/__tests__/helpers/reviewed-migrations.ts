@@ -234,6 +234,12 @@ export const REVIEWED_MIGRATION_FILES: readonly string[] = Object.freeze([
   // Body, authorization, grants and search_path are unchanged; only the
   // function volatility is advanced from STABLE to VOLATILE.
   '214_phoenix_central_needs_review_readiness_volatility.sql',
+  // C2 / M215: the governed Central Needs correction lifecycle — function-only.
+  // Opening a correction keeps the approved revision effective; approval
+  // supersedes it atomically; stale-fenced, reason-mandatory, audited. No new
+  // table, column, enum, trigger, policy or permission key, and no stock,
+  // movement, allocation or transfer SQL.
+  '215_phoenix_central_needs_governed_correction_lifecycle.sql',
 ]);
 
 const REVIEWED_SET: ReadonlySet<string> = new Set(REVIEWED_MIGRATION_FILES);

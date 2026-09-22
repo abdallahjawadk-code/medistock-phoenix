@@ -215,7 +215,14 @@ describe('no client-side document-number sequence exists',()=>{
     // max()+1, generated numeric identity or document number of any kind, so it
     // is registered here by exact number. Boundary moves to 214 so the next
     // unknown migration still fails closed.
-    const beyond=migrations.filter(f=>/^(1[89]\d|[2-9]\d\d)_/.test(f)&&!/^(179|180|181|182|183|184|185|186|187|188|189|190|191|192|193|194|195|196|197|198|199|200|201|202|203|204|205|206|207|208|209|210|211|212|213|214)_/.test(f));
+    // C2 / M215: the governed Central Needs correction lifecycle — function-only.
+    // It introduces no sequence, counter, generated numeric identity or
+    // document number. The one number it assigns, a correction's
+    // revision_number (newest revision_number + 1), is computed SERVER-SIDE
+    // under the plan-family lock and backed by M209's UNIQUE (plan_id,
+    // revision_number) — exactly as M210 already did — and is never allocated by
+    // a client. Registered by exact number; boundary moves to 215.
+    const beyond=migrations.filter(f=>/^(1[89]\d|[2-9]\d\d)_/.test(f)&&!/^(179|180|181|182|183|184|185|186|187|188|189|190|191|192|193|194|195|196|197|198|199|200|201|202|203|204|205|206|207|208|209|210|211|212|213|214|215)_/.test(f));
     expect(beyond).toEqual([]);
     for(const f of [
       '211_phoenix_central_needs_batch_and_disposition.sql',

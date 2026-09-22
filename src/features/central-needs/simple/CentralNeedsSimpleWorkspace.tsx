@@ -71,6 +71,13 @@ interface Props {
   busy: boolean;
   activity: SimpleActivity;
   onOpenRevision: (openNext: boolean) => void;
+  /**
+   * C2 — the number of a NEWER revision of the selected revision's own plan,
+   * or null when the selection is the newest. A correction can only follow
+   * the newest revision (the server's stale fence), so it is withheld while
+   * this is set. Optional for older test harnesses; the screen always passes it.
+   */
+  newerRevisionNumber?: number | null;
   preview: PreviewState;
   pendingFile: File | null;
   onPickFile: (file: File | null) => void;
@@ -97,7 +104,7 @@ interface Props {
 
 export function CentralNeedsSimpleWorkspace({
   lang, planYear, onPlanYearChange, revisionsLoading, revision, isDraft, revisionDataReady,
-  canImport, canEdit, busy, activity, onOpenRevision, preview, pendingFile, onPickFile, onVerify, error, notice,
+  canImport, canEdit, busy, activity, onOpenRevision, newerRevisionNumber = null, preview, pendingFile, onPickFile, onVerify, error, notice,
   readiness, batches = [], beneficiaryColumns, careInstitutions, records, dispositions, activeSessionId,
   onChanged, onSwitchToAdvanced,
 }: Props) {
@@ -312,26 +319,44 @@ export function CentralNeedsSimpleWorkspace({
                   : t('cn2b_simple_closed_notice', lang)}
               </p>
               {/*
-                A closed revision is superseded ONLY by this explicit click —
-                never by rendering. It calls the same `openPlanRevision`
-                handler Advanced Mode uses, with openNext=true, exactly once.
+                A correction is opened ONLY by this explicit click — never by
+                rendering. It calls the same parent correction handler Advanced
+                Mode uses (`onOpenRevision(true)`), which asks for the reason and
+                sends the selected revision's own year and id exactly once. C2:
+                the approved revision stays in effect until the correction is
+                itself approved; a correction can only follow a DECIDED newest
+                revision, so it is withheld otherwise and says why.
               */}
               {canImport ? (
                 <>
                   <div className="cn2b-simple-card__actions">
                     <PhoenixButton
                       type="button" variant="primary" size="lg"
-                      disabled={revisionsLoading || busy || !revisionContext.correction.ok}
+                      disabled={revisionsLoading || busy || !revisionContext.correction.ok
+                        || !revisionContext.acceptsNextRevisionRequest || newerRevisionNumber !== null}
                       data-testid="cn2b-simple-create-correction"
                       onClick={() => onOpenRevision(true)}
                     >
                       {t('cn2b_simple_create_correction', lang)}
                     </PhoenixButton>
                   </div>
+                  {revisionContext.correction.ok && revisionContext.revisionNumber !== null && (
+                    <p className="cn2b-simple-card__hint" data-testid="cn2b-simple-correction-target">
+                      {t('cn2b_correction_target', lang)
+                        .replace('__YEAR__', String(revisionContext.correction.planYear))
+                        .replace('__N__', String(revisionContext.revisionNumber))}
+                      {' '}{t('cn2b_correction_keeps_effective', lang)}
+                    </p>
+                  )}
                   {/* C1 — no trustworthy plan year, no correction: fail closed and say why. */}
                   {!revisionContext.correction.ok && (
                     <p className="cn2b-simple-card__hint" data-testid="cn2b-simple-correction-year-unavailable">
                       {t('cn2b_err_revision_plan_year_unavailable', lang)}
+                    </p>
+                  )}
+                  {revisionContext.correction.ok && newerRevisionNumber !== null && (
+                    <p className="cn2b-simple-card__hint" data-testid="cn2b-simple-correction-newer-revision">
+                      {t('cn2b_correction_newer_revision_exists', lang).replace('__N__', String(newerRevisionNumber))}
                     </p>
                   )}
                 </>

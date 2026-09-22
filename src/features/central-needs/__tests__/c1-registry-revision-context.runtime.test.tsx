@@ -12,8 +12,12 @@
  * that already existed before C1, so the same file demonstrates the defect on
  * the baseline and its absence after the fix.
  *
- * What C1 does NOT change is asserted nowhere here: the server lifecycle
- * (M210's supersession timing, stale fence, correction reason) is C2.
+ * C2 (M215) moved the correction onto its own governed RPC. The PD-1 guarantee
+ * asserted here is unchanged — the request carries the SELECTED revision's own
+ * plan year — and is now asserted on `openCorrectionRevision(org, year,
+ * selectedRevisionId, reason)`, with the human reason supplied through the
+ * prompt the screen shows. The server lifecycle itself (stale fence, atomic
+ * approval switch) is proven by M215's dynamic suite, not here.
  */
 import '@testing-library/jest-dom/vitest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -51,6 +55,9 @@ const listBeneficiaryColumns = vi.fn();
 const listSourceRecords = vi.fn();
 const listDispositions = vi.fn();
 const openPlanRevision = vi.fn();
+const openCorrectionRevision = vi.fn();
+/** The human reason every correction test types into the prompt. */
+const REASON = 'hospital resubmitted its annual return';
 const getOrganizations = vi.fn();
 
 vi.mock('@/app/AppContext', () => ({ useApp: () => appState }));
@@ -70,6 +77,7 @@ vi.mock('../central-needs.service', async () => {
     listSourceRecords: (...a: unknown[]) => listSourceRecords(...(a as [string])),
     listDispositions: (...a: unknown[]) => listDispositions(...(a as [string])),
     openPlanRevision: (...a: unknown[]) => openPlanRevision(...a),
+    openCorrectionRevision: (...a: unknown[]) => openCorrectionRevision(...a),
     setBeneficiaryColumns: vi.fn(async () => ({ confirmed: [] })),
     recordFieldOverride: vi.fn(),
     searchCentralItems: vi.fn(async () => []),
@@ -108,6 +116,10 @@ function loadRegistry(revisions: PlanRevision[]) {
   getOrganizations.mockResolvedValue([] as OrgRow[]);
   openPlanRevision.mockImplementation(async (_org: string, planYear: number) => ({
     planRevisionId: 'rev-opened', revisionNumber: 99, planYear, idempotent: false,
+  }));
+  openCorrectionRevision.mockImplementation(async (_org: string, planYear: number, expected: string) => ({
+    planRevisionId: 'rev-correction', revisionNumber: 99, planYear,
+    openedAfterRevisionId: expected, effectiveApprovedRevisionId: null,
   }));
 }
 
@@ -172,6 +184,7 @@ beforeEach(() => {
   appState.dir = 'ltr';
   appState.myPermissions = new Set(['central_needs.import', 'central_needs.edit', 'central_needs.approve']);
   Object.defineProperty(Element.prototype, 'scrollIntoView', { configurable: true, writable: true, value: vi.fn() });
+  vi.spyOn(window, 'prompt').mockReturnValue(REASON);
 });
 afterEach(() => cleanup());
 
@@ -184,8 +197,9 @@ describe('C1 / PD-1 — Advanced Mode correction targets the SELECTED revision y
     const { planStage } = await renderAdvanced('rev-2025');
     typeDraftYear(planStage, 2026);
     fireEvent.click(openNextButton(planStage));
-    await waitFor(() => expect(openPlanRevision).toHaveBeenCalledTimes(1));
-    expect(openPlanRevision).toHaveBeenCalledWith(ORG, 2025, true);
+    await waitFor(() => expect(openCorrectionRevision).toHaveBeenCalledTimes(1));
+    expect(openCorrectionRevision).toHaveBeenCalledWith(ORG, 2025, 'rev-2025', REASON);
+    expect(openPlanRevision).not.toHaveBeenCalled();
   });
 
   it('B) draft-year input 2027, selected rejected revision of 2024 -> requests 2024', async () => {
@@ -193,8 +207,9 @@ describe('C1 / PD-1 — Advanced Mode correction targets the SELECTED revision y
     const { planStage } = await renderAdvanced('rev-2024');
     typeDraftYear(planStage, 2027);
     fireEvent.click(openNextButton(planStage));
-    await waitFor(() => expect(openPlanRevision).toHaveBeenCalledTimes(1));
-    expect(openPlanRevision).toHaveBeenCalledWith(ORG, 2024, true);
+    await waitFor(() => expect(openCorrectionRevision).toHaveBeenCalledTimes(1));
+    expect(openCorrectionRevision).toHaveBeenCalledWith(ORG, 2024, 'rev-2024', REASON);
+    expect(openPlanRevision).not.toHaveBeenCalled();
   });
 
   it('D) switching the selected revision re-targets the correction, whatever the draft-year input says', async () => {
@@ -205,8 +220,9 @@ describe('C1 / PD-1 — Advanced Mode correction targets the SELECTED revision y
     // The draft-year input is untouched by the switch; it still says 2030.
     expect(within(planStage).getByRole('spinbutton')).toHaveValue(2030);
     fireEvent.click(openNextButton(planStage));
-    await waitFor(() => expect(openPlanRevision).toHaveBeenCalledTimes(1));
-    expect(openPlanRevision).toHaveBeenCalledWith(ORG, 2025, true);
+    await waitFor(() => expect(openCorrectionRevision).toHaveBeenCalledTimes(1));
+    expect(openCorrectionRevision).toHaveBeenCalledWith(ORG, 2025, 'rev-2025', REASON);
+    expect(openPlanRevision).not.toHaveBeenCalled();
   });
 
   it('E) a selected revision with no trustworthy plan year never borrows the draft-year input', async () => {
@@ -218,6 +234,7 @@ describe('C1 / PD-1 — Advanced Mode correction targets the SELECTED revision y
     // Give any (wrong) asynchronous request every chance to be issued.
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(openPlanRevision).not.toHaveBeenCalled();
+    expect(openCorrectionRevision).not.toHaveBeenCalled();
   });
 });
 
@@ -232,8 +249,9 @@ describe('C1 / PD-1 — Simple Mode correction targets the SELECTED revision yea
     const { button } = await renderSimpleClosed();
     await waitFor(() => expect(button).not.toBeDisabled());
     fireEvent.click(button);
-    await waitFor(() => expect(openPlanRevision).toHaveBeenCalledTimes(1));
-    expect(openPlanRevision).toHaveBeenCalledWith(ORG, year, true);
+    await waitFor(() => expect(openCorrectionRevision).toHaveBeenCalledTimes(1));
+    expect(openCorrectionRevision).toHaveBeenCalledWith(ORG, year, 'rev-old', REASON);
+    expect(openPlanRevision).not.toHaveBeenCalled();
   });
 
   it('a revision chosen in Advanced Mode stays the correction target after switching back to Simple Mode', async () => {
@@ -245,8 +263,9 @@ describe('C1 / PD-1 — Simple Mode correction targets the SELECTED revision yea
     const button = await screen.findByTestId('cn2b-simple-create-correction');
     await waitFor(() => expect(button).not.toBeDisabled());
     fireEvent.click(button);
-    await waitFor(() => expect(openPlanRevision).toHaveBeenCalledTimes(1));
-    expect(openPlanRevision).toHaveBeenCalledWith(ORG, 2025, true);
+    await waitFor(() => expect(openCorrectionRevision).toHaveBeenCalledTimes(1));
+    expect(openCorrectionRevision).toHaveBeenCalledWith(ORG, 2025, 'rev-2025', REASON);
+    expect(openPlanRevision).not.toHaveBeenCalled();
   });
 
   it('E) a closed revision with no trustworthy plan year cannot be corrected with the calendar year', async () => {
@@ -256,6 +275,7 @@ describe('C1 / PD-1 — Simple Mode correction targets the SELECTED revision yea
     fireEvent.click(button);
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(openPlanRevision).not.toHaveBeenCalled();
+    expect(openCorrectionRevision).not.toHaveBeenCalled();
     // And the calendar year is never presented as this revision's year.
     expect(screen.getByTestId('cn2b-simple-upload')).not.toHaveTextContent(String(THIS_YEAR));
   });
@@ -304,12 +324,16 @@ describe('C1 — a correction is never created by rendering', () => {
     await renderSimpleClosed();
     await waitFor(() => expect(listBeneficiaryColumns).toHaveBeenCalledWith('rev-2025'));
     expect(openPlanRevision).not.toHaveBeenCalled();
+    expect(openCorrectionRevision).not.toHaveBeenCalled();
+    expect(window.prompt).not.toHaveBeenCalled();
   });
 
   it('Advanced Mode renders a closed revision and requests nothing', async () => {
     loadRegistry([rev('rev-2025', 2025, 1, 'rejected')]);
     await renderAdvanced('rev-2025');
     expect(openPlanRevision).not.toHaveBeenCalled();
+    expect(openCorrectionRevision).not.toHaveBeenCalled();
+    expect(window.prompt).not.toHaveBeenCalled();
   });
 });
 

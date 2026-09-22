@@ -59,9 +59,13 @@ describe('M197 static — identity and placement', () => {
       // no EXECUTE to PUBLIC at all, so what 197 converges is untouched. It is
       // now the reviewed ceiling.
       '214_phoenix_central_needs_review_readiness_volatility.sql',
+      // C2/M215: the governed Central Needs correction lifecycle — function-only; it
+      // grants no EXECUTE to PUBLIC (every new function REVOKEs PUBLIC), so what this suite converges is untouched. It is now the
+      // reviewed ceiling.
+      '215_phoenix_central_needs_governed_correction_lifecycle.sql',
     ]);
-    expect(files.filter((f) => Number(f.slice(0, 3)) > 214)).toEqual([]);
-    expect(files).toHaveLength(214);
+    expect(files.filter((f) => Number(f.slice(0, 3)) > 215)).toEqual([]);
+    expect(files).toHaveLength(215);
   });
 
   it('carries no MANUAL APPLY ONLY banner, so the pinned executor will accept it', () => {

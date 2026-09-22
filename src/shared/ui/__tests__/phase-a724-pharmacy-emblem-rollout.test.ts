@@ -637,6 +637,17 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
       // closed.
       'supabase/migrations/214_phoenix_central_needs_review_readiness_volatility.sql',
       'supabase/migrations/__tests__/214-central-needs-review-readiness-volatility-static.test.ts',
+      // C2/M215: the governed Central Needs correction lifecycle — one reviewed,
+      // forward-only, FUNCTION-ONLY migration plus its static and dynamic
+      // proofs. It adds no branding asset, no table, no RLS policy and no new
+      // authorization decision: every function authorizes through the existing
+      // Central Needs guard with M209's own keys, so A7.2.4's own subject is
+      // untouched by it. Registered by EXACT filename, exactly as M209-M214
+      // were. No wildcard and no directory exemption, so every other file
+      // under supabase/ still fails this guard closed.
+      'supabase/migrations/215_phoenix_central_needs_governed_correction_lifecycle.sql',
+      'supabase/migrations/__tests__/215-central-needs-governed-correction-lifecycle-static.test.ts',
+      'supabase/migrations/__tests__/215-central-needs-governed-correction-lifecycle.dynamic.test.ts',
       // INTERACTIVE-GUIDE-IG1: one new file under the watched `src/app`
       // prefix, registered by EXACT filename like every entry above.
       //

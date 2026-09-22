@@ -179,8 +179,14 @@ describe('C1 — the module is pure and the screens read it', () => {
     // correction path; only the context's `target.planYear` does.
     expect(correction).not.toMatch(/(^|[^.\w])planYear\b/);
     expect(correction).toContain('target.planYear');
-    expect(screen).toContain('openPlanRevision(organizationId, targetYear, openNext)');
-    expect(screen).not.toContain('openPlanRevision(organizationId, planYear');
+    // C2 (M215): a correction is its own RPC, fenced on the SELECTED revision's
+    // id, and never goes through the annual-draft RPC. The draft RPC has exactly
+    // one call site — the annual draft — which is the only place the explicit
+    // draft-year input is legitimately read, and it can never open a correction.
+    expect(correction).toContain('openCorrectionRevision(organizationId, target.planYear, target.revisionId, reason)');
+    expect(correction).not.toContain('openPlanRevision(');
+    expect(screen.match(/openPlanRevision\(/g)).toHaveLength(1);
+    expect(screen).toContain('openPlanRevision(organizationId, planYear, false)');
     expect(simple).not.toMatch(/planYear\s*\?\?\s*planYear/);
     expect(simple).not.toMatch(/revision!?\.planYear\s*\?\?/);
   });

@@ -25,13 +25,16 @@ const TARGET =
   'ALTER FUNCTION public.phoenix_central_needs_review_readiness(uuid) VOLATILE;';
 
 describe('M214 static — registration and exact scope', () => {
-  it('is the reviewed migration ceiling at canonical ordinal 214', () => {
+  it('is registered at 214, immediately below C2/M215 which is now the ceiling', () => {
     const files = readdirSync(MIGRATIONS).filter((f) => /^\d{3}_.*\.sql$/.test(f)).sort();
     expect(files).toContain(FILENAME);
     expect(isReviewedMigrationFile(FILENAME)).toBe(true);
     expect(REVIEWED_MIGRATION_FILES).toContain(FILENAME);
-    expect(getMaximumReviewedMigrationNumber()).toBe(214);
-    expect(getNextUnreviewedMigrationNumber()).toBe(215);
+    // C2/M215 (the governed correction lifecycle) sits directly after 214; its
+    // own static suite owns the ceiling assertions from here on.
+    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.indexOf(FILENAME) + 1]).toBe('215_phoenix_central_needs_governed_correction_lifecycle.sql');
+    expect(getMaximumReviewedMigrationNumber()).toBe(215);
+    expect(getNextUnreviewedMigrationNumber()).toBe(216);
   });
 
   it('changes exactly the readiness RPC volatility to VOLATILE', () => {

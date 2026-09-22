@@ -3026,3 +3026,8 @@
   .cn2b-xl-grid { block-size: clamp(260px, 62vh, 480px); }
   .cn2b-xl-inspector__list { grid-template-columns: 1fr; }
 }
+
+/* C2 — Governed Correction Lifecycle: the read-only revision history of one plan year. */
+.cn2b-history { display: grid; gap: 6px; margin-block-start: 8px; }
+.cn2b-history__list { margin: 0; padding-inline-start: 1.25rem; display: grid; gap: 4px; font-size: 0.82rem; }
+.cn2b-history__list time { opacity: 0.75; font-variant-numeric: tabular-nums; }
