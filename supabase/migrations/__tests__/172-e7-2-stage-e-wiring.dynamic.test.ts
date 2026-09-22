@@ -295,6 +295,11 @@ run('E7-2 · Stage-E application wiring (dynamic)',()=>{
       // still ends at 171" remains true. Listed here so this guard stays
       // exhaustive and still fails closed on any unlisted new file.
       '214_phoenix_central_needs_review_readiness_volatility.sql',
+      // C2/M215: the governed Central Needs correction lifecycle — function-only;
+      // it adds no migration numbered <= 171 and no corridor, route, dispatch or
+      // stock SQL at all, so "Stage E still ends at 171" remains true. Listed so
+      // this guard stays exhaustive and fails closed on any unlisted new file.
+      '215_phoenix_central_needs_governed_correction_lifecycle.sql',
     ];
     it('Stage E still ends at 171 — E7-2 introduced no new SQL',()=>{
       const files=readdirSync(join(__dirname,'..')).filter(f=>/^\d{3}_.*\.sql$/.test(f));

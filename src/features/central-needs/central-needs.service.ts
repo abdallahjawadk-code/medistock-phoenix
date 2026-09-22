@@ -642,18 +642,20 @@ export async function listNeedLineLineage(
 // ---------------------------------------------------------------------------
 
 /**
- * G — open (or reuse) the annual draft for one plan year.
+ * G — open (or reuse) the NEW / current annual draft for one plan year.
  *
- * `openNextRevision = false` is the FIRST-revision / reuse-current call: M210
- * returns the existing open draft when there is one, so this is safe to press
- * twice and never silently creates a second draft. `true` is the explicit
- * "supersede a closed revision" action and is only offered after approval or
- * rejection. There is no automatic revision creation anywhere in this feature.
+ * This is the FIRST-revision / reuse-current call only: the server returns the
+ * existing open draft when there is one, so it is safe to press twice and never
+ * silently creates a second draft. C2 (M215) closed the legacy correction path
+ * of this RPC (`p_open_next_revision = true` now fails with
+ * `central_needs_governed_correction_required`), so the flag is fixed to the
+ * literal `false` here and a correction goes through `openCorrectionRevision`.
+ * There is no automatic revision creation anywhere in this feature.
  */
 export async function openPlanRevision(
   organizationId: string,
   planYear: number,
-  openNextRevision = false,
+  openNextRevision: false = false,
 ): Promise<{ planRevisionId: string; revisionNumber: number; planYear: number; idempotent: boolean }> {
   const { data, error } = await supabase.rpc('phoenix_central_needs_open_plan_revision', {
     p_organization_id: organizationId,
@@ -667,6 +669,105 @@ export async function openPlanRevision(
     revisionNumber: row.revision_number as number,
     planYear,
     idempotent: row.idempotent_replay === true,
+  };
+}
+
+/**
+ * C2 — open a correction DRAFT after the closed newest revision of a plan year
+ * (M215 `phoenix_central_needs_open_correction_revision`).
+ *
+ * `expectedLatestRevisionId` is the stale-predecessor fence: the server refuses
+ * with `central_needs_revision_stale` and writes nothing unless it is still the
+ * plan's newest revision. That refusal is surfaced as-is — this function never
+ * refreshes and retries. `reason` is mandatory; the server trims it and refuses
+ * blank text with `correction_reason_required`. The approved revision stays in
+ * effect until the correction itself is approved.
+ */
+export async function openCorrectionRevision(
+  organizationId: string,
+  planYear: number,
+  expectedLatestRevisionId: string,
+  reason: string,
+): Promise<{
+  planRevisionId: string;
+  revisionNumber: number;
+  planYear: number;
+  openedAfterRevisionId: string;
+  effectiveApprovedRevisionId: string | null;
+}> {
+  const { data, error } = await supabase.rpc('phoenix_central_needs_open_correction_revision', {
+    p_organization_id: organizationId,
+    p_plan_year: planYear,
+    p_expected_latest_revision_id: expectedLatestRevisionId,
+    p_reason: reason,
+  });
+  if (error) fail(error);
+  const row = data as Record<string, unknown>;
+  return {
+    planRevisionId: row.plan_revision_id as string,
+    revisionNumber: row.revision_number as number,
+    planYear,
+    openedAfterRevisionId: row.opened_after_revision_id as string,
+    effectiveApprovedRevisionId: (row.effective_approved_revision_id as string | null) ?? null,
+  };
+}
+
+/** One lifecycle event of a plan year (M215 `phoenix_central_needs_revision_lifecycle`). */
+export interface RevisionLifecycleEvent {
+  action: 'open' | 'open_correction' | 'submit' | 'approve' | 'reject' | 'supersede';
+  revisionId: string;
+  revisionNumber: number | null;
+  occurredAt: string;
+  actorId: string | null;
+  actorRole: string | null;
+  fromStatus: string | null;
+  toStatus: string | null;
+  reason: string | null;
+  openedAfterRevisionId: string | null;
+  effectiveApprovedRevisionId: string | null;
+  predecessorRevisionId: string | null;
+  supersededByRevisionId: string | null;
+}
+
+export interface RevisionLifecycle {
+  planId: string | null;
+  planYear: number;
+  effectiveRevisionId: string | null;
+  events: RevisionLifecycleEvent[];
+}
+
+/**
+ * C2 — the narrow lifecycle history of ONE plan year: which revision was
+ * corrected, which successor was created, by whom, when and why. Authorized by
+ * `central_needs.view` server-side; it is not a generic audit reader.
+ */
+export async function fetchRevisionLifecycle(organizationId: string, planYear: number): Promise<RevisionLifecycle> {
+  const { data, error } = await supabase.rpc('phoenix_central_needs_revision_lifecycle', {
+    p_organization_id: organizationId,
+    p_plan_year: planYear,
+  });
+  if (error) fail(error);
+  const row = data as Record<string, unknown>;
+  const str = (v: unknown) => (typeof v === 'string' ? v : null);
+  return {
+    planId: str(row.plan_id),
+    planYear,
+    effectiveRevisionId: str(row.effective_revision_id),
+    events: ((row.events ?? []) as Array<Record<string, unknown>>).map((e) => ({
+      action: String(e.action).replace('central_needs.plan_revision.', '') as RevisionLifecycleEvent['action'],
+      revisionId: e.revision_id as string,
+      revisionNumber: typeof e.revision_number === 'number' ? e.revision_number : null,
+      occurredAt: e.occurred_at as string,
+      actorId: str(e.actor_id),
+      actorRole: str(e.actor_role),
+      fromStatus: str(e.from_status),
+      toStatus: str(e.to_status),
+      reason: str(e.reason),
+      openedAfterRevisionId: str(e.opened_after_revision_id),
+      effectiveApprovedRevisionId: str(e.effective_approved_revision_id),
+      predecessorRevisionId: str(e.predecessor_revision_id),
+      supersededByRevisionId: str(e.superseded_by_revision_id),
+    })),
   };
 }
 

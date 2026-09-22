@@ -218,6 +218,11 @@ describe('G) No UI path mutates outlet_stock/warehouse_stock quantities outside 
       // Read-only SELECT tables, not RPCs — matched by the same regex, not a
       // mutation entry point.
       'phoenix_stock_correction_requests', 'phoenix_warehouse_correction_requests',
+      // C2 (M215): the Central Needs annual-plan correction REVISION, not a
+      // stock correction — it only opens a draft plan revision and touches no
+      // outlet_stock/warehouse_stock row (M215 static domain-boundary test).
+      // Allowed by exact name; every other *correction* name stays refused.
+      'phoenix_central_needs_open_correction_revision',
     ]);
     const root = join(SRC);
     const offenders: string[] = [];

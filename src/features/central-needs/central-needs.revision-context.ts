@@ -70,6 +70,26 @@ export function findRegistryRevision(rows: readonly PlanRevision[], revisionId: 
   return rows.find((row) => row.id === revisionId) ?? null;
 }
 
+/**
+ * C2 — the newest revision of the SELECTED revision's own plan, when it is
+ * newer than the selection; null when the selection is itself the newest.
+ *
+ * The correction target never comes from here (it stays `deriveRevisionContext`
+ * of the selection alone, and the server's stale fence checks the selected id).
+ * This only tells the UI that a correction from an older revision would be
+ * refused as stale, so it can say so instead of offering the action. Rows of
+ * other plans (other years) are ignored: revision numbers restart per plan.
+ */
+export function newerRevisionOf(rows: readonly PlanRevision[], revision: PlanRevision | null): PlanRevision | null {
+  if (revision === null) return null;
+  let newest: PlanRevision | null = null;
+  for (const row of rows) {
+    if (row.planId !== revision.planId) continue;
+    if (newest === null || row.revisionNumber > newest.revisionNumber) newest = row;
+  }
+  return newest !== null && newest.id !== revision.id && newest.revisionNumber > revision.revisionNumber ? newest : null;
+}
+
 /** Why no correction target can be named for the current selection. */
 export type CorrectionRefusal = 'no_revision_selected' | 'revision_plan_year_unavailable';
 

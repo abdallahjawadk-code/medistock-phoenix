@@ -110,14 +110,18 @@ describe('183 registration and shape', () => {
       // changes no body, grant or search_path, so the emergency-outlet
       // integrity surface 183 owns is untouched. It is now the reviewed ceiling.
       '214_phoenix_central_needs_review_readiness_volatility.sql',
+      // C2/M215: the governed Central Needs correction lifecycle — function-only (no table, column, enum,
+      // trigger, policy or permission key) and no emergency-outlet SQL, so nothing this suite asserts moves.
+      // It is now the reviewed ceiling.
+      '215_phoenix_central_needs_governed_correction_lifecycle.sql',
     ];
     const i = REVIEWED_MIGRATION_FILES.indexOf(NAME);
     expect(REVIEWED_MIGRATION_FILES.slice(i + 1)).toEqual(SUCCESSORS);
     expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1])
       .toBe(SUCCESSORS[SUCCESSORS.length - 1]);
-    // The ceiling is now 214; `[2-9]\d\d` would match it, so this asserts
+    // The ceiling is now 215; `[2-9]\d\d` would match it, so this asserts
     // numerically that nothing sits ABOVE the ceiling.
-    expect(REVIEWED_MIGRATION_FILES.filter(f => Number(f.slice(0, 3)) > 214)).toHaveLength(0);
+    expect(REVIEWED_MIGRATION_FILES.filter(f => Number(f.slice(0, 3)) > 215)).toHaveLength(0);
   });
 
   it('is a single transaction, manual-apply only', () => {
