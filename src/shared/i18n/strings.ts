@@ -2217,6 +2217,11 @@ export const T: Dict = {
   cn2b_plan_explainer: { ar: 'يفتح مسودة السنة المحددة أو يعيد استخدام المسودة المفتوحة. لا تُنشأ أي مراجعة تلقائيًا.', en: 'Opens the draft for the chosen year, or reuses the one already open. No revision is ever created automatically.' },
   cn2b_open_draft: { ar: 'فتح مسودة السنة', en: 'Open annual draft' },
   cn2b_open_next_revision: { ar: 'فتح مراجعة تالية', en: 'Open next revision' },
+  /* C1 — Registry + Revision Context: a correction names the selected
+     revision's own plan year (PD-1), and refuses when it has none. */
+  cn2b_open_next_revision_for_year: { ar: 'فتح الإصدار التالي لخطة __YEAR__', en: 'Open next revision of the __YEAR__ plan' },
+  cn2b_err_revision_plan_year_unavailable: { ar: 'سنة الخطة لهذا الإصدار غير متوفرة، لذلك لا يُفتح له إصدار تصحيح. أعد تحميل الصفحة.', en: 'The plan year of this revision is unavailable, so no correction revision is opened for it. Reload the page.' },
+  cn2b_err_no_revision_selected: { ar: 'لم يُحدَّد أي إصدار.', en: 'No revision is selected.' },
   cn2b_notice_revision_opened: { ar: 'تم فتح المراجعة.', en: 'Revision opened.' },
   cn2b_notice_revision_existing: { ar: 'المسودة مفتوحة بالفعل — لم تُنشأ مراجعة جديدة.', en: 'A draft was already open — no new revision was created.' },
   cn2b_err_open_revision_failed: { ar: 'تعذّر فتح المراجعة.', en: 'Could not open the revision.' },

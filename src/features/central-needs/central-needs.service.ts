@@ -17,6 +17,7 @@
  * (still RLS-governed) so its exact decimals arrive as text.
  */
 import { supabase } from '@/shared/supabase/client';
+import { isTrustedPlanYear, sortRegistryRevisions } from './central-needs.revision-context';
 
 export type ImportSessionStatus = 'pending' | 'processing' | 'completed' | 'failed';
 export type RevisionStatus = 'draft' | 'submitted' | 'approved' | 'superseded' | 'rejected';
@@ -280,6 +281,11 @@ function fail(error: { message?: string } | null): never {
 // Reads (RLS-governed)
 // ---------------------------------------------------------------------------
 
+/**
+ * C1 — THE canonical registry read. Every screen takes its plan/revision facts
+ * from these rows through `central-needs.revision-context`, never from a
+ * parallel copy. Existing columns only; nothing is added or inferred.
+ */
 export async function listPlanRevisions(organizationId: string): Promise<PlanRevision[]> {
   // The plan year is embedded through the existing plan_id foreign key, so a
   // revision can always be labelled "2026 · revision 1" rather than a bare "#1".
@@ -289,19 +295,20 @@ export async function listPlanRevisions(organizationId: string): Promise<PlanRev
     .eq('organization_id', organizationId)
     .order('revision_number', { ascending: false });
   if (error) fail(error);
-  return (data ?? []).map((r) => {
+  return sortRegistryRevisions((data ?? []).map((r) => {
     const plan = r.central_needs_plans as { plan_year?: number } | Array<{ plan_year?: number }> | null;
     const planYear = Array.isArray(plan) ? plan[0]?.plan_year : plan?.plan_year;
     return {
       id: r.id as string,
       planId: r.plan_id as string,
       organizationId: r.organization_id as string,
-      planYear: typeof planYear === 'number' ? planYear : null,
+      // Only a year the database could hold is a year; anything else is
+      // unavailable, and an unavailable year is never replaced by a guess.
+      planYear: isTrustedPlanYear(planYear) ? planYear : null,
       revisionNumber: r.revision_number as number,
       status: r.status as RevisionStatus,
     };
-  }).sort((a, b) =>
-    (b.planYear ?? 0) - (a.planYear ?? 0) || b.revisionNumber - a.revisionNumber);
+  }));
 }
 
 /**

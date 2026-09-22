@@ -99,6 +99,7 @@ import {
   type SourceRecord,
 } from './central-needs.service';
 import type { ArchiveParseResult, FileParseResult } from './import/contract.ts';
+import { deriveRevisionContext, findRegistryRevision } from './central-needs.revision-context';
 import { CentralNeedsSimpleWorkspace } from './simple/CentralNeedsSimpleWorkspace';
 
 type Busy = null | 'verifying' | 'submitting' | 'approving' | 'rejecting' | 'abandoning' | 'opening';
@@ -333,7 +334,10 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
   const preview = useCentralNeedsPreview();
   const [pendingFile, setPendingFile] = useState<File | null>(null);
 
-  // G — the annual plan surface.
+  // G — the annual plan surface. C1: this is the NEW / FIRST / CURRENT annual
+  // draft year the person types, and nothing else. It is never the authority
+  // for a selected revision: a correction reads the selected revision's own
+  // plan year through `revisionContext` below (PD-1).
   const [planYear, setPlanYear] = useState<number>(() => new Date().getFullYear());
   // I — bounded source-evidence search.
   const [sourceQuery, setSourceQuery] = useState('');
@@ -368,8 +372,14 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
    */
   const revisionReloadSeq = useRef(0);
 
-  const revision = useMemo(() => revisions.find((r) => r.id === revisionId) ?? null, [revisions, revisionId]);
-  const isDraft = revision?.status === 'draft';
+  const revision = useMemo(() => findRegistryRevision(revisions, revisionId), [revisions, revisionId]);
+  /**
+   * C1 — the selected revision's context, derived synchronously from the
+   * selection alone (no mirrored state, no effect). A revision switch changes
+   * it in the same commit as the selection.
+   */
+  const revisionContext = useMemo(() => deriveRevisionContext(revision), [revision]);
+  const isDraft = revisionContext.isDraft;
   const revisionDataReady = revisionId !== null && dataRevisionId === revisionId;
 
   /**
@@ -577,13 +587,17 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
     return window.confirm(t('cn2b_revision_context_change_confirm', lang));
   }, [revisionContextBusy, revisionDraftDirty, lang]);
 
-  const onOpenRevision = useCallback(async (openNext: boolean) => {
+  /**
+   * The one call site of `openPlanRevision`. It never chooses a year itself:
+   * each of the two intents below hands it the year that intent is about.
+   */
+  const requestPlanRevision = useCallback(async (targetYear: number, openNext: boolean) => {
     if (!organizationId || !confirmRevisionContextDiscard()) return;
     setBusy('opening');
     setError(null);
     setNotice(null);
     try {
-      const opened = await openPlanRevision(organizationId, planYear, openNext);
+      const opened = await openPlanRevision(organizationId, targetYear, openNext);
       const rows = await listPlanRevisions(organizationId);
       setRevisions(rows);
       setRevisionId(opened.planRevisionId);
@@ -593,7 +607,37 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
     } finally {
       setBusy(null);
     }
-  }, [organizationId, planYear, confirmRevisionContextDiscard]);
+  }, [organizationId, confirmRevisionContextDiscard]);
+
+  /** A NEW, first or current annual draft: the explicit year the person typed. Never a correction. */
+  const onOpenAnnualDraft = useCallback(() => {
+    void requestPlanRevision(planYear, false);
+  }, [requestPlanRevision, planYear]);
+
+  /**
+   * PD-1 — an explicit correction (the next revision after a closed one)
+   * targets the SELECTED revision's own plan year, and only that. The target
+   * comes from `revisionContext`, whose only input is the selected revision, so
+   * the draft-year input, the calendar and every other revision are out of
+   * reach. No trustworthy year means no request at all: fail closed, never
+   * guess. What the server then does to the previous revision is unchanged
+   * here (M210; the governed correction lifecycle is C2).
+   */
+  const onOpenCorrection = useCallback(() => {
+    const target = revisionContext.correction;
+    if (!target.ok) {
+      setNotice(null);
+      setError(target.reason);
+      return;
+    }
+    void requestPlanRevision(target.planYear, true);
+  }, [requestPlanRevision, revisionContext]);
+
+  /** The existing two-intent entry Simple Mode calls: `true` = correction, `false` = annual draft. */
+  const onOpenRevision = useCallback((openNext: boolean) => {
+    if (openNext) onOpenCorrection();
+    else onOpenAnnualDraft();
+  }, [onOpenCorrection, onOpenAnnualDraft]);
 
   // I — search runs against the selected revision only; RLS is the boundary.
   const onSearchSource = useCallback(async (q: string) => {
@@ -851,9 +895,41 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
           </select>
         </label>
 
+        {/*
+          PD-1 — the next revision after a CLOSED one acts on the SELECTED
+          revision, so it sits with that revision and names that revision's own
+          plan year. The year input below never retargets it. A separate,
+          explicit action — never automatic, and never offered while a draft is
+          open. With no trustworthy plan year it is refused, and says why.
+        */}
+        {canEdit && revisionContext.acceptsNextRevisionRequest && (
+          <>
+            <div className="cn2b-actions">
+              <button
+                type="button"
+                className="cn2b-btn"
+                data-testid="cn2b-open-next-revision"
+                data-target-year={revisionContext.planYear ?? ''}
+                disabled={busy !== null || !revisionContext.correction.ok}
+                onClick={onOpenCorrection}
+              >
+                {revisionContext.planYear === null
+                  ? t('cn2b_open_next_revision', lang)
+                  : t('cn2b_open_next_revision_for_year', lang).replace('__YEAR__', String(revisionContext.planYear))}
+              </button>
+            </div>
+            {!revisionContext.correction.ok && (
+              <p className="cn2b-hint">{t('cn2b_err_revision_plan_year_unavailable', lang)}</p>
+            )}
+          </>
+        )}
+
         {canEdit && (
           <>
             <label className="cn2b-field">
+              {/* C1 — the year of a NEW or current annual draft only (see the
+                  explainer below); it never retargets the correction above. The
+                  "Plan year" label is an existing browser-tested contract. */}
               <span className="cn2b-field__label">{t('cn2b_plan_year', lang)}</span>
               <input
                 className="cn2b-input"
@@ -873,22 +949,10 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
                 type="button"
                 className="cn2b-btn cn2b-btn--primary"
                 disabled={busy !== null || !Number.isFinite(planYear)}
-                onClick={() => void onOpenRevision(false)}
+                onClick={onOpenAnnualDraft}
               >
                 {t('cn2b_open_draft', lang)}
               </button>
-              {/* Superseding a CLOSED revision is a separate, explicit action —
-                  never automatic, and never offered while a draft is open. */}
-              {(revision?.status === 'approved' || revision?.status === 'rejected') && (
-                <button
-                  type="button"
-                  className="cn2b-btn"
-                  disabled={busy !== null}
-                  onClick={() => void onOpenRevision(true)}
-                >
-                  {t('cn2b_open_next_revision', lang)}
-                </button>
-              )}
             </div>
           </>
         )}
