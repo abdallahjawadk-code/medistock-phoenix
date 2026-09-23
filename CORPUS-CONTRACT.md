@@ -42,6 +42,23 @@ Every accepted sheet was classified by scanning `usedRange.startRow`'s own heade
 
 **Zero sheets, out of 75, expose a unit column the current parser's own `fieldName` output can identify.** This is not because the corpus lacks unit information — it is present — but because of the structural defect documented in §4.
 
+### 3a. C3 re-measurement (2026-09-22) — the unit evidence that IS there, and why it still cannot be read automatically
+
+The table above measures one specific thing: an exact unit-word match against `fieldName`, i.e. the header-row text. C3 re-measured the corpus against `fieldName` **and** the B2 `columnHeaderEvidence` candidates, which matters for anyone tempted to "just detect the unit column":
+
+| Header label carrying a unit word | Physical columns | Really a unit of measure? |
+|---|---|---|
+| `وحدة القياس` | 73 (19 of them have a `col:N` fieldName — the label sits on another row) | yes |
+| `Measuring unit` | 5 | yes |
+| `UNIT` + `DOSE` (two-line header) | 3 | yes (dose unit) |
+| `UNIT` | 1 (its `fieldName` is `col:N`, so the exact-match rule never sees it) | yes |
+| `وحدة قياس`, `وحدة القياس /العبوة` | 2 | yes |
+| **`وحدة المناعة`, `وحدة الهرمونات`** | **19** | **NO — laboratory DEPARTMENTS** |
+
+Those columns hold 7,262 non-blank values across **326 distinct strings**, including case variants (`pcs`/`PCS`/`Pcs`), abbreviations (`doz`, `Doz.`), compound descriptions (`vial or ampoule`, `(1ml vial)concentrated`) and the value `0` (108 times).
+
+The fail-closed conclusion of §3/§4 therefore stands, and C3 adds the reason it must stay: a "contains وحدة" rule would read 19 department columns as units of measure, and free-text values in 326 variants cannot be mapped onto the 8-value canonical vocabulary without inventing meaning. Source unit remains evidence; the approved unit remains a human election. C3 closed the two places where that separation leaked in the UI: the need-line editor no longer preselects `box` (a new line cannot be saved until a human elects a unit or declares `conversion_required`), and Simple Mode now labels a catalog item's own unit as the CATALOG unit instead of "the approved unit in the system".
+
 ## 4. Parser/import contract finding — REPORTED, not worked around
 
 Per the owner task's instruction ("If a parser/import contract defect is discovered: REPORT IT. Do not expand scope silently"), this finding is reported here and **no change was made to any parser/replay file** (`parser-core.ts`, `archive-core.ts`, `contract.ts`, `node-replay.ts`, `node-inflate.ts`, `browser-inflate.ts`, `worker.ts` are byte-identical to master).
@@ -56,6 +73,29 @@ Per the owner task's instruction ("If a parser/import contract defect is discove
 **Consequence for this task:** there is no deterministic, already-proven source-unit rule for any layout family in this real corpus, as currently exposed by the frozen parser contract. Per the owner task's own instruction ("DO NOT solve it by heuristic persistence... mark those records/layouts as needing review"), Simple Mode's material+unit card fails closed: a source unit is shown **only** when a row happens to carry a field whose header is an exact unit-word match (a narrow, honest, structural rule with zero false positives — see `SimpleMaterialCard.tsx`'s `sourceUnitOf()`), and otherwise shows "⚠ تحتاج مراجعة الوحدة" (needs unit review), matching the owner task's own §13 fallback branch. For this corpus, that fallback is the outcome for effectively every record. This is a measured fact about the real archive, not a shortcut.
 
 **Recommended follow-up (separately authorized task, NOT performed here):** teach `buildSourceRecords()` to resolve each column's header from its own earliest-populated header row within a small bounded window, re-running the full CN-2A/CN-2B parity and adversarial test suites. Out of scope here because it touches the frozen parser core, which this task's file scope does not include and which the mission explicitly gates ("Do not change parser/replay core... unless a defect is proven" — proven here, but fixing it is a separate, independently-authorized change).
+
+### 4a. What C3 (contract 1.2.0) did and did NOT change about this finding
+
+C3 was that separately-authorized package. It did **not** promote a second-row
+header into `fieldName`: doing so is exactly the inference this document warns
+against, and the evidence for it already exists in B2's
+`columnHeaderEvidence`, which C3 measured at **468 of the 510 `col:N` columns**
+carrying real header text on another row. The header-band text is still emitted
+as ordinary data (520 evidence cells across 29 rows in 29 sheets), and a human
+dispositions those rows — fail-closed, never a silent quantity.
+
+What C3 did change is the header predicate itself: `fieldName`,
+`duplicateHeaderGroups` and `columnHeaderEvidence` now share one rule, so a
+header cell must be a string carrying at least one VISIBLE character. This
+closed two real defects — an invisible-only header (zero-width space, RLM, word
+joiner) used to become a field name, and an error or date cell used to name a
+field from text that is not header text — and it aligned the duplicate
+diagnostic with the fieldName rule. On this corpus that moved exactly one
+figure: `DUPLICATE_HEADER_TEXT` **51 → 50**, because two single-space headers
+(`" "`, at A1 and AQ1 of sheet `المجرد` in `من 42 تشخيصية 2026 مواد!.xls`) are no
+longer "duplicate header text". Both columns already produced `col:0`/`col:42`,
+so no field name changed. Every other figure in this document is unchanged, and
+§6's quantity rule is untouched.
 
 ## 5. Beneficiary column — unaffected by the header-row finding
 

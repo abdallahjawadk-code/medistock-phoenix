@@ -20,7 +20,10 @@
  * SOURCE UNIT (section 7.2/18/19/20): a source unit is shown ONLY when this
  * row carries a field whose header text is an exact "unit"-like match
  * (never inferred from the material description, never defaulted from the
- * canonical item). CORPUS-CONTRACT.md documents that, as currently exposed
+ * canonical item). C3 re-measured why the match must stay EXACT: in the real
+ * corpus, 19 columns are headed `وحدة المناعة` / `وحدة الهرمونات` — laboratory
+ * DEPARTMENTS, not units of measure. A "contains وحدة" rule would have read
+ * them as units, so containment matching is deliberately refused here. CORPUS-CONTRACT.md documents that, as currently exposed
  * by the frozen parser contract, this corpus has no sheet where that
  * condition is met — so `sourceUnitText` is `null` and the card fails
  * closed to "needs unit review" for effectively every record, matching
@@ -226,8 +229,11 @@ export function SimpleMaterialCard({ lang, importSessionId, editable, targetEnti
           <div className="cn2b-simple-match">
             <p className="cn2b-simple-match__label">{t('cn2b_simple_matching_material', lang)}</p>
             <p className="cn2b-simple-match__name" data-testid="cn2b-simple-material-suggestion"><bdi>{suggestion.name}</bdi></p>
-            <p className="cn2b-simple-match__meta">
-              {t('cn2b_simple_approved_unit_label', lang)}: <bdi>{suggestion.unit}</bdi>
+            {/* C3: this is the CATALOG item's own unit — context for the person
+                deciding, never an approved unit. Approval happens only when a
+                human elects a unit on a need line, so the label says so. */}
+            <p className="cn2b-simple-match__meta" data-testid="cn2b-simple-catalog-unit">
+              {t('cn2b_simple_catalog_unit_label', lang)}: <bdi>{suggestion.unit}</bdi>
             </p>
           </div>
           <div className="cn2b-simple-card__actions">

@@ -75,6 +75,13 @@
  *    per-file result) and `sourceProvenance.extractedAt`. Filenames, SHA-256
  *    fingerprints, entry classifications, reconciliation counts, diagnostics
  *    and all workbook content were compared verbatim.
+ *    The 1.2.0 re-verification (C3) repeated the same procedure, against the
+ *    same synthetic fixture AND against the real 57-workbook corpus, with the
+ *    same two masks and no others. Its hashes are recorded in
+ *    docs/phoenix/proposals/cn2a-parser-contract.md §3; the 1.0.0 and 1.1.0
+ *    hashes above are kept as history and do not reproduce against 1.2.0,
+ *    because `identity.contractVersion` and `sourceProvenance.parserVersion`
+ *    are compared verbatim by design.
  */
 
 // ---------------------------------------------------------------------------
@@ -92,8 +99,29 @@
  * documents are unchanged. See docs/phoenix/proposals/cn2a-parser-contract.md
  * and the CN2A-COLUMN-ANCHOR-AUDIT and CN2A-B2-PAGINATION
  * evidence bundles for the full design proof this shape is based on.
+ *
+ * 1.1.0 -> 1.2.0 (MINOR, C3 "Parser / Header / Unit Closure"): a deliberate
+ * SEMANTIC change, not a shape change. No type in this file changed.
+ *   (a) ONE structural-header predicate (`usableHeaderText` in parser-core.ts)
+ *       now governs `fieldName`, `duplicateHeaderGroups` and
+ *       `columnHeaderEvidence` alike. A header cell supplies text only when it
+ *       is present, string-valued, and carries at least one VISIBLE character
+ *       (neither whitespace nor a Default_Ignorable code point). Previously the
+ *       three paths disagreed: an error cell (`#REF!`) or a date cell could
+ *       name a field while the duplicate diagnostic ignored it, and a header
+ *       made only of zero-width/bidi marks became a field name outright.
+ *       Every other case takes the stable positional fallback `col:{n}`.
+ *   (b) CSV input is parsed with SheetJS `raw: true`, so a CSV cell keeps its
+ *       exact source text ("000123" stays "000123", "TRUE" stays a string,
+ *       "=1+1" is text and never a formula cell). XLS/XLSX are untouched.
+ * Valid header text is still returned BYTE-VERBATIM: never trimmed, case
+ * folded, Unicode-normalized, bidi-stripped or whitespace-collapsed.
+ * Rationale and corpus measurements: the C3-Parser-Header-Unit-Discovery
+ * evidence bundle (12-C3-PARSER-HEADER-UNIT-CONTRACT-v1.md). The 1.0.0 and
+ * 1.1.0 parity hashes remain history; 1.2.0 records its own — see
+ * docs/phoenix/proposals/cn2a-parser-contract.md §3.
  */
-export const CN2A_CONTRACT_VERSION = '1.1.0';
+export const CN2A_CONTRACT_VERSION = '1.2.0';
 
 /** Pinned SheetJS Community Edition identity (never the npm registry's stale 0.18.5). */
 export const SHEETJS_VERSION = '0.20.3';
@@ -212,9 +240,18 @@ export interface DuplicateHeaderGroup {
  * `mergedRanges` (the usual physical marker of a spanned record), the
  * three-way `missing`/`blank`/`value` presence distinction per coordinate
  * (the usual marker of an inherited/empty key cell), and exact row/column
- * indices on every cell. A later package can therefore group continuation
- * rows from stored evidence WITHOUT re-parsing the source workbook, and
- * without CN-2A having mutated or collapsed anything first.
+ * indices on every cell, none of which CN-2A mutates or collapses.
+ *
+ * CORRECTED at 1.2.0 (C3): an earlier version of this note said a later
+ * package could group continuation rows "from stored evidence WITHOUT
+ * re-parsing the source workbook". That overstated what the DATABASE holds.
+ * Only value cells become `central_needs_source_records` rows; `mergedRanges`,
+ * explicit-blank coordinates and missing coordinates live in the PARSE RESULT
+ * and are never persisted relationally. They remain recoverable because CN-2B
+ * stores the source bytes permanently and content-addressed and this parser is
+ * deterministic: a future governed package re-parses those exact bytes under
+ * the parser identity recorded on the import session. Nothing is lost — the
+ * recovery route is a deterministic re-parse, not a DB query.
  */
 export interface SheetEvidence {
   /** 0-based sheet index within the workbook's native tab order. */
@@ -349,7 +386,13 @@ export interface Diagnostic {
  */
 export interface ColumnHeaderEvidence {
   coordinate: A1Coordinate;
-  /** Byte-verbatim header cell text — never trimmed, case-folded, normalized, or reformatted. */
+  /**
+   * Byte-verbatim header cell text — never trimmed, case-folded, normalized, or
+   * reformatted. Since 1.2.0 a candidate cell must satisfy the same single
+   * usable-header predicate `fieldName` uses (present, string-valued, at least
+   * one visible character), so an error code, a serialized date or an
+   * invisible-only string is no longer offered as header evidence.
+   */
   rawText: string;
   /** Set only when a real multi-column merge in the header band explains this entry. */
   mergedRange?: string;
@@ -391,6 +434,30 @@ export interface SourceProvenance {
 export interface SourceValueRecordDraft {
   /** Generic stable logical identifier — matches M209's `target_entity` vocabulary. Not a foreign key at this stage. */
   targetEntity: string;
+  /**
+   * The physical column's label: the header cell's text BYTE-VERBATIM when that
+   * cell is usable (present, string-valued, at least one visible character —
+   * see `usableHeaderText` in parser-core.ts), otherwise the stable positional
+   * fallback `col:{zero-based column index}`. A missing, explicit-blank,
+   * whitespace-only, invisible-only, numeric, boolean, date or error header all
+   * yield the fallback. A second header row is never promoted here; it stays in
+   * `columnHeaderEvidence` (1.2.0).
+   *
+   * A LABEL, NEVER AN IDENTITY. Two physical columns may legitimately carry the
+   * same text (`duplicateHeaderGroups`, `DUPLICATE_HEADER_TEXT`). Column
+   * identity is positional — `(sheetIndex, coordinate.col)` from provenance —
+   * which is exactly what M213's beneficiary mapping keys on.
+   *
+   * PERSISTENCE CANONICALIZATION (existing M210 contract, documented here since
+   * 1.2.0 rather than left implicit): `phoenix_central_needs_apply_authoritative
+   * _replay` stores `btrim(fieldName)`, i.e. PostgreSQL's default btrim, which
+   * strips U+0020 only — not tabs and not NBSP. The canonical digests
+   * (`_phoenix_central_needs_payload_digest_v1` and the semantic digest) apply
+   * the SAME btrim, so preview and replay still agree and parity is unaffected.
+   * The parser does not pre-trim: the untouched header text stays available as
+   * `columnHeaderEvidence.rawText` on the column's anchor record, so the
+   * verbatim evidence survives even though the persisted label is canonicalized.
+   */
   fieldName: string;
   /** JSON-serializable. Becomes `source_values` (JSONB NOT NULL). */
   sourceValues: unknown;

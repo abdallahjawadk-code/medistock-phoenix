@@ -1986,6 +1986,13 @@ export const T: Dict = {
   cn2b_nl_session_scope: { ar: '— لجلسة الاستيراد المحددة؛ اكتمال المراجعة الكامل يظهر في لوحة الاكتمال', en: '— for the selected import session; revision-wide completeness is in the readiness panel' },
   cn2b_nl_quantity_hint: { ar: 'الصفر قيمة صحيحة. الفراغ ليس صفرًا. لا يُجرى أي تدوير.', en: 'Zero is a valid value. Blank is not zero. Nothing is ever rounded.' },
   cn2b_nl_unit: { ar: 'الوحدة المعتمدة', en: 'Canonical unit' },
+  // C3: the picker opens unselected; a new line cannot be confirmed until a
+  // human chooses a unit or marks the line as needing conversion.
+  cn2b_nl_unit_unselected: { ar: '— اختر الوحدة —', en: '— choose a unit —' },
+  cn2b_nl_unit_required_note: {
+    ar: 'اختر الوحدة المعتمدة لهذا السطر الجديد، أو حدّد أن الوحدة تحتاج تحويلًا. لا تُختار وحدة تلقائيًا.',
+    en: 'Choose the approved unit for this new line, or mark it as needing conversion. No unit is chosen for you.',
+  },
   cn2b_nl_unit_conversion_required: { ar: 'الوحدة تحتاج تحويلًا — لا تُخمَّن', en: 'Unit needs conversion — never guessed' },
   cn2b_nl_source_unit: { ar: 'وحدة المصدر (دليل فقط)', en: 'Source unit (evidence only)' },
   cn2b_nl_warehouse: { ar: 'مخزن الهدف (اختياري)', en: 'Target warehouse (optional)' },
@@ -2105,6 +2112,10 @@ export const T: Dict = {
   cn2b_nl_block_no_selection: { ar: 'حدّد خلية مصدرية واحدة على الأقل — لا يوجد سطر احتياج بلا مصدر.', en: 'Designate at least one source cell — no need line exists without provenance.' },
   cn2b_nl_block_quantity: { ar: 'يجب أن تكون كل مساهمة رقمًا عشريًا غير سالب.', en: 'Every designated contribution must be a non-negative decimal.' },
   cn2b_nl_block_reason: { ar: 'اكتب مبرر الربط.', en: 'Write the mapping justification.' },
+  cn2b_nl_block_unit: {
+    ar: 'اختر الوحدة المعتمدة للسطر الجديد، أو حدّد أن الوحدة تحتاج تحويلًا.',
+    en: 'Choose the approved unit for the new line, or mark it as needing conversion.',
+  },
   cn2b_nl_block_unavailable: { ar: 'أزل المصادر المحددة التي لم تعد قابلة للتحديد.', en: 'Remove the selected sources that are no longer designatable.' },
   cn2b_nl_preview_heading: { ar: 'معاينة ما سيُكتب', en: 'Preview of what will be written' },
   cn2b_nl_preview_explainer: { ar: 'هذا بالضبط ما سيُكتب — سطر لكل مستفيد ومادة ومخزن. لم يُحفظ شيء بعد.', en: 'This is exactly what will be written — one line per beneficiary, material and warehouse. Nothing has been saved yet.' },
@@ -3893,6 +3904,11 @@ export const T: Dict = {
 
   cn2b_simple_matching_material:  { ar: 'المادة المقابلة في البرنامج', en: 'Matching material in the system' },
   cn2b_simple_approved_unit_label: { ar: 'الوحدة المعتمدة في البرنامج', en: 'Approved unit in the system' },
+  // C3: a catalog item's own unit is CONTEXT, not an approved unit — nothing is
+  // approved until a human elects a unit on a need line. The material card now
+  // labels it as catalog context. The key above stays for any surface that
+  // genuinely shows an APPROVED unit.
+  cn2b_simple_catalog_unit_label: { ar: 'وحدة المادة في الدليل', en: 'Catalog unit' },
   cn2b_simple_choose_another_material: { ar: 'اختيار مادة أخرى', en: 'Choose another material' },
   cn2b_simple_not_a_material:          { ar: 'ليست مادة',        en: 'Not a material' },
   cn2b_simple_choose_material:         { ar: 'اختيار المادة',    en: 'Choose material' },
