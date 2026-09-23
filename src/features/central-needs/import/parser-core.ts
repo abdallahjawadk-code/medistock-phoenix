@@ -120,6 +120,103 @@ function resolveErrorCode(cell: XLSX.CellObject): string {
 }
 
 // ---------------------------------------------------------------------------
+// C3 (1.2.0) — the ONE structural-header predicate
+// ---------------------------------------------------------------------------
+
+/**
+ * Unicode Default_Ignorable_Code_Point, written out as explicit ranges rather
+ * than as `\p{Default_Ignorable_Code_Point}` ON PURPOSE: the browser Worker and
+ * the Node replay run different V8 builds with different Unicode tables, so a
+ * property escape could classify a newly-assigned code point differently on the
+ * two runtimes and break this contract's byte-identical parity guarantee. An
+ * enumerated list cannot drift.
+ *
+ * Source: Unicode 15.1 DerivedCoreProperties.txt, Default_Ignorable_Code_Point.
+ */
+const DEFAULT_IGNORABLE_RANGES: ReadonlyArray<readonly [number, number]> = [
+  [0x00ad, 0x00ad], [0x034f, 0x034f], [0x061c, 0x061c], [0x115f, 0x1160],
+  [0x17b4, 0x17b5], [0x180b, 0x180f], [0x200b, 0x200f], [0x202a, 0x202e],
+  [0x2060, 0x206f], [0x3164, 0x3164], [0xfe00, 0xfe0f], [0xfeff, 0xfeff],
+  [0xffa0, 0xffa0], [0xfff0, 0xfff8], [0x1bca0, 0x1bca3], [0x1d173, 0x1d17a],
+  [0xe0000, 0xe0fff],
+];
+
+function isDefaultIgnorable(codePoint: number): boolean {
+  for (const [lo, hi] of DEFAULT_IGNORABLE_RANGES) {
+    if (codePoint < lo) return false; // ranges are ascending
+    if (codePoint <= hi) return true;
+  }
+  return false;
+}
+
+/**
+ * Unicode White_Space, enumerated for the same reason as the table above, and
+ * NOT delegated to `String.prototype.trim`.
+ *
+ * `trim()` removes the ECMAScript *WhiteSpace* and *LineTerminator* sets, which
+ * are close to Unicode White_Space but not equal to it. U+0085 NEXT LINE is the
+ * counterexample that matters here: Unicode calls it White_Space, ECMAScript
+ * does not, so `''.trim()` returns the character unchanged. Using `trim()`
+ * as the classifier therefore let a header made only of U+0085 count as visible
+ * and become a business field name — exactly what this contract forbids.
+ *
+ * Source: Unicode 15.1 PropList.txt, White_Space.
+ */
+const UNICODE_WHITE_SPACE_RANGES: ReadonlyArray<readonly [number, number]> = [
+  [0x0009, 0x000d], [0x0020, 0x0020], [0x0085, 0x0085], [0x00a0, 0x00a0],
+  [0x1680, 0x1680], [0x2000, 0x200a], [0x2028, 0x2029], [0x202f, 0x202f],
+  [0x205f, 0x205f], [0x3000, 0x3000],
+];
+
+function isUnicodeWhiteSpace(codePoint: number): boolean {
+  for (const [lo, hi] of UNICODE_WHITE_SPACE_RANGES) {
+    if (codePoint < lo) return false; // ranges are ascending
+    if (codePoint <= hi) return true;
+  }
+  return false;
+}
+
+/**
+ * True when `text` carries at least one character a reader could actually see:
+ * neither Unicode White_Space nor a Default_Ignorable code point. Used ONLY to
+ * decide whether a header string is effectively empty — never to rewrite one,
+ * so a header that passes is still returned byte-for-byte.
+ */
+export function hasVisibleCharacter(text: string): boolean {
+  for (const ch of text) {
+    const codePoint = ch.codePointAt(0)!;
+    if (isUnicodeWhiteSpace(codePoint)) continue;
+    if (isDefaultIgnorable(codePoint)) continue;
+    return true;
+  }
+  return false;
+}
+
+/**
+ * C3's single "may this cell supply structural header text?" rule, shared by
+ * `duplicateHeaderGroups`, `buildSourceRecords` (fieldName) and
+ * `computeColumnHeaderEvidence`. One predicate is the whole point: before
+ * 1.2.0 those three paths disagreed, so an error cell could name a field while
+ * the duplicate-header diagnostic ignored the same cell.
+ *
+ * A usable header is a present, string-valued cell carrying at least one
+ * visible character. Numeric, boolean, date and error cells are never headers:
+ * an error code (`#REF!`) and a serialized date are not header TEXT. A
+ * formula-backed cell qualifies only through its cached STRING result, and the
+ * formula itself is never evaluated.
+ *
+ * The returned text is the cell's own value, VERBATIM: never trimmed, case
+ * folded, Unicode-normalized, bidi-stripped or whitespace-collapsed.
+ */
+function usableHeaderText(cell: CellEvidence): string | null {
+  if (cell.presence !== 'value') return null;
+  if (cell.valueType !== 'string') return null;
+  if (typeof cell.rawValue !== 'string') return null;
+  if (!hasVisibleCharacter(cell.rawValue)) return null;
+  return cell.rawValue;
+}
+
+// ---------------------------------------------------------------------------
 // Cell extraction
 // ---------------------------------------------------------------------------
 
@@ -281,11 +378,15 @@ function extractSheet(
         cells.push(evidence);
         if (evidence.presence === 'value') {
           nonEmptyCellCount += 1;
-          if (r === usedRange.startRow && evidence.valueType === 'string' && typeof evidence.rawValue === 'string') {
-            headerByCol.set(c, evidence.rawValue);
-            const group = headerGroups.get(evidence.rawValue) ?? [];
+          // 1.2.0: the SAME usable-header rule the fieldName and column-evidence
+          // paths use, so a numeric/date/error/invisible-only header can never
+          // enter a duplicate group here while naming a field there.
+          const headerText = r === usedRange.startRow ? usableHeaderText(evidence) : null;
+          if (headerText !== null) {
+            headerByCol.set(c, headerText);
+            const group = headerGroups.get(headerText) ?? [];
             group.push(c);
-            headerGroups.set(evidence.rawValue, group);
+            headerGroups.set(headerText, group);
           }
         }
         if (cells.length > limits.maxCellsPerSheet) {
@@ -434,11 +535,14 @@ function computeColumnHeaderEvidence(sheet: SheetEvidence): Map<number, ColumnHe
   // Every non-blank string cell inside the header window, grouped by column.
   const byCol = new Map<number, Array<{ coordinate: A1Coordinate; text: string }>>();
   for (const cell of sheet.cells) {
-    if (cell.presence !== 'value' || typeof cell.rawValue !== 'string') continue;
     if (cell.coordinate.row < startRow || cell.coordinate.row > windowEndRow) continue;
-    if (cell.rawValue.trim() === '') continue;
+    // 1.2.0: one shared predicate (see usableHeaderText). It replaces the old
+    // `typeof rawValue === 'string'` + `trim() === ''` pair, which admitted
+    // error/date cells and invisible-only text as header candidates.
+    const text = usableHeaderText(cell);
+    if (text === null) continue;
     const list = byCol.get(cell.coordinate.col) ?? [];
-    list.push({ coordinate: cell.coordinate, text: cell.rawValue });
+    list.push({ coordinate: cell.coordinate, text });
     byCol.set(cell.coordinate.col, list);
   }
   if (byCol.size === 0) return result;
@@ -501,9 +605,9 @@ function buildSourceRecords(
     const headerRow = sheet.usedRange.startRow;
     const headerByCol = new Map<number, string>();
     for (const cell of sheet.cells) {
-      if (cell.coordinate.row === headerRow && cell.presence === 'value' && typeof cell.rawValue === 'string') {
-        headerByCol.set(cell.coordinate.col, cell.rawValue);
-      }
+      if (cell.coordinate.row !== headerRow) continue;
+      const headerText = usableHeaderText(cell);
+      if (headerText !== null) headerByCol.set(cell.coordinate.col, headerText);
     }
     // B2: computed once per sheet, attached only to the first-emitted record
     // for each physical column (proven identical to "lowest row" under this
@@ -514,13 +618,11 @@ function buildSourceRecords(
       if (cell.coordinate.row === headerRow) continue; // header row itself is not a data record
       if (cell.presence !== 'value') continue;
       const headerText = headerByCol.get(cell.coordinate.col);
-      // A whitespace-only header carries no usable field name. Preserve every
-      // non-blank header byte-for-byte, but use the contract's stable fallback
-      // when the header is missing or becomes empty under the same btrim-style
-      // predicate enforced by M210.
-      const fieldName = headerText !== undefined && headerText.trim().length > 0
-        ? headerText
-        : `col:${cell.coordinate.col}`;
+      // 1.2.0: `headerByCol` now holds ONLY usable headers (see
+      // usableHeaderText), so a present entry is already verbatim header text
+      // and every other case — missing, blank, whitespace-only, invisible-only,
+      // numeric, boolean, date, error — takes the stable positional fallback.
+      const fieldName = headerText !== undefined ? headerText : `col:${cell.coordinate.col}`;
       const targetEntity = `sheet:${sheet.index}:row:${cell.coordinate.row}`;
       // B2: "first emitted" per physical column, this loop's own order.
       const isColumnAnchor = !anchoredColumns.has(cell.coordinate.col);
@@ -631,6 +733,21 @@ export async function parseWorkbookBytes(
       bookVBA: true,
       WTF: false,
       dense: false,
+      // 1.2.0 — CSV ONLY: keep every cell exactly as the file spells it.
+      //
+      // A CSV has no types; its bytes ARE the evidence. SheetJS's CSV grammar
+      // otherwise re-types text, and that is lossy in ways this contract cannot
+      // accept: "000123" became the number 123 (a National Code losing its
+      // leading zeros, recoverable afterwards from nothing but the display
+      // string, which this contract declares non-authoritative), "TRUE" became
+      // a boolean, and "=1+1" became a FORMULA cell. With `raw: true` each of
+      // those stays the source string, so nothing is re-typed and no CSV text
+      // can enter the evidence as a formula.
+      //
+      // Scoped to CSV deliberately: XLS/XLSX carry real cell types, and raw
+      // mode there would discard them. Those paths keep their exact 1.1.0
+      // options, so their output is unchanged.
+      ...(magicFormat === 'csv' ? { raw: true } : {}),
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

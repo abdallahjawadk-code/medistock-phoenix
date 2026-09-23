@@ -171,8 +171,22 @@ const sel = (which: string) => attr('data-nl-sel', which);
 const searchBox = () => screen.getByRole('searchbox', { name: T.cn2b_nl_filter_search.en });
 const filterBtn = (key: string) => screen.getByRole('button', { name: T[key].en });
 const clearBtn = () => screen.getByRole('button', { name: T.cn2b_nl_filter_clear.en });
-const fillReason = (text = 'reviewer designated the final block') =>
+/**
+ * C3 — a NEW need line now requires an EXPLICIT unit election, exactly as it
+ * requires a reason; the panel no longer preselects `box`. These UX-2C cases
+ * are about selection, filters, totals and preview/confirm behavior, so they
+ * elect the same `box` the panel used to assume, and do it visibly. No-op when
+ * the picker is hidden (the case marked the line `conversion_required`).
+ */
+const electUnit = (u = 'box') => {
+  const select = screen.queryByTestId('cn2b-nl-unit-select') as HTMLSelectElement | null;
+  // Only fills the gap: a case that elected its own unit keeps it.
+  if (select && select.value === '') fireEvent.change(select, { target: { value: u } });
+};
+const fillReason = (text = 'reviewer designated the final block') => {
   fireEvent.change(screen.getByLabelText(T.cn2b_nl_reason.en), { target: { value: text } });
+  electUnit();
+};
 const openPreview = () => {
   const btn = screen.queryByRole('button', { name: T.cn2b_nl_save.en })
     ?? screen.getByRole('button', { name: T.cn2b_nl_bulk_preview.en });

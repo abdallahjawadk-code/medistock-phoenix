@@ -272,7 +272,11 @@ export function CentralNeedsNeedLinePanel({
   const [institutions, setInstitutions] = useState<OrgRow[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
 
-  const [unit, setUnit] = useState<NeedLineUnit>('box');
+  // C3: NO DEFAULT UNIT. '' is "nobody has chosen yet", and a new line cannot be
+  // confirmed from it. The old `'box'` default meant a reviewer who never
+  // touched the picker still stamped every quantity `box` — a unit the human
+  // never elected. The catalog unit is context and is never auto-elected either.
+  const [unit, setUnit] = useState<NeedLineUnit | ''>('');
   const [conversionRequired, setConversionRequired] = useState(false);
   const [sourceUnitText, setSourceUnitText] = useState('');
   const [targetWarehouseId, setTargetWarehouseId] = useState('');
@@ -300,7 +304,7 @@ export function CentralNeedsNeedLinePanel({
     || deletingLineId !== null
     || deleteReason.trim() !== ''
     || conversionRequired
-    || unit !== 'box'
+    || unit !== ''
     || sourceUnitText.trim() !== ''
     || targetWarehouseId !== '';
 
@@ -310,7 +314,7 @@ export function CentralNeedsNeedLinePanel({
 
   /** A confirmed revision/session switch discards only local, unpersisted editor state. */
   useEffect(() => {
-    setUnit('box');
+    setUnit('');
     setConversionRequired(false);
     setSourceUnitText('');
     setTargetWarehouseId('');
@@ -492,9 +496,20 @@ export function CentralNeedsNeedLinePanel({
   const everyQuantityValid = selectedIds.length > 0
     && selectedIds.every((id) => DECIMAL.test((designated[id]?.quantity ?? '').trim()));
   const everySelectionResolved = selectedIds.length > 0 && selectedIds.every((id) => beneficiaryByRecordId.has(id));
+  /**
+   * C3 — a NEW line needs an explicit unit decision: either a chosen unit or an
+   * explicit `conversion_required`. Groups that ADD to an existing line are
+   * exempt: that line already carries its own approved unit, and its
+   * designations are quantities in it, so the editor's blank unit never
+   * re-interprets it.
+   */
+  const newGroupsNeedingUnit = [...groups.values()].filter((g) => !g.existing);
+  const unitDecisionMade = conversionRequired || unit !== '';
+  const everyNewGroupHasUnitDecision = newGroupsNeedingUnit.length === 0 || unitDecisionMade;
   const canSave = editable && selectedIds.length > 0 && everySelectionResolved
     && unavailableSelectedIds.length === 0
     && everyQuantityValid && reason.trim().length > 0 && groups.size > 0
+    && everyNewGroupHasUnitDecision
     && [...groups.values()].every((g) => g.total !== '');
 
   /**
@@ -522,7 +537,10 @@ export function CentralNeedsNeedLinePanel({
         quantitySources,
         expectedSourceRecordIds: group.expectedIds,
         // An existing line keeps its unit: its designations are quantities in it.
-        approvedUnit: existing ? existing.approvedUnit : (conversionRequired ? null : unit),
+        // For a new line, `unit === ''` means "not chosen yet" and stays null
+        // here; `canSave`/`canConfirm` refuse that state, so a plan carrying a
+        // null unit can be displayed but never confirmed (C3 §9).
+        approvedUnit: existing ? existing.approvedUnit : (conversionRequired ? null : (unit === '' ? null : unit)),
         unitConversionState: existing
           ? existing.unitConversionState
           : (conversionRequired ? 'conversion_required' : 'canonical'),
@@ -699,6 +717,19 @@ export function CentralNeedsNeedLinePanel({
       setDesignated({});
       setPreview(null);
       setReason('');
+      // C3: the line ATTRIBUTES are part of one operation's decision, exactly
+      // like its designations and its justification, so they end with it. Left
+      // standing, the next new line would silently inherit this operation's
+      // unit, conversion declaration or source-unit text — a unit nobody
+      // elected for that line, which is the defect C3 exists to remove.
+      //
+      // Only after the WHOLE plan committed: the loop above is already past its
+      // last group here, and the catch branch deliberately keeps this state so a
+      // refusal can be corrected and retried without retyping it.
+      setUnit('');
+      setConversionRequired(false);
+      setSourceUnitText('');
+      setTargetWarehouseId('');
       onChanged();
     } catch (e) {
       // A server refusal is shown by its stable code, translated where known —
@@ -738,6 +769,9 @@ export function CentralNeedsNeedLinePanel({
     selectedIds.length > 0 && !everyQuantityValid && 'cn2b_nl_block_quantity',
     unavailableSelectedIds.length > 0 && 'cn2b_nl_block_unavailable',
     reason.trim() === '' && 'cn2b_nl_block_reason',
+    // C3: the unit election is as mandatory as the reason for a NEW line, so it
+    // is named here rather than leaving the save button disabled unexplained.
+    !everyNewGroupHasUnitDecision && 'cn2b_nl_block_unit',
   ].filter((k): k is string => Boolean(k));
 
   const previewSourceCount = preview ? preview.plan.reduce((n, p) => n + p.group.recordIds.length, 0) : 0;
@@ -1044,11 +1078,22 @@ export function CentralNeedsNeedLinePanel({
                       className="cn2b-nl-select"
                       aria-label={t('cn2b_nl_unit', lang)}
                       value={unit}
-                      onChange={(e) => { setUnit(e.target.value as NeedLineUnit); setPreview(null); }}
+                      data-testid="cn2b-nl-unit-select"
+                      onChange={(e) => { setUnit(e.target.value as NeedLineUnit | ''); setPreview(null); }}
                     >
+                      {/* C3: the unselected option is real state, not a decoration —
+                          a new line cannot be confirmed while it is chosen. */}
+                      <option value="">{t('cn2b_nl_unit_unselected', lang)}</option>
                       {NEED_LINE_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
                     </select>
                   </label>
+                )}
+
+                {/* Says WHY save is refused, instead of leaving a disabled button unexplained. */}
+                {!unitDecisionMade && newGroupsNeedingUnit.length > 0 && (
+                  <p className="cn2b-nl-note" data-testid="cn2b-nl-unit-required-note">
+                    {t('cn2b_nl_unit_required_note', lang)}
+                  </p>
                 )}
 
                 <PhoenixInput

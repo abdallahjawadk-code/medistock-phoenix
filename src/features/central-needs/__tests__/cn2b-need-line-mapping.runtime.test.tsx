@@ -5,7 +5,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { T } from '@/shared/i18n/strings';
-import type { BeneficiaryColumnSummary } from '../central-needs.service';
+import type { BeneficiaryColumnSummary, NeedLineUnit } from '../central-needs.service';
 
 /**
  * CN-2B CONFORMANCE (M212, corrected by 213) — the operational need-line
@@ -215,6 +215,22 @@ function contributionInput(fieldName: string) {
 const reasonText = 'reviewer designated the final block';
 function fillReason(text = reasonText) {
   fireEvent.change(screen.getByLabelText(T.cn2b_nl_reason.en), { target: { value: text } });
+  electUnit();
+}
+
+/**
+ * C3 — a NEW need line now requires an EXPLICIT unit election, exactly as it
+ * requires a reason; the panel no longer preselects `box`. These cases are
+ * about everything else (lineage, totals, scopes, refusals), so they elect the
+ * same `box` the panel used to assume, and do it visibly. The election itself
+ * is covered by the "C3 — the approved unit is elected, never defaulted"
+ * block at the end of this file. No-op when the picker is hidden, i.e. when
+ * the case marked the line `conversion_required`.
+ */
+function electUnit(u: NeedLineUnit = 'box') {
+  const select = screen.queryByTestId('cn2b-nl-unit-select') as HTMLSelectElement | null;
+  // Only fills the gap: a case that elected its own unit keeps it.
+  if (select && select.value === '') fireEvent.change(select, { target: { value: u } });
 }
 
 function saveAndConfirm() {
@@ -934,5 +950,262 @@ describe('M212 — the client never becomes the authority', () => {
       expect(SERVICE, u).toContain(`'${u}'`);
       expect(sql, u).toContain(`'${u}'`);
     }
+  });
+});
+
+/**
+ * C3 — the approved unit is ELECTED, never defaulted.
+ *
+ * Before C3 the picker opened on `box`, so a reviewer who never touched it
+ * still stamped every quantity `box` — a unit nobody chose, indistinguishable
+ * afterwards from a deliberate one. The unit is now as mandatory, and as
+ * explicit, as the mapping justification: a NEW line is saveable only once a
+ * human either picks a unit or declares the line `conversion_required`.
+ *
+ * What this does NOT do: it never proposes a unit. Not the catalog item's unit,
+ * not the source text, not the previous line's. There is no conversion factor
+ * anywhere and no quantity is ever rescaled.
+ */
+describe('C3 — the approved unit is elected, never defaulted', () => {
+  const typeReason = (text = 'c3 election') =>
+    fireEvent.change(screen.getByLabelText(T.cn2b_nl_reason.en), { target: { value: text } });
+
+  it('T32 a NEW line cannot be previewed or confirmed until a unit is elected', async () => {
+    renderPanel('en');
+    await waitFor(() => expect(getOrganizations).toHaveBeenCalled());
+    designate(ROW_5, 'final');
+    fireEvent.change(contributionInput('final'), { target: { value: '3' } });
+    typeReason();
+
+    // Everything else is satisfied, and the picker opens UNSELECTED.
+    const select = screen.getByTestId('cn2b-nl-unit-select') as HTMLSelectElement;
+    expect(select.value).toBe('');
+    const save = screen.getByRole('button', { name: T.cn2b_nl_save.en });
+    expect(save).toBeDisabled();
+    // ...and the refusal says why, rather than leaving a dead button.
+    expect(screen.getByTestId('cn2b-nl-save-blockers').querySelector('[data-blocker="cn2b_nl_block_unit"]')).not.toBeNull();
+    expect(screen.getByTestId('cn2b-nl-unit-required-note')).toHaveTextContent(T.cn2b_nl_unit_required_note.en);
+
+    fireEvent.change(select, { target: { value: 'vial' } });
+    expect(save).toBeEnabled();
+    expect(screen.queryByTestId('cn2b-nl-unit-required-note')).toBeNull();
+
+    saveAndConfirm();
+    await waitFor(() => expect(setNeedLine).toHaveBeenCalledTimes(1));
+    expect(setNeedLine.mock.calls[0][0]).toMatchObject({ approvedUnit: 'vial', unitConversionState: 'canonical' });
+  });
+
+  it('T32 nothing is written while the unit is unelected', async () => {
+    renderPanel('en');
+    await waitFor(() => expect(getOrganizations).toHaveBeenCalled());
+    designate(ROW_5, 'final');
+    fireEvent.change(contributionInput('final'), { target: { value: '3' } });
+    typeReason();
+    fireEvent.click(screen.getByRole('button', { name: T.cn2b_nl_save.en }));
+    expect(screen.queryByTestId('cn2b-nl-preview')).toBeNull();
+    expect(setNeedLine).not.toHaveBeenCalled();
+  });
+
+  it('T33 conversion_required is its own complete decision: saveable, and it carries NO unit', async () => {
+    renderPanel('en');
+    await waitFor(() => expect(getOrganizations).toHaveBeenCalled());
+    designate(ROW_5, 'final');
+    fireEvent.change(contributionInput('final'), { target: { value: '3' } });
+    typeReason();
+    fireEvent.click(screen.getByLabelText(T.cn2b_nl_unit_conversion_required.en));
+
+    // The picker is gone, and the save is unblocked by the declaration itself.
+    expect(screen.queryByTestId('cn2b-nl-unit-select')).toBeNull();
+    expect(screen.getByRole('button', { name: T.cn2b_nl_save.en })).toBeEnabled();
+
+    saveAndConfirm();
+    await waitFor(() => expect(setNeedLine).toHaveBeenCalledTimes(1));
+    expect(setNeedLine.mock.calls[0][0]).toMatchObject({ approvedUnit: null, unitConversionState: 'conversion_required' });
+  });
+
+  it('T34 an EXISTING line keeps its own unit, and is never forced to re-elect one', async () => {
+    renderPanel('en', { needLines: [EXISTING], claimedSources: [EXISTING_LINK] });
+    await waitFor(() => expect(getOrganizations).toHaveBeenCalled());
+    designate(ROW_5, 'final');
+    fireEvent.change(contributionInput('final'), { target: { value: '0.2' } });
+    typeReason('adds to the existing line');
+
+    // The editor's picker is still unselected, and that does NOT block this
+    // save: the existing line already carries its approved unit.
+    expect((screen.getByTestId('cn2b-nl-unit-select') as HTMLSelectElement).value).toBe('');
+    expect(screen.queryByTestId('cn2b-nl-unit-required-note')).toBeNull();
+    const save = screen.getByRole('button', { name: T.cn2b_nl_save.en });
+    expect(save).toBeEnabled();
+
+    saveAndConfirm();
+    await waitFor(() => expect(setNeedLine).toHaveBeenCalledTimes(1));
+    expect(setNeedLine.mock.calls[0][0]).toMatchObject({
+      approvedUnit: EXISTING.approvedUnit, unitConversionState: EXISTING.unitConversionState, approvedQuantity: '0.3',
+    });
+  });
+
+  it('T36 no catalog, source or neighbouring unit is ever written as the approved unit', () => {
+    const PANEL = readFileSync(join(__dirname, '..', 'CentralNeedsNeedLinePanel.tsx'), 'utf8');
+    // The only unit the panel can send for a new line is the elected one; it
+    // holds no catalog item unit at all, and never seeds the picker from data.
+    expect(PANEL).toContain("useState<NeedLineUnit | ''>('')");
+    expect(PANEL).not.toContain("useState<NeedLineUnit>('box')");
+    for (const forbidden of ['item.unit', 'centralItem.unit', 'catalogUnit', 'suggestion.unit']) {
+      expect(PANEL, forbidden).not.toContain(forbidden);
+    }
+    // Every setUnit call site is either a clear (session switch, post-commit
+    // reset) or the human's own pick. None derives a unit from data — that is
+    // the property being asserted, not the number of call sites.
+    const assignments = PANEL.match(/setUnit\([^)]*\)/g) ?? [];
+    expect(assignments.length).toBeGreaterThanOrEqual(2);
+    for (const call of assignments) {
+      expect(["setUnit('')", "setUnit(e.target.value as NeedLineUnit | '')"], call).toContain(call);
+    }
+    // No conversion arithmetic exists anywhere in this surface.
+    for (const forbidden of ['conversionFactor', 'convertQuantity', '* factor', 'toBaseUnit']) {
+      expect(PANEL, forbidden).not.toContain(forbidden);
+    }
+  });
+});
+
+/**
+ * C3 correction #1 — the unit decision belongs to ONE operation.
+ *
+ * The commit path used to clear the designations, the preview and the reason,
+ * but left the line attributes standing. The next new line therefore started
+ * with the previous operation's unit, conversion declaration and source-unit
+ * text already filled in — a unit nobody elected for THAT line, which is the
+ * exact defect C3 exists to remove. The reset now happens only after the whole
+ * write plan has succeeded.
+ */
+describe('C3 — line attributes reset after a successful write (correction #1)', () => {
+  const typeReason = (text = 'c3 reset') =>
+    fireEvent.change(screen.getByLabelText(T.cn2b_nl_reason.en), { target: { value: text } });
+  const unitSelect = () => screen.getByTestId('cn2b-nl-unit-select') as HTMLSelectElement;
+  const sourceUnitInput = () => screen.getByLabelText(T.cn2b_nl_source_unit.en) as HTMLInputElement;
+  const saveButton = () => screen.getByRole('button', { name: T.cn2b_nl_save.en });
+
+  it('U1 a second NEW line starts with no unit and cannot be saved until a fresh election', async () => {
+    renderPanel('en');
+    await waitFor(() => expect(getOrganizations).toHaveBeenCalled());
+    designate(ROW_5, 'final');
+    fireEvent.change(contributionInput('final'), { target: { value: '3' } });
+    typeReason();
+    fireEvent.change(unitSelect(), { target: { value: 'vial' } });
+    saveAndConfirm();
+    await waitFor(() => expect(setNeedLine).toHaveBeenCalledTimes(1));
+    expect(setNeedLine.mock.calls[0][0]).toMatchObject({ approvedUnit: 'vial' });
+
+    // The next operation inherits nothing.
+    await waitFor(() => expect(unitSelect().value).toBe(''));
+    designate(ROW_6, 'final');
+    fireEvent.change(contributionInput('final'), { target: { value: '4' } });
+    typeReason('second line');
+    expect(saveButton()).toBeDisabled();
+    expect(screen.getByTestId('cn2b-nl-save-blockers').querySelector('[data-blocker="cn2b_nl_block_unit"]')).not.toBeNull();
+
+    fireEvent.change(unitSelect(), { target: { value: 'tablet' } });
+    expect(saveButton()).toBeEnabled();
+    saveAndConfirm();
+    await waitFor(() => expect(setNeedLine).toHaveBeenCalledTimes(2));
+    // The second write carries ITS OWN election, never the first one's.
+    expect(setNeedLine.mock.calls[1][0]).toMatchObject({ approvedUnit: 'tablet', unitConversionState: 'canonical' });
+  });
+
+  it('U2 a conversion_required declaration does not survive into the next line', async () => {
+    renderPanel('en');
+    await waitFor(() => expect(getOrganizations).toHaveBeenCalled());
+    designate(ROW_5, 'final');
+    fireEvent.change(contributionInput('final'), { target: { value: '3' } });
+    typeReason();
+    fireEvent.click(screen.getByLabelText(T.cn2b_nl_unit_conversion_required.en));
+    saveAndConfirm();
+    await waitFor(() => expect(setNeedLine).toHaveBeenCalledTimes(1));
+    expect(setNeedLine.mock.calls[0][0]).toMatchObject({ approvedUnit: null, unitConversionState: 'conversion_required' });
+
+    // The checkbox is cleared, so the picker is back and unselected.
+    await waitFor(() => expect(screen.getByLabelText(T.cn2b_nl_unit_conversion_required.en)).not.toBeChecked());
+    expect(unitSelect().value).toBe('');
+    designate(ROW_6, 'final');
+    fireEvent.change(contributionInput('final'), { target: { value: '4' } });
+    typeReason('second line');
+    expect(saveButton()).toBeDisabled();
+  });
+
+  it('U3 source-unit evidence is not inherited by the next line', async () => {
+    renderPanel('en');
+    await waitFor(() => expect(getOrganizations).toHaveBeenCalled());
+    designate(ROW_5, 'final');
+    fireEvent.change(contributionInput('final'), { target: { value: '3' } });
+    fireEvent.change(sourceUnitInput(), { target: { value: 'vial or ampoule' } });
+    typeReason();
+    fireEvent.change(unitSelect(), { target: { value: 'vial' } });
+    saveAndConfirm();
+    await waitFor(() => expect(setNeedLine).toHaveBeenCalledTimes(1));
+    expect(setNeedLine.mock.calls[0][0]).toMatchObject({ sourceUnitText: 'vial or ampoule' });
+
+    await waitFor(() => expect(sourceUnitInput().value).toBe(''));
+  });
+
+  it('U4 extending an EXISTING line still keeps that line own unit and state', async () => {
+    renderPanel('en', { needLines: [EXISTING], claimedSources: [EXISTING_LINK] });
+    await waitFor(() => expect(getOrganizations).toHaveBeenCalled());
+    designate(ROW_5, 'final');
+    fireEvent.change(contributionInput('final'), { target: { value: '0.2' } });
+    typeReason('adds to the existing line');
+    // No election is required, and none is invented.
+    expect(unitSelect().value).toBe('');
+    saveAndConfirm();
+    await waitFor(() => expect(setNeedLine).toHaveBeenCalledTimes(1));
+    expect(setNeedLine.mock.calls[0][0]).toMatchObject({
+      approvedUnit: EXISTING.approvedUnit,
+      unitConversionState: EXISTING.unitConversionState,
+      approvedQuantity: '0.3',
+    });
+    await waitFor(() => expect(unitSelect().value).toBe(''));
+  });
+
+  it('U5 a MULTI-GROUP write applies the one election to every group, and resets only after all of them succeed', async () => {
+    renderPanel('en', {
+      dispositions: [disposition(ROW_5, ITEM_A)],
+      records: [
+        record('rec-a', ROW_5, 'Hospital A', 100, 1, { columnIndex: 1 }),
+        record('rec-b', ROW_5, 'Hospital B', 50, 2, { columnIndex: 2 }),
+      ],
+      beneficiaryColumns: [beneficiaryColumn(1, BENE), beneficiaryColumn(2, BENE2)],
+    });
+    await waitFor(() => expect(getOrganizations).toHaveBeenCalled());
+    designate(ROW_5, 'Hospital A');
+    designate(ROW_5, 'Hospital B');
+    typeReason('one election, two beneficiaries');
+    fireEvent.change(unitSelect(), { target: { value: 'ampoule' } });
+
+    fireEvent.click(screen.getByRole('button', { name: T.cn2b_nl_bulk_preview.en }));
+    expect(screen.getAllByTestId('cn2b-nl-preview-group')).toHaveLength(2);
+    fireEvent.click(screen.getByRole('button', { name: T.cn2b_nl_bulk_confirm.en }));
+
+    await waitFor(() => expect(setNeedLine).toHaveBeenCalledTimes(2));
+    // Both groups of THIS confirmed write carry the elected unit.
+    expect(setNeedLine.mock.calls[0][0]).toMatchObject({ approvedUnit: 'ampoule', beneficiaryOrganizationId: BENE });
+    expect(setNeedLine.mock.calls[1][0]).toMatchObject({ approvedUnit: 'ampoule', beneficiaryOrganizationId: BENE2 });
+    // Only once every group completed does the editor forget the decision.
+    await waitFor(() => expect(unitSelect().value).toBe(''));
+    expect(screen.getByLabelText(T.cn2b_nl_unit_conversion_required.en)).not.toBeChecked();
+  });
+
+  it('a FAILED write keeps the decision, so it can be corrected and retried', async () => {
+    renderPanel('en');
+    await waitFor(() => expect(getOrganizations).toHaveBeenCalled());
+    designate(ROW_5, 'final');
+    fireEvent.change(contributionInput('final'), { target: { value: '3' } });
+    fireEvent.change(sourceUnitInput(), { target: { value: 'doz' } });
+    typeReason();
+    fireEvent.change(unitSelect(), { target: { value: 'vial' } });
+    setNeedLine.mockRejectedValueOnce(new CentralNeedsError('need_line_lineage_stale', 'need_line_lineage_stale'));
+    saveAndConfirm();
+    await waitFor(() => expect(setNeedLine).toHaveBeenCalledTimes(1));
+    // Nothing was written, so nothing is forgotten.
+    expect(unitSelect().value).toBe('vial');
+    expect(sourceUnitInput().value).toBe('doz');
   });
 });

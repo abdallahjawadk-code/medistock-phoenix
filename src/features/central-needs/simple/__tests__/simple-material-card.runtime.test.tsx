@@ -2,6 +2,7 @@
 import '@testing-library/jest-dom/vitest';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { T } from '@/shared/i18n/strings';
 import type { SourceRecord } from '../../central-needs.service';
 
 const setRecordDisposition = vi.fn();
@@ -176,5 +177,59 @@ describe('SimpleMaterialCard — permission parity (Director finding 2)', () => 
     expect(setRecordDisposition).toHaveBeenCalledWith({
       importSessionId: 's1', targetEntity: 'sheet:0:row:8', decision: 'mapped', centralItemId: 'item-1',
     });
+  });
+});
+
+/**
+ * C3 — catalog unit vs approved unit.
+ *
+ * A catalog item's own `unit` is CONTEXT for the person deciding. It is not an
+ * approved unit: nothing is approved until a human elects a unit on a need
+ * line. The card used to label it "Approved unit in the system", which said the
+ * decision had already been made. It now says "Catalog unit", and still never
+ * writes a unit anywhere.
+ */
+describe('C3 — the catalog unit is context, not an approval', () => {
+  it('T35 labels a suggestion’s unit as the CATALOG unit, never as an approved one', async () => {
+    searchCentralItems.mockResolvedValue([{ id: 'item-1', name: 'PARACETAMOL 500 MG', unit: 'box' }]);
+    renderCard([rec({ id: 'r1', fieldName: 'ITEMS', sourceValues: { value: 'PARACETAMOL 500 MG' } })]);
+    const meta = await screen.findByTestId('cn2b-simple-catalog-unit');
+    expect(meta).toHaveTextContent(T.cn2b_simple_catalog_unit_label.ar);
+    expect(meta).toHaveTextContent('box');
+    expect(meta).not.toHaveTextContent(T.cn2b_simple_approved_unit_label.ar);
+  });
+
+  it('T36 showing a catalog unit writes nothing: no disposition, no unit, until the human confirms', async () => {
+    searchCentralItems.mockResolvedValue([{ id: 'item-1', name: 'PARACETAMOL 500 MG', unit: 'vial' }]);
+    renderCard([rec({ id: 'r1', fieldName: 'ITEMS', sourceValues: { value: 'PARACETAMOL 500 MG' } })]);
+    await screen.findByTestId('cn2b-simple-catalog-unit');
+    expect(setRecordDisposition).not.toHaveBeenCalled();
+  });
+
+  it('T37 a department column headed "وحدة المناعة" is NOT read as a unit of measure', async () => {
+    searchCentralItems.mockResolvedValue([]);
+    renderCard([
+      // Real corpus shape: 19 columns are headed with a department whose name
+      // begins with وحدة. Only an EXACT unit word may supply a source unit.
+      rec({ id: 'r1', fieldName: 'وحدة المناعة', sourceValues: { value: 'مختبر' } }),
+      rec({ id: 'r2', fieldName: 'وحدة الهرمونات', sourceValues: { value: '12' } }),
+      rec({ id: 'r3', fieldName: 'ITEMS', sourceValues: { value: 'PARACETAMOL 500 MG' } }),
+    ]);
+    // No unit was inferred from either department column.
+    expect(await screen.findByTestId('cn2b-simple-unit-needs-review')).toBeInTheDocument();
+    const unitRow = screen.getByTestId('cn2b-simple-material-unit-row');
+    expect(unitRow).toHaveAttribute('data-state', 'review');
+    expect(unitRow).not.toHaveTextContent('مختبر');
+  });
+
+  it('an EXACT unit-word header still supplies the source unit, unchanged by C3', async () => {
+    searchCentralItems.mockResolvedValue([]);
+    renderCard([
+      rec({ id: 'r1', fieldName: 'الوحدة', sourceValues: { value: 'vial' } }),
+      rec({ id: 'r2', fieldName: 'ITEMS', sourceValues: { value: 'PARACETAMOL 500 MG' } }),
+    ]);
+    const unitRow = await screen.findByTestId('cn2b-simple-material-unit-row');
+    expect(unitRow).toHaveAttribute('data-state', 'known');
+    expect(unitRow).toHaveTextContent('vial');
   });
 });

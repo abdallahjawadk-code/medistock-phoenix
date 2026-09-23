@@ -301,13 +301,16 @@ describe('CN-2A B2 — column-anchor structural header evidence', () => {
     expect(JSON.stringify(a.sourceRecords)).toBe(JSON.stringify(b.sourceRecords));
   });
 
-  it('17. the contract version reports 1.1.0, the additive B2 minor bump', async () => {
+  // B2 shipped as 1.1.0; C3's header/CSV semantics moved the same contract to
+  // 1.2.0. The pin moves with it deliberately — the version is compared
+  // verbatim by the parity gate, so it must never drift silently.
+  it('17. the contract version reports 1.2.0, carrying the additive B2 evidence forward', async () => {
     const ws = XLSX.utils.aoa_to_sheet([['Name'], ['A']]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
     const result = await parseWorkbookBytes(toBytes(wb), 'w.xlsx', { runtime: 'node', now: NOW });
-    expect(CN2A_CONTRACT_VERSION).toBe('1.1.0');
-    expect(result.identity.contractVersion).toBe('1.1.0');
+    expect(CN2A_CONTRACT_VERSION).toBe('1.2.0');
+    expect(result.identity.contractVersion).toBe('1.2.0');
   });
 
   it('18. B2 is purely additive: fieldName, targetEntity, sourceValues, and record cardinality/order are unchanged', async () => {

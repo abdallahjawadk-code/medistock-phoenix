@@ -96,6 +96,7 @@ correct output for a given input, so no semantic drift is possible.
    |---|---|---|
    | 1.0.0 (original) | `9f8f45badbff4aae00f6ee6784c9effb0e67a8741dd20786c35bad717e85eca6` | 8,025 |
    | 1.1.0 (B2 column-anchor evidence) | `c98bd6e6c22b64a985d7db15f85924c53fb1e004f269387c2b3f68de2c5bd76f` | 8,375 |
+   | 1.2.0 (C3 header predicate + CSV exact text) | `0a5471bcfcf30924f1c22915812974f2f09566574531e6eaa7bb4b721f4bf28f` | 8,375 |
 
    The 1.1.0 re-run reproduced the exact same procedure against the same
    synthetic fixture. The hash changed for three additive reasons, not one:
@@ -114,8 +115,33 @@ correct output for a given input, so no semantic drift is possible.
    two documented runtime-only differences. The old 1.0.0 hash is kept above for history, not as a
    live expectation — it will not reproduce against the current parser.
 
+   The 1.2.0 row (C3) was measured the same way, and for the first time the
+   REAL corpus was carried through the same comparison as well:
+
+   | 1.2.0 subject | Masked SHA-256 | Masked bytes |
+   |---|---|---|
+   | synthetic fixture (`__tests__/fixtures/synthetic-archive.zip`) | `0a5471bcfcf30924f1c22915812974f2f09566574531e6eaa7bb4b721f4bf28f` | 8,375 |
+   | real corpus `احتياج 2026.zip` (sha256 `b00208ca…`, 57 workbooks, 113,950 records) | `a1ad950b7b117d6639e6c8a4f20f7bf0fb8ce045dffc8bc8c4980b5e9801940c` | 96,383,696 |
+
+   Both were produced by the production Worker in real Chrome and by the Node
+   replay, compared with `api/_lib/parity.ts`'s own `compareParsedResults`
+   after a JSON round trip (the shape `finalize-import` actually receives),
+   masking only `identity.runtime` and `sourceProvenance.extractedAt` — no new
+   mask. `equal === true` and the masked JSON is byte-for-byte identical on
+   both subjects. The fixture hash moved from 1.1.0 for exactly two reasons,
+   both compared verbatim by design: `identity.contractVersion`
+   (`"1.1.0"` → `"1.2.0"`) and `sourceProvenance.parserVersion`
+   (`"1.1.0/0.20.3"` → `"1.2.0/0.20.3"`). The 1.0.0 and 1.1.0 hashes stay above
+   as history and will not reproduce against 1.2.0.
+
 Reproduce with `scripts/cn2a-zip-parity-node.ts` (Node side) and
 `scripts/cn2a-browser-evidence.html` served by the dev server (browser side).
+(Operational note from the C3 run: on a workstation whose security software
+intercepts `.zip` downloads, that page's own `fetch` of the fixture can be
+answered with an empty HTTP 204 in the browser while Node receives the real
+file from the same dev server. That is an environment artifact, not a parser
+difference — hand the same bytes to the Worker directly and the comparison is
+valid again. The C3 evidence bundle records both runs.)
 
 ## 4. Determinism
 
@@ -220,15 +246,29 @@ gap flagged in §9 — guessing it would bake an unvalidated rule into frozen
 evidence. Deferring is safe because everything needed to derive the grouping
 later is already preserved coordinate-exactly: merged ranges, the three-way
 `missing`/`blank`/`value` presence distinction, and exact row/column indices on
-every cell. A later package can group continuation rows from stored evidence
-without re-parsing, and without CN-2A having collapsed anything first.
+every cell, and CN-2A collapses nothing.
+
+**Corrected at 1.2.0 (C3).** The sentence that used to end this section said a
+later package could group continuation rows "from stored evidence without
+re-parsing". That overstated what the DATABASE holds: only value cells become
+`central_needs_source_records` rows, so `mergedRanges`, explicit-blank
+coordinates and missing coordinates live in the parse result and are never
+persisted relationally. They stay recoverable because CN-2B stores the source
+bytes permanently and content-addressed and this parser is deterministic — a
+future governed package re-parses those exact bytes under the parser identity
+recorded on the import session. Nothing is lost; the recovery route is a
+deterministic re-parse, not a DB query. C3 measured the corpus shape this
+concerns: 1,052 vertically merged ranges below the header window in 7 sheets,
+and 335 heuristic continuation-row candidates in 47 sheets — an audit signal
+only, never a rule, because the same shape is produced by subtotal lines,
+category dividers and second header rows.
 
 ## 9. Source-record generation — a generic mechanism, not business semantics
 
 `buildSourceRecords` emits one `SourceValueRecordDraft` per non-header,
 non-blank data cell: `targetEntity` is a stable `sheet:{index}:row:{row}`
 logical id, `fieldName` is the header-row text at that column (or `col:{n}`
-when no header text exists). This satisfies "source_values and
+when no header text exists — see §9b for the exact 1.2.0 rule). This satisfies "source_values and
 source_provenance compatible with M209" and "normalized records without
 database persistence" as a structural mechanism. **What it deliberately does
 not do**: map real annual-needs business fields (item name vs. quantity
@@ -261,6 +301,49 @@ fresh against the same real corpus at 1.1.0: `TOTAL_SOURCE_RECORDS=113,950`,
 `fieldName`/`targetEntity`/`sourceValues` sequence identical to the pre-B2
 mechanism (see the CN2A-B2-PAGINATION-IMPLEMENTATION-20260917 evidence
 bundle, `B2-CORPUS-PROOF.json`).
+
+### 9b. C3 (1.2.0) — one header predicate, and CSV as exact source text
+
+`CN2A_CONTRACT_VERSION` moved `1.1.0` → `1.2.0`. No type changed; two semantics did.
+
+**(a) One usable-header predicate.** `usableHeaderText()` in `parser-core.ts` is
+now the single rule behind `fieldName`, `duplicateHeaderGroups` and
+`columnHeaderEvidence`. A header cell supplies text only when it is `presence:
+'value'`, `valueType: 'string'` and carries at least one VISIBLE character —
+neither whitespace nor a Default_Ignorable code point (the set is enumerated in
+code rather than written as `\p{Default_Ignorable_Code_Point}`, because the
+browser and Node run different V8 Unicode tables and a property escape could
+drift between runtimes). Valid header text is still returned byte-verbatim:
+never trimmed, case folded, Unicode-normalized, bidi-stripped or
+whitespace-collapsed. Everything else — missing, explicit blank, empty,
+whitespace-only, invisible-only, numeric, boolean, date, error — takes the
+positional fallback `col:{n}`.
+
+Before 1.2.0 the three paths disagreed, and two consequences were real:
+a header made only of a zero-width space, RLM or word joiner became the
+`fieldName` itself (an invisible business field name, which M210's `btrim` also
+preserves), and an error cell (`#REF!`) or a date cell named a field from text
+that is not header text at all, while the duplicate-header diagnostic ignored
+the very same cells. A formula-backed header still qualifies through its cached
+STRING result only; the formula is never evaluated.
+
+**Real-corpus effect, measured (C3-Parser-Header-Unit-Implementation bundle):**
+every structural total is unchanged — 71/57/14 entries, 75 sheets, 1,104 merges,
+684 formulas, 410/253/21 cached formula results, 45,009 numeric zeros, 31,824
+explicit blanks, 113,950 source records, 1,582 anchors, and an identical
+`fieldName` sequence. Exactly one figure moved: `DUPLICATE_HEADER_TEXT` 51 → 50.
+The group that disappeared was two single-space headers (`" "`, U+0020) at A1
+and AQ1 of sheet `المجرد` in `من 42 تشخيصية 2026 مواد!.xls`. Both columns
+already produced `col:0` and `col:42`, so no field name changed; only the bogus
+"duplicate header text" diagnostic for a whitespace header is gone.
+
+**(b) CSV is exact source text.** For CSV input only, `XLSX.read` is called with
+`raw: true`. A CSV has no types; its bytes are the evidence. Without this,
+SheetJS's CSV grammar re-typed text: `"000123"` became the number `123` (a
+National Code silently losing its leading zeros, since `formattedText` is
+non-authoritative and never persisted), `"TRUE"` became a boolean, and `"=1+1"`
+became a FORMULA cell. XLS/XLSX keep their exact 1.1.0 options and their real
+cell types. The corpus is entirely BIFF8 `.xls`, so this changes nothing in it.
 
 ## 10. What was verified, and how (see the accompanying verification report for full evidence)
 
