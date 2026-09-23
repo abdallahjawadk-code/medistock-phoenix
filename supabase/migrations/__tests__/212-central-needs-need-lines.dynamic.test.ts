@@ -109,6 +109,8 @@ run('CN-2B/212 operational need lines — dynamic', () => {
   let fileSeq = 0;
   /** True when the replayed chain carries 213's beneficiary-column contract (set in beforeAll). */
   let FORWARD = false;
+  /** True when the replayed chain carries 216's beneficiary-region relation (set in beforeAll). */
+  let REGIONS = false;
 
   const call = (userId: string | null, sql: string, params: unknown[] = [], role = 'authenticated') =>
     rig.asUser(userId, (c: any) => c.query(sql, params).then((r: any) => r.rows[0]?.result ?? r.rows[0]),
@@ -312,6 +314,14 @@ run('CN-2B/212 operational need lines — dynamic', () => {
       throw new Error(`fixture mode mismatch: 213 contract present=${present}, 213 applied=${chainIncludes213}`);
     }
     FORWARD = present;
+    // 216 attaches the same deferred assertion to its region relation (C4 T2).
+    const [{ regions }] = await admin(
+      `SELECT to_regclass('public.central_needs_beneficiary_regions') IS NOT NULL AS regions`);
+    const chainIncludes216 = migrationFiles().some((f: string) => f.startsWith('216_'));
+    if (regions !== chainIncludes216) {
+      throw new Error(`fixture mode mismatch: 216 relation present=${regions}, 216 applied=${chainIncludes216}`);
+    }
+    REGIONS = regions;
     await rig.asAdmin(async (c: any) => {
       await c.query(`INSERT INTO organizations (id,name,name_ar,code,organization_kind,institution_class) VALUES
         ('${ORG_OWNER}','CN212-OWNER','مالك','p212-owner','care_institution','hospital'),
@@ -450,7 +460,9 @@ run('CN-2B/212 operational need lines — dynamic', () => {
       // 213 attaches the SAME deferred assertion to its mapping table as well;
       // each chain asserts its own exact attachment set.
       expect(rows.map((r: any) => r.relname)).toEqual(FORWARD
-        ? ['central_needs_beneficiary_column_mappings', 'central_needs_need_line_sources', 'central_needs_need_lines']
+        ? ['central_needs_beneficiary_column_mappings',
+           ...(REGIONS ? ['central_needs_beneficiary_regions'] : []),
+           'central_needs_need_line_sources', 'central_needs_need_lines']
         : ['central_needs_need_line_sources', 'central_needs_need_lines']);
       for (const r of rows) {
         expect(r.tgdeferrable, r.relname).toBe(true);

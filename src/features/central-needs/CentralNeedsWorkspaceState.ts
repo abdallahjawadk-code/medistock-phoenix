@@ -37,10 +37,16 @@ export const BLOCKERS_BY_STAGE: Readonly<Record<(typeof WORKFLOW_STAGES)[number]
   ]),
   beneficiaries: new Set([
     'beneficiary_column_review_required',
+    // C4 (M216) — beneficiary regions, judged over ACTIVE versions.
+    'beneficiary_region_cell_uncovered',
+    'beneficiary_region_overlap',
+    'beneficiary_decision_grain_conflict',
+    'beneficiary_region_geometry_invalid',
   ]),
   'need-lines': new Set([
     'mapped_target_entity_without_need_line',
     'beneficiary_column_cell_without_need_line',
+    'beneficiary_region_cell_without_need_line',
     'need_line_material_mapping_divergent',
     'need_line_unit_conversion_required',
     'need_line_warehouse_org_mismatch',
@@ -166,6 +172,12 @@ const SESSION_ATTRIBUTABLE_BLOCKERS = new Set([
   'beneficiary_column_review_required',
   'mapped_target_entity_without_need_line',
   'beneficiary_column_cell_without_need_line',
+  // C4 (M216): every region blocker's detail starts with `session=%s sheet=%s`.
+  'beneficiary_region_cell_uncovered',
+  'beneficiary_region_cell_without_need_line',
+  'beneficiary_region_overlap',
+  'beneficiary_decision_grain_conflict',
+  'beneficiary_region_geometry_invalid',
 ]);
 
 export interface SessionBlockerSummary {

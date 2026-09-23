@@ -648,6 +648,17 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
       'supabase/migrations/215_phoenix_central_needs_governed_correction_lifecycle.sql',
       'supabase/migrations/__tests__/215-central-needs-governed-correction-lifecycle-static.test.ts',
       'supabase/migrations/__tests__/215-central-needs-governed-correction-lifecycle.dynamic.test.ts',
+      // C4/M216: the Central Needs beneficiary-region persistence — one
+      // reviewed, forward-only, additive migration plus its static and dynamic
+      // proofs. It adds no branding asset and no permission key: its one new
+      // table's RLS policies and its write RPC authorize through the existing
+      // Central Needs checks with M209's own keys, so A7.2.4's own subject is
+      // untouched by it. Registered by EXACT filename, exactly as M209-M215
+      // were. No wildcard and no directory exemption, so every other file
+      // under supabase/ still fails this guard closed.
+      'supabase/migrations/216_phoenix_central_needs_region_persistence.sql',
+      'supabase/migrations/__tests__/216-central-needs-region-persistence-static.test.ts',
+      'supabase/migrations/__tests__/216-central-needs-region-persistence.dynamic.test.ts',
       // INTERACTIVE-GUIDE-IG1: one new file under the watched `src/app`
       // prefix, registered by EXACT filename like every entry above.
       //

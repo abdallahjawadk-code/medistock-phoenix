@@ -92,9 +92,14 @@ describe('M198 static — identity and placement', () => {
       // pins search_path = public, pg_temp on every SECURITY DEFINER function it defines, so what this suite converges is untouched. It is now the
       // reviewed ceiling.
       '215_phoenix_central_needs_governed_correction_lifecycle.sql',
+      // C4/M216: the additive Central Needs beneficiary-region persistence (region version
+      // relation, governed M213 <-> region coexistence/conversion) — it pins search_path =
+      // public, pg_temp on every function it defines and alters none of the thirty, so what
+      // this suite converges is untouched. It is now the reviewed ceiling.
+      '216_phoenix_central_needs_region_persistence.sql',
     ]);
-    expect(files.filter((f) => Number(f.slice(0, 3)) > 215)).toEqual([]);
-    expect(files).toHaveLength(215);
+    expect(files.filter((f) => Number(f.slice(0, 3)) > 216)).toEqual([]);
+    expect(files).toHaveLength(216);
   });
 
   it('carries no MANUAL APPLY ONLY banner, so the pinned executor will accept it', () => {

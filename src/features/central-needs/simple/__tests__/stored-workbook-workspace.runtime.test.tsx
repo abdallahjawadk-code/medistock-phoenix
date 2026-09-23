@@ -44,6 +44,8 @@ const { svc, writes, panelLifecycle, backendAccess, workerMessages } = vi.hoiste
     requestSourceDownload: vi.fn(),
     /** E2-A: the read-only batch-entry query the panel makes after a verified parse. */
     listBatchEntries: vi.fn(),
+    /** C4: the revision's ACTIVE beneficiary regions — a revision-scoped READ, like the ones above. */
+    listBeneficiaryRegions: vi.fn(),
     getOrganizations: vi.fn(),
   },
   writes: {
@@ -209,6 +211,7 @@ function loadScreen(state: { sessions: ImportSession[]; batches: ImportBatch[] }
   svc.fetchReviewReadiness.mockResolvedValue(READINESS);
   svc.listNeedLineLineage.mockResolvedValue({ needLines: [] as NeedLine[], sources: [] as NeedLineSourceLink[] });
   svc.listBeneficiaryColumns.mockResolvedValue([] as BeneficiaryColumnSummary[]);
+  svc.listBeneficiaryRegions.mockResolvedValue([]);
   svc.listSourceRecords.mockResolvedValue([RECORD]);
   svc.listDispositions.mockResolvedValue([] as RecordDisposition[]);
   svc.getOrganizations.mockResolvedValue([]);

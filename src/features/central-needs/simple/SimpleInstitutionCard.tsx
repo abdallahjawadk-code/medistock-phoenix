@@ -12,6 +12,14 @@
  * in Advanced Mode: a suggestion is never auto-persisted — [صحيح] performs
  * the SAME explicit human-confirmed write `setBeneficiaryColumns` always
  * required, just triggered from a simpler control.
+ *
+ * C4 (X1) — a column is decided EITHER by one whole-column decision OR by
+ * beneficiary regions, never both. A column an ACTIVE region spans is shown
+ * read-only here, with no whole-column write. The one-click confirm is not
+ * offered for a column that intersects an ACTIVE region or an unsaved Need
+ * source drawn on the workbook, and before any whole-column decision the card
+ * says that it keeps the column out of regions until it is explicitly
+ * converted on the workbook view.
  */
 import { useMemo, useState } from 'react';
 import { t } from '@/shared/i18n/strings';
@@ -26,6 +34,8 @@ import {
 } from '../CentralNeedsBeneficiaryColumnPanel';
 import { setBeneficiaryColumns, type BeneficiaryColumnSummary } from '../central-needs.service';
 import { centralNeedsErrorText } from '../central-needs.i18n';
+import { oneClickConfirmSuppressed, regionGovernsColumn } from '../regions/beneficiaryRegions';
+import { useRegionWorkspace } from '../regions/RegionWorkspace';
 
 interface Props {
   lang: 'ar' | 'en';
@@ -40,11 +50,34 @@ interface Props {
   column: BeneficiaryColumnSummary;
   activeCareInstitutions: OrgRow[];
   onResolved: () => void;
+  /**
+   * C4: an ACTIVE beneficiary region spans this column, so it is decided by
+   * regions and offers no whole-column write. Derived from the workspace's
+   * region context when not given; false with neither (older harnesses).
+   */
+  regionGoverned?: boolean;
+  /**
+   * C4: the column intersects an ACTIVE region or an unsaved workbook Need
+   * source (or regions could not be read): the one-click confirm is withheld.
+   * Derived from the workspace's region context when not given.
+   */
+  oneClickSuppressed?: boolean;
 }
 
 type Picker = { open: boolean; query: string };
 
-export function SimpleInstitutionCard({ lang, planRevisionId, editable, column, activeCareInstitutions, onResolved }: Props) {
+export function SimpleInstitutionCard({
+  lang, planRevisionId, editable: editableProp, column, activeCareInstitutions, onResolved,
+  regionGoverned: regionGovernedProp, oneClickSuppressed: oneClickSuppressedProp,
+}: Props) {
+  const regionWorkspace = useRegionWorkspace();
+  const regionGoverned = regionGovernedProp ?? (regionWorkspace !== null
+    && regionWorkspace.regions.phase === 'ready'
+    && regionGovernsColumn(regionWorkspace.regions.versions, column.importSessionId, column.sheetIndex, column.columnIndex));
+  const oneClickSuppressed = oneClickSuppressedProp ?? (regionWorkspace !== null
+    && oneClickConfirmSuppressed(column, regionWorkspace.regions, regionWorkspace.unsavedDrafts));
+  // A region-governed column accepts no whole-column decision at all.
+  const editable = editableProp && !regionGoverned;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [picker, setPicker] = useState<Picker>({ open: false, query: '' });
@@ -87,7 +120,7 @@ export function SimpleInstitutionCard({ lang, planRevisionId, editable, column, 
   }
 
   function confirmSuggestion() {
-    if (!singleSuggestion) return;
+    if (!singleSuggestion || oneClickSuppressed) return;
     // (213) An unresolved column's FIRST beneficiary confirmation never
     // requires a typed reason — reasonRequiredFor(column, id) is false here
     // because column.decision is null. The default initial-confirmation
@@ -127,8 +160,17 @@ export function SimpleInstitutionCard({ lang, planRevisionId, editable, column, 
         </div>
       )}
 
+      {regionGoverned && (
+        <p className="cn2b-bc-readonly cn2b-simple-readonly" data-testid="cn4-simple-region-governed">
+          {t('cn4_region_governed_column', lang)}
+        </p>
+      )}
+      {editable && (
+        <p className="cn2b-simple-card__hint" data-testid="cn4-simple-x1-warning">{t('cn4_m213_keeps_column_out_of_regions', lang)}</p>
+      )}
+
       {/* Read-only: the evidence and any exact match stay visible, every control does not. */}
-      {!editable && (
+      {!editable && !regionGoverned && (
         <>
           {singleSuggestion && (
             <div className="cn2b-simple-match">
@@ -152,10 +194,17 @@ export function SimpleInstitutionCard({ lang, planRevisionId, editable, column, 
               <bdi>{orgLabel(singleSuggestion)}</bdi>
             </p>
           </div>
+          {oneClickSuppressed && (
+            <p className="cn2b-simple-card__hint" data-testid="cn4-simple-one-click-suppressed">
+              {t('cn4_one_click_suppressed', lang)}
+            </p>
+          )}
           <div className="cn2b-simple-card__actions">
-            <PhoenixButton type="button" variant="primary" size="lg" disabled={busy} onClick={confirmSuggestion}>
-              {t('cn2b_simple_correct', lang)}
-            </PhoenixButton>
+            {!oneClickSuppressed && (
+              <PhoenixButton type="button" variant="primary" size="lg" disabled={busy} onClick={confirmSuggestion}>
+                {t('cn2b_simple_correct', lang)}
+              </PhoenixButton>
+            )}
             <PhoenixButton type="button" variant="secondary" disabled={busy} onClick={() => setPicker({ open: true, query: '' })}>
               {t('cn2b_simple_choose_another_institution', lang)}
             </PhoenixButton>

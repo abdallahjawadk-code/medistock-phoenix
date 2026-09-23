@@ -240,6 +240,17 @@ export const REVIEWED_MIGRATION_FILES: readonly string[] = Object.freeze([
   // table, column, enum, trigger, policy or permission key, and no stock,
   // movement, allocation or transfer SQL.
   '215_phoenix_central_needs_governed_correction_lifecycle.sql',
+  // C4 / M216: Central Needs beneficiary-region persistence — independently
+  // reviewed; additive DDL (no DROP; M213's columns, constraints, indexes and
+  // policies unchanged). One new version relation (region_id lineage,
+  // version_id rows, one-time retirement, no delete) with its guard triggers,
+  // one grain trigger on the M213 mapping table, and one fenced write RPC;
+  // governed M213 <-> region coexistence (one grain per column) with the
+  // audited M213 -> region conversion. Four M213 functions are replaced with
+  // unchanged signatures (behaviour deltas are documented in M216's header and
+  // function comments).
+  // No stock, movement, allocation or transfer SQL and no new permission key.
+  '216_phoenix_central_needs_region_persistence.sql',
 ]);
 
 const REVIEWED_SET: ReadonlySet<string> = new Set(REVIEWED_MIGRATION_FILES);

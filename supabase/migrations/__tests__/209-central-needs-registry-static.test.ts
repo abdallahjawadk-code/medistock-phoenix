@@ -47,17 +47,17 @@ describe('CN-1A/209 static — registration and file hygiene', () => {
     const files = readdirSync(MIGRATIONS).filter((f) => /^\d{3}_.*\.sql$/.test(f)).sort();
     expect(files).toContain(FILENAME);
     expect(files.indexOf(FILENAME)).toBe(208);
-    expect(files.filter((f) => Number(f.slice(0, 3)) > 215)).toEqual([]);
-    expect(files).toHaveLength(215);
+    expect(files.filter((f) => Number(f.slice(0, 3)) > 216)).toEqual([]);
+    expect(files).toHaveLength(216);
     expect(isReviewedMigrationFile(FILENAME)).toBe(true);
     // 209 is no longer last: CN-1B/210 sits directly after it, and 210's own
     // static suite owns the ceiling assertions from here on. This immediate-
     // successor relationship (209 -> 210) is historical and never moves; only
-    // the ceiling below advances, now to C2/M215.
+    // the ceiling below advances, now to C4/M216.
     expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.indexOf(FILENAME) + 1])
       .toBe('210_phoenix_central_needs_workflow_rpcs.sql');
-    expect(getMaximumReviewedMigrationNumber()).toBe(215);
-    expect(getNextUnreviewedMigrationNumber()).toBe(216);
+    expect(getMaximumReviewedMigrationNumber()).toBe(216);
+    expect(getNextUnreviewedMigrationNumber()).toBe(217);
   });
 
   it('carries no CR bytes — LF only', () => {
@@ -77,9 +77,9 @@ describe('CN-1A/209 static — registration and file hygiene', () => {
     const others = readdirSync(MIGRATIONS).filter((f) => f.endsWith('.sql') && f !== FILENAME);
     // 208 historical migrations below 209, plus CN-1B/210, CN-2B/211,
     // CN-2B conformance/212, CN-2B/Finding-1 corrective 213, the M214
-    // readiness-RPC volatility correction and the C2/M215 governed correction
-    // lifecycle above it.
-    expect(others).toHaveLength(214);
+    // readiness-RPC volatility correction, the C2/M215 governed correction
+    // lifecycle and the C4/M216 beneficiary-region persistence above it.
+    expect(others).toHaveLength(215);
   });
 });
 

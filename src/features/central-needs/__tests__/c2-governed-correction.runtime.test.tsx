@@ -259,6 +259,10 @@ describe('C2 — lifecycle history', () => {
     loadRegistry([rev('rev-2025-2', 2025, 2, 'approved'), rev('rev-2025-1', 2025, 1, 'superseded')]);
     const history: RevisionLifecycle = {
       planId: 'plan-2025', planYear: 2025, effectiveRevisionId: 'rev-2025-2',
+      revisions: [
+        { id: 'rev-2025-1', revisionNumber: 1, status: 'superseded', effective: false },
+        { id: 'rev-2025-2', revisionNumber: 2, status: 'approved', effective: true },
+      ],
       events: [
         { action: 'open', revisionId: 'rev-2025-1', revisionNumber: 1, occurredAt: '2026-01-01T08:00:00Z', actorId: 'u', actorRole: 'central_warehouse_manager', fromStatus: null, toStatus: null, reason: null, openedAfterRevisionId: null, effectiveApprovedRevisionId: null, predecessorRevisionId: null, supersededByRevisionId: null },
         { action: 'open_correction', revisionId: 'rev-2025-2', revisionNumber: 2, occurredAt: '2026-02-01T08:00:00Z', actorId: 'u', actorRole: 'central_warehouse_manager', fromStatus: null, toStatus: null, reason: 'recount', openedAfterRevisionId: 'rev-2025-1', effectiveApprovedRevisionId: 'rev-2025-1', predecessorRevisionId: null, supersededByRevisionId: null },
