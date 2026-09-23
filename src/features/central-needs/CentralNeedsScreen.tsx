@@ -72,6 +72,7 @@ import {
   finalizeImport,
   listDispositions,
   listBeneficiaryColumns,
+  listBeneficiaryRegions,
   listNeedLineLineage,
   listImportBatches,
   listImportSessions,
@@ -101,6 +102,8 @@ import {
 } from './central-needs.service';
 import type { ArchiveParseResult, FileParseResult } from './import/contract.ts';
 import { deriveRevisionContext, findRegistryRevision, newerRevisionOf } from './central-needs.revision-context';
+import { revisionToOpen } from './central-needs.revision-open';
+import type { RegionReadState } from './regions/beneficiaryRegions';
 import { CentralNeedsRevisionHistory } from './CentralNeedsRevisionHistory';
 import { CentralNeedsSimpleWorkspace } from './simple/CentralNeedsSimpleWorkspace';
 
@@ -120,6 +123,9 @@ const CORRECTION_STATE_MOVED: ReadonlySet<string> = new Set([
 type ChildActivity = { busy: boolean; dirty: boolean; failed: boolean };
 
 /** A revision label is never a bare "#1" — revision numbers restart per plan year. */
+/** C4 — before a revision's regions are read they are not known, which fails closed. */
+const REGIONS_NOT_LOADED: RegionReadState = { phase: 'unavailable', code: 'beneficiary_regions_not_loaded' };
+
 function revisionLabel(r: PlanRevision, lang: Parameters<typeof t>[1]): string {
   const year = r.planYear === null ? '—' : String(r.planYear);
   return `${year} · ${t('cn2b_revision', lang)} ${r.revisionNumber} — ${t(`cn2b_revstatus_${r.status}`, lang)}`;
@@ -289,6 +295,12 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
   const [claimedSources, setClaimedSources] = useState<NeedLineSourceLink[]>([]);
   /** (213) Every physical candidate column of the revision and its confirmed beneficiary, if any. */
   const [beneficiaryColumns, setBeneficiaryColumns] = useState<BeneficiaryColumnSummary[]>([]);
+  /**
+   * C4 — the revision's ACTIVE beneficiary regions, read fresh from the server
+   * with every revision reload, or why they could not be read (fail closed:
+   * region writes and the Simple one-click confirm are then withheld).
+   */
+  const [beneficiaryRegions, setBeneficiaryRegions] = useState<RegionReadState>(REGIONS_NOT_LOADED);
   /** Active care institutions — the only eligible beneficiaries, same rule the server enforces. */
   const [careInstitutions, setCareInstitutions] = useState<OrgRow[]>([]);
   const [readiness, setReadiness] = useState<ReviewReadiness | null>(null);
@@ -415,6 +427,7 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
     setNeedLines([]);
     setClaimedSources([]);
     setBeneficiaryColumns([]);
+    setBeneficiaryRegions(REGIONS_NOT_LOADED);
     setActiveSessionId(null);
     setSessionEntries([]);
     setPendingFile(null);
@@ -465,7 +478,9 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
       .then((rows) => {
         if (cancelled) return;
         setRevisions(rows);
-        setRevisionId((current) => current ?? rows[0]?.id ?? null);
+        // C4 — reopen by identity (the plan's open draft, else its one
+        // approved revision), never by whatever sorts first.
+        setRevisionId((current) => revisionToOpen(rows, current));
       })
       .catch((e: unknown) => !cancelled && setError(e instanceof CentralNeedsError ? e.code : 'load_failed'))
       .finally(() => { if (!cancelled) setRevisionsLoading(false); });
@@ -476,7 +491,7 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
     const seq = (revisionReloadSeq.current += 1);
     setRevisionReloading(true);
     try {
-      const [nextSessions, nextBatches, nextOverrides, nextReadiness, nextLineage, nextBeneficiaryColumns, nextSessionEntries] =
+      const [nextSessions, nextBatches, nextOverrides, nextReadiness, nextLineage, nextBeneficiaryColumns, nextSessionEntries, nextRegions] =
         await Promise.all([
           listImportSessions(id),
           listImportBatches(id),
@@ -486,6 +501,17 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
           listBeneficiaryColumns(id),
           // Existing bounded revision query; label enrichment is presentation-only and fails soft.
           searchBatchEntries(id, '', 500).catch(() => []),
+          // C4 — a failed or inconsistent region read never blocks the rest of
+          // the screen; it marks the region layer unavailable (fail closed).
+          Promise.resolve()
+            .then(() => listBeneficiaryRegions({ planRevisionId: id }))
+            .then(
+              (versions): RegionReadState => ({ phase: 'ready', versions }),
+              (e: unknown): RegionReadState => ({
+                phase: 'unavailable',
+                code: e instanceof CentralNeedsError ? e.code : 'beneficiary_regions_read_inconsistent',
+              }),
+            ),
         ]);
       if (seq !== revisionReloadSeq.current) return;
       setSessions(nextSessions);
@@ -495,6 +521,7 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
       setNeedLines(nextLineage.needLines);
       setClaimedSources(nextLineage.sources);
       setBeneficiaryColumns(nextBeneficiaryColumns);
+      setBeneficiaryRegions(nextRegions);
       setSessionEntries(nextSessionEntries.map((entry) => ({
         importSessionId: entry.importSessionId,
         archiveEntryPath: entry.archiveEntryPath,
@@ -1325,6 +1352,7 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
           activeCareInstitutions={careInstitutions}
           onChanged={() => void reloadRevision(revision.id)}
           onActivityChange={setBeneficiaryActivity}
+          beneficiaryRegions={beneficiaryRegions}
         />
       </Panel>
     ) : (
@@ -1453,6 +1481,8 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
           activeSessionId={activeSessionId}
           onChanged={() => void reloadRevision(revisionId as string)}
           onSwitchToAdvanced={() => setMode('advanced')}
+          beneficiaryRegions={beneficiaryRegions}
+          sessions={sessions}
         />
       ) : (
       <>

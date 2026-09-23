@@ -7,6 +7,10 @@
  * revision is effective, who acted, when, and why. Read-only; nothing here can
  * change a revision. Loaded only when the person asks, so rendering the plan
  * panel never issues a request.
+ *
+ * C4 — the "effective (approved)" mark shown here is a DISPLAY label only. It
+ * is shown only when the plan holds exactly one approved revision; more than
+ * one, or a lifecycle refusal as ambiguous, shows "ambiguous" and marks nothing.
  */
 import { useCallback, useState } from 'react';
 import { t } from '@/shared/i18n/strings';
@@ -17,6 +21,7 @@ import {
   type RevisionLifecycleEvent,
 } from './central-needs.service';
 import { centralNeedsErrorText } from './central-needs.i18n';
+import { effectiveLabelOf } from './central-needs.revision-open';
 
 type Lang = 'ar' | 'en';
 
@@ -74,6 +79,23 @@ export function CentralNeedsRevisionHistory({ lang, organizationId, planYear }: 
       </div>
       {state.phase === 'loading' && <p className="cn2b-hint" role="status">{t('cn2b_history_loading', lang)}</p>}
       {state.phase === 'failed' && <p className="cn2b-hint" role="alert">{centralNeedsErrorText(state.code, lang)}</p>}
+      {state.phase === 'failed' && state.code === 'central_needs_lifecycle_state_ambiguous' && (
+        <p className="cn2b-hint" data-testid="cn4-effective-label" data-effective="ambiguous">{t('cn4_effective_ambiguous', lang)}</p>
+      )}
+      {state.phase === 'done' && (() => {
+        const label = effectiveLabelOf(state.history);
+        if (label.kind === 'ambiguous') {
+          return <p className="cn2b-hint" data-testid="cn4-effective-label" data-effective="ambiguous">{t('cn4_effective_ambiguous', lang)}</p>;
+        }
+        if (label.kind === 'effective') {
+          return (
+            <p className="cn2b-hint" data-testid="cn4-effective-label" data-effective={label.revisionId}>
+              {t('cn4_effective_revision', lang).replace('__N__', String(label.revisionNumber))}
+            </p>
+          );
+        }
+        return <p className="cn2b-hint" data-testid="cn4-effective-label" data-effective="none">{t('cn4_effective_none', lang)}</p>;
+      })()}
       {state.phase === 'done' && (
         state.history.events.length === 0
           ? <p className="cn2b-hint">{t('cn2b_history_empty', lang)}</p>

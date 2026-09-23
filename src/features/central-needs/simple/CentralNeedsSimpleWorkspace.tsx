@@ -39,8 +39,10 @@ import { summarizeSimpleReadiness } from './simpleReadiness';
 import { computeSimpleCounts } from './simpleCounts';
 import { deriveRevisionContext } from '../central-needs.revision-context';
 import type {
-  BeneficiaryColumnSummary, ImportBatch, PlanRevision, RecordDisposition, ReviewReadiness, SourceRecord,
+  BeneficiaryColumnSummary, ImportBatch, ImportSession, PlanRevision, RecordDisposition, ReviewReadiness, SourceRecord,
 } from '../central-needs.service';
+import type { RegionReadState } from '../regions/beneficiaryRegions';
+import { RegionWorkspaceProvider } from '../regions/RegionWorkspace';
 
 type SimpleStep = 'upload' | 'analyzing' | 'summary' | 'review-institution' | 'review-material' | 'pending';
 
@@ -100,13 +102,21 @@ interface Props {
   activeSessionId: string | null;
   onChanged: () => void;
   onSwitchToAdvanced: () => void;
+  /**
+   * C4: the revision's ACTIVE beneficiary regions, read fresh from the server
+   * by the screen, or why they could not be read. The screen always passes it;
+   * an older harness that passes none gets no region layer at all.
+   */
+  beneficiaryRegions?: RegionReadState;
+  /** C4: the revision's import sessions (parser identities back the G3 check). */
+  sessions?: readonly ImportSession[];
 }
 
 export function CentralNeedsSimpleWorkspace({
   lang, planYear, onPlanYearChange, revisionsLoading, revision, isDraft, revisionDataReady,
   canImport, canEdit, busy, activity, onOpenRevision, newerRevisionNumber = null, preview, pendingFile, onPickFile, onVerify, error, notice,
   readiness, batches = [], beneficiaryColumns, careInstitutions, records, dispositions, activeSessionId,
-  onChanged, onSwitchToAdvanced,
+  onChanged, onSwitchToAdvanced, beneficiaryRegions, sessions,
 }: Props) {
   /**
    * THE ONLY navigation state in Simple Mode (defects 4 and 5), and it is
@@ -241,6 +251,10 @@ export function CentralNeedsSimpleWorkspace({
   const previewReady = preview.phase === 'ready';
 
   return (
+    // C4 — the region context for the surfaces below: which columns ACTIVE
+    // regions govern, the write gate, the sessions for G3, the reload after a
+    // region write, and the unsaved workbook Need sources.
+    <RegionWorkspaceProvider regions={beneficiaryRegions} canWrite={canWrite} sessions={sessions ?? NO_SESSIONS} onChanged={onChanged}>
     <div className="cn2b-simple" dir={dir} data-testid="cn2b-simple-workspace" data-step={step}>
       {/* The page identity. Simple Mode owns the screen's h1 — the Advanced
           command header is not rendered around this view. */}
@@ -720,7 +734,10 @@ export function CentralNeedsSimpleWorkspace({
         <span className="cn2b-simple-footer__hint">{t('cn2b_simple_advanced_hint', lang)}</span>
       </footer>
     </div>
+    </RegionWorkspaceProvider>
   );
 }
+
+const NO_SESSIONS: readonly ImportSession[] = [];
 
 export type { SimpleStep, SimpleActivity };

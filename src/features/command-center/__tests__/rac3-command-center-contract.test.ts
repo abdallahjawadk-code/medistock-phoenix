@@ -417,7 +417,13 @@ describe('RAC-3 · I) no backend or migration change', () => {
     // as M200-M214 were, so this guard still fails closed for any OTHER
     // migration or supabase/ file.
     const M215 = 'supabase/migrations/215_phoenix_central_needs_governed_correction_lifecycle.sql';
-    const ALLOWED_SQL = [M200, M201, M202, M203, M204, M205, M206, M207, M208, M209, M210, M211, M212, M213, M214, M215];
+    // C4/M216: the independently reviewed Central Needs beneficiary-region
+    // persistence — one region-version relation and the governed M213 <-> region
+    // coexistence; it touches no command-centre object. Registered by EXACT
+    // filename, exactly as M200-M215 were, so this guard still fails closed for
+    // any OTHER migration or supabase/ file.
+    const M216 = 'supabase/migrations/216_phoenix_central_needs_region_persistence.sql';
+    const ALLOWED_SQL = [M200, M201, M202, M203, M204, M205, M206, M207, M208, M209, M210, M211, M212, M213, M214, M215, M216];
     const changed = execSync(
       'git diff --name-only b707f073d60b4cc61205c35003ab491f3aed7468',
       { cwd: process.cwd(), encoding: 'utf8' },

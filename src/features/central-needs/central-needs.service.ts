@@ -729,10 +729,26 @@ export interface RevisionLifecycleEvent {
   supersededByRevisionId: string | null;
 }
 
+/** One revision of the plan year, as `revision_lifecycle` lists it (M215 `revisions`). */
+export interface RevisionLifecycleRevision {
+  id: string;
+  revisionNumber: number;
+  status: RevisionStatus;
+  /** The server's per-revision flag: status is `approved`. */
+  effective: boolean;
+}
+
 export interface RevisionLifecycle {
   planId: string | null;
   planYear: number;
+  /**
+   * The server's newest-first single-row pick of an approved revision. A
+   * DISPLAY input only (C4): never read it without `revisions`, because only
+   * the full list can show that more than one revision is approved.
+   */
   effectiveRevisionId: string | null;
+  /** Every revision of the plan year, in revision order. */
+  revisions: RevisionLifecycleRevision[];
   events: RevisionLifecycleEvent[];
 }
 
@@ -753,6 +769,12 @@ export async function fetchRevisionLifecycle(organizationId: string, planYear: n
     planId: str(row.plan_id),
     planYear,
     effectiveRevisionId: str(row.effective_revision_id),
+    revisions: ((row.revisions ?? []) as Array<Record<string, unknown>>).map((r) => ({
+      id: r.id as string,
+      revisionNumber: Number(r.revision_number),
+      status: r.status as RevisionStatus,
+      effective: r.effective === true,
+    })),
     events: ((row.events ?? []) as Array<Record<string, unknown>>).map((e) => ({
       action: String(e.action).replace('central_needs.plan_revision.', '') as RevisionLifecycleEvent['action'],
       revisionId: e.revision_id as string,
@@ -956,6 +978,335 @@ export async function listBeneficiaryColumns(planRevisionId: string): Promise<Be
     mappedRowNumericCount: Number(row.mapped_row_numeric_count ?? 0),
     reviewRequired: row.review_required === true,
   }));
+}
+
+// ---------------------------------------------------------------------------
+// C4 (M216) — beneficiary regions
+//
+// A region is one rectangle of one sheet of one import session with an
+// explicit human decision. The server keeps immutable VERSIONS: `regionId` is
+// the logical region, `versionId` one decision about it. The working view is
+// the ACTIVE versions only; a retired version is history and is never shown
+// as current, never fenced and never re-used.
+// ---------------------------------------------------------------------------
+
+/** A whole physical column, as a region stores it: rows 0..1,048,575. */
+export const REGION_WHOLE_COLUMN_ROW_END = 1_048_575;
+export const REGION_MAX_COLUMN_INDEX = 16_383;
+
+export type BeneficiaryRegionDecision = 'beneficiary' | 'non_beneficiary';
+
+/** One ACTIVE region version: the server's current decision for one rectangle. */
+export interface BeneficiaryRegionVersion {
+  versionId: string;
+  regionId: string;
+  versionNo: number;
+  supersedesVersionId: string | null;
+  planRevisionId: string;
+  importSessionId: string;
+  sheetIndex: number;
+  /** 0-based, inclusive, the parser's physical frame. */
+  rowStart: number;
+  rowEnd: number;
+  columnStart: number;
+  columnEnd: number;
+  decision: BeneficiaryRegionDecision;
+  beneficiaryOrganizationId: string | null;
+  decisionReason: string;
+  decidedBy: string | null;
+  decidedAt: string;
+}
+
+export type BeneficiaryRegionChange =
+  | { op: 'add'; rowStart: number; rowEnd: number; columnStart: number; columnEnd: number;
+      decision: BeneficiaryRegionDecision; beneficiaryOrganizationId: string | null }
+  | { op: 'replace'; versionId: string; rowStart: number; rowEnd: number; columnStart: number; columnEnd: number;
+      decision: BeneficiaryRegionDecision; beneficiaryOrganizationId: string | null }
+  | { op: 'remove'; versionId: string }
+  /**
+   * B2: convert one M213-decided column to regions. The four fence values are
+   * sent back EXACTLY as last read (id, decision, beneficiary — null for a
+   * `non_beneficiary` row — and `mapped_at` verbatim, never re-formatted). The
+   * same call must carry at least one add/replace over the column; nothing is
+   * ever copied from the M213 row.
+   */
+  | { op: 'convert_column'; columnIndex: number; expectedMappingId: string;
+      previousDecision: BeneficiaryColumnDecision; previousBeneficiaryOrganizationId: string | null;
+      previousMappedAt: string };
+
+/** The rendering parser, as the client asserts it — a refuse-only witness. */
+export interface RenderedParserIdentity {
+  contractVersion: string;
+  sheetjsVersion: string;
+  sheetjsTarballSha256: string;
+}
+
+export interface SetBeneficiaryRegionsResult {
+  operationBatchId: string;
+  /** The COMPLETE final ACTIVE set of the scope — the next write's fence. */
+  activeVersions: BeneficiaryRegionVersion[];
+  changes: Array<{ op: 'add' | 'replace' | 'remove'; regionId: string; previousVersionId: string | null; newVersionId: string | null }>;
+  convertedColumns: Array<{ columnIndex: number; retiredMappingId: string }>;
+}
+
+/**
+ * The ONE write path of beneficiary regions. One call covers exactly one
+ * (import session, sheet) and is atomic server-side: every refusal writes
+ * nothing. `expectedVersionIds` is the COMPLETE set of ACTIVE version ids the
+ * human last loaded for this sheet (empty when they believe there are none);
+ * a stale set is refused as `beneficiary_region_stale`. This function never
+ * refreshes that set and never retries — a refusal is surfaced as-is.
+ */
+export async function setBeneficiaryRegions(input: {
+  planRevisionId: string;
+  importSessionId: string;
+  sheetIndex: number;
+  renderedParserIdentity: RenderedParserIdentity;
+  expectedSheetName: string;
+  expectedVersionIds: readonly string[];
+  changes: readonly BeneficiaryRegionChange[];
+  reason: string;
+}): Promise<SetBeneficiaryRegionsResult> {
+  const { data, error } = await supabase.rpc('phoenix_central_needs_set_beneficiary_regions', {
+    p_plan_revision_id: input.planRevisionId,
+    p_import_session_id: input.importSessionId,
+    p_sheet_index: input.sheetIndex,
+    p_rendered_parser_identity: {
+      contractVersion: input.renderedParserIdentity.contractVersion,
+      sheetjsVersion: input.renderedParserIdentity.sheetjsVersion,
+      sheetjsTarballSha256: input.renderedParserIdentity.sheetjsTarballSha256,
+    },
+    p_expected_sheet_name: input.expectedSheetName,
+    p_expected_version_ids: [...input.expectedVersionIds],
+    p_changes: input.changes.map((c) => {
+      switch (c.op) {
+        case 'remove':
+          return { op: 'remove', versionId: c.versionId };
+        case 'convert_column':
+          return {
+            op: 'convert_column',
+            columnIndex: c.columnIndex,
+            expectedMappingId: c.expectedMappingId,
+            previousDecision: c.previousDecision,
+            previousBeneficiaryOrganizationId: c.previousBeneficiaryOrganizationId,
+            previousMappedAt: c.previousMappedAt,
+          };
+        default:
+          return {
+            op: c.op,
+            ...(c.op === 'replace' ? { versionId: c.versionId } : {}),
+            rowStart: c.rowStart,
+            rowEnd: c.rowEnd,
+            columnStart: c.columnStart,
+            columnEnd: c.columnEnd,
+            decision: c.decision,
+            beneficiaryOrganizationId: c.beneficiaryOrganizationId,
+          };
+      }
+    }),
+    p_reason: input.reason,
+  });
+  if (error) fail(error);
+  const row = data as Record<string, unknown>;
+  return {
+    operationBatchId: row.operation_batch_id as string,
+    activeVersions: ((row.active_versions ?? []) as Array<Record<string, unknown>>).map((v) => regionVersionFromRow({
+      ...v,
+      plan_revision_id: row.plan_revision_id,
+      import_session_id: row.import_session_id,
+      sheet_index: row.sheet_index,
+    })),
+    changes: ((row.changes ?? []) as Array<Record<string, unknown>>).map((c) => ({
+      op: c.op as 'add' | 'replace' | 'remove',
+      regionId: c.regionId as string,
+      previousVersionId: (c.previousVersionId as string | null) ?? null,
+      newVersionId: (c.newVersionId as string | null) ?? null,
+    })),
+    convertedColumns: ((row.converted_columns ?? []) as Array<Record<string, unknown>>).map((c) => ({
+      columnIndex: Number(c.columnIndex),
+      retiredMappingId: c.retiredMappingId as string,
+    })),
+  };
+}
+
+function regionVersionFromRow(r: Record<string, unknown>): BeneficiaryRegionVersion {
+  return {
+    versionId: r.version_id as string,
+    regionId: r.region_id as string,
+    versionNo: Number(r.version_no),
+    supersedesVersionId: (r.supersedes_version_id as string | null) ?? null,
+    planRevisionId: r.plan_revision_id as string,
+    importSessionId: r.import_session_id as string,
+    sheetIndex: Number(r.sheet_index),
+    rowStart: Number(r.row_start),
+    rowEnd: Number(r.row_end),
+    columnStart: Number(r.column_start),
+    columnEnd: Number(r.column_end),
+    decision: r.decision as BeneficiaryRegionDecision,
+    beneficiaryOrganizationId: (r.beneficiary_organization_id as string | null) ?? null,
+    decisionReason: r.decision_reason as string,
+    decidedBy: (r.decided_by as string | null) ?? null,
+    decidedAt: r.decided_at as string,
+  };
+}
+
+/** Requested page size only; correctness never depends on the server honouring it. */
+const REGION_PAGE_SIZE = 500;
+
+const regionsIntersect = (a: BeneficiaryRegionVersion, b: BeneficiaryRegionVersion): boolean =>
+  a.importSessionId === b.importSessionId && a.sheetIndex === b.sheetIndex
+  && a.rowStart <= b.rowEnd && b.rowStart <= a.rowEnd
+  && a.columnStart <= b.columnEnd && b.columnStart <= a.columnEnd;
+
+/**
+ * The region WORKING VIEW: every ACTIVE version of a revision — optionally of
+ * one (session, sheet) — read directly under RLS, in the deterministic order
+ * (import session, sheet, row start, column start, version id), in ranged
+ * pages that end ONLY on an empty page and advance by the rows actually
+ * returned. A short page is never taken as the end.
+ *
+ * FAIL CLOSED: a read error, a duplicate or out-of-order version, two ACTIVE
+ * versions of one region or with one geometry, or two intersecting ACTIVE
+ * rectangles throws — the caller then shows the layer as unavailable and
+ * disables every write. It never returns a partial or repaired set.
+ */
+export async function listBeneficiaryRegions(input: {
+  planRevisionId: string;
+  importSessionId?: string;
+  sheetIndex?: number;
+}): Promise<BeneficiaryRegionVersion[]> {
+  const out: BeneficiaryRegionVersion[] = [];
+  const seenVersions = new Set<string>();
+  const seenRegions = new Set<string>();
+  const seenGeometry = new Set<string>();
+  let offset = 0;
+  let previousKey: [string, number, number, number, string] | null = null;
+
+  for (;;) {
+    let query = supabase
+      .from('central_needs_beneficiary_regions')
+      .select('version_id, region_id, version_no, supersedes_version_id, plan_revision_id, import_session_id, sheet_index, '
+        + 'row_start, row_end, column_start, column_end, decision, beneficiary_organization_id, decision_reason, decided_by, decided_at')
+      .eq('plan_revision_id', input.planRevisionId)
+      .is('retired_at', null);
+    if (input.importSessionId !== undefined) query = query.eq('import_session_id', input.importSessionId);
+    if (input.sheetIndex !== undefined) query = query.eq('sheet_index', input.sheetIndex);
+    const { data, error } = await query
+      .order('import_session_id', { ascending: true })
+      .order('sheet_index', { ascending: true })
+      .order('row_start', { ascending: true })
+      .order('column_start', { ascending: true })
+      .order('version_id', { ascending: true })
+      .range(offset, offset + REGION_PAGE_SIZE - 1);
+    if (error) fail(error);
+    const batch = (data ?? []) as unknown as Array<Record<string, unknown>>;
+    if (batch.length === 0) break;
+
+    for (const raw of batch) {
+      const v = regionVersionFromRow(raw);
+      if (seenVersions.has(v.versionId)) {
+        throw new CentralNeedsError('beneficiary_regions_read_inconsistent', `duplicate version ${v.versionId}`);
+      }
+      const key: [string, number, number, number, string] = [v.importSessionId, v.sheetIndex, v.rowStart, v.columnStart, v.versionId];
+      if (previousKey !== null && compareRegionKey(previousKey, key) >= 0) {
+        throw new CentralNeedsError('beneficiary_regions_read_inconsistent', `out-of-order version ${v.versionId}`);
+      }
+      if (seenRegions.has(v.regionId)) {
+        throw new CentralNeedsError('beneficiary_regions_read_inconsistent', `two ACTIVE versions of region ${v.regionId}`);
+      }
+      const geometry = `${v.importSessionId}:${v.sheetIndex}:${v.rowStart}:${v.rowEnd}:${v.columnStart}:${v.columnEnd}`;
+      if (seenGeometry.has(geometry)) {
+        throw new CentralNeedsError('beneficiary_regions_read_inconsistent', `two ACTIVE versions with geometry ${geometry}`);
+      }
+      seenVersions.add(v.versionId);
+      seenRegions.add(v.regionId);
+      seenGeometry.add(geometry);
+      previousKey = key;
+      out.push(v);
+    }
+    offset += batch.length;
+  }
+
+  for (let i = 0; i < out.length; i += 1) {
+    for (let j = i + 1; j < out.length; j += 1) {
+      if (regionsIntersect(out[i], out[j])) {
+        throw new CentralNeedsError('beneficiary_regions_read_inconsistent',
+          `ACTIVE versions ${out[i].versionId} and ${out[j].versionId} intersect`);
+      }
+    }
+  }
+  return out;
+}
+
+function compareRegionKey(a: [string, number, number, number, string], b: [string, number, number, number, string]): number {
+  if (a[0] !== b[0]) return a[0] < b[0] ? -1 : 1;
+  for (let i = 1; i <= 3; i += 1) {
+    if (a[i] !== b[i]) return (a[i] as number) - (b[i] as number);
+  }
+  if (a[4] === b[4]) return 0;
+  return a[4] < b[4] ? -1 : 1;
+}
+
+/** One M213 whole-column decision of one (session, sheet), with its exact conversion fence values. */
+export interface ScopeColumnMapping {
+  mappingId: string;
+  importSessionId: string;
+  sheetIndex: number;
+  columnIndex: number;
+  decision: BeneficiaryColumnDecision;
+  beneficiaryOrganizationId: string | null;
+  /** Exactly as the server rendered it — sent back verbatim as a conversion fence. */
+  mappedAt: string;
+}
+
+/**
+ * The M213 rows of one (session, sheet), read directly under RLS with the
+ * same paging and fail-closed rules as the region read. Each row carries its
+ * id and `mapped_at` exactly as returned, so a conversion can state the exact
+ * M213 fence.
+ */
+export async function listScopeColumnMappings(input: {
+  planRevisionId: string;
+  importSessionId: string;
+  sheetIndex: number;
+}): Promise<ScopeColumnMapping[]> {
+  const out: ScopeColumnMapping[] = [];
+  const seen = new Set<string>();
+  let offset = 0;
+  let previousColumn = -1;
+  for (;;) {
+    const { data, error } = await supabase
+      .from('central_needs_beneficiary_column_mappings')
+      .select('id, import_session_id, sheet_index, column_index, decision, beneficiary_organization_id, mapped_at')
+      .eq('plan_revision_id', input.planRevisionId)
+      .eq('import_session_id', input.importSessionId)
+      .eq('sheet_index', input.sheetIndex)
+      .order('column_index', { ascending: true })
+      .range(offset, offset + REGION_PAGE_SIZE - 1);
+    if (error) fail(error);
+    const batch = (data ?? []) as Array<Record<string, unknown>>;
+    if (batch.length === 0) break;
+    for (const r of batch) {
+      const id = r.id as string;
+      const columnIndex = Number(r.column_index);
+      if (seen.has(id) || columnIndex <= previousColumn || typeof r.mapped_at !== 'string') {
+        throw new CentralNeedsError('beneficiary_regions_read_inconsistent', `inconsistent M213 row ${id}`);
+      }
+      seen.add(id);
+      previousColumn = columnIndex;
+      out.push({
+        mappingId: id,
+        importSessionId: r.import_session_id as string,
+        sheetIndex: Number(r.sheet_index),
+        columnIndex,
+        decision: r.decision as BeneficiaryColumnDecision,
+        beneficiaryOrganizationId: (r.beneficiary_organization_id as string | null) ?? null,
+        mappedAt: r.mapped_at,
+      });
+    }
+    offset += batch.length;
+  }
+  return out;
 }
 
 export async function recordFieldOverride(input: {

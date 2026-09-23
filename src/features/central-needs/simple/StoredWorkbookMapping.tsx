@@ -18,6 +18,15 @@
  * workspace mounts it with `key={revision.id}`, so a revision switch destroys
  * the drafts and any local approval together with the source viewer; nothing is
  * persisted.
+ *
+ * C4 — PERSISTED REGIONS. Next to those unsaved drafts, `BeneficiaryRegionLayer`
+ * shows the server's ACTIVE beneficiary regions of the sheet on screen as a
+ * separate layer and is the only place a draft becomes server truth — with a
+ * reason, fenced, and only when `canWrite` (edit permission AND a draft
+ * revision) and the G3 parser-identity check both hold. Its inputs come from
+ * the workspace's region context, so this component's own props and the
+ * selection bridge above are unchanged. Region truth always reloads from the
+ * server; nothing here is kept across revisions or reloads.
  */
 import { useMemo, type ComponentProps } from 'react';
 import { InstitutionMappingPanel, type BeneficiaryChoice } from '../mapping/InstitutionMappingPanel';
@@ -26,6 +35,8 @@ import { SheetMappingProfilePanel } from '../mapping/SheetMappingProfilePanel';
 import { useWorkbookMapping } from '../mapping/useInstitutionMapping';
 import { useMappingApprovalGate } from '../mapping/useMappingApprovalGate';
 import { StoredWorkbookPanel } from './StoredWorkbookPanel';
+import { BeneficiaryRegionLayer } from '../regions/BeneficiaryRegionLayer';
+import { useRegionWorkspace } from '../regions/RegionWorkspace';
 
 /** The stored panel's own inputs; the selection bridge is wired here, not by the caller. */
 type Props = Pick<ComponentProps<typeof StoredWorkbookPanel>, 'lang' | 'batches'> & {
@@ -45,6 +56,8 @@ type Props = Pick<ComponentProps<typeof StoredWorkbookPanel>, 'lang' | 'batches'
 
 export function StoredWorkbookMapping({ lang, batches, careInstitutions = [], planRevisionId = null }: Props) {
   const mapping = useWorkbookMapping();
+  // C4: the workspace's region context (write gate, sessions, reload); absent in older harnesses.
+  const regionWorkspace = useRegionWorkspace();
   const eligibleBeneficiaryIds = useMemo(() => careInstitutions.map((b) => b.id), [careInstitutions]);
   const approval = useMappingApprovalGate({
     planRevisionId,
@@ -67,6 +80,18 @@ export function StoredWorkbookMapping({ lang, batches, careInstitutions = [], pl
         profile={mapping.sheet.state.profile}
         beneficiaries={careInstitutions}
       />
+      {planRevisionId !== null && regionWorkspace !== null && (
+        <BeneficiaryRegionLayer
+          lang={lang}
+          planRevisionId={planRevisionId}
+          canWrite={regionWorkspace.canWrite}
+          careInstitutions={careInstitutions}
+          sessions={regionWorkspace.sessions}
+          institutions={mapping.institutions}
+          onChanged={regionWorkspace.onChanged}
+          onUnsavedDraftsChange={regionWorkspace.setUnsavedDrafts}
+        />
+      )}
       <MappingApprovalGatePanel lang={lang} approval={approval} />
     </>
   );

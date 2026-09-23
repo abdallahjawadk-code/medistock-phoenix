@@ -222,7 +222,17 @@ describe('no client-side document-number sequence exists',()=>{
     // under the plan-family lock and backed by M209's UNIQUE (plan_id,
     // revision_number) — exactly as M210 already did — and is never allocated by
     // a client. Registered by exact number; boundary moves to 215.
-    const beyond=migrations.filter(f=>/^(1[89]\d|[2-9]\d\d)_/.test(f)&&!/^(179|180|181|182|183|184|185|186|187|188|189|190|191|192|193|194|195|196|197|198|199|200|201|202|203|204|205|206|207|208|209|210|211|212|213|214|215)_/.test(f));
+    // C4 / M216: the independently reviewed, additive Central Needs
+    // beneficiary-region persistence — one region-version relation and the
+    // governed M213 <-> region coexistence/conversion write path. It introduces
+    // no sequence, generated numeric identity or document number: version_id
+    // and each new region_id are gen_random_uuid(). The one number it assigns,
+    // version_no, is an internal per-region lineage counter (1 on add, the
+    // replaced ACTIVE version's version_no + 1 on replace) computed SERVER-SIDE
+    // under the revision FOR UPDATE lock and backed by UNIQUE (region_id,
+    // version_no) — never allocated by a client and never a document/reference
+    // number. Registered by exact number; boundary moves to 216.
+    const beyond=migrations.filter(f=>/^(1[89]\d|[2-9]\d\d)_/.test(f)&&!/^(179|180|181|182|183|184|185|186|187|188|189|190|191|192|193|194|195|196|197|198|199|200|201|202|203|204|205|206|207|208|209|210|211|212|213|214|215|216)_/.test(f));
     expect(beyond).toEqual([]);
     for(const f of [
       '211_phoenix_central_needs_batch_and_disposition.sql',

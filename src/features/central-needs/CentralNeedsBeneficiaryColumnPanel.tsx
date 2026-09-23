@@ -62,7 +62,7 @@
  * The decision semantics, the reason contract, the group-apply scope rule and
  * the write-time re-filter are untouched.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { t } from '@/shared/i18n/strings';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
 import { PhoenixButton } from '@/shared/ui/PhoenixButton';
@@ -74,6 +74,7 @@ import {
   type SetBeneficiaryColumnsInput,
 } from './central-needs.service';
 import { centralNeedsErrorText } from './central-needs.i18n';
+import { regionGovernsColumn, type RegionReadState } from './regions/beneficiaryRegions';
 
 /** The picker value that stands for an explicit "not a beneficiary column" decision. */
 export const NON_BENEFICIARY_CHOICE = '__non_beneficiary__';
@@ -88,6 +89,12 @@ interface Props {
   onChanged: () => void;
   /** UX-3R Package B: revision-context guard sees local pending/busy presentation state only. */
   onActivityChange?: (activity: { busy: boolean; dirty: boolean; failed: boolean }) => void;
+  /**
+   * C4 (X1): the revision's ACTIVE beneficiary regions. A column one of them
+   * spans is decided by regions and is shown read-only here, with no
+   * whole-column write. Optional for older harnesses (read as "none").
+   */
+  beneficiaryRegions?: RegionReadState;
 }
 
 type ColumnKey = string; // `${importSessionId}:${sheetIndex}:${columnIndex}`
@@ -158,6 +165,7 @@ export function mappingFor(col: BeneficiaryColumnSummary, choice: string): SetBe
 
 export function CentralNeedsBeneficiaryColumnPanel({
   lang, planRevisionId, editable, columns, activeCareInstitutions, onChanged, onActivityChange,
+  beneficiaryRegions = { phase: 'ready', versions: [] },
 }: Props) {
   const [pendingChoice, setPendingChoice] = useState<Record<ColumnKey, string>>({});
   const [pendingReason, setPendingReason] = useState<Record<ColumnKey, string>>({});
@@ -285,9 +293,19 @@ export function CentralNeedsBeneficiaryColumnPanel({
    *
    *   ORIGINAL ENVELOPE ∩ STILL-UNRESOLVED = what is displayed AND written.
    */
+  /** C4 (X1): a column an ACTIVE region spans takes no whole-column write, alone or in a group. */
+  const isRegionGoverned = useCallback(
+    (c: Pick<BeneficiaryColumnSummary, 'importSessionId' | 'sheetIndex' | 'columnIndex'>) =>
+      beneficiaryRegions.phase === 'ready'
+      && regionGovernsColumn(beneficiaryRegions.versions, c.importSessionId, c.sheetIndex, c.columnIndex),
+    [beneficiaryRegions],
+  );
+
   const groupTargets = useMemo(
-    () => (groupConfirm ? columns.filter((c) => groupConfirm.keys.includes(keyOf(c)) && c.decision === null) : []),
-    [columns, groupConfirm],
+    () => (groupConfirm
+      ? columns.filter((c) => groupConfirm.keys.includes(keyOf(c)) && c.decision === null && !isRegionGoverned(c))
+      : []),
+    [columns, groupConfirm, isRegionGoverned],
   );
 
   function clearFilters() {
@@ -330,7 +348,7 @@ export function CentralNeedsBeneficiaryColumnPanel({
   function confirmGroup() {
     if (!groupConfirm) return;
     // Re-filter at write time: a column reviewed meanwhile is never overwritten by a group apply.
-    const targets = columns.filter((c) => groupConfirm.keys.includes(keyOf(c)) && c.decision === null);
+    const targets = columns.filter((c) => groupConfirm.keys.includes(keyOf(c)) && c.decision === null && !isRegionGoverned(c));
     // Nothing left to apply — every captured column was reviewed while this
     // confirmation was open. Close the preview rather than calling the RPC with
     // an empty mapping set; the pending choices stay, so the reviewer can see
@@ -433,6 +451,15 @@ export function CentralNeedsBeneficiaryColumnPanel({
           {!editable && (
             <p className="cn2b-bc-readonly" data-empty="read-only">{t('cn2b_bc_read_only', lang)}</p>
           )}
+          {/* C4 (X1) — one column, one grain. */}
+          {editable && (
+            <p className="cn2b-hint" data-testid="cn4-bc-x1-warning">{t('cn4_m213_keeps_column_out_of_regions', lang)}</p>
+          )}
+          {beneficiaryRegions.phase === 'unavailable' && (
+            <p className="cn2b-hint" role="status" data-testid="cn4-bc-regions-unavailable">
+              {t('cn4_region_unavailable', lang)} ({centralNeedsErrorText(beneficiaryRegions.code, lang)})
+            </p>
+          )}
 
           {visibleColumns.length === 0 ? (
             /* B — columns exist, but these filters match none of them. */
@@ -462,8 +489,10 @@ export function CentralNeedsBeneficiaryColumnPanel({
                 /** A prefilled exact match is a SUGGESTION until a human confirms it. */
                 const showingSuggestion = choice === undefined && !col.decision && suggestions.length === 1;
 
+                const regionGoverned = isRegionGoverned(col);
+
                 const siblings = col.sourceFieldName ? (bySameLabel.get(col.sourceFieldName) ?? []) : [];
-                const unresolvedSiblingKeys = siblings.filter((s) => s.decision === null).map(keyOf);
+                const unresolvedSiblingKeys = siblings.filter((s) => s.decision === null && !isRegionGoverned(s)).map(keyOf);
                 const offerGroup = col.decision === null && Boolean(col.sourceFieldName)
                   && unresolvedSiblingKeys.length > 1 && hasChange;
 
@@ -474,6 +503,7 @@ export function CentralNeedsBeneficiaryColumnPanel({
                     data-column-state={col.decision ?? 'unresolved'}
                     data-blocking={col.reviewRequired || undefined}
                     data-suggested={showingSuggestion || undefined}
+                    data-region-governed={regionGoverned || undefined}
                     className="cn2b-bc-row"
                   >
                     {/* 1 — SOURCE EVIDENCE. Nothing here is ever dropped. */}
@@ -504,10 +534,15 @@ export function CentralNeedsBeneficiaryColumnPanel({
                           {t('cn2b_beneficiary_column_blocks_readiness', lang)}
                         </span>
                       )}
+                      {regionGoverned && (
+                        <span data-testid="cn4-bc-region-governed" className="cn2b-bc__blocks">
+                          {t('cn4_region_governed_column', lang)}
+                        </span>
+                      )}
                     </div>
 
-                    {/* 3 — REVIEW ACTION. Decision semantics unchanged. */}
-                    {editable && (
+                    {/* 3 — REVIEW ACTION. Decision semantics unchanged; none on a region-governed column. */}
+                    {editable && !regionGoverned && (
                       <div className="cn2b-bc__action">
                         <select
                           className="cn2b-bc-select"

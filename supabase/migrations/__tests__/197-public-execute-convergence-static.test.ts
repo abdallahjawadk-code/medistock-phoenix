@@ -63,9 +63,17 @@ describe('M197 static — identity and placement', () => {
       // grants no EXECUTE to PUBLIC (every new function REVOKEs PUBLIC), so what this suite converges is untouched. It is now the
       // reviewed ceiling.
       '215_phoenix_central_needs_governed_correction_lifecycle.sql',
+      // C4/M216: the additive Central Needs beneficiary-region persistence (region
+      // version relation, governed M213 <-> region coexistence/conversion), with no
+      // stock, movement, allocation or transfer SQL; independently reviewed. It
+      // grants no EXECUTE to PUBLIC (every function it creates, and its one new
+      // relation, REVOKEs PUBLIC) and never names the six functions 197
+      // converges, so what this suite converges is untouched. It is now the
+      // reviewed ceiling.
+      '216_phoenix_central_needs_region_persistence.sql',
     ]);
-    expect(files.filter((f) => Number(f.slice(0, 3)) > 215)).toEqual([]);
-    expect(files).toHaveLength(215);
+    expect(files.filter((f) => Number(f.slice(0, 3)) > 216)).toEqual([]);
+    expect(files).toHaveLength(216);
   });
 
   it('carries no MANUAL APPLY ONLY banner, so the pinned executor will accept it', () => {

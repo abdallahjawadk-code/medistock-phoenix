@@ -300,6 +300,12 @@ run('E7-2 · Stage-E application wiring (dynamic)',()=>{
       // stock SQL at all, so "Stage E still ends at 171" remains true. Listed so
       // this guard stays exhaustive and fails closed on any unlisted new file.
       '215_phoenix_central_needs_governed_correction_lifecycle.sql',
+      // C4/M216: the additive Central Needs beneficiary-region persistence —
+      // one region version relation and governed M213 <-> region coexistence;
+      // it adds no migration numbered <= 171 and no corridor, route, dispatch or
+      // stock SQL at all, so "Stage E still ends at 171" remains true. Listed so
+      // this guard stays exhaustive and fails closed on any unlisted new file.
+      '216_phoenix_central_needs_region_persistence.sql',
     ];
     it('Stage E still ends at 171 — E7-2 introduced no new SQL',()=>{
       const files=readdirSync(join(__dirname,'..')).filter(f=>/^\d{3}_.*\.sql$/.test(f));

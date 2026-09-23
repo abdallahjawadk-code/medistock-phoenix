@@ -555,7 +555,9 @@ describe('UX-2A — authorization is untouched', () => {
 describe('UX-2A corrective — revision-scoped isolation', () => {
   const REV_B = 'rev-2';
   const SESSION_B = 's2';
-  const REVISION_B: PlanRevision = { ...REVISION, id: REV_B, planYear: 2027, revisionNumber: 1 };
+  // C4: a revision of ANOTHER, older plan — one plan can never hold two open drafts,
+  // and the screen now opens the newest plan's draft by identity, not list position.
+  const REVISION_B: PlanRevision = { ...REVISION, id: REV_B, planId: 'plan-2', planYear: 2025, revisionNumber: 1 };
   const SESSION_TWO: ImportSession = { ...SESSION, id: SESSION_B, planRevisionId: REV_B };
 
   const BATCH_A = { id: 'bA', planRevisionId: REV, containerFilename: 'ALPHA-2026.zip', containerKind: 'zip', containerSha256: 'a'.repeat(64), acceptedEntryCount: 1, excludedEntryCount: 0 } as unknown as ImportBatch;
