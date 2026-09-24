@@ -4,8 +4,8 @@
 // The Supabase CLI reasons in Production's OWN migration-version namespace.
 // This repository's canonical directory uses 001..NNN filenames, but
 // Production's history is 001..172 followed by 14-digit CLI timestamps. Point
-// the CLI at the canonical directory and it computes a pending set of
-// twenty-five migrations, because local `173` does not match remote
+// the CLI at the canonical directory and it computes a pending set spanning
+// every timestamp-era migration, because local `173` does not match remote
 // `20260810200846`.
 //
 // So the CLI is never pointed at the repository. This builder writes a
@@ -47,16 +47,18 @@ const sha256 = (buf) => createHash('sha256').update(buf).digest('hex');
  *
  * `remoteName` is REQUIRED for an already-applied timestamp row and must be the
  * name Production actually recorded, taken from the reconciled mapping. Most of
- * Production's timestamp rows carry the full canonical stem, but canonical 173
- * carries `phoenix_database_security_surface_hardening` with no `173_` prefix
- * (see HISTORICAL_REMOTE_NAME_EXCEPTIONS). Rebuilding that alias from the
- * canonical stem instead would hand the CLI a workspace describing a history
- * Production does not have.
+ * Production's timestamp rows carry the full canonical stem, but two do not
+ * (see HISTORICAL_REMOTE_NAME_EXCEPTIONS, each bound to its exact remote
+ * version): canonical 173 carries `phoenix_database_security_surface_hardening`
+ * under 20260810200846, and canonical 214 carries
+ * `fix_central_needs_review_readiness_volatility` under 20260914111813.
+ * Rebuilding either alias from the canonical stem instead would hand the CLI a
+ * workspace describing a history Production does not have.
  *
  * It is omitted only for the NEW pending target, which has no recorded name
- * yet and is written under its full canonical stem -- so migration 197 is
- * recorded as `197_phoenix_public_execute_convergence`, keeping the prefixed
- * convention that 174 through 196 already follow.
+ * yet and is written under its full canonical stem -- so migration 216 is
+ * recorded as `216_phoenix_central_needs_region_persistence`, keeping the
+ * prefixed convention that every other timestamp-era row follows.
  */
 export function aliasFilenameFor(remoteVersion, canonicalFilename, remoteName) {
   const stem = canonicalStem(canonicalFilename);
@@ -125,7 +127,7 @@ export function buildShadowMigrationWorkspace({
 
     const bytes = readFileSync(join(migrationsDir, local.filename));
     // The alias reproduces the name Production really recorded, not the name
-    // the canonical filename implies -- they differ for canonical 173.
+    // the canonical filename implies -- they differ for canonicals 173 and 214.
     const aliasName = aliasFilenameFor(m.remoteVersion, local.filename, m.remoteName);
     writeFileSync(join(migDir, aliasName), bytes);
     aliases.push({ canonical: m.canonical, remoteVersion: m.remoteVersion, aliasName, sha256: sha256(bytes) });

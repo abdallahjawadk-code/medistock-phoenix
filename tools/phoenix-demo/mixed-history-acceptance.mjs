@@ -10,9 +10,10 @@
 //
 // What it proves, in order:
 //   1. the connection is genuinely TLS (asked of the server, not assumed);
-//   2. the seeded history reproduces Production's shape: 172 three-digit rows
-//      then 24 timestamp rows, 196 total;
-//   3. the reconciler derives canonical ceiling 196 and pending [197];
+//   2. the seeded history reproduces Production's shape before M216: 172
+//      three-digit rows then 43 timestamp rows (canonical 173..215), 215 total,
+//      carrying BOTH historical unprefixed rows (173 and 214) literally;
+//   3. the reconciler derives canonical ceiling 215 and pending [216];
 //   4. the CLI, pointed at the shadow workspace, reports EXACTLY ONE pending
 //      migration — the target alias — with NO --debug;
 //   5. the same run WITH --debug agrees, proving the pinned binary does not
@@ -23,10 +24,10 @@
 //   9. the reconciler then reports the resume-safe state.
 //
 // PRECONDITION: ACCEPTANCE_DB_URL must already carry the canonical chain
-// 001->196. Migration 197 GRANTs/REVOKEs EXECUTE on named functions with no
-// IF EXISTS guard, so pushing it at an empty database aborts on the first
-// missing function. Stage 2 below proves that precondition rather than
-// assuming it.
+// 001->215. Migration 216 opens with a fail-closed precondition block that
+// requires the M209-M215 tables and functions by name and refuses if its own
+// table already exists, so pushing it at any other database aborts. Stage 1b
+// below proves that precondition rather than assuming it.
 //
 // Usage:
 //   ACCEPTANCE_DB_URL=postgresql://user:pw@host:port/db?sslmode=require \
@@ -46,35 +47,45 @@ const REPO_ROOT = process.cwd();
 const MIGRATIONS_DIR = join(REPO_ROOT, 'supabase', 'migrations');
 
 const NUMERIC_ERA = 172;
-const TIMESTAMP_ERA = 24;
-const TARGET_REMOTE_VERSION = '20260823181015';
+const TIMESTAMP_ERA = 43;
+const TARGET_REMOTE_VERSION = '20260923215400';
 
 // ---------------------------------------------------------------------------
-// PRODUCTION'S REAL TIMESTAMP-ERA SHAPE.
+// PRODUCTION'S REAL TIMESTAMP-ERA SHAPE, THROUGH CANONICAL 215.
 //
 // Versions and names below are the shape live Production actually carries, not
-// a generated approximation. The earlier fixture wrote the full canonical stem
-// for all 24 rows, which made the acceptance agree with the code by
-// construction and let a real defect through: executor run 32667193982 refused
-// against Production on canonical 173, whose recorded name has NO `173_`
-// prefix, while this acceptance was green.
+// a generated approximation. An earlier fixture wrote the full canonical stem
+// for every row, which made the acceptance agree with the code by construction
+// and let real defects through twice: executor run 32667193982 refused against
+// Production on canonical 173, and executor run 35925796412 refused on
+// canonical 214, while this acceptance was green both times.
 //
-// 23 of the 24 rows DO carry the prefix. 173 is the single exception, and it is
-// written out literally rather than derived from expectedRemoteName() -- a
+// 41 of the 43 rows DO carry the canonical prefix. 173 and 214 are the two
+// historical exceptions, and both are written out literally rather than
+// derived from expectedRemoteName() or HISTORICAL_REMOTE_NAME_EXCEPTIONS -- a
 // fixture that asks the code under test what to expect proves nothing.
+// 215 is the Director-verified Production row the M216 target must follow.
 // ---------------------------------------------------------------------------
 const REAL_REMOTE_VERSIONS = new Map([
   [173, '20260810200846'],
   [174, '20260810220715'],
   [196, '20260823131150'],
+  [214, '20260914111813'],
+  [215, '20260922153813'],
 ]);
 const REAL_REMOTE_NAMES = new Map([
   [173, 'phoenix_database_security_surface_hardening'],
+  [214, 'fix_central_needs_review_readiness_volatility'],
 ]);
 
-/** 175..195 are stepped 12h from 2026-08-11, strictly between 174 and 196. */
+/**
+ * 175..195 are stepped 12h from 2026-08-11, strictly between 174 and 196;
+ * 197..213 are stepped 12h from 2026-08-24, strictly between 196 and 214.
+ */
 const remoteVersionFor = (canonical) => REAL_REMOTE_VERSIONS.get(canonical)
-  ?? new Date(Date.UTC(2026, 7, 11, 0, 0, 0) + (canonical - 175) * 43_200_000)
+  ?? new Date((canonical < 196
+    ? Date.UTC(2026, 7, 11, 0, 0, 0) + (canonical - 175) * 43_200_000
+    : Date.UTC(2026, 7, 24, 0, 0, 0) + (canonical - 197) * 43_200_000))
     .toISOString().replace(/[-:TZ.]/g, '').slice(0, 14);
 
 const remoteNameFor = (canonical, filename) => REAL_REMOTE_NAMES.get(canonical)
@@ -172,15 +183,27 @@ async function main() {
   if (!mySsl || mySsl.ssl !== true) fail('this session is not using SSL — the acceptance must run over TLS.');
   ok(`server ssl=on and this session is TLS (${mySsl.version})`);
 
-  console.log('== 1b. the acceptance database really carries the 001->196 chain ==');
+  console.log(`== 1b. the acceptance database really carries the 001->${NUMERIC_ERA + TIMESTAMP_ERA} chain ==`);
   // Without this the failure would surface deep inside `supabase db push` as an
-  // opaque SQL error. 197 touches these by name, so their absence is decisive.
-  const need = ['public.phoenix_my_org()', 'public.phoenix_my_role()', 'public.phoenix_handle_new_user()'];
+  // opaque SQL error. M216's own precondition block requires these by name
+  // (M209-M215 surface, including M214's readiness and M215's lifecycle), so
+  // their absence is decisive.
+  const need = [
+    'public.phoenix_central_needs_list_beneficiary_columns(uuid)',
+    'public.phoenix_central_needs_review_readiness(uuid)',
+    'public.phoenix_central_needs_set_need_line(uuid, uuid, uuid, numeric, text, jsonb, uuid[], text, text, uuid, text)',
+    'public._phoenix_central_needs_lock_plan_family_v1(uuid, integer)',
+    'public.phoenix_central_needs_open_correction_revision(uuid, integer, uuid, text)',
+    'public.phoenix_central_needs_revision_lifecycle(uuid, integer)',
+  ];
   for (const sig of need) {
     const { rows: r } = await c.query('SELECT to_regprocedure($1) IS NOT NULL AS ok', [sig]);
-    if (!r[0].ok) fail(`${sig} is missing — the acceptance database has not received migrations 001->196.`);
+    if (!r[0].ok) fail(`${sig} is missing — the acceptance database has not received migrations 001->${NUMERIC_ERA + TIMESTAMP_ERA}.`);
   }
-  ok(`canonical chain present (${need.length} of 197's target functions resolve)`);
+  const regionsBefore = (await c.query(
+    "SELECT to_regclass('public.central_needs_beneficiary_regions') IS NULL AS absent")).rows[0].absent;
+  if (!regionsBefore) fail('public.central_needs_beneficiary_regions already exists — the target M216 must not be applied yet.');
+  ok(`canonical chain present (${need.length} of M216's precondition functions resolve; M216's table is absent)`);
 
   console.log('== 2. seed Production\'s history shape (disposable database only) ==');
   await c.query('CREATE SCHEMA IF NOT EXISTS supabase_migrations');
@@ -203,12 +226,18 @@ async function main() {
     await c.query('INSERT INTO supabase_migrations.schema_migrations(version,name) VALUES($1,$2)', [version14, name]);
   }
   // The fixture is only worth running if it really carries the mixed shape.
-  if (unprefixedSeeded !== 1) {
-    fail(`fixture seeded ${unprefixedSeeded} unprefixed timestamp names, expected exactly 1 (canonical 173).`);
+  if (unprefixedSeeded !== 2) {
+    fail(`fixture seeded ${unprefixedSeeded} unprefixed timestamp names, expected exactly 2 (canonicals 173 and 214).`);
   }
   let rows = await readHistory(c);
   if (rows.length !== NUMERIC_ERA + TIMESTAMP_ERA) fail(`seeded ${rows.length} rows, expected ${NUMERIC_ERA + TIMESTAMP_ERA}.`);
-  ok(`${rows.length} rows seeded (${NUMERIC_ERA} three-digit + ${TIMESTAMP_ERA} timestamp, 23 prefixed + 1 historical unprefixed)`);
+  for (const [canonical, name] of REAL_REMOTE_NAMES) {
+    const seeded = rows.filter((r) => r.version === REAL_REMOTE_VERSIONS.get(canonical));
+    if (seeded.length !== 1 || seeded[0].name !== name) {
+      fail(`historical row for canonical ${canonical} is not seeded exactly as ${REAL_REMOTE_VERSIONS.get(canonical)} ${name}.`);
+    }
+  }
+  ok(`${rows.length} rows seeded (${NUMERIC_ERA} three-digit + ${TIMESTAMP_ERA} timestamp, ${TIMESTAMP_ERA - 2} prefixed + 2 historical unprefixed)`);
 
   console.log('== 3. PROOF A — canonical reconciliation ==');
   const targetCanonical = NUMERIC_ERA + TIMESTAMP_ERA + 1;
@@ -225,6 +254,12 @@ async function main() {
     localMigrations: local.filter((m) => m.version <= targetCanonical), repoRoot: REPO_ROOT,
     target: { canonicalVersion: targetCanonical, filename: targetLocal.filename, remoteHistoryVersion: TARGET_REMOTE_VERSION },
   });
+  for (const [canonical, name] of REAL_REMOTE_NAMES) {
+    const alias = `${REAL_REMOTE_VERSIONS.get(canonical)}_${name}.sql`;
+    if (shadow.aliases.find((a) => a.canonical === canonical)?.aliasName !== alias) {
+      fail(`shadow workspace does not alias canonical ${canonical} as ${alias}.`);
+    }
+  }
   ok(`shadow workspace: ${shadow.totalMigrations} migrations, target ${shadow.targetAliasFilename}`);
 
   const pushArgs = ['db', 'push', '--yes', '--db-url', DB_URL, '--workdir', shadow.workspaceDir];
@@ -252,7 +287,10 @@ async function main() {
   if (added.length !== 1) fail(`expected exactly one row with version ${TARGET_REMOTE_VERSION}, found ${added.length}.`);
   const expectedName = targetLocal.filename.replace(/\.sql$/, '');
   if (added[0].name !== expectedName) fail(`new row name ${JSON.stringify(added[0].name)}, expected ${JSON.stringify(expectedName)}.`);
-  ok(`history 196 -> ${rows.length}; exactly one new row ${TARGET_REMOTE_VERSION} = ${expectedName}`);
+  const regionsAfter = (await c.query(
+    "SELECT to_regclass('public.central_needs_beneficiary_regions') IS NOT NULL AS present")).rows[0].present;
+  if (!regionsAfter) fail('public.central_needs_beneficiary_regions is absent after the push — M216 did not apply.');
+  ok(`history ${NUMERIC_ERA + TIMESTAMP_ERA} -> ${rows.length}; exactly one new row ${TARGET_REMOTE_VERSION} = ${expectedName}`);
 
   console.log('== 7. nothing pending afterwards ==');
   const dry2 = cli([...pushArgs, '--dry-run']);

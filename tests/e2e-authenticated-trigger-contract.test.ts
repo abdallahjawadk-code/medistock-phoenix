@@ -107,7 +107,29 @@ describe('pg-rig TLS mixed-history acceptance stays in ci.yml', () => {
   });
 
   it('still replays the predecessor chain before pushing the newest migration', () => {
-    expect(code(CI_YML)).toContain('node tools/pg-rig/apply.mjs 196');
+    // Production's ceiling before M216 is 215, so the acceptance replays
+    // exactly 001->215 and the shadow-workspace push is M216. A stale ceiling
+    // (the old 196) must not survive anywhere in the executable YAML.
+    expect(code(CI_YML)).toContain('node tools/pg-rig/apply.mjs 215');
+    expect(code(CI_YML)).not.toContain('node tools/pg-rig/apply.mjs 196');
+    expect(code(CI_YML).match(/node tools\/pg-rig\/apply\.mjs 215\b/g)).toHaveLength(1);
+    // …and it runs immediately before the acceptance, against the same TLS-only database.
+    const yml = code(CI_YML);
+    const replay = yml.indexOf('node tools/pg-rig/apply.mjs 215');
+    const acceptance = yml.indexOf('node tools/phoenix-demo/mixed-history-acceptance.mjs');
+    expect(replay).toBeGreaterThan(-1);
+    expect(acceptance).toBeGreaterThan(replay);
+    // The replay step itself (its own `- name:` through its `run:`) targets the
+    // TLS-only acceptance server and the database the acceptance then reads.
+    const replayStep = yml.slice(yml.lastIndexOf('      - name:', replay), replay);
+    expect(replayStep).toContain('PHOENIX_RIG_PG: postgresql://postgres:acceptance@127.0.0.1:55433/postgres?sslmode=require');
+    expect(replayStep).toContain('PHOENIX_RIG_DB: acceptance_rig');
+    expect(replayStep).toContain('NODE_EXTRA_CA_CERTS: /tmp/tlspg/server.crt');
+    expect(replayStep).not.toMatch(/^\s*if\s*:/m);
+    // No other step sits between the replay and the acceptance.
+    const between = yml.slice(replay, acceptance);
+    expect(between.match(/^ {6}- name:/gm)).toHaveLength(1);
+    expect(between).toContain('ACCEPTANCE_DB_URL: postgresql://postgres:acceptance@127.0.0.1:55433/acceptance_rig?sslmode=require');
   });
 
   it('still pins the Supabase CLI rather than tracking latest', () => {
