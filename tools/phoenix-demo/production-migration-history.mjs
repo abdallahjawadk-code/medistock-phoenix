@@ -70,28 +70,41 @@ export const canonicalStem = (filename) => String(filename ?? '').replace(/\.sql
  * HISTORICAL REMOTE-NAME EXCEPTIONS.
  *
  * Production's timestamp era records `name` as the canonical filename stem --
- * WITH its NNN_ prefix -- for 23 of its 24 rows. Canonical 173 is the single
- * documented exception: it was pushed from a filename whose 14-digit timestamp
- * REPLACED the `173_` prefix instead of preceding it, so Production holds
+ * WITH its NNN_ prefix -- for every row except exactly two documented events:
+ *
+ *   canonical 173 -- pushed from a filename whose 14-digit timestamp REPLACED
+ *   the `173_` prefix instead of preceding it, so Production holds
  *
  *     version 20260810200846   name phoenix_database_security_surface_hardening
  *
- * while this repository holds 173_phoenix_database_security_surface_hardening.sql.
- * Established by live Production enumeration; executor run 32667193982 refused
- * on exactly this row.
+ *   while this repository holds 173_phoenix_database_security_surface_hardening.sql.
+ *   Established by live Production enumeration; executor run 32667193982 refused
+ *   on exactly this row.
  *
- * This is an exhaustive, immutable record of one past event -- NOT a naming
- * rule, and emphatically not licence to strip `^\d{3}_` generally. 174 through
- * 196 all retain their prefix, and an unprefixed name from any of them is a
- * refusal.
+ *   canonical 214 -- recorded in Production under a different name altogether,
+ *   so Production holds
  *
- * Each entry is keyed by canonical ordinal AND bound to the exact canonical
- * filename it describes. The ordinal alone would let the exception drift onto
- * whatever migration happened to occupy slot 173; binding the filename means a
- * renamed or renumbered migration loses the exception and is compared exactly,
- * which is the fail-closed direction. Nothing here is derived from Production:
- * an exception inferred from what Production contains would not be an
- * exception, it would be an unconditional acceptance of Production's own claim.
+ *     version 20260914111813   name fix_central_needs_review_readiness_volatility
+ *
+ *   while this repository holds 214_phoenix_central_needs_review_readiness_volatility.sql.
+ *   Executor run 35925796412 refused on exactly this row (REMOTE_NAME_MISMATCH at
+ *   canonical 214) in its read-only preflight, before applying anything.
+ *
+ * This is an exhaustive, immutable record of two past events -- NOT a naming
+ * rule, and emphatically not licence to strip `^\d{3}_` or to accept any other
+ * form generally. Every other timestamp-era row retains its full canonical stem,
+ * and any other name for any row is a refusal.
+ *
+ * An exception applies only when THREE facts match its record together: the
+ * canonical ordinal, the exact canonical filename, and the exact remote
+ * version. The ordinal alone would let an exception drift onto whatever
+ * migration happened to occupy its slot; binding the filename means a renamed
+ * or renumbered migration loses the exception and is compared exactly; binding
+ * the remote version means the historical name is honoured only on the ONE
+ * Production row that actually carries it -- the same name under any other
+ * version is a refusal. Each binding fails closed. Nothing here is derived from
+ * Production: an exception inferred from what Production contains would not be
+ * an exception, it would be an unconditional acceptance of Production's own claim.
  */
 export const HISTORICAL_REMOTE_NAME_EXCEPTIONS = Object.freeze([
   Object.freeze({
@@ -100,6 +113,12 @@ export const HISTORICAL_REMOTE_NAME_EXCEPTIONS = Object.freeze([
     remoteVersion: '20260810200846',
     remoteName: 'phoenix_database_security_surface_hardening',
   }),
+  Object.freeze({
+    canonical: 214,
+    canonicalFilename: '214_phoenix_central_needs_review_readiness_volatility.sql',
+    remoteVersion: '20260914111813',
+    remoteName: 'fix_central_needs_review_readiness_volatility',
+  }),
 ]);
 
 /**
@@ -107,10 +126,16 @@ export const HISTORICAL_REMOTE_NAME_EXCEPTIONS = Object.freeze([
  * permitted to carry. Exactly one string is ever returned: there is no
  * alternative form, no optional prefix, and no pattern that could match more
  * than one name.
+ *
+ * A historical exception is returned only on an exact match of canonical
+ * ordinal + canonical filename + remote version. Without a remote version no
+ * exception can match, and the canonical stem is returned -- the fail-closed
+ * direction.
  */
-export function expectedRemoteName(canonical, canonicalFilename) {
-  const exception = HISTORICAL_REMOTE_NAME_EXCEPTIONS
-    .find((e) => e.canonical === canonical && e.canonicalFilename === canonicalFilename);
+export function expectedRemoteName(canonical, canonicalFilename, remoteVersion) {
+  const version = remoteVersion === undefined || remoteVersion === null ? null : String(remoteVersion);
+  const exception = version === null ? undefined : HISTORICAL_REMOTE_NAME_EXCEPTIONS.find((e) =>
+    e.canonical === canonical && e.canonicalFilename === canonicalFilename && e.remoteVersion === version);
   return exception ? exception.remoteName : canonicalStem(canonicalFilename);
 }
 
@@ -195,9 +220,10 @@ export function reconcileMigrationHistory(remoteRows, localMigrations) {
     if (m.era !== 'timestamp') continue;
     const local = localByVersion.get(m.canonical);
     // Exactly one permitted string, per expectedRemoteName(). Still an exact
-    // equality test -- the documented 173 exception changes WHICH name is
-    // expected, never that the comparison is exact.
-    const expected = expectedRemoteName(m.canonical, local.filename);
+    // equality test -- the documented historical exceptions (173, 214) change
+    // WHICH name is expected, and only on their own exact remote version, never
+    // that the comparison is exact.
+    const expected = expectedRemoteName(m.canonical, local.filename, m.remoteVersion);
     if (m.remoteName === null || m.remoteName === undefined || m.remoteName === '') {
       refuse('REMOTE_NAME_MISSING', `Production timestamp row ${m.remoteVersion} has no name, so its canonical identity cannot be independently confirmed.`);
     }

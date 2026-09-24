@@ -2,8 +2,8 @@
  * SHADOW MIGRATION WORKSPACE — builder and dry-run parser.
  *
  * The workspace is what the Supabase CLI is actually pointed at, so its
- * correctness is the difference between "one migration runs" and "twenty-five
- * migrations run". These tests pin the alias naming, the byte fidelity of every
+ * correctness is the difference between "one migration runs" and "every
+ * timestamp-era migration runs". These tests pin the alias naming, the byte fidelity of every
  * alias, the containment rule, and the mechanical parsing of the CLI's answer.
  */
 import { describe, it, expect, afterAll } from 'vitest';
@@ -11,6 +11,7 @@ import { createHash } from 'node:crypto';
 import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   ShadowWorkspaceRefusal,
   aliasFilenameFor,
@@ -262,7 +263,7 @@ describe("the workspace reproduces Production's real mixed naming", () => {
     const { dir, local } = fixture();
     // The mapping is built by hand rather than via reconcileMigrationHistory,
     // because the reconciler deliberately refuses an unprefixed name for any
-    // migration other than the real canonical 173 (see the history suite).
+    // row other than the exact historical 173 and 214 rows (see the history suite).
     // What is under test here is narrower: given a mapping that says Production
     // recorded THIS name, the workspace must write THAT name.
     const mapping = [
@@ -297,5 +298,89 @@ describe("the workspace reproduces Production's real mixed naming", () => {
     // every alias carries the exact bytes of its canonical migration
     const six = readFileSync(join(built.migrationsDir, '20260810200846_phoenix_step_6.sql'));
     expect(sha(six)).toBe(sha(readFileSync(join(dir, '006_phoenix_step_6.sql'))));
+  });
+});
+
+// Executor run 35925796412 refused at canonical 214, which Production records as
+// `fix_central_needs_review_readiness_volatility` under 20260914111813. Once the
+// reconciler accepts that exact row, the workspace must reproduce it literally,
+// with the REAL reviewed M214 bytes behind it.
+describe('canonical 214 — the workspace reproduces Production\'s recorded M214 row', () => {
+  const REPO_MIGRATIONS = fileURLToPath(new URL('../../../supabase/migrations/', import.meta.url));
+  const M214_FILENAME = '214_phoenix_central_needs_review_readiness_volatility.sql';
+  const M214_ALIAS = '20260914111813_fix_central_needs_review_readiness_volatility.sql';
+
+  it('aliasFilenameFor writes the literal M214 alias from the recorded name', () => {
+    expect(aliasFilenameFor('20260914111813', M214_FILENAME, 'fix_central_needs_review_readiness_volatility'))
+      .toBe(M214_ALIAS);
+  });
+
+  it('builds the literal M214 alias through the real reconciler, byte-identical to the canonical M214 SQL', () => {
+    // Canonical 1..216 with the REAL filenames of 173, 213-216. M214 and the M216
+    // target carry their real repository bytes; the rest are tiny stand-ins.
+    const real: Record<number, string> = {
+      173: '173_phoenix_database_security_surface_hardening.sql',
+      213: '213_phoenix_central_needs_beneficiary_column_mapping.sql',
+      214: M214_FILENAME,
+      215: '215_phoenix_central_needs_governed_correction_lifecycle.sql',
+      216: '216_phoenix_central_needs_region_persistence.sql',
+    };
+    const dir = mkdtempSync(join(tmpdir(), 'phoenix-canon-214-'));
+    scratch.push(dir);
+    const local: { version: number; filename: string }[] = [];
+    for (let v = 1; v <= 216; v++) {
+      const f = real[v] ?? `${String(v).padStart(3, '0')}_phoenix_step_${v}.sql`;
+      const bytes = v === 214 || v === 216 ? readFileSync(join(REPO_MIGRATIONS, f)) : `-- canonical migration ${v}\nSELECT ${v};\n`;
+      writeFileSync(join(dir, f), bytes);
+      local.push({ version: v, filename: f });
+    }
+    // Production through 215, the real rows written out literally.
+    const rows: { version: string; name: string }[] = [];
+    for (let n = 1; n <= 172; n++) rows.push({ version: String(n).padStart(3, '0'), name: `legacy_${n}` });
+    rows.push({ version: '20260810200846', name: 'phoenix_database_security_surface_hardening' });
+    for (let v = 174; v <= 213; v++) {
+      const version = new Date(Date.UTC(2026, 7, 11) + (v - 174) * 43_200_000).toISOString().replace(/[-:TZ.]/g, '').slice(0, 14);
+      rows.push({ version, name: local[v - 1].filename.replace(/\.sql$/, '') });
+    }
+    rows.push({ version: '20260914111813', name: 'fix_central_needs_review_readiness_volatility' });
+    rows.push({ version: '20260922153813', name: '215_phoenix_central_needs_governed_correction_lifecycle' });
+
+    const rec = reconcileMigrationHistory(rows, local);
+    expect(rec.canonicalCeiling).toBe(215);
+    expect(rec.pendingCanonical).toEqual([216]);
+
+    const m216Bytes = readFileSync(join(REPO_MIGRATIONS, real[216]));
+    const ws = buildShadowMigrationWorkspace({
+      migrationsDir: dir, mapping: rec.mapping, localMigrations: local,
+      target: { canonicalVersion: 216, filename: real[216], sha256: sha(m216Bytes), remoteHistoryVersion: '20260923215400' },
+    });
+    scratch.push(ws.workspaceDir);
+    const written = readdirSync(ws.migrationsDir);
+
+    expect(written).toContain(M214_ALIAS);
+    expect(written).not.toContain('20260914111813_214_phoenix_central_needs_review_readiness_volatility.sql');
+    expect(written.filter((f) => f.startsWith('20260914111813_'))).toEqual([M214_ALIAS]);
+    expect(ws.aliases.find((a) => a.canonical === 214)).toMatchObject({ remoteVersion: '20260914111813', aliasName: M214_ALIAS });
+
+    // byte-identical to the reviewed canonical M214 SQL in this repository
+    const aliasBytes = readFileSync(join(ws.migrationsDir, M214_ALIAS));
+    const canonicalBytes = readFileSync(join(REPO_MIGRATIONS, M214_FILENAME));
+    expect(aliasBytes.equals(canonicalBytes)).toBe(true);
+    expect(sha(aliasBytes)).toBe(sha(canonicalBytes));
+
+    // the other historical exception and the neighbours keep their recorded names
+    expect(written).toContain('20260810200846_phoenix_database_security_surface_hardening.sql');
+    expect(written).toContain('20260922153813_215_phoenix_central_needs_governed_correction_lifecycle.sql');
+    const unprefixed = written.filter((f) => /^\d{14}_/.test(f) && !/^\d{14}_\d{3}_/.test(f)).sort();
+    expect(unprefixed).toEqual([
+      '20260810200846_phoenix_database_security_surface_hardening.sql',
+      M214_ALIAS,
+    ]);
+
+    // exactly applied + 1: the M216 target under its full canonical stem
+    expect(ws.targetAliasFilename).toBe('20260923215400_216_phoenix_central_needs_region_persistence.sql');
+    expect(readFileSync(join(ws.migrationsDir, ws.targetAliasFilename)).equals(m216Bytes)).toBe(true);
+    expect(written).toHaveLength(216);
+    expect(ws.totalMigrations).toBe(216);
   });
 });

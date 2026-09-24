@@ -203,13 +203,18 @@ describe('timestamp validity helper', () => {
 // ===========================================================================
 // PRODUCTION'S REAL TIMESTAMP-ERA NAMING.
 //
-// 23 of Production's 24 timestamp rows record the FULL canonical stem. Exactly
-// one -- canonical 173 -- records `phoenix_database_security_surface_hardening`
-// with no `173_` prefix, because its original filename's timestamp replaced the
-// prefix rather than preceding it. Executor run 32667193982 refused on that row.
+// Production's timestamp rows record the FULL canonical stem, except for
+// exactly two documented events:
+//   - canonical 173 records `phoenix_database_security_surface_hardening` with
+//     no `173_` prefix, because its original filename's timestamp replaced the
+//     prefix rather than preceding it. Executor run 32667193982 refused on it.
+//   - canonical 214 records `fix_central_needs_review_readiness_volatility`
+//     under version 20260914111813. Executor run 35925796412 refused on it.
 //
-// The fix must accept that ONE row and nothing else. These tests pin both
-// halves: the exception is honoured, and every neighbouring form still refuses.
+// The fix must accept exactly those two rows -- each only on its own exact
+// canonical ordinal, canonical filename AND remote version -- and nothing
+// else. These tests pin both halves: the exceptions are honoured, and every
+// neighbouring or look-alike form still refuses.
 // ===========================================================================
 const M173_FILENAME = '173_phoenix_database_security_surface_hardening.sql';
 const M173_NAME = 'phoenix_database_security_surface_hardening';
@@ -238,7 +243,7 @@ function realShapedRows(overrides: Record<number, { version?: string; name?: str
   return rows;
 }
 
-describe('historical remote-name exception — canonical 173 only', () => {
+describe('historical remote-name exception — canonical 173 (exact triple)', () => {
   it('stamp(0) is the real Production version for canonical 173', () => {
     expect(stamp(0)).toBe('20260810200846');
   });
@@ -292,8 +297,8 @@ describe('historical remote-name exception — canonical 173 only', () => {
 
   it('binds the exception to the exact canonical FILENAME, not merely to slot 173', () => {
     // LOCAL's 173 is a different migration (173_phoenix_step_173.sql), so the
-    // exception must not transfer to it.
-    expect(expectedRemoteName(173, '173_phoenix_step_173.sql')).toBe('173_phoenix_step_173');
+    // exception must not transfer to it -- even on the real 173 remote version.
+    expect(expectedRemoteName(173, '173_phoenix_step_173.sql', '20260810200846')).toBe('173_phoenix_step_173');
     expectRefusal(
       () => reconcileMigrationHistory(
         productionShapedRows().map((r, i) => (i === 172 ? { ...r, name: 'phoenix_step_173' } : r)), LOCAL),
@@ -301,22 +306,218 @@ describe('historical remote-name exception — canonical 173 only', () => {
     );
   });
 
-  it('expectedRemoteName returns the exception only for the exact pair', () => {
-    expect(expectedRemoteName(173, M173_FILENAME)).toBe(M173_NAME);
-    expect(expectedRemoteName(174, M174_FILENAME)).toBe('174_phoenix_authenticated_rpc_surface_hardening');
-    expect(expectedRemoteName(197, '197_phoenix_public_execute_convergence.sql'))
-      .toBe('197_phoenix_public_execute_convergence');
+  it('binds the exception to the exact REMOTE VERSION: the real 173 name under any other version REFUSES', () => {
+    // 20260810200847 is one second after the real row and still orders between
+    // 172 and 174, so only the version binding can reject it.
+    expect(expectedRemoteName(173, M173_FILENAME, '20260810200847'))
+      .toBe('173_phoenix_database_security_surface_hardening');
+    expectRefusal(
+      () => reconcileMigrationHistory(
+        realShapedRows({ 173: { version: '20260810200847', name: M173_NAME } }), REAL_LOCAL),
+      'REMOTE_NAME_MISMATCH',
+    );
   });
 
-  it('the exception table holds exactly one entry and is frozen', () => {
-    expect(HISTORICAL_REMOTE_NAME_EXCEPTIONS).toHaveLength(1);
-    expect(HISTORICAL_REMOTE_NAME_EXCEPTIONS[0]).toMatchObject({
-      canonical: 173,
-      canonicalFilename: M173_FILENAME,
-      remoteVersion: '20260810200846',
-      remoteName: M173_NAME,
-    });
+  it('expectedRemoteName returns the exception only for the exact triple', () => {
+    expect(expectedRemoteName(173, M173_FILENAME, '20260810200846')).toBe(M173_NAME);
+    // no remote version -> no exception can apply (fail closed)
+    expect(expectedRemoteName(173, M173_FILENAME)).toBe('173_phoenix_database_security_surface_hardening');
+    expect(expectedRemoteName(173, M173_FILENAME, null)).toBe('173_phoenix_database_security_surface_hardening');
+    expect(expectedRemoteName(174, M174_FILENAME, stamp(1))).toBe('174_phoenix_authenticated_rpc_surface_hardening');
+    expect(expectedRemoteName(197, '197_phoenix_public_execute_convergence.sql', '20260824010203'))
+      .toBe('197_phoenix_public_execute_convergence');
+  });
+});
+
+// ===========================================================================
+// CANONICAL 214 AND PRODUCTION THROUGH 215 — the real state before M216.
+//
+// Executor run 35925796412 refused at canonical 214: Production records it as
+// `fix_central_needs_review_readiness_volatility` under 20260914111813. The
+// fixture below writes that row -- and the real 173 and 215 rows -- out
+// LITERALLY, independent of HISTORICAL_REMOTE_NAME_EXCEPTIONS and of
+// expectedRemoteName(), so these tests cannot agree with the code merely by
+// construction.
+// ===========================================================================
+const M213_FILENAME = '213_phoenix_central_needs_beneficiary_column_mapping.sql';
+const M214_FILENAME = '214_phoenix_central_needs_review_readiness_volatility.sql';
+const M214_VERSION = '20260914111813';
+const M214_NAME = 'fix_central_needs_review_readiness_volatility';
+const M215_FILENAME = '215_phoenix_central_needs_governed_correction_lifecycle.sql';
+const M215_VERSION = '20260922153813';
+const M216_FILENAME = '216_phoenix_central_needs_region_persistence.sql';
+const M216_VERSION = '20260923215400';
+
+/** Local catalogue 1..216 with the REAL filenames of 173, 174 and 213-216. */
+const LOCAL_216 = Array.from({ length: 216 }, (_, i) => {
+  const v = i + 1;
+  const real: Record<number, string> = {
+    173: M173_FILENAME, 174: M174_FILENAME, 213: M213_FILENAME, 214: M214_FILENAME, 215: M215_FILENAME, 216: M216_FILENAME,
+  };
+  return { version: v, filename: real[v] ?? `${String(v).padStart(3, '0')}_phoenix_step_${v}.sql` };
+});
+
+/** 174..213: synthetic 12-hour steps from 2026-08-11, strictly between the real 173 and 214 rows. */
+const synthVersion = (canonical: number) =>
+  new Date(Date.UTC(2026, 7, 11, 0, 0, 0) + (canonical - 174) * 43_200_000)
+    .toISOString().replace(/[-:TZ.]/g, '').slice(0, 14);
+
+/** Production through canonical 215: 172 three-digit rows + 43 timestamp rows = 215 rows. */
+function productionThrough215(overrides: Record<number, { version?: string; name?: string }> = {}) {
+  const rows: { version: string; name: string }[] = [];
+  for (let i = 1; i <= 172; i++) rows.push({ version: String(i).padStart(3, '0'), name: `legacy_name_${i}` });
+  for (let canonical = 173; canonical <= 215; canonical++) {
+    let row: { version: string; name: string };
+    if (canonical === 173) row = { version: '20260810200846', name: 'phoenix_database_security_surface_hardening' };
+    else if (canonical === 214) row = { version: '20260914111813', name: 'fix_central_needs_review_readiness_volatility' };
+    else if (canonical === 215) row = { version: '20260922153813', name: '215_phoenix_central_needs_governed_correction_lifecycle' };
+    else row = { version: synthVersion(canonical), name: canonicalStem(LOCAL_216[canonical - 1].filename) };
+    rows.push({ ...row, ...(overrides[canonical] ?? {}) });
+  }
+  return rows;
+}
+
+describe('historical remote-name exception — canonical 214, and Production through 215', () => {
+  it('the fixture carries the real 173 / 214 / 215 rows literally, in strict timestamp order', () => {
+    const rows = productionThrough215();
+    expect(rows).toHaveLength(215);
+    expect(rows.find((r) => r.version === '20260810200846')?.name).toBe('phoenix_database_security_surface_hardening');
+    expect(rows.find((r) => r.version === '20260914111813')?.name).toBe('fix_central_needs_review_readiness_volatility');
+    expect(rows.find((r) => r.version === '20260922153813')?.name).toBe('215_phoenix_central_needs_governed_correction_lifecycle');
+    const stamped = rows.filter((r) => /^\d{14}$/.test(r.version)).map((r) => r.version);
+    expect(stamped).toHaveLength(43);
+    expect(new Set(stamped).size).toBe(43);
+    expect([...stamped].sort()).toEqual(stamped);
+    expect(synthVersion(213) < M214_VERSION).toBe(true);
+  });
+
+  it('Production-shaped history through 215 reconciles cleanly: ceiling 215, pendingCanonical === [216]', () => {
+    const r = reconcileMigrationHistory(productionThrough215(), LOCAL_216);
+    expect(r.numericRowCount).toBe(172);
+    expect(r.timestampRowCount).toBe(43);
+    expect(r.canonicalCeiling).toBe(215);
+    expect(r.mapping).toHaveLength(215);
+    expect(r.appliedCanonical).toEqual(Array.from({ length: 215 }, (_, i) => i + 1));
+    expect(r.pendingCanonical).toEqual([216]);
+    expect(r.mapping.find((m) => m.canonical === 173)).toMatchObject({ remoteVersion: '20260810200846', remoteName: M173_NAME });
+    expect(r.mapping.find((m) => m.canonical === 214)).toMatchObject({ remoteVersion: M214_VERSION, remoteName: M214_NAME, era: 'timestamp' });
+    expect(r.mapping.find((m) => m.canonical === 215))
+      .toMatchObject({ remoteVersion: M215_VERSION, remoteName: '215_phoenix_central_needs_governed_correction_lifecycle' });
+  });
+
+  it('exact M214 triple PASSES', () => {
+    expect(expectedRemoteName(214, M214_FILENAME, M214_VERSION)).toBe(M214_NAME);
+  });
+
+  it('REFUSES the real M214 name under a wrong remote version', () => {
+    // each stays strictly between the synthetic 213 row and the real 215 row,
+    // so ordering still places it at canonical 214 and only the version differs
+    for (const version of ['20260914111814', '20260914111812', '20260913111813']) {
+      expect(expectedRemoteName(214, M214_FILENAME, version)).toBe('214_phoenix_central_needs_review_readiness_volatility');
+      expectRefusal(
+        () => reconcileMigrationHistory(productionThrough215({ 214: { version, name: M214_NAME } }), LOCAL_216),
+        'REMOTE_NAME_MISMATCH',
+      );
+    }
+  });
+
+  it('REFUSES the canonical-name substitution on the real M214 row — the exception is exact, not optional', () => {
+    expectRefusal(
+      () => reconcileMigrationHistory(
+        productionThrough215({ 214: { name: '214_phoenix_central_needs_review_readiness_volatility' } }), LOCAL_216),
+      'REMOTE_NAME_MISMATCH',
+    );
+  });
+
+  it('REFUSES arbitrary alternative names for M214', () => {
+    for (const name of [
+      'fix_central_needs_review_readiness_volatility_v2', 'central_needs_review_readiness_volatility',
+      'phoenix_central_needs_review_readiness_volatility', 'fix_central_needs_review_readiness',
+      'FIX_CENTRAL_NEEDS_REVIEW_READINESS_VOLATILITY', ' fix_central_needs_review_readiness_volatility', '',
+    ]) {
+      expectRefusal(
+        () => reconcileMigrationHistory(productionThrough215({ 214: { name } }), LOCAL_216),
+        name === '' ? 'REMOTE_NAME_MISSING' : 'REMOTE_NAME_MISMATCH',
+      );
+    }
+  });
+
+  it('binds the M214 exception to the exact canonical FILENAME', () => {
+    expect(expectedRemoteName(214, '214_phoenix_step_214.sql', M214_VERSION)).toBe('214_phoenix_step_214');
+    const renamed = LOCAL_216.map((m) => (m.version === 214 ? { version: 214, filename: '214_phoenix_step_214.sql' } : m));
+    expectRefusal(() => reconcileMigrationHistory(productionThrough215(), renamed), 'REMOTE_NAME_MISMATCH');
+  });
+
+  it('binds each exception to its exact canonical ORDINAL — the right filename and version at another ordinal get none', () => {
+    // Filename and remote version both match an exception here; only the
+    // canonical ordinal differs, so only the ordinal part of the triple can refuse.
+    expect(expectedRemoteName(213, M214_FILENAME, M214_VERSION)).toBe('214_phoenix_central_needs_review_readiness_volatility');
+    expect(expectedRemoteName(215, M214_FILENAME, M214_VERSION)).toBe('214_phoenix_central_needs_review_readiness_volatility');
+    expect(expectedRemoteName('214' as unknown as number, M214_FILENAME, M214_VERSION))
+      .toBe('214_phoenix_central_needs_review_readiness_volatility');
+    expect(expectedRemoteName(172, M173_FILENAME, '20260810200846')).toBe('173_phoenix_database_security_surface_hardening');
+    expect(expectedRemoteName(174, M173_FILENAME, '20260810200846')).toBe('173_phoenix_database_security_surface_hardening');
+    expect(expectedRemoteName('173' as unknown as number, M173_FILENAME, '20260810200846'))
+      .toBe('173_phoenix_database_security_surface_hardening');
+  });
+
+  it('neighbouring migrations inherit NO exception', () => {
+    expect(expectedRemoteName(213, M213_FILENAME, M214_VERSION)).toBe('213_phoenix_central_needs_beneficiary_column_mapping');
+    expect(expectedRemoteName(215, M215_FILENAME, M214_VERSION)).toBe('215_phoenix_central_needs_governed_correction_lifecycle');
+    expect(expectedRemoteName(174, M174_FILENAME, '20260810200846')).toBe('174_phoenix_authenticated_rpc_surface_hardening');
+    const cases: Array<[number, string]> = [[213, M214_NAME], [215, M214_NAME], [174, M173_NAME], [216, M214_NAME]];
+    for (const [canonical, name] of cases) {
+      const rows = canonical === 216
+        ? [...productionThrough215(), { version: M216_VERSION, name }]
+        : productionThrough215({ [canonical]: { name } });
+      expectRefusal(() => reconcileMigrationHistory(rows, LOCAL_216), 'REMOTE_NAME_MISMATCH');
+    }
+  });
+
+  it('does NOT silently accept a third unprefixed row', () => {
+    for (const canonical of [175, 197, 213, 215]) {
+      const stripped = canonicalStem(LOCAL_216[canonical - 1].filename).replace(/^\d{3}_/, '');
+      expectRefusal(
+        () => reconcileMigrationHistory(productionThrough215({ [canonical]: { name: stripped } }), LOCAL_216),
+        'REMOTE_NAME_MISMATCH',
+      );
+    }
+  });
+
+  it('the exception table holds exactly the two proven events, and it and every entry are frozen', () => {
+    expect(HISTORICAL_REMOTE_NAME_EXCEPTIONS).toHaveLength(2);
+    expect(HISTORICAL_REMOTE_NAME_EXCEPTIONS).toEqual([
+      { canonical: 173, canonicalFilename: M173_FILENAME, remoteVersion: '20260810200846', remoteName: M173_NAME },
+      { canonical: 214, canonicalFilename: M214_FILENAME, remoteVersion: M214_VERSION, remoteName: M214_NAME },
+    ]);
     expect(Object.isFrozen(HISTORICAL_REMOTE_NAME_EXCEPTIONS)).toBe(true);
+    for (const e of HISTORICAL_REMOTE_NAME_EXCEPTIONS) expect(Object.isFrozen(e)).toBe(true);
+    expect(() => { (HISTORICAL_REMOTE_NAME_EXCEPTIONS as unknown as object[]).push({}); }).toThrow(TypeError);
+    expect(() => { (HISTORICAL_REMOTE_NAME_EXCEPTIONS[1] as { remoteVersion: string }).remoteVersion = '20990101000000'; })
+      .toThrow(TypeError);
+    expect(HISTORICAL_REMOTE_NAME_EXCEPTIONS[1].remoteVersion).toBe(M214_VERSION);
+  });
+
+  it('after M216 lands at its pinned version, post-apply acceptance reaches 216 with nothing pending', () => {
+    const before = productionThrough215();
+    expect(assertRemoteHistoryVersionUsable(M216_VERSION, before)).toBe(M216_VERSION);
+    const after = [...before, { version: M216_VERSION, name: '216_phoenix_central_needs_region_persistence' }];
+    const { reconciled, laterCatalogueTail } = assertPostApplyAcceptance({
+      remoteRows: after,
+      localMigrations: LOCAL_216,
+      expectedCeiling: 216,
+      expectedRemoteVersion: M216_VERSION,
+      expectedName: '216_phoenix_central_needs_region_persistence',
+      expectedRowCount: 216,
+    });
+    expect(reconciled.canonicalCeiling).toBe(216);
+    expect(reconciled.pendingCanonical).toEqual([]);
+    expect(laterCatalogueTail).toEqual([]);
+  });
+
+  it('refuses a pinned M216 version that is not strictly newer than the real M215 row', () => {
+    expectRefusal(() => assertRemoteHistoryVersionUsable(M215_VERSION, productionThrough215()), 'TARGET_VERSION_ALREADY_PRESENT');
+    expectRefusal(() => assertRemoteHistoryVersionUsable('20260922153812', productionThrough215()), 'TARGET_VERSION_NOT_NEWEST');
   });
 });
 
