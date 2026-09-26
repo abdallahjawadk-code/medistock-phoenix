@@ -27,12 +27,37 @@
  * rendered the OLD one (it was not), so one chromium assertion failed and its
  * sibling passed. A canonical value in the dictionary has no import order to
  * get wrong.
+ *
+ * C5 §14 — a refusal object is read by its fields, never by its message:
+ * a retryable contention gets the one "try again" sentence (nothing retries on
+ * its own), and a code whose DETAIL pins a `reason=` token gets the
+ * reason-specific sentence `cn2b_err_<code>__<reason>` when one exists.
  */
 import { t } from '@/shared/i18n/strings';
 import type { Lang } from '@/shared/i18n/strings';
+import { reasonOf } from './central-needs.service';
 
-export function centralNeedsErrorText(code: string, lang: Lang): string {
+/** The fields of a `CentralNeedsError` this module reads. */
+export interface CentralNeedsRefusal {
+  businessCode: string;
+  details?: string | null;
+  retryable?: boolean;
+}
+
+function codeText(code: string, lang: Lang): string {
   const key = `cn2b_err_${code}`;
   const text = t(key, lang);
   return text === key ? code : text;
+}
+
+export function centralNeedsErrorText(error: string | CentralNeedsRefusal, lang: Lang): string {
+  if (typeof error === 'string') return codeText(error, lang);
+  if (error.retryable === true) return t('cn2b_err_retryable_contention', lang);
+  const reason = reasonOf(error.details);
+  if (reason !== null) {
+    const key = `cn2b_err_${error.businessCode}__${reason}`;
+    const text = t(key, lang);
+    if (text !== key) return text;
+  }
+  return codeText(error.businessCode, lang);
 }

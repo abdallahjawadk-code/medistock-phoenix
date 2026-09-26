@@ -11,7 +11,12 @@ export type CentralNeedsStageProgress =
   | 'not-ready'
   | 'ready'
   | 'submitted'
-  | 'approved';
+  | 'approved'
+  | 'rejected'
+  | 'superseded'
+  // C5 §17 — a workflow stage of a revision that is no longer a draft: its
+  // evidence stays readable, and no blocker can make it an edit task.
+  | 'closed';
 
 export type CentralNeedsStageProgressMap =
   Readonly<Record<CentralNeedsStageId, CentralNeedsStageProgress>>;
@@ -31,6 +36,8 @@ export const BLOCKERS_BY_STAGE: Readonly<Record<(typeof WORKFLOW_STAGES)[number]
     'import_session_still_open',
     'completed_session_not_in_trusted_batch',
     'incomplete_trusted_batch',
+    // C5 §7.1 (M217) — structurally invalid immutable source evidence.
+    'source_cell_value_contract_invalid',
   ]),
   review: new Set([
     'target_entity_without_disposition',
@@ -52,8 +59,13 @@ export const BLOCKERS_BY_STAGE: Readonly<Record<(typeof WORKFLOW_STAGES)[number]
     'need_line_warehouse_org_mismatch',
     'need_line_target_warehouse_not_active',
     'need_line_beneficiary_ineligible',
+    // C5 §7.2 (M217) — a need-line source link whose quantity lineage is unsafe.
+    'need_line_quantity_lineage_unsafe',
   ]),
 };
+
+/** C5 §17 — the statuses that are not a draft, and so land on the readiness stage. */
+const TERMINAL_STATUSES: ReadonlySet<RevisionStatus> = new Set(['submitted', 'approved', 'rejected', 'superseded']);
 
 export const KNOWN_BLOCKERS = new Set(
   WORKFLOW_STAGES.flatMap((stage) => [...BLOCKERS_BY_STAGE[stage]]),
@@ -91,6 +103,15 @@ export function deriveCentralNeedsStageProgress({
   };
 
   if (!hasRevision) return progress;
+
+  // C5 §17 — status routing comes BEFORE any blocker projection. A revision
+  // that is no longer a draft is read-only: its blockers are informational on
+  // the readiness landing and can never turn a workflow stage into an edit task.
+  if (revisionStatus !== null && TERMINAL_STATUSES.has(revisionStatus)) {
+    for (const stage of WORKFLOW_STAGES) progress[stage] = 'closed';
+    progress.readiness = revisionStatus as Exclude<RevisionStatus, 'draft'>;
+    return progress;
+  }
 
   if (!revisionDataReady || !readiness) {
     for (const stage of WORKFLOW_STAGES) progress[stage] = refreshing ? 'refreshing' : 'unknown';
@@ -135,34 +156,38 @@ export function deriveCentralNeedsStageProgress({
     }
   }
 
-  if (revisionStatus === 'approved') progress.readiness = 'approved';
-  else if (revisionStatus === 'submitted') progress.readiness = 'submitted';
-  else if (readiness.ready) progress.readiness = 'ready';
-  else progress.readiness = 'not-ready';
+  progress.readiness = readiness.ready ? 'ready' : 'not-ready';
 
   return progress;
 }
 
+/** The readiness states of a revision that is no longer a draft (C5 §17). */
+const TERMINAL_PROGRESS: ReadonlySet<CentralNeedsStageProgress> = new Set(['submitted', 'approved', 'rejected', 'superseded']);
+
+/**
+ * The stage a revision should open on. C5 §17: a non-DRAFT revision lands on
+ * the readiness stage FIRST — by its status, whatever blockers the server
+ * still lists — and only a draft is routed by its blockers.
+ */
 export function recommendedCentralNeedsStage(
   hasRevision: boolean,
   progress: CentralNeedsStageProgressMap,
+  revisionStatus: RevisionStatus | null = null,
 ): CentralNeedsStageId {
   if (!hasRevision) return 'plan';
+  if ((revisionStatus !== null && TERMINAL_STATUSES.has(revisionStatus)) || TERMINAL_PROGRESS.has(progress.readiness)) {
+    return 'readiness';
+  }
   for (const stage of WORKFLOW_STAGES) {
     if (progress[stage] === 'needs-action') return stage;
   }
   if (WORKFLOW_STAGES.some((stage) => progress[stage] === 'unknown')) return 'readiness';
-  if (progress.readiness === 'not-ready'
-    || progress.readiness === 'ready'
-    || progress.readiness === 'submitted'
-    || progress.readiness === 'approved') {
-    return 'readiness';
-  }
+  if (progress.readiness === 'not-ready' || progress.readiness === 'ready') return 'readiness';
   return 'plan';
 }
 
 export function stageProgressLabelKey(progress: CentralNeedsStageProgress): string {
-  return `cn2b_stage_state_${progress.replace('-', '_')}`;
+  return `cn2b_stage_state_${progress.replace(/-/g, '_')}`;
 }
 
 const SESSION_ATTRIBUTABLE_BLOCKERS = new Set([
@@ -178,6 +203,10 @@ const SESSION_ATTRIBUTABLE_BLOCKERS = new Set([
   'beneficiary_region_overlap',
   'beneficiary_decision_grain_conflict',
   'beneficiary_region_geometry_invalid',
+  // C5 §7 (M217): both details start with `session=%s source_record=%s`. One
+  // linked invalid cell may be counted under both — they are two obligations.
+  'source_cell_value_contract_invalid',
+  'need_line_quantity_lineage_unsafe',
 ]);
 
 export interface SessionBlockerSummary {

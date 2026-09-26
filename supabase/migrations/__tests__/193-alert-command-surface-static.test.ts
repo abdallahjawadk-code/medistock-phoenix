@@ -69,8 +69,8 @@ describe('193 · registration and file hygiene', () => {
   });
 
   it('is immediately followed by 194 through 210, the new ceiling, and 211 stays absent', () => {
-    expect(getMaximumReviewedMigrationNumber()).toBe(216);
-    expect(getNextUnreviewedMigrationNumber()).toBe(217);
+    expect(getMaximumReviewedMigrationNumber()).toBe(217);
+    expect(getNextUnreviewedMigrationNumber()).toBe(218);
     const NEXT = '194_phoenix_authorization_surface_reproducibility_convergence.sql';
     const NEXT_2 = '195_phoenix_auth_helper_profile_schema_qualification.sql';
     const NEXT_3 = '196_phoenix_secdef_relation_schema_qualification.sql';
@@ -99,16 +99,16 @@ describe('193 · registration and file hygiene', () => {
     expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.indexOf(NAME) + 9]).toBe(NEXT_9);
     expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.indexOf(NAME) + 15]).toBe(NEXT_15);
     expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.indexOf(NAME) + 16]).toBe(NEXT_16);
-    // C4/M216 (the Central Needs beneficiary-region persistence) is now the
-    // reviewed successor at the end of the array. It is Central Needs-only and
-    // adds no alert-command SQL, so what 193 asserts is unaffected.
+    // C5/M217 (the Central Needs safety convergence) is now the reviewed
+    // successor at the end of the array. It is Central Needs-only and adds no
+    // alert-command SQL, so what 193 asserts is unaffected.
     expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1])
-      .toBe('216_phoenix_central_needs_region_persistence.sql');
-    // The ceiling is now 216; `[2-9]\d\d` would match it, so this asserts
+      .toBe('217_phoenix_central_needs_c5_safety_convergence.sql');
+    // The ceiling is now 217; `[2-9]\d\d` would match it, so this asserts
     // numerically that nothing sits ABOVE the ceiling.
-    expect(REVIEWED_MIGRATION_FILES.filter(f => Number(f.slice(0, 3)) > 216)).toHaveLength(0);
+    expect(REVIEWED_MIGRATION_FILES.filter(f => Number(f.slice(0, 3)) > 217)).toHaveLength(0);
     expect(readdirSync(MIGRATIONS_DIR)
-      .filter(f => /^\d{3}_.*\.sql$/.test(f) && Number(f.slice(0, 3)) > 216)).toEqual([]);
+      .filter(f => /^\d{3}_.*\.sql$/.test(f) && Number(f.slice(0, 3)) > 217)).toEqual([]);
     expect(isReviewedMigrationFile('211_unreviewed_test_migration.sql')).toBe(false);
   });
 
@@ -126,11 +126,11 @@ describe('193 · registration and file hygiene', () => {
   });
 
   it('edits no historical migration — it is self-contained', () => {
-    // 203-216 (material-dispensing-suspension through the C4/M216 beneficiary-
-    // region persistence) are the newest chain members; they edit nothing
-    // here, so this count moves by exactly twelve more.
+    // 203-217 (material-dispensing-suspension through the C5/M217 Central
+    // Needs safety convergence) are the newest chain members; they edit nothing
+    // here, so this count moves by exactly thirteen more.
     const others = readdirSync(MIGRATIONS_DIR).filter(f => f.endsWith('.sql') && f !== NAME);
-    expect(others).toHaveLength(215);
+    expect(others).toHaveLength(216);
   });
 });
 

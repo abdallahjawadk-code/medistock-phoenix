@@ -176,6 +176,9 @@ run('CN-2B/213 beneficiary column mapping — dynamic', () => {
     `SELECT sheet_index, column_index, beneficiary_organization_id
        FROM central_needs_beneficiary_column_mappings WHERE import_session_id=$1 ORDER BY sheet_index, column_index`, [sessionId]);
 
+  // buildRig() replays the FULL chain (001..latest, C5/M217 included), which the
+  // Vitest default 10s hook budget cannot hold: the reviewed long hook timeout
+  // the other full-chain Central Needs suites use (C5 §19).
   beforeAll(async () => {
     rig = await buildRig();
     await rig.asAdmin(async (c: any) => {
@@ -205,7 +208,7 @@ run('CN-2B/213 beneficiary column mapping — dynamic', () => {
         ($2,'central_needs.edit',true),($2,'central_needs.view',true)
         ON CONFLICT (profile_id, permission_key) DO UPDATE SET allowed=true`, [U_EDIT, U_OTHER]);
     });
-  });
+  }, 600000);
 
   afterAll(async () => { await rig?.end(); });
 

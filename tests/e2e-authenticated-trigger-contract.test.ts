@@ -107,15 +107,17 @@ describe('pg-rig TLS mixed-history acceptance stays in ci.yml', () => {
   });
 
   it('still replays the predecessor chain before pushing the newest migration', () => {
-    // Production's ceiling before M216 is 215, so the acceptance replays
-    // exactly 001->215 and the shadow-workspace push is M216. A stale ceiling
-    // (the old 196) must not survive anywhere in the executable YAML.
-    expect(code(CI_YML)).toContain('node tools/pg-rig/apply.mjs 215');
+    // Production's ceiling before M217 is 216, so the acceptance replays
+    // exactly 001->216 and the shadow-workspace push is M217. A stale ceiling
+    // (the old 196, or the M216-era 215) must not survive anywhere in the
+    // executable YAML.
+    expect(code(CI_YML)).toContain('node tools/pg-rig/apply.mjs 216');
     expect(code(CI_YML)).not.toContain('node tools/pg-rig/apply.mjs 196');
-    expect(code(CI_YML).match(/node tools\/pg-rig\/apply\.mjs 215\b/g)).toHaveLength(1);
+    expect(code(CI_YML)).not.toMatch(/node tools\/pg-rig\/apply\.mjs 215\b/);
+    expect(code(CI_YML).match(/node tools\/pg-rig\/apply\.mjs 216\b/g)).toHaveLength(1);
     // …and it runs immediately before the acceptance, against the same TLS-only database.
     const yml = code(CI_YML);
-    const replay = yml.indexOf('node tools/pg-rig/apply.mjs 215');
+    const replay = yml.indexOf('node tools/pg-rig/apply.mjs 216');
     const acceptance = yml.indexOf('node tools/phoenix-demo/mixed-history-acceptance.mjs');
     expect(replay).toBeGreaterThan(-1);
     expect(acceptance).toBeGreaterThan(replay);

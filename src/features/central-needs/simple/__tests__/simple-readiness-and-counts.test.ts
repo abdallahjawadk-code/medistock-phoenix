@@ -43,6 +43,25 @@ describe('summarizeSimpleReadiness — fail-closed readiness projection (item 12
     expect(s.messageKeys).toEqual(['cn2b_simple_blocker_unknown']);
   });
 
+  it('C5 §7: gives invalid evidence and each lineage reason their OWN keys alongside the category sentences', () => {
+    const s = summarizeSimpleReadiness(readiness([
+      { blocker: 'no_finalized_import' },
+      { blocker: 'source_cell_value_contract_invalid', detail: 'session=s1 source_record=r1 reason=invalid_evidence' },
+      { blocker: 'target_entity_without_disposition' },
+      { blocker: 'need_line_quantity_lineage_unsafe', detail: 'session=s1 source_record=r1 need_line=n1 reason=source_quantity_override_value_invalid' },
+      { blocker: 'need_line_quantity_lineage_unsafe', detail: 'session=s1 source_record=r2 need_line=n1 reason=source_cell_value_contract_invalid' },
+    ]))!;
+    expect(s.messageKeys).toEqual([
+      'cn2b_simple_blocker_source',
+      'cn2b_simple_blocker_source_evidence_invalid',
+      'cn2b_simple_blocker_material',
+      'cn2b_simple_blocker_lineage_source_cell_value_contract_invalid',
+      'cn2b_simple_blocker_lineage_source_quantity_override_value_invalid',
+    ]);
+    expect(s.countsByCategory).toMatchObject({ source: 2, material: 1, need_line: 2, unknown: 0 });
+    expect(s.hasUnknownBlocker).toBe(false);
+  });
+
   it('reports no message lines when there are no blockers, without claiming a business fact beyond the server’s own `ready`', () => {
     const s = summarizeSimpleReadiness(readiness([], true))!;
     expect(s.messageKeys).toEqual([]);

@@ -78,12 +78,24 @@ const disposition = (entity: string, item: string | null = ITEM_A, decision: 'ma
   decidedAt: '2026-01-01T00:00:00.000Z',
 });
 
+/**
+ * C5 §15/§18 — the parser's own `source_values` envelope (`parser-core.ts`):
+ * a quantity is suggested only from a typed `number` or an exact whole-number
+ * `string`, so fixtures carry `valueType` exactly as imported evidence does.
+ */
+const envelope = (value: unknown) => ({
+  value,
+  valueType: typeof value === 'number' ? 'number' : typeof value === 'boolean' ? 'boolean' : 'string',
+  isFormula: false,
+  formula: null,
+});
+
 const record = (
   id: string, entity: string, fieldName: string, value: unknown, ordinal: number, columnIndex: number,
   extra: { a1?: string; originalFilename?: string; importSessionId?: string } = {},
 ) => ({
   id, importSessionId: extra.importSessionId ?? 's1', recordOrdinal: ordinal, targetEntity: entity, fieldName,
-  sourceValues: { value },
+  sourceValues: envelope(value),
   sourceProvenance: {
     sheetIndex: 0,
     coordinate: { col: columnIndex, ...(extra.a1 ? { a1: extra.a1 } : {}) },
@@ -137,6 +149,7 @@ function renderPanel(lang: 'ar' | 'en', over: Partial<PanelProps> = {}) {
       record('rec-7-price', ROW_7, 'unit price', 7, 4, 10),
     ],
     overrides: [],
+    overrideReadFailure: null,
     needLines: [],
     claimedSources: [],
     beneficiaryColumns: [beneficiaryColumn(2, BENE), beneficiaryColumn(3, BENE), nonBeneficiaryColumn(10)],

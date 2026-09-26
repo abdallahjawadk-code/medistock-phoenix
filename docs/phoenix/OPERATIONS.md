@@ -85,6 +85,19 @@ preflight is FAILED_CLEAN by construction: the apply step is skipped, and
 `supabase db push` is never invoked in any form. That has happened and was
 correctly classified; it is the expected shape of a safe refusal.
 
+### C5 / M217 activation window
+
+M217 (`217_phoenix_central_needs_c5_safety_convergence.sql`) is applied by
+the executor, like any other migration. It may only be dispatched inside the
+ordered C5 activation window: T0 snapshot, a complete submit/approve EXECUTE
+freeze, drains, governed rejection, Proof A/B and the exact ACL restore. That
+window is described in [C5-ACTIVATION-RUNBOOK.md](C5-ACTIVATION-RUNBOOK.md),
+and its tooling is `tools/phoenix-demo/c5-activation-*.mjs`. For M217, the
+runbook's failure branches take precedence over the table above: FAILED_CLEAN
+restores the captured ACL and holds, while FAILED_PARTIAL and UNKNOWN keep the
+freeze in place and restore nothing. Production activation needs a separate Owner
+Production authorization, and none is in force.
+
 ### Forward-only correction
 
 Applied migrations are immutable. A defect in an applied migration is corrected

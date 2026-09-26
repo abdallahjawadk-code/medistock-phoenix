@@ -423,7 +423,15 @@ describe('RAC-3 · I) no backend or migration change', () => {
     // filename, exactly as M200-M215 were, so this guard still fails closed for
     // any OTHER migration or supabase/ file.
     const M216 = 'supabase/migrations/216_phoenix_central_needs_region_persistence.sql';
-    const ALLOWED_SQL = [M200, M201, M202, M203, M204, M205, M206, M207, M208, M209, M210, M211, M212, M213, M214, M215, M216];
+    // C5/M217: the Central Needs safety convergence (classifier, shared
+    // quantity-lineage helper, NOT VALID source-value CHECK, approval-gate
+    // fence); it touches no command-centre object. Registered by EXACT
+    // filename, exactly as M200-M216 were, so this guard still fails closed for
+    // any OTHER migration or supabase/ file. Its static, dynamic, lifecycle-chain
+    // and activation-rehearsal suites live under supabase/migrations/__tests__/,
+    // which this guard already exempts, and are not SQL.
+    const M217 = 'supabase/migrations/217_phoenix_central_needs_c5_safety_convergence.sql';
+    const ALLOWED_SQL = [M200, M201, M202, M203, M204, M205, M206, M207, M208, M209, M210, M211, M212, M213, M214, M215, M216, M217];
     const changed = execSync(
       'git diff --name-only b707f073d60b4cc61205c35003ab491f3aed7468',
       { cwd: process.cwd(), encoding: 'utf8' },

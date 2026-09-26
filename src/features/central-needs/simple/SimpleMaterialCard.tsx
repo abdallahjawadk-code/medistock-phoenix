@@ -43,6 +43,7 @@ import { t } from '@/shared/i18n/strings';
 import { PhoenixButton } from '@/shared/ui/PhoenixButton';
 import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import {
+  CentralNeedsError,
   searchCentralItems,
   setRecordDisposition,
   type CentralItemOption,
@@ -95,9 +96,16 @@ interface Props {
   /** Every SourceRecord sharing this targetEntity — the whole imported row. */
   fields: SourceRecord[];
   onResolved: () => void;
+  /**
+   * C5 §17 (UI-F3) — a server refusal of this card's write. The screen re-reads
+   * the registry and the revision when it means the revision's lifecycle moved
+   * (e.g. `plan_revision_not_editable`) or the outcome is unknown; nothing is
+   * retried.
+   */
+  onRefused?: (refusal: CentralNeedsError) => void;
 }
 
-export function SimpleMaterialCard({ lang, importSessionId, editable, targetEntity, fields, onResolved }: Props) {
+export function SimpleMaterialCard({ lang, importSessionId, editable, targetEntity, fields, onResolved, onRefused }: Props) {
   const [query, setQuery] = useState('');
   const [candidates, setCandidates] = useState<CentralItemOption[]>([]);
   const [picking, setPicking] = useState(false);
@@ -156,7 +164,8 @@ export function SimpleMaterialCard({ lang, importSessionId, editable, targetEnti
       });
       onResolved();
     } catch (e) {
-      setError(centralNeedsErrorText((e as { code?: string }).code ?? 'unknown_error', lang));
+      setError(centralNeedsErrorText(e instanceof CentralNeedsError ? e : (e as { code?: string }).code ?? 'unknown_error', lang));
+      if (e instanceof CentralNeedsError) onRefused?.(e);
     } finally {
       setBusy(false);
     }
@@ -176,7 +185,8 @@ export function SimpleMaterialCard({ lang, importSessionId, editable, targetEnti
       });
       onResolved();
     } catch (e) {
-      setError(centralNeedsErrorText((e as { code?: string }).code ?? 'unknown_error', lang));
+      setError(centralNeedsErrorText(e instanceof CentralNeedsError ? e : (e as { code?: string }).code ?? 'unknown_error', lang));
+      if (e instanceof CentralNeedsError) onRefused?.(e);
     } finally {
       setBusy(false);
     }

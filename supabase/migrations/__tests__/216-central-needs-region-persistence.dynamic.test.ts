@@ -1,6 +1,13 @@
 /**
  * C4 / M216 — DYNAMIC proof of beneficiary-region persistence against a real
- * disposable PostgreSQL with the canonical chain 001..216 applied in order.
+ * disposable PostgreSQL with the canonical chain applied in order (buildRig():
+ * every migration on disk, so C5/M217 too — whose approval-gate fence is why
+ * the approved and submitted lifecycle fixtures go through the real RPCs).
+ * C5 §18: the ONE session_replication_role use (RX-8, the lock-free race
+ * simulation) is an explicitly labelled policy exception, not a fixture: it
+ * proves inside its own transaction that only region/M213 rows change and no
+ * revision, need line, link, override, source record or audit row (so no
+ * approved state and no approval gate) is touched.
  *
  * Covers the frozen C4 adversarial matrix (R1-R12, RX-1..RX-8, RV-1..RV-11)
  * and the I4 critical list. EVERY refusal asserts three things:
@@ -264,6 +271,43 @@ run('C4/M216 beneficiary-region persistence — dynamic (PostgreSQL)', { timeout
       o.sources, o.expected ?? [], 'box', 'canonical', null, null]);
   const deleteLine = (lineId: string, expected: string[]) =>
     call(U_EDIT, DELETE_LINE_SQL, [lineId, 'wrong geometry, re-designate after conversion', expected]);
+
+  /**
+   * C5 §16/§18 (217): on the forward chain a direct UPDATE into 'approved' is
+   * refused by the approval-gate fence (23514 central_needs_approval_gate_missing),
+   * and a revision set 'submitted' directly must never go on to be approved. A
+   * lifecycle fixture therefore reaches SUBMITTED only canonically: the given
+   * region-covered cells (10 each) are designated to ONE need line of the
+   * region's beneficiary, the completed session is registered in a trusted
+   * batch, readiness is proven empty, and the real submit RPC runs (U_EDIT).
+   */
+  async function submitCanonically(revId: string, sessionId: string, cells: string[], beneficiary: string) {
+    await setLine(revId, {
+      beneficiary, qty: 10 * cells.length, sources: sources(...cells.map((id): [string, number] => [id, 10])),
+    });
+    const hex = sessionId.replace(/-/g, '');
+    const [{ id: batchId }] = await admin(
+      `INSERT INTO central_needs_import_batches
+         (plan_revision_id, organization_id, container_kind, container_filename, container_sha256,
+          storage_locator, accepted_entry_count, parser_identity)
+       VALUES ($1,$2,'file','needs.xlsx',$3,'permanent/x',1,$4::jsonb) RETURNING id`,
+      [revId, ORG_OWNER, hex.padStart(64, 'c'), JSON.stringify(PARSER_IDENTITY)]);
+    await admin(
+      `INSERT INTO central_needs_import_batch_entries
+         (batch_id, plan_revision_id, organization_id, entry_ordinal, entry_sha256, import_session_id)
+       VALUES ($1,$2,$3,1,$4,$5)`,
+      [batchId, revId, ORG_OWNER, hex.padStart(64, 'e'), sessionId]);
+    expect(await blockers(revId)).toEqual([]);
+    const out = await call(U_EDIT, 'SELECT public.phoenix_central_needs_submit_revision($1) AS result', [revId]);
+    expect(out.status).toBe('submitted');
+  }
+
+  /** submitCanonically, then the real approve RPC (U_APPROVE), which writes its own approval gate. */
+  async function approveCanonically(revId: string, sessionId: string, cells: string[], beneficiary: string) {
+    await submitCanonically(revId, sessionId, cells, beneficiary);
+    const out = await call(U_APPROVE, 'SELECT public.phoenix_central_needs_approve_revision($1) AS result', [revId]);
+    expect(out).toMatchObject({ ok: true, status: 'approved' });
+  }
 
   /** Everything a region refusal must leave untouched, plus the global audit count. */
   async function snapshot(revId: string) {
@@ -1093,10 +1137,13 @@ run('C4/M216 beneficiary-region persistence — dynamic (PostgreSQL)', { timeout
   // ===========================================================================
   describe('R8-R11 / RV-10 correction lifecycle', () => {
     async function approvedWithRegion() {
-      const s = await standard();
+      // C5 §18: approved canonically (draft -> submit -> approve through the real
+      // RPCs), never by a direct UPDATE the 217 fence refuses. One region-governed
+      // column of three numeric cells keeps the revision small enough to be READY;
+      // R8-R11 assert only on that column's region, so nothing they prove moves.
+      const s = await standard([1, 2, 3], [2]);
       await setRegions(U_EDIT, { rev: s.revId, session: s.sessionId, expected: [], changes: [add(0, WHOLE, 2, 2, ORG_BENE_A)] });
-      await admin(`UPDATE central_needs_plan_revisions SET status='approved', approved_by=$2, approved_at=now() WHERE id=$1`,
-        [s.revId, U_APPROVE]);
+      await approveCanonically(s.revId, s.sessionId, [1, 2, 3].map((r) => s.rec(0, r, 2)), ORG_BENE_A);
       return s;
     }
     const regionRows = () => admin(`SELECT to_jsonb(v) j FROM central_needs_beneficiary_regions v ORDER BY version_id`);
@@ -1149,7 +1196,9 @@ run('C4/M216 beneficiary-region persistence — dynamic (PostgreSQL)', { timeout
       const rev2 = corr.plan_revision_id ?? corr.revision_id ?? corr.id;
       const sess2 = await addSession(rev2, [{ sheet: 0, rows: grid([1, 2, 3], [2]) }]);
       await setRegions(U_EDIT, { rev: rev2, session: sess2.sessionId, expected: [], changes: [add(0, WHOLE, 2, 2, ORG_BENE_B)] });
-      await admin(`UPDATE central_needs_plan_revisions SET status='submitted' WHERE id=$1`, [rev2]);
+      // C5 §18: R11 goes on to APPROVE this correction, so it is submitted
+      // canonically through the real submit RPC — never by a direct UPDATE.
+      await submitCanonically(rev2, sess2.sessionId, [1, 2, 3].map((r) => sess2.rec(0, r, 2)), ORG_BENE_B);
       return { s, rev2, sess2 };
     }
 
@@ -1226,12 +1275,18 @@ run('C4/M216 beneficiary-region persistence — dynamic (PostgreSQL)', { timeout
         await admin(`UPDATE profiles SET role='central_warehouse_manager', status='active', organization_id=$2 WHERE id=$1`, [tmp, ORG_OWNER]);
         await admin(`INSERT INTO profile_permission_overrides (profile_id, permission_key, allowed) VALUES
           ($1,'central_needs.view',true),($1,'central_needs.edit',true) ON CONFLICT (profile_id, permission_key) DO UPDATE SET allowed=true`, [tmp]);
-        const s = await standard();
+        // One region-governed column (rows 1-25, column 2) that the replaced
+        // version covers exactly, so the approved case can be made READY: C5 §18
+        // approves it canonically (submit -> approve through the real RPCs),
+        // never by a direct UPDATE the 217 fence refuses. The FK actor nulling
+        // under test concerns only the two version rows, whatever the grid.
+        const rows = Array.from({ length: 25 }, (_, i) => i + 1);
+        const s = await standard(rows, [2]);
         await setRegions(tmp, { rev: s.revId, session: s.sessionId, expected: [], changes: [add(1, 20, 2, 2, ORG_BENE_A)] });
         const [v1] = await activeOf(s.sessionId);
         await setRegions(tmp, { rev: s.revId, session: s.sessionId, expected: [v1.version_id], changes: [replace(v1.version_id, 1, 25, 2, 2, ORG_BENE_A)] });
         if (approveAfter) {
-          await admin(`UPDATE central_needs_plan_revisions SET status='approved', approved_by=$2, approved_at=now() WHERE id=$1`, [s.revId, U_APPROVE]);
+          await approveCanonically(s.revId, s.sessionId, rows.map((r) => s.rec(0, r, 2)), ORG_BENE_A);
         }
         const before = await versionsOf(s.sessionId);
         await admin(`DELETE FROM auth.users WHERE id=$1`, [tmp]);
@@ -1338,7 +1393,30 @@ run('C4/M216 beneficiary-region persistence — dynamic (PostgreSQL)', { timeout
       const s = await oneRegion();
       // Reproduce the committed outcome of two lock-free transactions that never
       // saw each other: triggers are suspended only inside this superuser txn.
-      await bypass(async (c) => {
+      //
+      // C5 §18 DISPOSITION — an explicitly labelled POLICY EXCEPTION (a
+      // race-simulation NEGATIVE, never a lifecycle fixture). This suite runs on
+      // the 217 chain, where §18 forbids session_replication_role for fixtures:
+      // replica mode also silences the C5 approval fence and the deferred
+      // lineage trigger. It stays on the 217 chain (it is not pinned to <= 216)
+      // on purpose — the blockers and set_need_line it judges below ARE the M217
+      // replacements. It is permitted ONLY because the replica window writes
+      // region and M213 mapping rows alone, proven INSIDE the same transaction
+      // before COMMIT: no plan, plan revision, need line, link, override, source
+      // record or audit row changes (so no approved state and no approval gate
+      // can be forged under it); and the switch is transaction-local.
+      const lifecycleFingerprint = async (c: any) => (await c.query(`SELECT
+          (SELECT md5(coalesce(string_agg(to_jsonb(r)::text, ',' ORDER BY r.id), '')) FROM central_needs_plan_revisions r) AS revisions,
+          (SELECT md5(coalesce(string_agg(to_jsonb(p)::text, ',' ORDER BY p.id), '')) FROM central_needs_plans p) AS plans,
+          (SELECT md5(coalesce(string_agg(to_jsonb(n)::text, ',' ORDER BY n.id), '')) FROM central_needs_need_lines n) AS lines,
+          (SELECT md5(coalesce(string_agg(to_jsonb(l)::text, ',' ORDER BY l.id), '')) FROM central_needs_need_line_sources l) AS links,
+          (SELECT md5(coalesce(string_agg(to_jsonb(o)::text, ',' ORDER BY o.id), '')) FROM central_needs_field_overrides o) AS overrides,
+          (SELECT count(*) FROM central_needs_source_records)::int AS records,
+          (SELECT count(*) FROM audit_logs)::int AS audits,
+          (SELECT count(*) FROM audit_logs WHERE action = 'central_needs.plan_revision.approval_gate')::int AS gates,
+          (SELECT count(*) FROM central_needs_plan_revisions WHERE status = 'approved')::int AS approved`)).rows[0];
+      const replicationRole = async (c: any) => (await c.query(`SELECT current_setting('session_replication_role') AS r`)).rows[0].r;
+      const raceWrites = async (c: any) => {
         await c.query(`SET LOCAL session_replication_role = replica`);
         // Two regions that intersect on rows 16-17 of column 4 (blocker 16).
         await c.query(`INSERT INTO central_needs_beneficiary_regions (region_id, version_no, plan_revision_id, organization_id,
@@ -1354,7 +1432,38 @@ run('C4/M216 beneficiary-region persistence — dynamic (PostgreSQL)', { timeout
         await c.query(`INSERT INTO central_needs_beneficiary_regions (region_id, version_no, plan_revision_id, organization_id,
            import_session_id, sheet_index, row_start, row_end, column_start, column_end, decision, beneficiary_organization_id, decision_reason)
          VALUES (gen_random_uuid(),1,$1,$2,$3,0,500,600,9,9,'beneficiary',$4,'no evidence')`, [s.revId, ORG_OWNER, s.sessionId, ORG_BENE_A]);
+      };
+      /** What the replica window is allowed to write: region versions and M213 rows of THIS session. */
+      const regionRows = async (c: any) => (await c.query(`SELECT
+          (SELECT count(*) FROM central_needs_beneficiary_regions WHERE import_session_id = $1)::int AS regions,
+          (SELECT count(*) FROM central_needs_beneficiary_column_mappings WHERE import_session_id = $1)::int AS m213`, [s.sessionId])).rows[0];
+      let inside: { before: unknown; after: unknown; role: string; wrote: { regions: number; m213: number } } | undefined;
+      await rig.asAdmin(async (c: any) => {
+        expect(await replicationRole(c)).toBe('origin');
+        await c.query('BEGIN');
+        try {
+          const before = await lifecycleFingerprint(c);
+          const rows0 = await regionRows(c);
+          await raceWrites(c);
+          const rows1 = await regionRows(c);
+          inside = { before, after: await lifecycleFingerprint(c), role: await replicationRole(c),
+            wrote: { regions: rows1.regions - rows0.regions, m213: rows1.m213 - rows0.m213 } };
+          await c.query('COMMIT');
+        } catch (e) {
+          await c.query('ROLLBACK').catch(() => undefined);
+          throw e;
+        }
+        // SET LOCAL: replica mode ended with the transaction on this very connection.
+        expect(await replicationRole(c)).toBe('origin');
       });
+      expect(inside!.role).toBe('replica');
+      expect(inside!.wrote).toEqual({ regions: 3, m213: 1 });   // the window did write — exactly the race rows
+      expect(inside!.after).toEqual(inside!.before);            // and nothing of the lifecycle
+      const [rev] = await admin(`SELECT status FROM central_needs_plan_revisions WHERE id=$1`, [s.revId]);
+      expect(rev.status).toBe('draft');
+      expect(await admin(`SELECT id FROM audit_logs WHERE entity_id=$1 AND action='central_needs.plan_revision.approval_gate'`, [s.revId]))
+        .toEqual([]);
+
       const codes = await blockerCodes(s.revId);
       expect(codes).toContain('beneficiary_region_overlap');
       expect(codes).toContain('beneficiary_decision_grain_conflict');

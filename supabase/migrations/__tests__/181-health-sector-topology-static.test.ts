@@ -103,12 +103,17 @@ describe('181 registration and shape', () => {
       // on Central Needs tables and it carries no topology SQL, so nothing this suite asserts moves.
       // It is now the reviewed ceiling.
       '216_phoenix_central_needs_region_persistence.sql',
+      // C5/M217: the Central Needs safety convergence (classifier, shared quantity-lineage helper,
+      // NOT VALID source-value CHECK, approval-gate fence) — its trigger and CHECK sit only on Central
+      // Needs tables and it carries no topology SQL, so nothing this suite asserts moves.
+      // It is now the reviewed ceiling.
+      '217_phoenix_central_needs_c5_safety_convergence.sql',
     ];
     const i = REVIEWED_MIGRATION_FILES.indexOf(NAME);
     expect(REVIEWED_MIGRATION_FILES.slice(i + 1)).toEqual(SUCCESSORS);
-    // The ceiling is now 216; `[2-9]\d\d` would match it, so this asserts
+    // The ceiling is now 217; `[2-9]\d\d` would match it, so this asserts
     // numerically that nothing sits ABOVE the ceiling.
-    expect(REVIEWED_MIGRATION_FILES.filter(f => Number(f.slice(0, 3)) > 216)).toHaveLength(0);
+    expect(REVIEWED_MIGRATION_FILES.filter(f => Number(f.slice(0, 3)) > 217)).toHaveLength(0);
   });
 
   it('is a single transaction, manual-apply only, through Supabase.apply_migration', () => {

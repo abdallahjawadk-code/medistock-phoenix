@@ -10,10 +10,11 @@
 //
 // What it proves, in order:
 //   1. the connection is genuinely TLS (asked of the server, not assumed);
-//   2. the seeded history reproduces Production's shape before M216: 172
-//      three-digit rows then 43 timestamp rows (canonical 173..215), 215 total,
-//      carrying BOTH historical unprefixed rows (173 and 214) literally;
-//   3. the reconciler derives canonical ceiling 215 and pending [216];
+//   2. the seeded history reproduces Production's shape before M217: 172
+//      three-digit rows then 44 timestamp rows (canonical 173..216), 216 total,
+//      carrying BOTH historical unprefixed rows (173 and 214) and the SEALED
+//      M216 row (20260924124100) literally;
+//   3. the reconciler derives canonical ceiling 216 and pending [217];
 //   4. the CLI, pointed at the shadow workspace, reports EXACTLY ONE pending
 //      migration — the target alias — with NO --debug;
 //   5. the same run WITH --debug agrees, proving the pinned binary does not
@@ -24,10 +25,11 @@
 //   9. the reconciler then reports the resume-safe state.
 //
 // PRECONDITION: ACCEPTANCE_DB_URL must already carry the canonical chain
-// 001->215. Migration 216 opens with a fail-closed precondition block that
-// requires the M209-M215 tables and functions by name and refuses if its own
-// table already exists, so pushing it at any other database aborts. Stage 1b
-// below proves that precondition rather than assuming it.
+// 001->216. Migration 217 opens with a fail-closed prelude that requires the
+// M209-M216 tables and functions by name and refuses if any of its own C5
+// objects already exists, so pushing it at any other database aborts. Stage
+// 1b below proves that precondition rather than assuming it, and stage 6
+// proves every M217 object exists afterwards.
 //
 // Usage:
 //   ACCEPTANCE_DB_URL=postgresql://user:pw@host:port/db?sslmode=require \
@@ -40,6 +42,7 @@ import { join } from 'node:path';
 import pg from 'pg';
 import { reconcileMigrationHistory } from './production-migration-history.mjs';
 import { buildShadowMigrationWorkspace, parseDryRunPending } from './build-shadow-migration-workspace.mjs';
+import { M217_STATE_SQL } from './c5-activation-sql.mjs';
 
 const DB_URL = process.env.ACCEPTANCE_DB_URL;
 const EXPECTED_CLI = process.env.ACCEPTANCE_CLI_VERSION ?? '2.115.0';
@@ -47,11 +50,15 @@ const REPO_ROOT = process.cwd();
 const MIGRATIONS_DIR = join(REPO_ROOT, 'supabase', 'migrations');
 
 const NUMERIC_ERA = 172;
-const TIMESTAMP_ERA = 43;
-const TARGET_REMOTE_VERSION = '20260923215400';
+const TIMESTAMP_ERA = 44;
+// The M217 target alias version for THIS disposable acceptance only: strictly
+// newer than the sealed M216 row below. It is not a Production version — a real
+// dispatch uses a freshly generated remote_history_version that is strictly
+// newer than a FRESH read of Production history.
+const TARGET_REMOTE_VERSION = '20260926120000';
 
 // ---------------------------------------------------------------------------
-// PRODUCTION'S REAL TIMESTAMP-ERA SHAPE, THROUGH CANONICAL 215.
+// PRODUCTION'S REAL TIMESTAMP-ERA SHAPE, THROUGH CANONICAL 216.
 //
 // Versions and names below are the shape live Production actually carries, not
 // a generated approximation. An earlier fixture wrote the full canonical stem
@@ -60,11 +67,16 @@ const TARGET_REMOTE_VERSION = '20260923215400';
 // Production on canonical 173, and executor run 35925796412 refused on
 // canonical 214, while this acceptance was green both times.
 //
-// 41 of the 43 rows DO carry the canonical prefix. 173 and 214 are the two
+// 42 of the 44 rows DO carry the canonical prefix. 173 and 214 are the two
 // historical exceptions, and both are written out literally rather than
 // derived from expectedRemoteName() or HISTORICAL_REMOTE_NAME_EXCEPTIONS -- a
 // fixture that asks the code under test what to expect proves nothing.
-// 215 is the Director-verified Production row the M216 target must follow.
+// 215 is the Director-verified Production row the M216 dispatch followed, and
+// 216 is the SEALED Production row of that dispatch (executor run 36026915933,
+// version 20260924124100, name 216_phoenix_central_needs_region_persistence).
+// The pre-dispatch fixture value 20260923215400 is retired here: C5 §19 forbids
+// treating a fixture timestamp as Production's M216 identity. The M217 target
+// must follow the sealed row.
 // ---------------------------------------------------------------------------
 const REAL_REMOTE_VERSIONS = new Map([
   [173, '20260810200846'],
@@ -72,7 +84,9 @@ const REAL_REMOTE_VERSIONS = new Map([
   [196, '20260823131150'],
   [214, '20260914111813'],
   [215, '20260922153813'],
+  [216, '20260924124100'],
 ]);
+const SEALED_M216_NAME = '216_phoenix_central_needs_region_persistence';
 const REAL_REMOTE_NAMES = new Map([
   [173, 'phoenix_database_security_surface_hardening'],
   [214, 'fix_central_needs_review_readiness_volatility'],
@@ -185,25 +199,34 @@ async function main() {
 
   console.log(`== 1b. the acceptance database really carries the 001->${NUMERIC_ERA + TIMESTAMP_ERA} chain ==`);
   // Without this the failure would surface deep inside `supabase db push` as an
-  // opaque SQL error. M216's own precondition block requires these by name
-  // (M209-M215 surface, including M214's readiness and M215's lifecycle), so
-  // their absence is decisive.
+  // opaque SQL error. M217's own prelude requires these by name (the M209-M216
+  // surface, including M215's family lock and M216's region resolver and safe
+  // coordinate extractor), so their absence is decisive.
   const need = [
-    'public.phoenix_central_needs_list_beneficiary_columns(uuid)',
-    'public.phoenix_central_needs_review_readiness(uuid)',
-    'public.phoenix_central_needs_set_need_line(uuid, uuid, uuid, numeric, text, jsonb, uuid[], text, text, uuid, text)',
+    'public._phoenix_central_needs_guard_v1(uuid, text)',
     'public._phoenix_central_needs_lock_plan_family_v1(uuid, integer)',
-    'public.phoenix_central_needs_open_correction_revision(uuid, integer, uuid, text)',
-    'public.phoenix_central_needs_revision_lifecycle(uuid, integer)',
+    'public._phoenix_central_needs_resolve_region_v1(uuid, jsonb)',
+    'public._phoenix_central_needs_safe_coordinate_v1(jsonb, integer)',
+    'public.phoenix_central_needs_set_need_line(uuid, uuid, uuid, numeric, text, jsonb, uuid[], text, text, uuid, text)',
+    'public.phoenix_central_needs_record_field_override(uuid, jsonb, text, text, text)',
+    'public.phoenix_central_needs_approve_revision(uuid)',
+    'public.phoenix_central_needs_review_readiness(uuid)',
   ];
   for (const sig of need) {
     const { rows: r } = await c.query('SELECT to_regprocedure($1) IS NOT NULL AS ok', [sig]);
     if (!r[0].ok) fail(`${sig} is missing — the acceptance database has not received migrations 001->${NUMERIC_ERA + TIMESTAMP_ERA}.`);
   }
-  const regionsBefore = (await c.query(
-    "SELECT to_regclass('public.central_needs_beneficiary_regions') IS NULL AS absent")).rows[0].absent;
-  if (!regionsBefore) fail('public.central_needs_beneficiary_regions already exists — the target M216 must not be applied yet.');
-  ok(`canonical chain present (${need.length} of M216's precondition functions resolve; M216's table is absent)`);
+  const regionsPresent = (await c.query(
+    "SELECT to_regclass('public.central_needs_beneficiary_regions') IS NOT NULL AS present")).rows[0].present;
+  if (!regionsPresent) fail('public.central_needs_beneficiary_regions is absent — the predecessor M216 has not been applied.');
+  // Every M217 object absent, and every body M217 replaces still pre-C5.
+  const before = (await c.query(M217_STATE_SQL)).rows[0];
+  const m217ObjectsBefore = ['classifier', 'lineage_helper', 'fence_function', 'fence_trigger', 'value_contract'].filter((k) => before[k]);
+  const c5BodiesBefore = Object.entries(before.bodies).filter(([, v]) => v !== false).map(([k]) => k);
+  if (m217ObjectsBefore.length || c5BodiesBefore.length) {
+    fail(`M217 is already (partly) present [${[...m217ObjectsBefore, ...c5BodiesBefore].join(', ')}] — the target M217 must not be applied yet.`);
+  }
+  ok(`canonical chain present (${need.length} of M217's prelude functions resolve; M216's table is present; every M217 object is absent)`);
 
   console.log('== 2. seed Production\'s history shape (disposable database only) ==');
   await c.query('CREATE SCHEMA IF NOT EXISTS supabase_migrations');
@@ -231,13 +254,16 @@ async function main() {
   }
   let rows = await readHistory(c);
   if (rows.length !== NUMERIC_ERA + TIMESTAMP_ERA) fail(`seeded ${rows.length} rows, expected ${NUMERIC_ERA + TIMESTAMP_ERA}.`);
-  for (const [canonical, name] of REAL_REMOTE_NAMES) {
+  for (const [canonical, name] of [...REAL_REMOTE_NAMES, [216, SEALED_M216_NAME]]) {
     const seeded = rows.filter((r) => r.version === REAL_REMOTE_VERSIONS.get(canonical));
     if (seeded.length !== 1 || seeded[0].name !== name) {
       fail(`historical row for canonical ${canonical} is not seeded exactly as ${REAL_REMOTE_VERSIONS.get(canonical)} ${name}.`);
     }
   }
-  ok(`${rows.length} rows seeded (${NUMERIC_ERA} three-digit + ${TIMESTAMP_ERA} timestamp, ${TIMESTAMP_ERA - 2} prefixed + 2 historical unprefixed)`);
+  if (!(TARGET_REMOTE_VERSION > previousVersion)) {
+    fail(`the M217 target version ${TARGET_REMOTE_VERSION} is not strictly newer than the sealed M216 row ${previousVersion}.`);
+  }
+  ok(`${rows.length} rows seeded (${NUMERIC_ERA} three-digit + ${TIMESTAMP_ERA} timestamp, ${TIMESTAMP_ERA - 2} prefixed + 2 historical unprefixed; sealed 216 row ${REAL_REMOTE_VERSIONS.get(216)})`);
 
   console.log('== 3. PROOF A — canonical reconciliation ==');
   const targetCanonical = NUMERIC_ERA + TIMESTAMP_ERA + 1;
@@ -287,10 +313,13 @@ async function main() {
   if (added.length !== 1) fail(`expected exactly one row with version ${TARGET_REMOTE_VERSION}, found ${added.length}.`);
   const expectedName = targetLocal.filename.replace(/\.sql$/, '');
   if (added[0].name !== expectedName) fail(`new row name ${JSON.stringify(added[0].name)}, expected ${JSON.stringify(expectedName)}.`);
-  const regionsAfter = (await c.query(
-    "SELECT to_regclass('public.central_needs_beneficiary_regions') IS NOT NULL AS present")).rows[0].present;
-  if (!regionsAfter) fail('public.central_needs_beneficiary_regions is absent after the push — M216 did not apply.');
-  ok(`history ${NUMERIC_ERA + TIMESTAMP_ERA} -> ${rows.length}; exactly one new row ${TARGET_REMOTE_VERSION} = ${expectedName}`);
+  const after = (await c.query(M217_STATE_SQL)).rows[0];
+  const m217Missing = ['classifier', 'lineage_helper', 'fence_function', 'fence_trigger', 'value_contract'].filter((k) => !after[k]);
+  const c5BodiesMissing = Object.entries(after.bodies).filter(([, v]) => v !== true).map(([k]) => k);
+  if (m217Missing.length || c5BodiesMissing.length) {
+    fail(`M217 objects/bodies absent after the push [${[...m217Missing, ...c5BodiesMissing].join(', ')}] — M217 did not apply.`);
+  }
+  ok(`history ${NUMERIC_ERA + TIMESTAMP_ERA} -> ${rows.length}; exactly one new row ${TARGET_REMOTE_VERSION} = ${expectedName}; every M217 object present`);
 
   console.log('== 7. nothing pending afterwards ==');
   const dry2 = cli([...pushArgs, '--dry-run']);

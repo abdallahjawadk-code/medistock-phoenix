@@ -90,6 +90,51 @@ export function newerRevisionOf(rows: readonly PlanRevision[], revision: PlanRev
   return newest !== null && newest.id !== revision.id && newest.revisionNumber > revision.revisionNumber ? newest : null;
 }
 
+/**
+ * C5 §17 — a revision's lifecycle only moves FORWARD (M210/M215/M217):
+ * draft -> submitted -> approved -> superseded, or submitted -> rejected. No
+ * product path ever returns a revision to an earlier status.
+ */
+const LIFECYCLE_RANK: Readonly<Record<RevisionStatus, number>> = {
+  draft: 0,
+  submitted: 1,
+  approved: 2,
+  rejected: 2,
+  superseded: 3,
+};
+
+function isRevisionStatus(value: unknown): value is RevisionStatus {
+  return typeof value === 'string' && Object.prototype.hasOwnProperty.call(LIFECYCLE_RANK, value);
+}
+
+/**
+ * C5 §17 — the FRESHEST known status of one revision, given the registry row's
+ * status and a status observed later for the same revision (the readiness
+ * read returns one). Because the lifecycle only moves forward, the status
+ * further along it is the fresher fact, whichever read produced it: a registry
+ * row still saying "draft" while readiness says "submitted" is stale, and so
+ * is a readiness still saying "submitted" after the registry says "approved".
+ *
+ * Fail closed: two different statuses never yield "draft" (the other one is
+ * always further along), so a disagreement can only make a revision LESS
+ * editable. An observed value that is not a status is ignored.
+ */
+export function freshestRevisionStatus(
+  registryStatus: RevisionStatus | null,
+  observedStatus: unknown,
+): RevisionStatus | null {
+  if (registryStatus === null) return null;
+  if (!isRevisionStatus(observedStatus) || observedStatus === registryStatus) return registryStatus;
+  return LIFECYCLE_RANK[observedStatus] > LIFECYCLE_RANK[registryStatus] ? observedStatus : registryStatus;
+}
+
+/** True when `observedStatus` is a status strictly further along the lifecycle than the registry's. */
+export function isStatusAheadOfRegistry(registryStatus: RevisionStatus | null, observedStatus: unknown): boolean {
+  return registryStatus !== null
+    && isRevisionStatus(observedStatus)
+    && LIFECYCLE_RANK[observedStatus] > LIFECYCLE_RANK[registryStatus];
+}
+
 /** Why no correction target can be named for the current selection. */
 export type CorrectionRefusal = 'no_revision_selected' | 'revision_plan_year_unavailable';
 

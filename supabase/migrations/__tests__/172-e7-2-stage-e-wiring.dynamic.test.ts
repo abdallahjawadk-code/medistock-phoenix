@@ -306,6 +306,13 @@ run('E7-2 · Stage-E application wiring (dynamic)',()=>{
       // stock SQL at all, so "Stage E still ends at 171" remains true. Listed so
       // this guard stays exhaustive and fails closed on any unlisted new file.
       '216_phoenix_central_needs_region_persistence.sql',
+      // C5/M217: the Central Needs safety convergence — classifier, shared
+      // quantity-lineage helper, NOT VALID source-value CHECK and approval-gate
+      // fence; it adds no migration numbered <= 171 and no corridor, route,
+      // dispatch or stock SQL at all, so "Stage E still ends at 171" remains
+      // true. Listed so this guard stays exhaustive and fails closed on any
+      // unlisted new file.
+      '217_phoenix_central_needs_c5_safety_convergence.sql',
     ];
     it('Stage E still ends at 171 — E7-2 introduced no new SQL',()=>{
       const files=readdirSync(join(__dirname,'..')).filter(f=>/^\d{3}_.*\.sql$/.test(f));

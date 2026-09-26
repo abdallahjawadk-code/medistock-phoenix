@@ -73,6 +73,95 @@ function ok(data: unknown, count: number | null = null): QaResult {
   return { data, error: null, count };
 }
 
+/**
+ * C5 §13 — the ONE table read by keyset. `listOverrides` pages
+ * central_needs_field_overrides newest first (`created_at DESC, id DESC`),
+ * bounds every later page with two `or()` filters of the exact shape
+ *   created_at.lt."<ts>",and(created_at.eq."<ts>",id.<lt|lte>.<id>)
+ * and ends only on an empty page. An inert `or()` would hand the same rows back
+ * forever, which the reader rightly refuses as inconsistent. For THIS table only
+ * the fixture client therefore answers the way PostgREST does: it evaluates those
+ * filters, orders as asked and applies the limit last. Every other table keeps the
+ * inert no-op behaviour it always had. Still SELECT-only and network-free.
+ */
+const KEYSET_TABLES = new Set(['central_needs_field_overrides']);
+const QA_TIMESTAMPTZ =
+  /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,6}))?(?:([+-])(\d{2})(?::?(\d{2}))?|Z)$/;
+
+type KeysetLeaf = { col: string; op: string; value: string };
+type KeysetNode = KeysetLeaf | { and: KeysetNode[] };
+
+/** Exact instant of a PostgreSQL timestamptz text, in microseconds; null if unparsable. */
+function qaTimestampMicros(text: string): bigint | null {
+  const m = QA_TIMESTAMPTZ.exec(text);
+  if (!m) return null;
+  const [, y, mo, d, h, mi, s, frac = '', sign, oh = '0', om = '0'] = m;
+  const ms = Date.UTC(Number(y), Number(mo) - 1, Number(d), Number(h), Number(mi), Number(s));
+  const offset = BigInt(Number(oh) * 3600 + Number(om) * 60) * 1_000_000n;
+  return BigInt(ms) * 1000n + BigInt(frac.padEnd(6, '0')) - (sign === '-' ? -offset : sign === '+' ? offset : 0n);
+}
+
+/** Split on top-level commas (outside parentheses and double quotes). */
+function splitTopLevel(expr: string): string[] | null {
+  const parts: string[] = [];
+  let depth = 0, quoted = false, start = 0;
+  for (let i = 0; i < expr.length; i += 1) {
+    const ch = expr[i];
+    if (quoted) { if (ch === '\\') i += 1; else if (ch === '"') quoted = false; continue; }
+    if (ch === '"') quoted = true;
+    else if (ch === '(') depth += 1;
+    else if (ch === ')') { depth -= 1; if (depth < 0) return null; }
+    else if (ch === ',' && depth === 0) { parts.push(expr.slice(start, i)); start = i + 1; }
+  }
+  if (depth !== 0 || quoted) return null;
+  parts.push(expr.slice(start));
+  return parts;
+}
+
+function parseKeysetNode(text: string): KeysetNode | null {
+  if (text.startsWith('and(') && text.endsWith(')')) {
+    const inner = splitTopLevel(text.slice(4, -1));
+    if (!inner) return null;
+    const nodes = inner.map(parseKeysetNode);
+    return nodes.every((n) => n !== null) ? { and: nodes as KeysetNode[] } : null;
+  }
+  const m = /^([a-z_]+)\.(eq|lt|lte|gt|gte)\.(.*)$/.exec(text);
+  if (!m) return null;
+  let value = m[3];
+  if (value.startsWith('"')) {
+    if (!value.endsWith('"') || value.length < 2) return null;
+    value = value.slice(1, -1).replace(/\\(.)/g, '$1');
+  }
+  return { col: m[1], op: m[2], value };
+}
+
+/** Compare a row cell with a filter value: timestamps as instants, everything else as text. */
+function keysetCompare(row: QaRow, col: string, value: string): number | null {
+  if (col === 'created_at') {
+    const rowText = typeof row.created_at_text === 'string' ? row.created_at_text : row.created_at;
+    const a = typeof rowText === 'string' ? qaTimestampMicros(rowText) : null;
+    const b = qaTimestampMicros(value);
+    if (a === null || b === null) return null;
+    return a === b ? 0 : a < b ? -1 : 1;
+  }
+  const cell = row[col];
+  if (typeof cell !== 'string') return null;
+  return cell === value ? 0 : cell < value ? -1 : 1;
+}
+
+function keysetMatches(row: QaRow, node: KeysetNode): boolean {
+  if ('and' in node) return node.and.every((n) => keysetMatches(row, n));
+  const c = keysetCompare(row, node.col, node.value);
+  if (c === null) return false;
+  switch (node.op) {
+    case 'eq': return c === 0;
+    case 'lt': return c < 0;
+    case 'lte': return c <= 0;
+    case 'gt': return c > 0;
+    default: return c >= 0;
+  }
+}
+
 /** A thenable query builder. Filters are best-effort (eq/in) so persona scoping
  *  visibly narrows fixtures; everything else is an inert chainable no-op. */
 class QaQueryBuilder implements PromiseLike<QaResult> {
@@ -80,10 +169,15 @@ class QaQueryBuilder implements PromiseLike<QaResult> {
   private readonly mutating: boolean;
   private wantsCountHead = false;
   private singleMode: 'one' | 'maybe' | null = null;
+  // C5 §13 keyset tables only (see KEYSET_TABLES): requested order and a deferred limit.
+  private readonly keyset: boolean;
+  private orders: Array<{ col: string; ascending: boolean }> = [];
+  private keysetLimit: number | null = null;
 
-  constructor(rows: QaRow[], mutating = false) {
+  constructor(rows: QaRow[], mutating = false, table?: string) {
     this.rows = [...rows];
     this.mutating = mutating;
+    this.keyset = table !== undefined && KEYSET_TABLES.has(table);
   }
 
   select(_cols?: string, opts?: { count?: string; head?: boolean }): this {
@@ -102,13 +196,29 @@ class QaQueryBuilder implements PromiseLike<QaResult> {
   lt(): this { return this; }
   like(): this { return this; }
   ilike(): this { return this; }
-  or(): this { return this; }
+  or(expr?: string): this {
+    if (!this.keyset || typeof expr !== 'string') return this;
+    const parts = splitTopLevel(expr);
+    const nodes = parts ? parts.map(parseKeysetNode) : null;
+    // An unrecognised keyset filter matches nothing: the reader then sees an
+    // empty page, never a silently unfiltered one.
+    if (!nodes || nodes.some((n) => n === null)) { this.rows = []; return this; }
+    this.rows = this.rows.filter((r) => (nodes as KeysetNode[]).some((n) => keysetMatches(r, n)));
+    return this;
+  }
   filter(): this { return this; }
   match(): this { return this; }
   contains(): this { return this; }
   overlaps(): this { return this; }
-  order(): this { return this; }
-  limit(n: number): this { this.rows = this.rows.slice(0, n); return this; }
+  order(col?: string, opts?: { ascending?: boolean }): this {
+    if (this.keyset && typeof col === 'string') this.orders.push({ col, ascending: opts?.ascending !== false });
+    return this;
+  }
+  limit(n: number): this {
+    if (this.keyset) { this.keysetLimit = n; return this; }
+    this.rows = this.rows.slice(0, n);
+    return this;
+  }
   range(from: number, to: number): this { this.rows = this.rows.slice(from, to + 1); return this; }
   returns(): this { return this; }
   single(): this { this.singleMode = 'one'; return this; }
@@ -121,6 +231,19 @@ class QaQueryBuilder implements PromiseLike<QaResult> {
 
   private resolve(): QaResult {
     if (this.mutating) return { data: null, error: READONLY_ERROR, count: null };
+    if (this.keyset) {
+      const orders = this.orders;
+      this.rows = [...this.rows].sort((a, b) => {
+        for (const o of orders) {
+          const c = o.col === 'created_at'
+            ? keysetCompare(a, 'created_at', String(b.created_at_text ?? b.created_at)) ?? 0
+            : String(a[o.col] ?? '') === String(b[o.col] ?? '') ? 0 : String(a[o.col] ?? '') < String(b[o.col] ?? '') ? -1 : 1;
+          if (c !== 0) return o.ascending ? c : -c;
+        }
+        return 0;
+      });
+      if (this.keysetLimit !== null) this.rows = this.rows.slice(0, this.keysetLimit);
+    }
     if (this.wantsCountHead) return { data: null, error: null, count: this.rows.length };
     if (this.singleMode) return ok(this.rows[0] ?? null);
     return ok(this.rows, this.rows.length);
@@ -151,7 +274,7 @@ export function createQaFixtureClient(profileId?: string, overlay: Record<string
   const client = {
     from(table: string) {
       const rows = Object.prototype.hasOwnProperty.call(overlay, table) ? overlay[table] : QA_FIXTURES[table];
-      return new QaQueryBuilder(Array.isArray(rows) ? (rows as QaRow[]) : []);
+      return new QaQueryBuilder(Array.isArray(rows) ? (rows as QaRow[]) : [], false, table);
     },
     rpc(name: string, args?: Record<string, unknown>) {
       QA_RPC_CALLS.push({ name, args: args ?? {} });
