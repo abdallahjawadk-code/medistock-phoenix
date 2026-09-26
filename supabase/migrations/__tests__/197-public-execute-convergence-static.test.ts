@@ -71,9 +71,18 @@ describe('M197 static — identity and placement', () => {
       // converges, so what this suite converges is untouched. It is now the
       // reviewed ceiling.
       '216_phoenix_central_needs_region_persistence.sql',
+      // C5/M217: the Central Needs safety convergence (classifier, shared
+      // quantity-lineage helper, NOT VALID source-value CHECK, approval-gate
+      // fence), with no stock, movement, allocation or transfer SQL. It grants
+      // no EXECUTE to PUBLIC (every function it creates REVOKEs PUBLIC, CREATE
+      // OR REPLACE keeps each replaced function's ACL, and it issues no GRANT
+      // or REVOKE on submit, approve or reject) and neither creates, replaces
+      // nor re-grants any of the six functions 197 converges, so what this
+      // suite converges is untouched. It is now the reviewed ceiling.
+      '217_phoenix_central_needs_c5_safety_convergence.sql',
     ]);
-    expect(files.filter((f) => Number(f.slice(0, 3)) > 216)).toEqual([]);
-    expect(files).toHaveLength(216);
+    expect(files.filter((f) => Number(f.slice(0, 3)) > 217)).toEqual([]);
+    expect(files).toHaveLength(217);
   });
 
   it('carries no MANUAL APPLY ONLY banner, so the pinned executor will accept it', () => {

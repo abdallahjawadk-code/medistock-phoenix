@@ -86,6 +86,18 @@ const disposition = (entity: string, item = ITEM_A) => ({
 });
 
 /**
+ * C5 §15/§18 — the parser's own `source_values` envelope (`parser-core.ts`):
+ * a quantity is suggested only from a typed `number` or an exact whole-number
+ * `string`, so fixtures carry `valueType` exactly as imported evidence does.
+ */
+const envelope = (value: unknown) => ({
+  value,
+  valueType: typeof value === 'number' ? 'number' : typeof value === 'boolean' ? 'boolean' : 'string',
+  isFormula: false,
+  formula: null,
+});
+
+/**
  * A designatable source record. `column` is the record's OWN physical-column
  * identity, persisted verbatim in `sourceProvenance` exactly as the real
  * parser writes it (`{ sheetIndex, coordinate: { col } }`) — the only thing
@@ -100,7 +112,7 @@ const record = (
   column: { sheetIndex?: number; columnIndex?: number; importSessionId?: string } = {},
 ) => ({
   id, importSessionId: column.importSessionId ?? 's1', recordOrdinal: ordinal, targetEntity: entity, fieldName,
-  sourceValues: { value },
+  sourceValues: envelope(value),
   // Partial overrides (e.g. `{ columnIndex: 3 }`) must still default sheetIndex —
   // a JS default parameter only applies when the whole argument is omitted, so
   // each field is defaulted individually here rather than relying on that.
@@ -110,7 +122,7 @@ const record = (
 /** A record whose column identity cannot even be read — never resolvable. */
 const recordWithoutProvenance = (id: string, entity: string, fieldName: string, value: unknown, ordinal: number) => ({
   id, importSessionId: 's1', recordOrdinal: ordinal, targetEntity: entity, fieldName,
-  sourceValues: { value }, sourceProvenance: null,
+  sourceValues: envelope(value), sourceProvenance: null,
 });
 
 const link = (needLineId: string, sourceRecordId: string, designatedQuantity: string,
@@ -171,6 +183,7 @@ function renderPanel(lang: 'ar' | 'en', over: Partial<PanelProps> = {}) {
       record(REC_6_FINAL, ROW_6, 'final', 40, 3),
     ],
     overrides: [],
+    overrideReadFailure: null,
     needLines: [],
     claimedSources: [],
     // (213) Every default record above (columns 1, 2, 3) is a CONFIRMED BENE

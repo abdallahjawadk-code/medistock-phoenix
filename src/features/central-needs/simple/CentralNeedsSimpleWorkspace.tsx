@@ -39,7 +39,7 @@ import { summarizeSimpleReadiness } from './simpleReadiness';
 import { computeSimpleCounts } from './simpleCounts';
 import { deriveRevisionContext } from '../central-needs.revision-context';
 import type {
-  BeneficiaryColumnSummary, ImportBatch, ImportSession, PlanRevision, RecordDisposition, ReviewReadiness, SourceRecord,
+  BeneficiaryColumnSummary, CentralNeedsError, ImportBatch, ImportSession, PlanRevision, RecordDisposition, ReviewReadiness, SourceRecord,
 } from '../central-needs.service';
 import type { RegionReadState } from '../regions/beneficiaryRegions';
 import { RegionWorkspaceProvider } from '../regions/RegionWorkspace';
@@ -101,6 +101,11 @@ interface Props {
   dispositions: RecordDisposition[];
   activeSessionId: string | null;
   onChanged: () => void;
+  /**
+   * C5 §17 (UI-F3) — a server refusal of a card's write, so the screen can re-read
+   * the registry and the revision when the revision's lifecycle moved.
+   */
+  onRefused?: (refusal: CentralNeedsError) => void;
   onSwitchToAdvanced: () => void;
   /**
    * C4: the revision's ACTIVE beneficiary regions, read fresh from the server
@@ -116,7 +121,7 @@ export function CentralNeedsSimpleWorkspace({
   lang, planYear, onPlanYearChange, revisionsLoading, revision, isDraft, revisionDataReady,
   canImport, canEdit, busy, activity, onOpenRevision, newerRevisionNumber = null, preview, pendingFile, onPickFile, onVerify, error, notice,
   readiness, batches = [], beneficiaryColumns, careInstitutions, records, dispositions, activeSessionId,
-  onChanged, onSwitchToAdvanced, beneficiaryRegions, sessions,
+  onChanged, onRefused, onSwitchToAdvanced, beneficiaryRegions, sessions,
 }: Props) {
   /**
    * THE ONLY navigation state in Simple Mode (defects 4 and 5), and it is
@@ -327,10 +332,10 @@ export function CentralNeedsSimpleWorkspace({
                 </span>
                 <span>{revisionContext.planYear ?? '—'}</span>
               </h2>
-              <p className="cn2b-simple-card__lead" data-testid="cn2b-simple-closed-notice">
-                {revision!.status === 'approved'
-                  ? t('cn2b_simple_already_approved', lang)
-                  : t('cn2b_simple_closed_notice', lang)}
+              {/* C5 §17 — each closed status has its own terminal sentence;
+                  none of them reads as an edit task. */}
+              <p className="cn2b-simple-card__lead" data-testid="cn2b-simple-closed-notice" data-status={revision!.status}>
+                {t(CLOSED_NOTICE_KEY_BY_STATUS[revision!.status] ?? 'cn2b_simple_closed_notice', lang)}
               </p>
               {/*
                 A correction is opened ONLY by this explicit click — never by
@@ -613,6 +618,7 @@ export function CentralNeedsSimpleWorkspace({
             column={unresolvedColumns[0]}
             activeCareInstitutions={careInstitutions}
             onResolved={onChanged}
+            onRefused={onRefused}
           />
           <div className="cn2b-simple-review-foot">
             <PhoenixButton type="button" variant="ghost" size="sm" onClick={goToSummary}>
@@ -639,6 +645,7 @@ export function CentralNeedsSimpleWorkspace({
             targetEntity={undispositionedEntities[0]}
             fields={fieldsByEntity.get(undispositionedEntities[0]) ?? []}
             onResolved={onChanged}
+            onRefused={onRefused}
           />
           <div className="cn2b-simple-review-foot">
             <PhoenixButton type="button" variant="ghost" size="sm" onClick={goToSummary}>
@@ -739,5 +746,17 @@ export function CentralNeedsSimpleWorkspace({
 }
 
 const NO_SESSIONS: readonly ImportSession[] = [];
+
+/**
+ * C5 §17 — the closed card's terminal sentence per status. Submitted says a
+ * decision is pending (no correction yet), approved offers a correction,
+ * rejected says why it is closed, superseded points to the newer revision.
+ */
+const CLOSED_NOTICE_KEY_BY_STATUS: Readonly<Partial<Record<PlanRevision['status'], string>>> = {
+  submitted: 'cn2b_simple_closed_submitted',
+  approved: 'cn2b_simple_already_approved',
+  rejected: 'cn2b_simple_closed_rejected',
+  superseded: 'cn2b_simple_closed_superseded',
+};
 
 export type { SimpleStep, SimpleActivity };

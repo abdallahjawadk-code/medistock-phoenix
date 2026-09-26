@@ -28,33 +28,43 @@ function redact(str, secret) {
   return String(str).split(secret).join('[REDACTED]');
 }
 
-export async function buildRemoteIo({ connectionString, maxConnections = 4 } = {}) {
-  if (!connectionString) {
-    throw new Error('buildRemoteIo: connectionString is required (read it from an env var, never a literal)');
-  }
-
-  // Recent pg-connection-string versions (matching this repo's pg@8.22)
-  // treat a URL-embedded `sslmode=require`/`prefer`/`verify-ca` -- exactly
-  // what Supabase's own copied connection strings carry -- as an ALIAS for
-  // `verify-full` (full certificate chain + hostname verification), which
-  // silently overrides the `ssl` object passed below and fails against
-  // Supabase's pooler cert with "self-signed certificate in certificate
-  // chain". Stripping any `ssl`-prefixed query params from the string
-  // itself (never touching user/password/host) makes the explicit `ssl`
-  // option below the only source of truth. Errors are still redacted
-  // against the ORIGINAL connectionString everywhere below, since that is
-  // what could actually leak.
-  let sanitizedConnectionString = connectionString;
+/**
+ * The exact connection string buildRemoteIo hands to `pg` (exported so a
+ * caller can validate the driver's EFFECTIVE target before connecting — C5
+ * DIR-01 — instead of re-implementing this rule).
+ *
+ * Recent pg-connection-string versions (matching this repo's pg@8.22)
+ * treat a URL-embedded `sslmode=require`/`prefer`/`verify-ca` -- exactly
+ * what Supabase's own copied connection strings carry -- as an ALIAS for
+ * `verify-full` (full certificate chain + hostname verification), which
+ * silently overrides the `ssl` object buildRemoteIo passes and fails against
+ * Supabase's pooler cert with "self-signed certificate in certificate
+ * chain". Stripping any `ssl`-prefixed query params from the string
+ * itself (never touching user/password/host) makes the explicit `ssl`
+ * option the only source of truth. A string that is not a parseable URL is
+ * returned untouched; pg's own parser will surface whatever error is
+ * appropriate.
+ */
+export function sanitizeRemoteConnectionString(connectionString) {
   try {
     const u = new URL(connectionString);
     for (const key of [...u.searchParams.keys()]) {
       if (/^ssl/i.test(key)) u.searchParams.delete(key);
     }
-    sanitizedConnectionString = u.toString();
+    return u.toString();
   } catch {
-    // Not a parseable URL -- leave untouched, pg's own parser will surface
-    // whatever error is appropriate, redacted as usual below.
+    return connectionString;
   }
+}
+
+export async function buildRemoteIo({ connectionString, maxConnections = 4 } = {}) {
+  if (!connectionString) {
+    throw new Error('buildRemoteIo: connectionString is required (read it from an env var, never a literal)');
+  }
+
+  // Errors are still redacted against the ORIGINAL connectionString
+  // everywhere below, since that is what could actually leak.
+  const sanitizedConnectionString = sanitizeRemoteConnectionString(connectionString);
 
   const pool = new pg.Pool({
     connectionString: sanitizedConnectionString,

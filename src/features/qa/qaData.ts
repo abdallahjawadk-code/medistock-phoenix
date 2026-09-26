@@ -252,8 +252,11 @@ export const QA_FIXTURES: Record<string, unknown> = {
       id: 'qa-cn2b-ovr-1', plan_revision_id: CN2B_REVISION, source_record_id: 'qa-cn2b-rec-0-qty',
       target_entity: CN2B_ENTITIES[0], field_name: 'quantity',
       previous_value: 120, final_value: 150,
+      // C5 §13/§15 — the exact texts the keyset reader selects
+      // (created_at::text, final_value::text), as PostgreSQL prints them.
+      final_value_text: '150',
       override_reason: 'Corrected against the signed institution request.',
-      override_note: null, created_at: '2026-09-01T09:05:00.000Z',
+      override_note: null, created_at: '2026-09-01T09:05:00.000Z', created_at_text: '2026-09-01 09:05:00+00',
     },
   ],
   'rpc:phoenix_central_needs_review_readiness': {

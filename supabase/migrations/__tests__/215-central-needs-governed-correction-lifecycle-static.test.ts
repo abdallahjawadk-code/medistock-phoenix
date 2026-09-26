@@ -1,8 +1,8 @@
 /**
  * C2 / M215 — STATIC proof of the governed Central Needs correction lifecycle.
  *
- *   * registration: M215 sits immediately below C4/M216, now the reviewed
- *     ceiling; nothing above M216 exists;
+ *   * registration: M215 sits immediately below C4/M216; C5/M217 is now the
+ *     reviewed ceiling; nothing above M217 exists;
  *   * FUNCTION-ONLY: no table, column, type, index, trigger, policy, permission
  *     key or role grant;
  *   * the exact function set, each SECURITY DEFINER function pinned to
@@ -55,19 +55,23 @@ const HISTORICAL_SHA256: Record<string, string> = {
 };
 
 describe('C2/M215 static — registration and file hygiene', () => {
-  it('is registered at 215, immediately below C4/M216 which is now the ceiling', () => {
+  it('is registered at 215, immediately below C4/M216; C5/M217 is now the ceiling', () => {
     const M216 = '216_phoenix_central_needs_region_persistence.sql';
+    const M217 = '217_phoenix_central_needs_c5_safety_convergence.sql';
     const files = readdirSync(MIGRATIONS).filter((f) => /^\d{3}_.*\.sql$/.test(f)).sort();
     expect(files).toContain(FILENAME);
-    expect(files).toHaveLength(216);
-    expect(files.filter((f) => Number(f.slice(0, 3)) > 214)).toEqual([FILENAME, M216]);
+    expect(files).toHaveLength(217);
+    expect(files.filter((f) => Number(f.slice(0, 3)) > 214)).toEqual([FILENAME, M216, M217]);
     expect(isReviewedMigrationFile(FILENAME)).toBe(true);
     // C4/M216 (Central Needs beneficiary-region persistence) sits directly after
-    // 215 and is now the reviewed ceiling; nothing above it exists.
+    // 215 — that relationship is HISTORICAL and never moves. C5/M217 (Central
+    // Needs safety convergence) sits after M216 and is now the reviewed
+    // ceiling; nothing above it exists.
     expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.indexOf(FILENAME) + 1]).toBe(M216);
-    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1]).toBe(M216);
-    expect(getMaximumReviewedMigrationNumber()).toBe(216);
-    expect(getNextUnreviewedMigrationNumber()).toBe(217);
+    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.indexOf(FILENAME) + 2]).toBe(M217);
+    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1]).toBe(M217);
+    expect(getMaximumReviewedMigrationNumber()).toBe(217);
+    expect(getNextUnreviewedMigrationNumber()).toBe(218);
   });
 
   it('carries no CR bytes, is one transaction, never rolls itself back, has no MANUAL APPLY ONLY banner', () => {

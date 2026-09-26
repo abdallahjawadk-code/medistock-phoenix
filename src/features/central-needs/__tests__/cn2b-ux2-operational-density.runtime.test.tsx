@@ -134,7 +134,8 @@ const READINESS: ReviewReadiness = { planRevisionId: REV, status: 'draft', ready
 function field(id: string, entity: string, ordinal: number, name: string, value: unknown, a1: string): SourceRecord {
   return {
     id, importSessionId: SESSION_ID, recordOrdinal: ordinal, targetEntity: entity, fieldName: name,
-    sourceValues: { value },
+    // C5 §18 — the parser's own envelope, exactly as imported evidence carries it.
+    sourceValues: { value, valueType: typeof value === 'number' ? 'number' : 'string', isFormula: false, formula: null },
     sourceProvenance: { sheetIndex: 0, sheetName: 'Requirements', coordinate: { a1 } },
   } as unknown as SourceRecord;
 }

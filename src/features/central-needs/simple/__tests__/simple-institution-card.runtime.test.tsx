@@ -182,3 +182,20 @@ describe('SimpleInstitutionCard — permission parity (Director finding 2)', () 
     expect(setBeneficiaryColumns).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('SimpleInstitutionCard — C5 §17 (UI-F3): a refused write reaches the screen', () => {
+  it('reports a plan_revision_not_editable refusal to onRefused, and resolves nothing', async () => {
+    const { centralNeedsErrorFromPostgrest } = await import('../../central-needs.service');
+    setBeneficiaryColumns.mockRejectedValueOnce(centralNeedsErrorFromPostgrest({
+      code: '23514', message: 'plan_revision_not_editable', details: 'revision=rev-1 status=submitted',
+    }));
+    const onRefused = vi.fn();
+    const onResolved = vi.fn();
+    renderCard({ onRefused, onResolved });
+    fireEvent.click(screen.getByText('صحيح'));
+    await vi.waitFor(() => expect(onRefused).toHaveBeenCalledTimes(1));
+    expect(onRefused.mock.calls[0][0]).toMatchObject({ businessCode: 'plan_revision_not_editable' });
+    expect(onResolved).not.toHaveBeenCalled();
+    expect(setBeneficiaryColumns).toHaveBeenCalledTimes(1);
+  });
+});

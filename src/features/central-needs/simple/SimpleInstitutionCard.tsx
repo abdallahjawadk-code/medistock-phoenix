@@ -32,7 +32,7 @@ import {
   reasonRequiredFor,
   NON_BENEFICIARY_CHOICE,
 } from '../CentralNeedsBeneficiaryColumnPanel';
-import { setBeneficiaryColumns, type BeneficiaryColumnSummary } from '../central-needs.service';
+import { CentralNeedsError, setBeneficiaryColumns, type BeneficiaryColumnSummary } from '../central-needs.service';
 import { centralNeedsErrorText } from '../central-needs.i18n';
 import { oneClickConfirmSuppressed, regionGovernsColumn } from '../regions/beneficiaryRegions';
 import { useRegionWorkspace } from '../regions/RegionWorkspace';
@@ -51,6 +51,13 @@ interface Props {
   activeCareInstitutions: OrgRow[];
   onResolved: () => void;
   /**
+   * C5 §17 (UI-F3) — a server refusal of this card's write. The screen re-reads
+   * the registry and the revision when it means the revision's lifecycle moved
+   * (e.g. `plan_revision_not_editable`) or the outcome is unknown; nothing is
+   * retried.
+   */
+  onRefused?: (refusal: CentralNeedsError) => void;
+  /**
    * C4: an ACTIVE beneficiary region spans this column, so it is decided by
    * regions and offers no whole-column write. Derived from the workspace's
    * region context when not given; false with neither (older harnesses).
@@ -67,7 +74,7 @@ interface Props {
 type Picker = { open: boolean; query: string };
 
 export function SimpleInstitutionCard({
-  lang, planRevisionId, editable: editableProp, column, activeCareInstitutions, onResolved,
+  lang, planRevisionId, editable: editableProp, column, activeCareInstitutions, onResolved, onRefused,
   regionGoverned: regionGovernedProp, oneClickSuppressed: oneClickSuppressedProp,
 }: Props) {
   const regionWorkspace = useRegionWorkspace();
@@ -113,7 +120,8 @@ export function SimpleInstitutionCard({
       });
       onResolved();
     } catch (e) {
-      setError(centralNeedsErrorText((e as { code?: string }).code ?? 'unknown_error', lang));
+      setError(centralNeedsErrorText(e instanceof CentralNeedsError ? e : (e as { code?: string }).code ?? 'unknown_error', lang));
+      if (e instanceof CentralNeedsError) onRefused?.(e);
     } finally {
       setBusy(false);
     }

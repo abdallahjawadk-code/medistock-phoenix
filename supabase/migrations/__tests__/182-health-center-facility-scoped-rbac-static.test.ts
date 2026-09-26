@@ -108,14 +108,19 @@ describe('182 registration and shape', () => {
       // Needs function replacements) and no facility-scoped RBAC SQL (no scope ledger, role, permission key, role
       // default or policy on an existing table), so nothing this suite asserts moves. It is now the reviewed ceiling.
       '216_phoenix_central_needs_region_persistence.sql',
+      // C5/M217: Central Needs safety convergence — one pure classifier, one no-client-EXECUTE lineage helper, a NOT
+      // VALID source-value CHECK, an approval-gate fence trigger on plan revisions and behaviour-only Central Needs
+      // function replacements; no facility-scoped RBAC SQL (no scope ledger, role, permission key, role default or
+      // policy), so nothing this suite asserts moves. It is now the reviewed ceiling.
+      '217_phoenix_central_needs_c5_safety_convergence.sql',
     ];
     const i = REVIEWED_MIGRATION_FILES.indexOf(NAME);
     expect(REVIEWED_MIGRATION_FILES.slice(i + 1)).toEqual(SUCCESSORS);
     expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1])
       .toBe(SUCCESSORS[SUCCESSORS.length - 1]);
-    // The ceiling is now 216; `[2-9]\d\d` would match it, so this asserts
+    // The ceiling is now 217; `[2-9]\d\d` would match it, so this asserts
     // numerically that nothing sits ABOVE the ceiling.
-    expect(REVIEWED_MIGRATION_FILES.filter(f => Number(f.slice(0, 3)) > 216)).toHaveLength(0);
+    expect(REVIEWED_MIGRATION_FILES.filter(f => Number(f.slice(0, 3)) > 217)).toHaveLength(0);
   });
 
   it('is a single transaction, manual-apply only', () => {

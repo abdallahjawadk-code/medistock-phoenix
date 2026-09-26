@@ -137,7 +137,7 @@ export function BeneficiaryRegionLayer({
       setLayer({ phase: 'ready', active, m213 });
     } catch (e) {
       if (seq !== loadSeq.current) return;
-      setLayer({ phase: 'unavailable', code: e instanceof CentralNeedsError ? e.code : 'beneficiary_regions_read_inconsistent' });
+      setLayer({ phase: 'unavailable', code: e instanceof CentralNeedsError ? e.businessCode : 'beneficiary_regions_read_inconsistent' });
     }
   }, [planRevisionId, scopeSessionId, scopeSheetIndex]);
 
@@ -213,14 +213,14 @@ export function BeneficiaryRegionLayer({
       await load();
       onChanged?.();
     } catch (e) {
-      const code = e instanceof CentralNeedsError ? e.code : 'unknown_error';
-      if (code === 'beneficiary_region_stale') {
+      const refusal = e instanceof CentralNeedsError ? e : 'unknown_error';
+      if (refusal instanceof CentralNeedsError && refusal.businessCode === 'beneficiary_region_stale') {
         // Reload what the server holds now; the human must look and decide again.
         setPending(null);
         await load();
-        setMessage({ tone: 'error', text: `${centralNeedsErrorText(code, lang)} ${t('cn4_region_stale_reloaded', lang)}` });
+        setMessage({ tone: 'error', text: `${centralNeedsErrorText(refusal, lang)} ${t('cn4_region_stale_reloaded', lang)}` });
       } else {
-        setMessage({ tone: 'error', text: centralNeedsErrorText(code, lang) });
+        setMessage({ tone: 'error', text: centralNeedsErrorText(refusal, lang) });
       }
     } finally {
       setBusy(false);

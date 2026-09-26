@@ -39,6 +39,14 @@
  * the chain. Mode branches wrap only SETUP that references 213 objects; the one
  * mode-aware EXPECTATION is A's exact trigger-attachment set, which 213
  * intentionally extends by one table — each mode asserts its own exact set.
+ *
+ * C5 (217) is detected the same way. On that chain a designated quantity is a
+ * JSON STRING in the exact decimal grammar before any cast (§10), so B's
+ * sign/NaN/free-text contributions are refused as designated_quantity_not_canonical;
+ * the readiness warehouse DETAIL carries its reason token (§4); and an approved
+ * revision is reached only through the real submit/approve RPCs, because the
+ * approval-gate fence refuses a direct UPDATE into 'approved' (§16/§18). Those
+ * are the only C5-aware expectations; every other M212 assertion is unchanged.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { buildRig, migrationFiles, rigAvailable } from '../../../tools/pg-rig/rig.mjs';
@@ -87,7 +95,7 @@ interface Row {
    * (default ORG_BENE). Same header + same beneficiary = one column; the same
    * header for a different beneficiary is a different physical column.
    */
-  fields?: Array<{ name: string; value: unknown; beneficiary?: string }>;
+  fields?: Array<{ name: string; value: unknown; beneficiary?: string; exactNumber?: boolean }>;
 }
 
 interface Refusal { code: string; message: string; detail?: string }
@@ -111,6 +119,15 @@ run('CN-2B/212 operational need lines — dynamic', () => {
   let FORWARD = false;
   /** True when the replayed chain carries 216's beneficiary-region relation (set in beforeAll). */
   let REGIONS = false;
+  /** True when the replayed chain carries C5/217's frozen numeric classifier (set in beforeAll). */
+  let C5 = false;
+
+  /**
+   * C5 §10 (217): designatedQuantity is judged LEXICALLY before any cast, so a
+   * sign, NaN/Infinity or free text is refused as designated_quantity_not_canonical
+   * ahead of M212's own numeric checks, which that grammar makes unreachable.
+   */
+  const designatedRefusal = (m212Code: string) => (C5 ? 'designated_quantity_not_canonical' : m212Code);
 
   const call = (userId: string | null, sql: string, params: unknown[] = [], role = 'authenticated') =>
     rig.asUser(userId, (c: any) => c.query(sql, params).then((r: any) => r.rows[0]?.result ?? r.rows[0]),
@@ -161,6 +178,15 @@ run('CN-2B/212 operational need lines — dynamic', () => {
         const sourceValues = {
           value: f.value, valueType: typeof f.value === 'number' ? 'number' : 'string', isFormula: false, formula: null,
         };
+        // `exactNumber`: a native NUMBER cell whose exact decimal text is written
+        // into the jsonb literal itself (jsonb stores numbers as PostgreSQL
+        // numeric), so no JS number ever rounds it — the C5 parser envelope.
+        if (f.exactNumber && !/^(?:0|[1-9][0-9]*)(?:[.][0-9]+)?$/.test(String(f.value))) {
+          throw new Error(`exactNumber fixture is not an exact decimal: ${String(f.value)}`);
+        }
+        const sourceValuesText = f.exactNumber
+          ? `{"value":${String(f.value)},"valueType":"number","isFormula":false,"formula":null}`
+          : JSON.stringify(sourceValues);
         const provenance = {
           fileFingerprintSha256: hash, originalFilename: `needs-${fileSeq}.xls`, parserVersion: '1.0.0',
           sheetIndex, sheetName: `Sheet${sheetIndex}`, sheetHidden: 'visible',
@@ -172,7 +198,7 @@ run('CN-2B/212 operational need lines — dynamic', () => {
              (import_session_id, organization_id, record_ordinal, target_entity, field_name,
               source_values, source_provenance)
            VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb) RETURNING id`,
-          [sessionId, ORG_OWNER, ordinal, row.entity, f.name, JSON.stringify(sourceValues), JSON.stringify(provenance)]);
+          [sessionId, ORG_OWNER, ordinal, row.entity, f.name, sourceValuesText, JSON.stringify(provenance)]);
         records.set(`${row.entity}::${f.name}`, id);
       }
       const decision = row.decision ?? 'mapped';
@@ -322,6 +348,14 @@ run('CN-2B/212 operational need lines — dynamic', () => {
       throw new Error(`fixture mode mismatch: 216 relation present=${regions}, 216 applied=${chainIncludes216}`);
     }
     REGIONS = regions;
+    // C5/217 carries the frozen numeric classifier; same cross-check.
+    const [{ c5 }] = await admin(
+      `SELECT to_regprocedure('public._phoenix_central_needs_review_numeric_class_v1(jsonb)') IS NOT NULL AS c5`);
+    const chainIncludes217 = migrationFiles().some((f: string) => f.startsWith('217_'));
+    if (c5 !== chainIncludes217) {
+      throw new Error(`fixture mode mismatch: 217 classifier present=${c5}, 217 applied=${chainIncludes217}`);
+    }
+    C5 = c5;
     await rig.asAdmin(async (c: any) => {
       await c.query(`INSERT INTO organizations (id,name,name_ar,code,organization_kind,institution_class) VALUES
         ('${ORG_OWNER}','CN212-OWNER','مالك','p212-owner','care_institution','hospital'),
@@ -533,7 +567,7 @@ run('CN-2B/212 operational need lines — dynamic', () => {
       expect(await refusal(setLine(U_EDIT, s.revId, { qty: -1, sources: sources([id, '-1']) })))
         .toMatchObject({ code: '23514', message: 'approved_quantity_must_not_be_negative' });
       expect(await refusal(setLine(U_EDIT, s.revId, { qty: 1, sources: sources([id, '-1']) })))
-        .toMatchObject({ code: '23514', message: 'designated_quantity_must_not_be_negative' });
+        .toMatchObject({ code: '23514', message: designatedRefusal('designated_quantity_must_not_be_negative') });
     });
 
     it('rejects a missing quantity — blank is not zero', async () => {
@@ -551,7 +585,7 @@ run('CN-2B/212 operational need lines — dynamic', () => {
       expect(await refusal(setLine(U_EDIT, s.revId, { qty: 'Infinity', sources: sources([id, 'Infinity']) })))
         .toMatchObject({ code: '23514', message: 'approved_quantity_must_be_finite' });
       expect(await refusal(setLine(U_EDIT, s.revId, { qty: 1, sources: sources([id, 'NaN']) })))
-        .toMatchObject({ code: '23514', message: 'designated_quantity_must_be_finite' });
+        .toMatchObject({ code: '23514', message: designatedRefusal('designated_quantity_must_be_finite') });
     });
 
     it('refuses a non-numeric designated contribution instead of coercing it', async () => {
@@ -560,7 +594,7 @@ run('CN-2B/212 operational need lines — dynamic', () => {
       expect(await refusal(setLine(U_EDIT, s.revId, {
         qty: 100,
         sources: JSON.stringify([{ sourceRecordId: id, designatedQuantity: '12 boxes' }]),
-      }))).toMatchObject({ code: '23514', message: 'designated_quantity_not_numeric' });
+      }))).toMatchObject({ code: '23514', message: designatedRefusal('designated_quantity_not_numeric') });
     });
 
     it('refuses a unit outside the canonical central_items vocabulary', async () => {
@@ -773,13 +807,39 @@ run('CN-2B/212 operational need lines — dynamic', () => {
     it('NEVER retroactively invalidates an already-approved revision', async () => {
       // An approved revision with a mapped row and no need line at all — exactly
       // the shape a revision approved before M212 has.
-      const s = await scenario({ status: 'draft' });
+      //
+      // C5 §16/§18: on the 217 chain a direct UPDATE into 'approved' is refused by
+      // the approval-gate fence, so the approval is reached canonically, in every
+      // chain mode. The one row is first dispositioned not_applicable, which makes
+      // the revision READY with no need line; its session is registered in a
+      // trusted batch, and it is submitted and approved through the real RPCs.
+      // Only then is the row re-dispositioned 'mapped' with privilege (the
+      // canonical mapping is mutable by design, M210 — see G), which yields that
+      // exact shape on an approval the fence admitted.
+      const s = await scenario({
+        rows: [{ entity: 'sheet:0:row:5', decision: 'not_applicable', fields: [{ name: 'final', value: 100 }] }],
+      });
       const id = s.records.get('sheet:0:row:5::final')!;
-      await admin(`UPDATE central_needs_plan_revisions SET status='submitted' WHERE id=$1`, [s.revId]);
-      // The revision table pairs approved_at with approved_by, so both are set.
+      const [{ id: batchId }] = await admin(
+        `INSERT INTO central_needs_import_batches
+           (plan_revision_id, organization_id, container_kind, container_filename, container_sha256,
+            storage_locator, accepted_entry_count, parser_identity)
+         VALUES ($1,$2,'file','needs.xls',$3,'permanent/x',1,$4::jsonb) RETURNING id`,
+        [s.revId, ORG_OWNER, `${s.year}`.padStart(64, 'c'), JSON.stringify(PARSER_IDENTITY)]);
       await admin(
-        `UPDATE central_needs_plan_revisions SET status='approved', approved_at=now(), approved_by=$2
-          WHERE id=$1`, [s.revId, U_EDIT]);
+        `INSERT INTO central_needs_import_batch_entries
+           (batch_id, plan_revision_id, organization_id, entry_ordinal, entry_sha256, import_session_id)
+         VALUES ($1,$2,$3,1,$4,$5)`,
+        [batchId, s.revId, ORG_OWNER, `${s.year}`.padStart(64, 'e'), s.sessionId]);
+      expect(await blockers(s.revId)).toEqual([]);
+      expect(await call(U_EDIT, `SELECT public.phoenix_central_needs_submit_revision($1) AS result`, [s.revId]))
+        .toMatchObject({ status: 'submitted' });
+      expect(await call(U_EDIT, `SELECT public.phoenix_central_needs_approve_revision($1) AS result`, [s.revId]))
+        .toMatchObject({ ok: true, status: 'approved' });
+      await admin(
+        `UPDATE central_needs_record_mappings
+            SET decision='mapped', central_item_id=$2, decision_reason=NULL
+          WHERE import_session_id=$1 AND target_entity='sheet:0:row:5'`, [s.sessionId, ITEM_A]);
 
       expect(await linesOf(s.revId)).toHaveLength(0);
 
@@ -1257,7 +1317,8 @@ run('CN-2B/212 operational need lines — dynamic', () => {
       const after = await blockers(s.revId);
       expect(after).toEqual([{
         blocker: 'need_line_target_warehouse_not_active',
-        detail: `need_line=${line.need_line_id} warehouse=${wh} status=archived`,
+        // C5 §4 (217) appends the reason token to this readiness DETAIL.
+        detail: `need_line=${line.need_line_id} warehouse=${wh} status=archived${C5 ? ' reason=not_active' : ''}`,
       }]);
       const r = await refusal(call(U_EDIT,
         `SELECT public.phoenix_central_needs_submit_revision($1) AS result`, [s.revId]));
@@ -1778,10 +1839,20 @@ run('CN-2B/212 operational need lines — dynamic', () => {
   // ---- P. EXACT-DECIMAL READ (review F5) --------------------------------
   describe('P. the read path is exact, end to end', () => {
     const BIG = '12345678901234567.891';
+    // The BIG source cell is a native NUMBER stored as an exact jsonb numeric
+    // literal (exactNumber), exactly as the CN-2A parser envelope carries it. A
+    // TEXT cell that merely looks numeric is ambiguous_numeric_text under C5 and
+    // could feed a line only through an explicit numeric override (§9); the read
+    // path under test here is the number path, which is unchanged.
+    const bigCell = [{ entity: 'sheet:0:row:1', fields: [{ name: 'final', value: BIG, exactNumber: true }] }];
 
     it(`returns ${BIG} to a JSON client as the exact string, never through a JS number`, async () => {
-      const s = await scenario({ rows: [{ entity: 'sheet:0:row:1', fields: [{ name: 'final', value: BIG }] }] });
+      const s = await scenario({ rows: bigCell });
       const id = s.records.get('sheet:0:row:1::final')!;
+      const [cell] = await admin(
+        `SELECT source_values->>'value' AS v, source_values->>'valueType' AS t
+           FROM central_needs_source_records WHERE id=$1`, [id]);
+      expect(cell).toEqual({ v: BIG, t: 'number' });
       const r = await setLine(U_EDIT, s.revId, { qty: BIG, sources: sources([id, BIG]) });
       expect(r.approved_quantity).toBe(BIG);
 
@@ -1793,7 +1864,7 @@ run('CN-2B/212 operational need lines — dynamic', () => {
     });
 
     it('proves WHY: the same column read as a table through json_agg is rounded by JSON.parse', async () => {
-      const s = await scenario({ rows: [{ entity: 'sheet:0:row:1', fields: [{ name: 'final', value: BIG }] }] });
+      const s = await scenario({ rows: bigCell });
       const id = s.records.get('sheet:0:row:1::final')!;
       const r = await setLine(U_EDIT, s.revId, { qty: BIG, sources: sources([id, BIG]) });
       const body = await call(U_EDIT,

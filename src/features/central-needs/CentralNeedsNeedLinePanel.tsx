@@ -87,6 +87,26 @@
  * the loaded revision would write. Any divergence blocks the confirmation until
  * the operator refreshes the preview and looks again. Editing an input that
  * shapes the write closes the preview, as selecting a cell always did.
+ *
+ * C5 (M217) — QUANTITY LINEAGE. The server re-checks every link through one
+ * shared lineage helper; this panel makes sure it never proposes or sends what
+ * that helper must refuse:
+ *   * a contribution is typed in the server's exact decimal grammar, untrimmed,
+ *     and suggested only from the two safe evidence shapes (§15);
+ *   * a cell's override is its HEAD — the first row of its exact
+ *     `sourceRecordId` in server order — and only a JSON-number head can be
+ *     pinned (§14/§15);
+ *   * a pin that is no longer its cell's head is cleared VISIBLY, with its
+ *     value, and must be chosen again; every pin a write would carry is listed
+ *     in the preview, so no pin is ever sent unseen (§14);
+ *   * while the override chain is not completely read, nothing is saved (§13),
+ *     and the chain can be re-read on its own from here;
+ *   * an unsafe-lineage refusal is explained by its `reason=` token, and a
+ *     stale binding marks the chain not loaded and re-reads it at once, on its
+ *     own (§7.2/§14);
+ *   * a refusal part-way through a multi-scope confirmation says how many
+ *     scopes were already saved — each scope is its own transaction — and an
+ *     unknown outcome is never titled a refusal (§14).
  */
 import { useEffect, useId, useMemo, useState } from 'react';
 import { t } from '@/shared/i18n/strings';
@@ -96,12 +116,16 @@ import { PhoenixButton } from '@/shared/ui/PhoenixButton';
 import { getOrganizations, type OrgRow } from '@/shared/supabase/services/organizations.service';
 import { getWarehouses, type Warehouse } from '@/shared/supabase/services/warehouses.service';
 import {
-  NEED_LINE_UNITS, deleteNeedLine, setNeedLine,
+  CentralNeedsError, NEED_LINE_UNITS, deleteNeedLine, reasonOf, setNeedLine, sourceRecordOf,
   type BeneficiaryColumnSummary, type FieldOverride, type NeedLine, type NeedLineQuantitySource,
   type NeedLineSourceLink, type NeedLineUnit, type RecordDisposition, type SourceRecord,
   type UnitConversionState,
 } from './central-needs.service';
 import { centralNeedsErrorText } from './central-needs.i18n';
+import {
+  SERVER_DECIMAL, isCanonicalQuantity, isNumericOverride, numericOverrideLexeme, overrideHeads,
+  overrideValueText, prefillQuantity,
+} from './central-needs.lineage';
 
 interface Props {
   lang: 'ar' | 'en';
@@ -114,8 +138,17 @@ interface Props {
   dispositions: RecordDisposition[];
   /** Source records of the active session — the designatable evidence. */
   records: SourceRecord[];
-  /** Field overrides of this revision, so a normalized value can be pinned. */
+  /**
+   * Field overrides of this revision, so a normalized value can be pinned — in
+   * the server's `created_at DESC, id DESC` order, never re-sorted (C5 §13).
+   */
   overrides: FieldOverride[];
+  /**
+   * C5 §13 — why the override chain is not available, or `null` when it was
+   * read completely. Any failure withholds every need-line save here; the
+   * panel stays readable.
+   */
+  overrideReadFailure: string | null;
   /** Every need line of the REVISION, not just of the active session. */
   needLines: NeedLine[];
   /** Every source link of the REVISION, each with its own cell identity. */
@@ -128,15 +161,39 @@ interface Props {
   beneficiaryColumns: BeneficiaryColumnSummary[];
   /** Reload the revision after anything changed, or after a stale refusal. */
   onChanged: () => void;
+  /**
+   * C5 §14 — re-read ONLY the override chain, on its own and at once: after a
+   * `source_quantity_override_binding_invalid` refusal (a newer head exists on
+   * the server), and from the "reload the overrides" control while the chain
+   * is unavailable (§13). The caller marks the chain not loaded until the read
+   * answers, so nothing is pinned or saved against the chain it replaces.
+   */
+  onReloadOverrides?: () => void;
+  /**
+   * C5 §17 — every server refusal of a write from this panel. The screen
+   * re-reads the registry and the revision when the refusal means the
+   * revision's lifecycle moved (e.g. `plan_revision_not_editable`) or when the
+   * outcome of the request is unknown; the write itself is never retried.
+   */
+  onRefused?: (refusal: CentralNeedsError) => void;
   /** UX-3R Package B: exposes only local busy/dirty presentation state to the parent session guard. */
   onActivityChange?: (activity: { busy: boolean; dirty: boolean; failed: boolean }) => void;
 }
 
-/** A plain non-negative decimal. No exponent, no sign, no thousands separator. */
-const DECIMAL = /^\d+(\.\d+)?$/;
-
 /** The server refusals after which the panel's view is known to be out of date. */
 const RELOAD_ON = new Set(['need_line_lineage_stale', 'need_line_scope_conflict', 'need_line_not_found']);
+
+/**
+ * C5 §14 (UI-F2) — a failure whose outcome is NOT known: no server refusal
+ * token and no rolled-back contention (a transport failure, for example). The
+ * write may or may not have committed, so it is never described as refused,
+ * and the revision is re-read.
+ */
+const outcomeUnknown = (refusal: CentralNeedsError) =>
+  refusal.businessCode === 'central_needs_request_failed' && !refusal.retryable;
+
+/** C5 §7.2/§14 — the lineage reason that means a pin is no longer its cell's head. */
+const STALE_BINDING_REASON = 'source_quantity_override_binding_invalid';
 
 /**
  * Exact decimal addition.
@@ -144,12 +201,14 @@ const RELOAD_ON = new Set(['need_line_lineage_stale', 'need_line_scope_conflict'
  * The approved quantity must equal the sum of the designated contributions, and
  * the server compares them as PostgreSQL `numeric`. Summing with `Number` would
  * make 0.1 + 0.2 disagree with the database and reject a correct mapping, so the
- * values are scaled to integers and added as BigInt.
+ * values are scaled to integers and added as BigInt. C5 §10: every member must
+ * already be in the server's exact decimal grammar — nothing is trimmed or
+ * normalized into it here.
  */
 export function sumExactDecimals(values: readonly string[]): string {
-  const parts = values.map((v) => v.trim()).filter((v) => v.length > 0);
+  const parts = values.filter((v) => v.length > 0);
   if (parts.length === 0) return '0';
-  if (!parts.every((v) => DECIMAL.test(v))) return '';
+  if (!parts.every((v) => SERVER_DECIMAL.test(v))) return '';
   const scale = parts.reduce((m, v) => Math.max(m, (v.split('.')[1] ?? '').length), 0);
   const scaled = parts.map((v) => {
     const [whole, frac = ''] = v.split('.');
@@ -160,26 +219,9 @@ export function sumExactDecimals(values: readonly string[]): string {
   return `${total.slice(0, total.length - scale)}.${total.slice(total.length - scale)}`;
 }
 
-/** The raw imported value of one record, as text, when it is a plain decimal. */
-function rawDecimal(record: SourceRecord): string | null {
-  const v = (record.sourceValues as { value?: unknown }).value;
-  if (typeof v === 'number' && Number.isFinite(v)) return String(v);
-  if (typeof v === 'string' && DECIMAL.test(v.trim())) return v.trim();
-  return null;
-}
-
-/** A field override's final value as text, when it is a plain decimal. */
-function overrideDecimal(o: FieldOverride): string | null {
-  const v = o.finalValue;
-  if (typeof v === 'number' && Number.isFinite(v)) return String(v);
-  if (typeof v === 'string' && DECIMAL.test(v.trim())) return v.trim();
-  return null;
-}
-
-/** The server's stable refusal code, whichever shape the error arrived in. */
-function refusalCode(e: unknown): string {
-  if (e instanceof Error && 'code' in e) return String((e as { code?: unknown }).code ?? e.message);
-  return e instanceof Error ? e.message : String(e);
+/** The server's refusal as an object, whichever shape it arrived in; decisions read `businessCode` only. */
+function refusalOf(e: unknown): CentralNeedsError {
+  return e instanceof CentralNeedsError ? e : new CentralNeedsError('central_needs_request_failed');
 }
 
 /** A need line's accounting scope, exactly as M212's scope key defines it. */
@@ -265,8 +307,8 @@ function sourceValueText(record: SourceRecord): string | null {
 }
 
 export function CentralNeedsNeedLinePanel({
-  lang, planRevisionId, workSessionId, editable, dispositions, records, overrides, needLines, claimedSources,
-  beneficiaryColumns, onChanged, onActivityChange,
+  lang, planRevisionId, workSessionId, editable, dispositions, records, overrides, overrideReadFailure, needLines,
+  claimedSources, beneficiaryColumns, onChanged, onReloadOverrides, onRefused, onActivityChange,
 }: Props) {
   const domId = useId();
   const [institutions, setInstitutions] = useState<OrgRow[]>([]);
@@ -283,10 +325,25 @@ export function CentralNeedsNeedLinePanel({
   const [reason, setReason] = useState('');
 
   const [designated, setDesignated] = useState<Record<string, Designation>>({});
+  /**
+   * C5 §14 — designations whose pinned override stopped being their cell's
+   * head (a newer override was recorded, or the server refused the binding).
+   * The pin and its value were cleared; this keeps the reason on screen until
+   * the reviewer chooses again.
+   */
+  const [clearedPins, setClearedPins] = useState<readonly string[]>([]);
   /** UX-2C — the exact write plan a preview displays, captured when it opened. */
   const [preview, setPreview] = useState<{ plan: PlannedWrite[]; signature: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** C5 §14 (UI-F2) — the shown failure's outcome is unknown, so it is not titled a refusal. */
+  const [errorUnconfirmed, setErrorUnconfirmed] = useState(false);
+  /**
+   * C5 §14 (UI-F2) — each scope of a confirmation is its own transaction, so a
+   * refusal part-way leaves the earlier scopes SAVED. This says how many, next
+   * to the refusal, instead of letting its copy imply that nothing was.
+   */
+  const [partialSave, setPartialSave] = useState<{ saved: number; total: number } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
   const [deletingLineId, setDeletingLineId] = useState<string | null>(null);
@@ -320,8 +377,11 @@ export function CentralNeedsNeedLinePanel({
     setTargetWarehouseId('');
     setReason('');
     setDesignated({});
+    setClearedPins([]);
     setPreview(null);
     setError(null);
+    setErrorUnconfirmed(false);
+    setPartialSave(null);
     setNotice(null);
     setDeletingLineId(null);
     setDeleteReason('');
@@ -419,15 +479,46 @@ export function CentralNeedsNeedLinePanel({
 
   const activeSessionIds = useMemo(() => new Set(records.map((r) => r.importSessionId)), [records]);
 
-  const overrideByRecord = useMemo(() => {
-    const m = new Map<string, FieldOverride>();
-    // Overrides are an append-only chain; the latest one for a (row, field) is
-    // the authoritative normalization.
-    for (const o of [...overrides].sort((a, b) => a.createdAt.localeCompare(b.createdAt))) {
-      m.set(`${o.targetEntity}::${o.fieldName}`, o);
-    }
-    return m;
-  }, [overrides]);
+  /**
+   * C5 §14 — each cell's head override: the FIRST row of its exact source
+   * record in server order. Never a client sort, and never keyed by row and
+   * header text — overrides are revision-wide, so that key collides across
+   * sessions and across duplicate headers of one row.
+   */
+  const headByRecord = useMemo(() => overrideHeads(overrides), [overrides]);
+  const overridesReadable = overrideReadFailure === null;
+
+  /** Drops the pin — and the value it supplied — of each named designation, and says so. */
+  function clearPins(recordIds: readonly string[]) {
+    if (recordIds.length === 0) return;
+    setDesignated((prev) => {
+      const next = { ...prev };
+      for (const id of recordIds) {
+        if (next[id]?.overrideId) next[id] = { quantity: '', overrideId: null };
+      }
+      return next;
+    });
+    setClearedPins((prev) => [...new Set([...prev, ...recordIds])]);
+    setPreview(null);
+  }
+
+  /**
+   * C5 §14 — a pin is valid only while it is its cell's CURRENT head. When the
+   * complete chain says otherwise, the pin is cleared visibly (never re-pointed
+   * at the new head) and the reviewer must choose again. While the chain is
+   * unavailable nothing is reconciled — saving is withheld instead.
+   */
+  const stalePinIds = useMemo(
+    () => (overridesReadable
+      ? Object.entries(designated)
+        .filter(([id, d]) => d.overrideId !== null && headByRecord.get(id)?.id !== d.overrideId)
+        .map(([id]) => id)
+      : []),
+    [designated, headByRecord, overridesReadable],
+  );
+  useEffect(() => {
+    if (stalePinIds.length > 0) clearPins(stalePinIds);
+  }, [stalePinIds]);
 
   /**
    * Designatable evidence: a source record of a row a human already mapped to a
@@ -493,9 +584,13 @@ export function CentralNeedsNeedLinePanel({
     [selectedIds, candidateIdSet, beneficiaryByRecordId],
   );
 
+  // C5 §10/§15 — the server's exact grammar on the value exactly as typed:
+  // ' 25', '007', '1e3', '.5' and '5.' are refused here, never trimmed into shape.
   const everyQuantityValid = selectedIds.length > 0
-    && selectedIds.every((id) => DECIMAL.test((designated[id]?.quantity ?? '').trim()));
+    && selectedIds.every((id) => isCanonicalQuantity(designated[id]?.quantity ?? ''));
   const everySelectionResolved = selectedIds.length > 0 && selectedIds.every((id) => beneficiaryByRecordId.has(id));
+  /** C5 §14 — every pin a write would carry is still its cell's current head. */
+  const everyPinCurrent = stalePinIds.length === 0;
   /**
    * C3 — a NEW line needs an explicit unit decision: either a chosen unit or an
    * explicit `conversion_required`. Groups that ADD to an existing line are
@@ -506,7 +601,8 @@ export function CentralNeedsNeedLinePanel({
   const newGroupsNeedingUnit = [...groups.values()].filter((g) => !g.existing);
   const unitDecisionMade = conversionRequired || unit !== '';
   const everyNewGroupHasUnitDecision = newGroupsNeedingUnit.length === 0 || unitDecisionMade;
-  const canSave = editable && selectedIds.length > 0 && everySelectionResolved
+  const canSave = editable && overridesReadable && everyPinCurrent
+    && selectedIds.length > 0 && everySelectionResolved
     && unavailableSelectedIds.length === 0
     && everyQuantityValid && reason.trim().length > 0 && groups.size > 0
     && everyNewGroupHasUnitDecision
@@ -522,7 +618,8 @@ export function CentralNeedsNeedLinePanel({
     const existing = group.existing;
     const quantitySources: NeedLineQuantitySource[] = group.recordIds.map((id) => ({
       sourceRecordId: id,
-      designatedQuantity: (designated[id]?.quantity ?? '').trim(),
+      // C5 §10 — the exact lexeme the reviewer typed; the server refuses, the client never trims.
+      designatedQuantity: designated[id]?.quantity ?? '',
       appliedOverrideId: designated[id]?.overrideId ?? null,
     }));
     return {
@@ -657,30 +754,45 @@ export function CentralNeedsNeedLinePanel({
       const next = { ...prev };
       if (!on) { delete next[record.id]; return next; }
       // The prefill is a SUGGESTION drawn from the record's own imported value —
-      // never an approval. The reviewer edits or replaces it.
-      next[record.id] = { quantity: rawDecimal(record) ?? '', overrideId: null };
+      // never an approval. The reviewer edits or replaces it. C5 §15: only the
+      // two safe evidence shapes suggest anything at all.
+      next[record.id] = { quantity: prefillQuantity(record.sourceValues) ?? '', overrideId: null };
       return next;
     });
+    forgetClearedPin(record.id);
     setPreview(null);
   }
 
   function setQuantity(recordId: string, quantity: string) {
     setDesignated((prev) => ({ ...prev, [recordId]: { ...(prev[recordId] ?? { overrideId: null }), quantity } }));
+    forgetClearedPin(recordId);
     setPreview(null);
   }
 
+  /**
+   * An explicit human pin of the cell's CURRENT head. C5 §15: only a JSON-number
+   * head can stand in for a numeric quantity, and its exact decimal (never a
+   * rounded JavaScript rendering) becomes the suggested contribution.
+   */
   function useOverride(record: SourceRecord, o: FieldOverride, on: boolean) {
+    if (on && (!isNumericOverride(o) || headByRecord.get(record.id)?.id !== o.id)) return;
     setDesignated((prev) => {
       const current = prev[record.id];
       if (!current) return prev;
       return {
         ...prev,
         [record.id]: on
-          ? { quantity: overrideDecimal(o) ?? current.quantity, overrideId: o.id }
+          ? { quantity: numericOverrideLexeme(o) ?? current.quantity, overrideId: o.id }
           : { quantity: current.quantity, overrideId: null },
       };
     });
+    forgetClearedPin(record.id);
     setPreview(null);
+  }
+
+  /** The reviewer acted on a cell whose pin had been cleared, so the notice for it has done its job. */
+  function forgetClearedPin(recordId: string) {
+    setClearedPins((prev) => (prev.includes(recordId) ? prev.filter((id) => id !== recordId) : prev));
   }
 
   /** UX-2C — an explicit human act: drop designations the reloaded revision no longer allows. */
@@ -703,7 +815,7 @@ export function CentralNeedsNeedLinePanel({
     // exactly what the loaded revision would write.
     if (!preview || previewStale || !canSave) return;
     const plan = preview.plan;
-    setBusy(true); setError(null); setNotice(null);
+    setBusy(true); setError(null); setErrorUnconfirmed(false); setPartialSave(null); setNotice(null);
     let written = 0;
     try {
       // (213) One RPC call per (beneficiary, canonical material, warehouse)
@@ -715,6 +827,7 @@ export function CentralNeedsNeedLinePanel({
       }
       setNotice(t('cn2b_nl_saved', lang));
       setDesignated({});
+      setClearedPins([]);
       setPreview(null);
       setReason('');
       // C3: the line ATTRIBUTES are part of one operation's decision, exactly
@@ -734,17 +847,37 @@ export function CentralNeedsNeedLinePanel({
     } catch (e) {
       // A server refusal is shown by its stable code, translated where known —
       // never flattened into a generic failure, never a raw database message.
-      const code = refusalCode(e);
-      setError(centralNeedsErrorText(code, lang));
+      // C5 §14: decisions read `businessCode`; the lineage reason comes from the
+      // pinned `reason=` token of `details`. Nothing is retried automatically.
+      const refusal = refusalOf(e);
+      const code = refusal.businessCode;
+      setError(centralNeedsErrorText(refusal, lang));
+      setErrorUnconfirmed(outcomeUnknown(refusal));
+      // UI-F2 — the scopes before this one each committed in their own call.
+      setPartialSave(written > 0 ? { saved: written, total: plan.length } : null);
       setPreview(null);
-      if (written > 0 || RELOAD_ON.has(code)) onChanged();
+      const staleBinding = code === 'need_line_quantity_lineage_unsafe' && reasonOf(refusal.details) === STALE_BINDING_REASON;
+      if (staleBinding) {
+        // The pinned override is no longer the cell's head: unpin it visibly
+        // now, and reload the chain so the current head can be chosen again.
+        const cell = sourceRecordOf(refusal.details);
+        clearPins(cell !== null && designated[cell]?.overrideId ? [cell] : []);
+      }
+      if (written > 0 || RELOAD_ON.has(code) || staleBinding) onChanged();
+      // UI-F1 — the chain that offered the stale head is not trusted again: it
+      // is re-read on its own (after the revision reload above, so this read is
+      // the newest and does not depend on the other reads succeeding), and it
+      // counts as NOT loaded until that read answers — a failed read keeps it
+      // unavailable, so the old head can never be pinned again meanwhile.
+      if (staleBinding) onReloadOverrides?.();
+      onRefused?.(refusal);
     } finally {
       setBusy(false);
     }
   }
 
   async function confirmDelete(line: NeedLine) {
-    setBusy(true); setError(null); setNotice(null);
+    setBusy(true); setError(null); setErrorUnconfirmed(false); setPartialSave(null); setNotice(null);
     try {
       await deleteNeedLine({
         needLineId: line.id,
@@ -756,18 +889,23 @@ export function CentralNeedsNeedLinePanel({
       setDeleteReason('');
       onChanged();
     } catch (e) {
-      const code = refusalCode(e);
-      setError(centralNeedsErrorText(code, lang));
-      if (RELOAD_ON.has(code)) { setDeletingLineId(null); onChanged(); }
+      const refusal = refusalOf(e);
+      setError(centralNeedsErrorText(refusal, lang));
+      setErrorUnconfirmed(outcomeUnknown(refusal));
+      if (RELOAD_ON.has(refusal.businessCode)) { setDeletingLineId(null); onChanged(); }
+      onRefused?.(refusal);
     } finally {
       setBusy(false);
     }
   }
 
   const saveBlockers = [
+    // C5 §13 — without the complete override chain no need line is saved.
+    !overridesReadable && 'cn2b_nl_block_overrides_unavailable',
     selectedIds.length === 0 && 'cn2b_nl_block_no_selection',
     selectedIds.length > 0 && !everyQuantityValid && 'cn2b_nl_block_quantity',
     unavailableSelectedIds.length > 0 && 'cn2b_nl_block_unavailable',
+    !everyPinCurrent && 'cn2b_nl_block_stale_pin',
     reason.trim() === '' && 'cn2b_nl_block_reason',
     // C3: the unit election is as mandatory as the reason for a NEW line, so it
     // is named here rather than leaving the save button disabled unexplained.
@@ -776,6 +914,21 @@ export function CentralNeedsNeedLinePanel({
 
   const previewSourceCount = preview ? preview.plan.reduce((n, p) => n + p.group.recordIds.length, 0) : 0;
   const previewBeneficiaryCount = preview ? new Set(preview.plan.map((p) => p.group.beneficiaryId)).size : 0;
+  /**
+   * C5 §14 — EVERY pin the previewed write carries, including pins on cells a
+   * filter hides, so no pin is ever sent without having been shown.
+   */
+  const previewPins = preview
+    ? preview.plan.flatMap((p) => p.input.quantitySources
+      .filter((s) => s.appliedOverrideId)
+      .map((s) => ({
+        sourceRecordId: s.sourceRecordId,
+        overrideId: s.appliedOverrideId as string,
+        designatedQuantity: s.designatedQuantity,
+        record: records.find((r) => r.id === s.sourceRecordId),
+        override: overrides.find((o) => o.id === s.appliedOverrideId),
+      })))
+    : [];
 
   return (
     <PhoenixCard className="cn2b cn2b-needlines">
@@ -819,6 +972,29 @@ export function CentralNeedsNeedLinePanel({
               beside it. A cell with none is listed but cannot be selected —
               map its column in the panel above first. */}
           <p className="cn2b-nl-hint" data-testid="cn2b-nl-beneficiary-note">{t('cn2b_nl_beneficiary_hint', lang)}</p>
+
+          {/* C5 §13 — the chain could not be read completely: everything stays
+              readable, and no need line is saved until it can be. */}
+          {overrideReadFailure !== null && (
+            <>
+              <p className="cn2b-nl-banner" role="status" data-testid="cn2b-nl-overrides-unavailable">
+                {t('cn2b_nl_overrides_unavailable', lang)} ({centralNeedsErrorText(overrideReadFailure, lang)})
+              </p>
+              {/* UI-F5 — re-read ONLY the override chain; nothing is written. */}
+              {onReloadOverrides && (
+                <PhoenixButton type="button" size="sm" variant="secondary" disabled={busy}
+                  data-testid="cn2b-nl-overrides-reload" onClick={() => onReloadOverrides()}>
+                  {t('cn2b_overrides_reload', lang)}
+                </PhoenixButton>
+              )}
+            </>
+          )}
+          {/* C5 §14 — pins cleared because they stopped being their cell's head. */}
+          {clearedPins.length > 0 && (
+            <p className="cn2b-nl-stale" role="status" data-testid="cn2b-nl-stale-pins-cleared">
+              {t('cn2b_nl_stale_pins_cleared', lang).replace('__N__', String(clearedPins.length))}
+            </p>
+          )}
 
           {/* 1 — SOURCE EVIDENCE AND DESIGNATION. Without at least one
               designated cell there is nothing to save — and nothing the server
@@ -895,16 +1071,18 @@ export function CentralNeedsNeedLinePanel({
                     <div className="cn2b-nl-rows">
                       {visibleCandidates.map((r) => {
                         const picked = designated[r.id];
-                        const o = overrideByRecord.get(`${r.targetEntity}::${r.fieldName}`);
-                        const raw = rawDecimal(r);
+                        const o = headByRecord.get(r.id);
+                        const raw = prefillQuantity(r.sourceValues);
                         const valueText = sourceValueText(r);
                         const location = locationEvidence(r);
                         const beneficiaryId = beneficiaryByRecordId.get(r.id);
                         const beneficiaryLabel = beneficiaryId ? institutionName(beneficiaryId) : null;
                         const decision = beneficiaryId ? 'beneficiary' : nonBeneficiaryRecordIds.has(r.id) ? 'non_beneficiary' : 'unresolved';
                         const contributionId = `${domId}-contribution-${r.id}`;
-                        const quantityOk = picked ? DECIMAL.test(picked.quantity.trim()) : true;
-                        const overrideValue = o ? overrideDecimal(o) : null;
+                        const quantityOk = picked ? isCanonicalQuantity(picked.quantity) : true;
+                        const overrideValue = o ? overrideValueText(o) : null;
+                        const numericHead = o ? isNumericOverride(o) : false;
+                        const pinCleared = Boolean(picked) && clearedPins.includes(r.id);
                         const unavailable = Boolean(picked) && !beneficiaryId;
                         return (
                           <div key={r.id} className="cn2b-nl-row" data-testid="cn2b-nl-candidate"
@@ -978,22 +1156,38 @@ export function CentralNeedsNeedLinePanel({
                                   {!quantityOk && (
                                     <p className="cn2b-nl-contrib__error" id={`${contributionId}-error`}>{t('cn2b_nl_contribution_invalid', lang)}</p>
                                   )}
-                                  {picked.overrideId === null && raw !== null && picked.quantity.trim() === raw && (
+                                  {picked.overrideId === null && raw !== null && picked.quantity === raw && (
                                     <p className="cn2b-nl-contrib__note">{t('cn2b_nl_suggestion_note', lang)}</p>
+                                  )}
+                                  {/* C5 §14 — the pin this contribution relied on stopped
+                                      being the cell's head; it was cleared, not re-pointed. */}
+                                  {pinCleared && (
+                                    <p className="cn2b-nl-stale" data-testid="cn2b-nl-stale-pin">{t('cn2b_nl_stale_pin_row', lang)}</p>
+                                  )}
+                                  {/* §13 — a pin held while the chain cannot be read is not
+                                      silently carried: it is named, and saving waits. */}
+                                  {!o && picked.overrideId !== null && (
+                                    <p className="cn2b-nl-stale" data-testid="cn2b-nl-pin-unverified">{t('cn2b_nl_pin_unverified', lang)}</p>
                                   )}
                                   {o && (
                                     <>
-                                      <span className="cn2b-nl-row__meta" data-testid="cn2b-nl-override-evidence">
+                                      <span className="cn2b-nl-row__meta" data-testid="cn2b-nl-override-evidence"
+                                        data-override-id={o.id} data-numeric={numericHead ? 'true' : 'false'}>
                                         {t('cn2b_nl_override_recorded', lang)}: <strong>{overrideValue ?? '—'}</strong> — {o.overrideReason}
                                       </span>
-                                      <label className="cn2b-nl-contrib__override">
-                                        <input
-                                          type="checkbox"
-                                          checked={picked.overrideId === o.id}
-                                          onChange={(e) => useOverride(r, o, e.target.checked)}
-                                        />
-                                        {t('cn2b_nl_use_override', lang)}
-                                      </label>
+                                      {numericHead ? (
+                                        <label className="cn2b-nl-contrib__override">
+                                          <input
+                                            type="checkbox"
+                                            checked={picked.overrideId === o.id}
+                                            onChange={(e) => useOverride(r, o, e.target.checked)}
+                                          />
+                                          {t('cn2b_nl_use_override', lang)}
+                                        </label>
+                                      ) : (
+                                        /* §15 — a text (or blank/boolean) override never counts as numeric. */
+                                        <span className="cn2b-nl-row__meta" data-testid="cn2b-nl-override-not-numeric">{t('cn2b_nl_override_not_numeric', lang)}</span>
+                                      )}
                                       {picked.overrideId === o.id && (
                                         <span className="cn2b-nl-row__meta" data-testid="cn2b-nl-override-applied">{t('cn2b_nl_override_applied', lang)}</span>
                                       )}
@@ -1238,6 +1432,26 @@ export function CentralNeedsNeedLinePanel({
                 {preview.plan.some((p) => p.group.existing) && (
                   <p className="cn2b-nl-note" data-testid="cn2b-nl-unit-locked">{t('cn2b_nl_existing_unit_locked', lang)}</p>
                 )}
+                {/* C5 §14 — every override pin this write carries, filtered-out cells included. */}
+                {previewPins.length > 0 && (
+                  <div data-testid="cn2b-nl-preview-pins">
+                    <p className="cn2b-nl-hint">{t('cn2b_nl_preview_pins', lang)}</p>
+                    <ul className="cn2b-nl-lineage">
+                      {previewPins.map((p) => (
+                        <li key={p.sourceRecordId} data-testid="cn2b-nl-preview-pin"
+                          data-source-record={p.sourceRecordId} data-override-id={p.overrideId}>
+                          <span className="cn2b-nl-row__ident">
+                            {p.record ? `${p.record.targetEntity} · ${p.record.fieldName}` : p.sourceRecordId}
+                          </span>
+                          {' = '}<strong>{p.designatedQuantity}</strong>
+                          {' — '}{t('cn2b_nl_override_recorded', lang)}:{' '}
+                          <strong>{p.override ? (overrideValueText(p.override) ?? '—') : p.overrideId}</strong>
+                          {p.override && <> — {p.override.overrideReason}</>}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
                 <p className="cn2b-nl-hint" data-testid="cn2b-nl-preview-reason">
                   {t('cn2b_nl_preview_reason', lang)}: {preview.plan[0]?.input.mappingReason}
                 </p>
@@ -1270,7 +1484,15 @@ export function CentralNeedsNeedLinePanel({
 
       {error && (
         <div className="cn2b-nl-error" role="alert" data-testid="cn2b-nl-error">
-          <strong>{t('cn2b_nl_error_title', lang)}</strong> <span>{error}</span>
+          <strong>{t(errorUnconfirmed ? 'cn2b_nl_error_title_unconfirmed' : 'cn2b_nl_error_title', lang)}</strong> <span>{error}</span>
+          {partialSave && (
+            <p className="cn2b-nl-note" data-testid="cn2b-nl-partial-saved"
+              data-saved={partialSave.saved} data-total={partialSave.total}>
+              {t('cn2b_nl_partial_saved', lang)
+                .replace('__K__', String(partialSave.saved))
+                .replace('__N__', String(partialSave.total))}
+            </p>
+          )}
         </div>
       )}
       {notice && <p className="cn2b-nl-notice" data-testid="cn2b-nl-notice">{notice}</p>}

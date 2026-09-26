@@ -21,12 +21,24 @@
  * produces many, and marking them one at a time is impractical. A bulk action
  * therefore states exactly how many entities it will change and requires a
  * second, explicit confirmation before any RPC is called.
+ *
+ * C5 (M217) — OVERRIDES. The effective value is the HEAD of each source
+ * record: the first row of its exact `sourceRecordId` in the server's newest-
+ * first order, never the last row of a client sort (§14). When the chain could
+ * not be read completely, no effective value is claimed and no override can be
+ * created (§13). A NUMERIC override is typed in the server's exact decimal
+ * grammar, and the JSON number that will actually be stored is shown for a
+ * second, explicit confirmation before anything is sent (§15). An unavailable
+ * chain can be re-read on its own from here (§13); every refusal is reported
+ * to the screen, which re-reads the revision when its lifecycle moved (§17);
+ * and a bulk decision refused part-way says how many were already saved.
  */
 import { useEffect, useMemo, useState } from 'react';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
 import { centralNeedsErrorText } from './central-needs.i18n';
+import { numericOverridePreview, overrideHeads, overrideValueText } from './central-needs.lineage';
 import {
   CentralNeedsError,
   recordFieldOverride,
@@ -43,9 +55,28 @@ interface Props {
   records: SourceRecord[];
   dispositions: RecordDisposition[];
   overrides: FieldOverride[];
+  /**
+   * C5 §13 — why the revision's override chain is not available, or `null`
+   * when it was read completely. Any failure withholds override creation and
+   * every effective-value claim.
+   */
+  overrideReadFailure: string | null;
   organizationId: string;
   canEdit: boolean;
   onChanged: () => void;
+  /**
+   * C5 §14 — re-read the override chain; called right after an override is
+   * recorded, and (§13, UI-F5) from the "reload the overrides" control while
+   * the chain is unavailable.
+   */
+  onOverridesChanged: () => void;
+  /**
+   * C5 §17 — every server refusal of a write from this table. The screen
+   * re-reads the registry and the revision when the refusal means the
+   * revision's lifecycle moved (e.g. `plan_revision_not_editable`) or when the
+   * outcome is unknown; nothing is retried.
+   */
+  onRefused?: (refusal: CentralNeedsError) => void;
   /** UX-3R Package B: session switching must not silently discard local work. */
   onActivityChange?: (activity: { busy: boolean; dirty: boolean; failed: boolean }) => void;
 }
@@ -84,10 +115,12 @@ function kindOfSourceValue(values: Record<string, unknown>): OverrideValueKind {
  * Builds the JSON value to persist. NOTHING is silently coerced: the reviewer
  * states the kind, and each kind has exactly one reading.
  *
- *   number  — must parse as a finite number. "0" is the number zero, which is
- *             a value, never a blank. A non-numeric entry is refused rather
- *             than quietly becoming NaN or 0.
- *   text    — stored verbatim, including "0" as the two-character string.
+ *   number  — C5 §15: exactly the server's decimal grammar, untrimmed and at
+ *             most 256 characters. "0" is the number zero, which is a value,
+ *             never a blank. `007`, ` 25`, `1e3`, `-5`, `.5`, `5.` and
+ *             `0x10` are refused rather than quietly becoming some number.
+ *   text    — stored verbatim, including "0" as the two-character string. A
+ *             text override never counts as a numeric quantity override.
  *   boolean — only the two literals.
  *   blank   — JSON null, the explicit "no value" the CN-2A contract
  *             distinguishes from both zero and an empty string.
@@ -97,10 +130,8 @@ function buildOverrideValue(
 ): { ok: true; value: unknown } | { ok: false; reason: string } {
   if (kind === 'blank') return { ok: true, value: null };
   if (kind === 'number') {
-    if (raw.trim() === '') return { ok: false, reason: 'number_required' };
-    const n = Number(raw);
-    if (!Number.isFinite(n)) return { ok: false, reason: 'number_required' };
-    return { ok: true, value: n };
+    const preview = numericOverridePreview(raw);
+    return preview.ok ? { ok: true, value: preview.value } : { ok: false, reason: preview.reason };
   }
   if (kind === 'boolean') {
     if (raw === 'true') return { ok: true, value: true };
@@ -136,8 +167,11 @@ export function CentralNeedsDispositionTable({
   records,
   dispositions,
   overrides,
+  overrideReadFailure,
   canEdit,
   onChanged,
+  onOverridesChanged,
+  onRefused,
   onActivityChange,
 }: Props) {
   const { lang } = useApp();
@@ -147,7 +181,22 @@ export function CentralNeedsDispositionTable({
   const [itemQuery, setItemQuery] = useState('');
   const [items, setItems] = useState<CentralItemOption[]>([]);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<CentralNeedsError | string | null>(null);
+  /**
+   * C5 §14 (UI-F2) — a bulk decision is one call per entity, so a refusal
+   * part-way leaves the earlier decisions SAVED; this says how many.
+   */
+  const [bulkPartial, setBulkPartial] = useState<{ saved: number; total: number } | null>(null);
+
+  /** A refusal is shown, and reported to the screen (C5 §17); anything else is its fallback code. */
+  function refused(e: unknown, fallback: string) {
+    if (e instanceof CentralNeedsError) {
+      setError(e);
+      onRefused?.(e);
+    } else {
+      setError(fallback);
+    }
+  }
 
   // H — the field-override editor. One row at a time, opened explicitly.
   const [overrideFor, setOverrideFor] = useState<SourceRecord | null>(null);
@@ -155,6 +204,13 @@ export function CentralNeedsDispositionTable({
   const [overrideRaw, setOverrideRaw] = useState('');
   const [overrideReason, setOverrideReason] = useState('');
   const [overrideNote, setOverrideNote] = useState('');
+  /**
+   * C5 §15 — the JSON number a numeric override would store, shown for an
+   * explicit confirmation. Keyed by the exact text it was computed from, so an
+   * edit after the preview can never be confirmed under it.
+   */
+  const [numberPreview, setNumberPreview] = useState<{ raw: string; json: string; exact: boolean } | null>(null);
+  const overridesReadable = overrideReadFailure === null;
 
 
   const dirty = selected.size > 0
@@ -177,10 +233,12 @@ export function CentralNeedsDispositionTable({
     setItemQuery('');
     setItems([]);
     setError(null);
+    setBulkPartial(null);
     setOverrideFor(null);
     setOverrideRaw('');
     setOverrideReason('');
     setOverrideNote('');
+    setNumberPreview(null);
   }, [importSessionId]);
 
   const groups = useMemo<EntityGroup[]>(() => {
@@ -199,11 +257,8 @@ export function CentralNeedsDispositionTable({
     return map;
   }, [dispositions]);
 
-  const overrideByRecord = useMemo(() => {
-    const map = new Map<string, FieldOverride>();
-    for (const o of overrides) map.set(o.sourceRecordId, o);
-    return map;
-  }, [overrides]);
+  /** C5 §14 — each source record's head: its FIRST row in server order. */
+  const overrideByRecord = useMemo(() => overrideHeads(overrides), [overrides]);
 
   const undecidedCount = groups.filter((g) => !dispositionByEntity.has(g.targetEntity)).length;
 
@@ -272,11 +327,12 @@ export function CentralNeedsDispositionTable({
   async function applyOne(targetEntity: string, decision: 'mapped' | 'not_applicable', centralItemId?: string, reason?: string) {
     setBusy(true);
     setError(null);
+    setBulkPartial(null);
     try {
       await setRecordDisposition({ importSessionId, targetEntity, decision, centralItemId, decisionReason: reason });
       onChanged();
     } catch (e: unknown) {
-      setError(e instanceof CentralNeedsError ? e.code : 'disposition_failed');
+      refused(e, 'disposition_failed');
     } finally {
       setBusy(false);
     }
@@ -287,21 +343,35 @@ export function CentralNeedsDispositionTable({
     if (bulkPreview === null || bulkReason.trim() === '') return;
     setBusy(true);
     setError(null);
+    setBulkPartial(null);
+    const targets = [...selected];
+    let written = 0;
     try {
-      for (const targetEntity of selected) {
+      for (const targetEntity of targets) {
         await setRecordDisposition({
           importSessionId,
           targetEntity,
           decision: 'not_applicable',
           decisionReason: bulkReason.trim(),
         });
+        written += 1;
       }
       setSelected(new Set());
       setBulkPreview(null);
       setBulkReason('');
       onChanged();
     } catch (e: unknown) {
-      setError(e instanceof CentralNeedsError ? e.code : 'disposition_failed');
+      refused(e, 'disposition_failed');
+      // UI-F2 — the decisions before the refused one each committed in their
+      // own call: say so, and re-read so the table shows them as decided.
+      // The saved ones leave the selection, so a retry (after a fresh preview
+      // and confirmation) only sends what was not written.
+      if (written > 0) {
+        setBulkPartial({ saved: written, total: targets.length });
+        setSelected(new Set(targets.slice(written)));
+        setBulkPreview(null);
+        onChanged();
+      }
     } finally {
       setBusy(false);
     }
@@ -317,6 +387,7 @@ export function CentralNeedsDispositionTable({
     setOverrideRaw('');
     setOverrideReason('');
     setOverrideNote('');
+    setNumberPreview(null);
   }
 
   function closeOverride() {
@@ -324,15 +395,32 @@ export function CentralNeedsDispositionTable({
     setOverrideRaw('');
     setOverrideReason('');
     setOverrideNote('');
+    setNumberPreview(null);
+  }
+
+  /** C5 §15 — first step of a numeric override: show the JSON number that would be stored. Sends nothing. */
+  function previewNumberOverride() {
+    if (!overrideFor || overrideReason.trim() === '' || !overridesReadable) return;
+    const preview = numericOverridePreview(overrideRaw);
+    if (!preview.ok) { setNumberPreview(null); setError(preview.reason); return; }
+    setError(null);
+    setNumberPreview({ raw: overrideRaw, json: preview.json, exact: preview.exact });
   }
 
   async function submitOverride() {
-    if (!overrideFor || overrideReason.trim() === '') return;
+    // C5 §13 — no override is recorded against a chain this screen could not read.
+    if (!overrideFor || overrideReason.trim() === '' || !overridesReadable) return;
+    // C5 §15 — a number is written only once its exact JSON form was shown for
+    // THIS input and confirmed; anything else goes back to the preview step.
+    if (overrideKind === 'number' && numberPreview?.raw !== overrideRaw) return;
     const built = buildOverrideValue(overrideKind, overrideRaw);
     if (!built.ok) { setError(built.reason); return; }
     setBusy(true);
     setError(null);
     try {
+      // The new id is deliberately unused: an override is never pinned for the
+      // reviewer (§14). The chain is re-read, and the need-line surface clears
+      // any designation that relied on the previous head.
       await recordFieldOverride({
         sourceRecordId: overrideFor.id,
         finalValue: built.value,
@@ -340,9 +428,10 @@ export function CentralNeedsDispositionTable({
         overrideNote: overrideNote.trim() === '' ? null : overrideNote.trim(),
       });
       closeOverride();
+      onOverridesChanged();
       onChanged();
     } catch (e: unknown) {
-      setError(e instanceof CentralNeedsError ? e.code : 'override_failed');
+      refused(e, 'override_failed');
     } finally {
       setBusy(false);
     }
@@ -418,6 +507,29 @@ export function CentralNeedsDispositionTable({
       </dl>
 
       {error && <p className="cn2b-error" role="alert">{centralNeedsErrorText(error, lang)}</p>}
+      {error && bulkPartial && (
+        <p className="cn2b-hint" data-testid="cn2b-bulk-partial-saved"
+          data-saved={bulkPartial.saved} data-total={bulkPartial.total}>
+          {t('cn2b_bulk_partial_saved', lang)
+            .replace('__K__', String(bulkPartial.saved))
+            .replace('__N__', String(bulkPartial.total))}
+        </p>
+      )}
+      {overrideReadFailure !== null && (
+        <>
+          <p className="cn2b-error" role="status" data-testid="cn2b-overrides-unavailable">
+            {t('cn2b_override_read_unavailable', lang)} ({centralNeedsErrorText(overrideReadFailure, lang)})
+          </p>
+          {/* UI-F5 — re-read ONLY the override chain. Reading is not editing,
+              so it is offered whether or not this revision is editable. */}
+          <div className="cn2b-actions">
+            <button type="button" className="cn2b-btn cn2b-btn--sm" disabled={busy}
+              data-testid="cn2b-overrides-reload" onClick={() => onOverridesChanged()}>
+              {t('cn2b_overrides_reload', lang)}
+            </button>
+          </div>
+        </>
+      )}
 
       {canEdit && (
         <fieldset className="cn2b-bulk">
@@ -552,12 +664,13 @@ export function CentralNeedsDispositionTable({
                     <td>{field.fieldName}</td>
                     <td><SourceValue values={field.sourceValues} /></td>
                     <td>
-                      {override ? (
+                      {!overridesReadable ? (
+                        /* C5 §13 — an unread chain is never shown as "as imported". */
+                        <span className="cn2b-effective" data-effective="unknown">{t('cn2b_effective_unknown', lang)}</span>
+                      ) : override ? (
                         <span className="cn2b-effective">
                           <span className="cn2b-effective__value">
-                            {override.finalValue === null
-                              ? t('cn2b_value_blank', lang)
-                              : String(override.finalValue)}
+                            {overrideValueText(override) ?? t('cn2b_value_blank', lang)}
                           </span>
                           <span className="cn2b-effective__reason">{override.overrideReason}</span>
                         </span>
@@ -568,7 +681,7 @@ export function CentralNeedsDispositionTable({
                         <button
                           type="button"
                           className="cn2b-btn cn2b-btn--sm"
-                          disabled={busy}
+                          disabled={busy || !overridesReadable}
                           onClick={() => openOverride(field)}
                         >
                           {override ? t('cn2b_override_replace', lang) : t('cn2b_override', lang)}
@@ -583,7 +696,7 @@ export function CentralNeedsDispositionTable({
                             <select
                               className="cn2b-select"
                               value={overrideKind}
-                              onChange={(e) => setOverrideKind(e.target.value as OverrideValueKind)}
+                              onChange={(e) => { setOverrideKind(e.target.value as OverrideValueKind); setNumberPreview(null); }}
                             >
                               <option value="number">{t('cn2b_kind_number', lang)}</option>
                               <option value="text">{t('cn2b_kind_text', lang)}</option>
@@ -610,10 +723,16 @@ export function CentralNeedsDispositionTable({
                                   type="text"
                                   inputMode={overrideKind === 'number' ? 'decimal' : 'text'}
                                   value={overrideRaw}
-                                  onChange={(e) => setOverrideRaw(e.target.value)}
+                                  onChange={(e) => { setOverrideRaw(e.target.value); setNumberPreview(null); }}
                                 />
                               )}
                             </label>
+                          )}
+                          {overrideKind === 'number' && (
+                            <p className="cn2b-hint">{t('cn2b_override_number_grammar', lang)}</p>
+                          )}
+                          {overrideKind === 'text' && (
+                            <p className="cn2b-hint" data-testid="cn2b-override-text-not-numeric">{t('cn2b_override_text_not_numeric', lang)}</p>
                           )}
                           <label className="cn2b-field">
                             <span className="cn2b-field__label">{t('cn2b_override_reason', lang)}</span>
@@ -633,15 +752,38 @@ export function CentralNeedsDispositionTable({
                               onChange={(e) => setOverrideNote(e.target.value)}
                             />
                           </label>
+                          {/* C5 §15 — the exact JSON number that would be stored,
+                              shown before the separate confirmation below. */}
+                          {overrideKind === 'number' && numberPreview?.raw === overrideRaw && (
+                            <div className="cn2b-override__preview" role="status" data-testid="cn2b-override-number-preview"
+                              data-exact={numberPreview.exact ? 'true' : 'false'}>
+                              <span>{t('cn2b_override_number_will_store', lang)}</span>{' '}
+                              <code className="cn2b-code" data-testid="cn2b-override-number-json">{numberPreview.json}</code>
+                              {!numberPreview.exact && (
+                                <p className="cn2b-hint" data-testid="cn2b-override-number-not-exact">{t('cn2b_override_number_not_exact', lang)}</p>
+                              )}
+                            </div>
+                          )}
                           <div className="cn2b-actions">
-                            <button
-                              type="button"
-                              className="cn2b-btn cn2b-btn--primary"
-                              disabled={busy || overrideReason.trim() === ''}
-                              onClick={() => void submitOverride()}
-                            >
-                              {t('cn2b_override_save', lang)}
-                            </button>
+                            {overrideKind === 'number' && numberPreview?.raw !== overrideRaw ? (
+                              <button
+                                type="button"
+                                className="cn2b-btn cn2b-btn--primary"
+                                disabled={busy || overrideReason.trim() === '' || !overridesReadable}
+                                onClick={previewNumberOverride}
+                              >
+                                {t('cn2b_override_number_preview', lang)}
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                className="cn2b-btn cn2b-btn--primary"
+                                disabled={busy || overrideReason.trim() === '' || !overridesReadable}
+                                onClick={() => void submitOverride()}
+                              >
+                                {overrideKind === 'number' ? t('cn2b_override_number_confirm', lang) : t('cn2b_override_save', lang)}
+                              </button>
+                            )}
                             <button type="button" className="cn2b-btn" disabled={busy} onClick={closeOverride}>
                               {t('cn2b_cancel', lang)}
                             </button>

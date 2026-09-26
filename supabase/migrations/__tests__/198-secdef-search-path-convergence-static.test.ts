@@ -97,9 +97,14 @@ describe('M198 static — identity and placement', () => {
       // public, pg_temp on every function it defines and alters none of the thirty, so what
       // this suite converges is untouched. It is now the reviewed ceiling.
       '216_phoenix_central_needs_region_persistence.sql',
+      // C5/M217: the Central Needs safety convergence (classifier, shared quantity-lineage
+      // helper, NOT VALID source-value CHECK, approval-gate fence) — it pins search_path =
+      // public, pg_temp on every function it creates or replaces and alters none of the
+      // thirty, so what this suite converges is untouched. It is now the reviewed ceiling.
+      '217_phoenix_central_needs_c5_safety_convergence.sql',
     ]);
-    expect(files.filter((f) => Number(f.slice(0, 3)) > 216)).toEqual([]);
-    expect(files).toHaveLength(216);
+    expect(files.filter((f) => Number(f.slice(0, 3)) > 217)).toEqual([]);
+    expect(files).toHaveLength(217);
   });
 
   it('carries no MANUAL APPLY ONLY banner, so the pinned executor will accept it', () => {

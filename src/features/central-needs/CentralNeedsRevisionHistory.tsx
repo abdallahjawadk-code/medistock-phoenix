@@ -59,7 +59,7 @@ export function CentralNeedsRevisionHistory({ lang, organizationId, planYear }: 
     try {
       setState({ phase: 'done', history: await fetchRevisionLifecycle(organizationId, planYear) });
     } catch (e: unknown) {
-      setState({ phase: 'failed', code: e instanceof CentralNeedsError ? e.code : 'load_failed' });
+      setState({ phase: 'failed', code: e instanceof CentralNeedsError ? e.businessCode : 'load_failed' });
     }
   }, [organizationId, planYear]);
 

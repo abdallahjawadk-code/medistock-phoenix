@@ -251,6 +251,17 @@ export const REVIEWED_MIGRATION_FILES: readonly string[] = Object.freeze([
   // function comments).
   // No stock, movement, allocation or transfer SQL and no new permission key.
   '216_phoenix_central_needs_region_persistence.sql',
+  // C5 / M217: Central Needs safety convergence (contract freeze v1.9). One
+  // frozen pure numeric classifier, one shared quantity-lineage helper (no
+  // client EXECUTE), one NOT VALID future-write source-value CHECK and one
+  // BEFORE INSERT OR UPDATE approval-gate fence on plan revisions (a same-
+  // transaction canonical gate audit is required). Seven existing functions
+  // are replaced with unchanged signatures (review blockers, beneficiary
+  // column list, set_need_line, need-line integrity, field override,
+  // beneficiary assert and approve with A2 eligibility locks). ACL-neutral for
+  // submit, approve and reject. No table, column, enum, policy or permission
+  // key, and no stock, movement, allocation or transfer SQL.
+  '217_phoenix_central_needs_c5_safety_convergence.sql',
 ]);
 
 const REVIEWED_SET: ReadonlySet<string> = new Set(REVIEWED_MIGRATION_FILES);

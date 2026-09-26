@@ -81,6 +81,7 @@ import {
   listSourceRecords,
   openCorrectionRevision,
   openPlanRevision,
+  reasonOf,
   rejectRevision,
   searchBatchEntries,
   searchSourceFiles,
@@ -97,13 +98,17 @@ import {
   type PlanRevision,
   type RecordDisposition,
   type ReviewReadiness,
+  type RevisionStatus,
   type SourceFile,
   type SourceRecord,
 } from './central-needs.service';
 import type { ArchiveParseResult, FileParseResult } from './import/contract.ts';
-import { deriveRevisionContext, findRegistryRevision, newerRevisionOf } from './central-needs.revision-context';
+import {
+  deriveRevisionContext, findRegistryRevision, freshestRevisionStatus, isStatusAheadOfRegistry, newerRevisionOf,
+} from './central-needs.revision-context';
 import { revisionToOpen } from './central-needs.revision-open';
 import type { RegionReadState } from './regions/beneficiaryRegions';
+import type { OverrideReadState } from './central-needs.lineage';
 import { CentralNeedsRevisionHistory } from './CentralNeedsRevisionHistory';
 import { CentralNeedsSimpleWorkspace } from './simple/CentralNeedsSimpleWorkspace';
 
@@ -120,11 +125,77 @@ const CORRECTION_STATE_MOVED: ReadonlySet<string> = new Set([
   'plan_revision_draft_already_open',
   'plan_revision_still_in_review',
 ]);
+/**
+ * C5 §14/§17 — refusals that mean the revision's lifecycle, eligibility or
+ * readiness moved since this screen read it. The registry and the revision are
+ * re-read so the person decides again on current facts; the action itself is
+ * never retried. This applies to the lifecycle actions here AND to every edit
+ * a panel sends (UI-F3): an edit refused with `plan_revision_not_editable`
+ * means someone else moved the draft on, and the screen must show that.
+ */
+const REVISION_STATE_MOVED: ReadonlySet<string> = new Set([
+  'plan_revision_not_submitted',
+  'plan_revision_already_closed',
+  'plan_revision_not_editable',
+  'plan_revision_not_ready_for_review',
+  'central_needs_revision_stale',
+  'central_needs_lifecycle_state_ambiguous',
+  'central_needs_approval_eligibility_changed',
+]);
+/**
+ * C5 §14 (UI-F2) — a failure whose outcome is NOT known: no business token
+ * from the server and not a rolled-back contention (a transport failure, for
+ * example). The request may or may not have taken effect, so the registry and
+ * the revision are re-read rather than assuming either.
+ */
+function outcomeUnknown(e: unknown): boolean {
+  if (!(e instanceof CentralNeedsError)) return true;
+  return e.businessCode === 'central_needs_request_failed' && !e.retryable;
+}
+
 type ChildActivity = { busy: boolean; dirty: boolean; failed: boolean };
 
 /** A revision label is never a bare "#1" — revision numbers restart per plan year. */
 /** C4 — before a revision's regions are read they are not known, which fails closed. */
 const REGIONS_NOT_LOADED: RegionReadState = { phase: 'unavailable', code: 'beneficiary_regions_not_loaded' };
+/** C5 §13 — before (or while) the override chain is read it is not known, which fails closed. */
+const OVERRIDES_NOT_LOADED: OverrideReadState = { phase: 'unavailable', code: 'field_overrides_not_loaded' };
+const NO_OVERRIDES: FieldOverride[] = [];
+
+/** C5 §17 — the terminal landing sentence of each status that is no longer a draft. */
+const TERMINAL_LANDING_KEY: Readonly<Record<Exclude<RevisionStatus, 'draft'>, string>> = {
+  submitted: 'cn2b_terminal_submitted',
+  approved: 'cn2b_terminal_approved',
+  rejected: 'cn2b_terminal_rejected',
+  superseded: 'cn2b_terminal_superseded',
+};
+
+/**
+ * C5 §13 — one complete read of the override chain, as a read STATE. A failed
+ * or inconsistent read never blocks the rest of the screen; it marks overrides
+ * unavailable, which withholds every override-dependent write.
+ */
+function readOverrideState(planRevisionId: string): Promise<OverrideReadState> {
+  return Promise.resolve()
+    .then(() => listOverrides(planRevisionId))
+    .then(
+      (overrides): OverrideReadState => ({ phase: 'ready', overrides }),
+      (e: unknown): OverrideReadState => ({
+        phase: 'unavailable',
+        code: !(e instanceof CentralNeedsError)
+          ? 'field_overrides_read_inconsistent'
+          // A READ that did not complete (a timeout, a contention, a transport
+          // failure) changed nothing; it is named as a failed read, never with
+          // a write's "outcome unknown" sentence.
+          : e.businessCode === 'central_needs_request_failed' ? 'field_overrides_read_failed' : e.businessCode,
+      }),
+    );
+}
+
+/** A refusal is kept whole (so retry and reason copy can be chosen); anything else is its fallback code. */
+function refusalOf(e: unknown, fallback: string): CentralNeedsError | string {
+  return e instanceof CentralNeedsError ? e : fallback;
+}
 
 function revisionLabel(r: PlanRevision, lang: Parameters<typeof t>[1]): string {
   const year = r.planYear === null ? '—' : String(r.planYear);
@@ -162,8 +233,18 @@ function StateBadge({ state }: { state: 'provisional' | 'verified' | 'incomplete
   return <span className="cn2b-badge" data-state={state}>{t(key, lang)}</span>;
 }
 
-/** A blocker with no translation yet shows its server identifier, not a dictionary key. */
-function blockerLabel(blocker: string, lang: Parameters<typeof t>[1]): string {
+/**
+ * A blocker with no translation yet shows its server identifier, not a
+ * dictionary key. C5 §7.2: a blocker whose detail pins a `reason=` token gets
+ * that reason's own label when one exists.
+ */
+function blockerLabel(blocker: string, detail: string | null, lang: Parameters<typeof t>[1]): string {
+  const reason = reasonOf(detail);
+  if (reason !== null) {
+    const reasonKey = `cn2b_blocker_${blocker}__${reason}`;
+    const reasonText = t(reasonKey, lang);
+    if (reasonText !== reasonKey) return reasonText;
+  }
   const key = `cn2b_blocker_${blocker}`;
   const text = t(key, lang);
   return text === key ? blocker : text;
@@ -290,7 +371,14 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
   const [batches, setBatches] = useState<ImportBatch[]>([]);
   const [records, setRecords] = useState<SourceRecord[]>([]);
   const [dispositions, setDispositions] = useState<RecordDisposition[]>([]);
-  const [overrides, setOverrides] = useState<FieldOverride[]>([]);
+  /**
+   * C5 §13 — the revision's COMPLETE override chain, or why it could not be
+   * read (fail closed: need-line saves and override creation are withheld,
+   * the rest of the screen stays readable).
+   */
+  const [overrideRead, setOverrideRead] = useState<OverrideReadState>(OVERRIDES_NOT_LOADED);
+  const overrides = overrideRead.phase === 'ready' ? overrideRead.overrides : NO_OVERRIDES;
+  const overrideReadFailure = overrideRead.phase === 'ready' ? null : overrideRead.code;
   const [needLines, setNeedLines] = useState<NeedLine[]>([]);
   const [claimedSources, setClaimedSources] = useState<NeedLineSourceLink[]>([]);
   /** (213) Every physical candidate column of the revision and its confirmed beneficiary, if any. */
@@ -323,7 +411,8 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
   const previousChildBusy = useRef<Record<'review' | 'beneficiaries' | 'need-lines', boolean>>({ review: false, beneficiaries: false, 'need-lines': false });
   const previousParentBusyStage = useRef<CentralNeedsStageId | null>(null);
   const [busy, setBusy] = useState<Busy>(null);
-  const [error, setError] = useState<string | null>(null);
+  /** A code of this screen's own, or the server's whole refusal (C5 §14: retry and reason copy read its fields). */
+  const [error, setError] = useState<CentralNeedsError | string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   /**
    * UX-2A — in-flight marker for the session read this screen already performs.
@@ -381,7 +470,7 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
    * records where that one request currently is.
    */
   const [sourceSearchPhase, setSourceSearchPhase] = useState<'idle' | 'searching' | 'done' | 'failed'>('idle');
-  const [sourceSearchError, setSourceSearchError] = useState<string | null>(null);
+  const [sourceSearchError, setSourceSearchError] = useState<CentralNeedsError | string | null>(null);
   /**
    * Monotonic request token. A slower earlier keystroke must never overwrite a
    * newer answer, which would show results for a query the operator has already
@@ -397,8 +486,34 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
    * and present it as B's. Only the newest request may commit.
    */
   const revisionReloadSeq = useRef(0);
+  /** C5 §13 — the same newest-request-wins token for the override chain, which can also be re-read on its own. */
+  const overrideReadSeq = useRef(0);
 
-  const revision = useMemo(() => findRegistryRevision(revisions, revisionId), [revisions, revisionId]);
+  /** The selected revision exactly as the registry list last returned it. */
+  const registryRevision = useMemo(() => findRegistryRevision(revisions, revisionId), [revisions, revisionId]);
+  const revisionDataReady = revisionId !== null && dataRevisionId === revisionId;
+  /**
+   * C5 §17 (UI-F3) — the status the revision's own readiness read returned,
+   * when that read belongs to the selected revision. It is often FRESHER than
+   * the registry row: another person may have submitted the draft since the
+   * list was read, and every panel reload brings the new status back here.
+   */
+  const observedStatus = revisionDataReady && readiness !== null && readiness.planRevisionId === revisionId
+    ? readiness.status
+    : null;
+  /**
+   * The selected revision with its FRESHEST known status (the lifecycle only
+   * moves forward, so the status further along it wins — see
+   * `freshestRevisionStatus`). Every §17 decision below — routing, the
+   * terminal landing, editability, the lifecycle actions offered — reads this,
+   * never the registry row alone. A disagreement can only make the revision
+   * less editable, never more.
+   */
+  const revision = useMemo<PlanRevision | null>(() => {
+    if (registryRevision === null) return null;
+    const status = freshestRevisionStatus(registryRevision.status, observedStatus);
+    return status === null || status === registryRevision.status ? registryRevision : { ...registryRevision, status };
+  }, [registryRevision, observedStatus]);
   /**
    * C1 — the selected revision's context, derived synchronously from the
    * selection alone (no mirrored state, no effect). A revision switch changes
@@ -406,7 +521,6 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
    */
   const revisionContext = useMemo(() => deriveRevisionContext(revision), [revision]);
   const isDraft = revisionContext.isDraft;
-  const revisionDataReady = revisionId !== null && dataRevisionId === revisionId;
 
   /**
    * FINDINGS A + B — everything below is scoped to ONE revision, so a revision
@@ -418,11 +532,12 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
   const resetRevisionScopedState = useCallback(() => {
     revisionReloadSeq.current += 1;
     sourceSearchSeq.current += 1;
+    overrideReadSeq.current += 1;
     // Nothing on screen may claim a revision until a reload proves which one.
     setDataRevisionId(null);
     setSessions([]);
     setBatches([]);
-    setOverrides([]);
+    setOverrideRead(OVERRIDES_NOT_LOADED);
     setReadiness(null);
     setNeedLines([]);
     setClaimedSources([]);
@@ -482,20 +597,23 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
         // approved revision), never by whatever sorts first.
         setRevisionId((current) => revisionToOpen(rows, current));
       })
-      .catch((e: unknown) => !cancelled && setError(e instanceof CentralNeedsError ? e.code : 'load_failed'))
+      .catch((e: unknown) => !cancelled && setError(refusalOf(e, 'load_failed')))
       .finally(() => { if (!cancelled) setRevisionsLoading(false); });
     return () => { cancelled = true; };
   }, [organizationId]);
 
   const reloadRevision = useCallback(async (id: string) => {
     const seq = (revisionReloadSeq.current += 1);
+    const overrideSeq = (overrideReadSeq.current += 1);
     setRevisionReloading(true);
     try {
-      const [nextSessions, nextBatches, nextOverrides, nextReadiness, nextLineage, nextBeneficiaryColumns, nextSessionEntries, nextRegions] =
+      const [nextSessions, nextBatches, nextOverrideRead, nextReadiness, nextLineage, nextBeneficiaryColumns, nextSessionEntries, nextRegions] =
         await Promise.all([
           listImportSessions(id),
           listImportBatches(id),
-          listOverrides(id),
+          // C5 §13 — an incomplete or inconsistent override chain never blocks
+          // the rest of the screen; it marks overrides unavailable (fail closed).
+          readOverrideState(id),
           fetchReviewReadiness(id),
           listNeedLineLineage(id),
           listBeneficiaryColumns(id),
@@ -509,14 +627,14 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
               (versions): RegionReadState => ({ phase: 'ready', versions }),
               (e: unknown): RegionReadState => ({
                 phase: 'unavailable',
-                code: e instanceof CentralNeedsError ? e.code : 'beneficiary_regions_read_inconsistent',
+                code: e instanceof CentralNeedsError ? e.businessCode : 'beneficiary_regions_read_inconsistent',
               }),
             ),
         ]);
       if (seq !== revisionReloadSeq.current) return;
       setSessions(nextSessions);
       setBatches(nextBatches);
-      setOverrides(nextOverrides);
+      if (overrideSeq === overrideReadSeq.current) setOverrideRead(nextOverrideRead);
       setReadiness(nextReadiness);
       setNeedLines(nextLineage.needLines);
       setClaimedSources(nextLineage.sources);
@@ -539,6 +657,56 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
     }
   }, []);
 
+  /**
+   * C5 §14 — re-read the override chain alone, immediately after an override
+   * was recorded. Until it answers the chain is NOT known (a newer head exists
+   * on the server), so override-dependent writes are withheld meanwhile; the
+   * need-line surface then clears any pin that is no longer its cell's head.
+   */
+  const reloadOverrides = useCallback(async (id: string) => {
+    const seq = (overrideReadSeq.current += 1);
+    setOverrideRead(OVERRIDES_NOT_LOADED);
+    const next = await readOverrideState(id);
+    if (seq === overrideReadSeq.current) setOverrideRead(next);
+  }, []);
+
+  /**
+   * A panel's "reload the revision" — its onChanged, after a confirmed write,
+   * a partial write or a refusal that moved the state. A failed re-read is
+   * surfaced as what it is (UI-N1): this revision's state could not be
+   * re-read. Never the re-read's own error, whose "not applied — try again" /
+   * "unknown outcome" copy would describe the person's write, which the re-read
+   * is not; never an unhandled rejection, never silence. The panel's own
+   * outcome message stays; the override chain it could not replace keeps
+   * whatever state it already had.
+   */
+  const refreshRevision = useCallback((id: string) => {
+    reloadRevision(id).catch(() => setError('revision_reread_failed'));
+  }, [reloadRevision]);
+
+  /**
+   * C5 §17 (UI-F3) — keep the registry honest. When the revision's own
+   * readiness read reports a status further along the lifecycle than the
+   * registry row (someone else submitted, approved or rejected it), the
+   * registry is re-read once for that disagreement, so the revision list and
+   * every registry-derived label catch up. The freshest status already governs
+   * every decision meanwhile; a failed re-read changes nothing.
+   */
+  const registryReconciledFor = useRef<string | null>(null);
+  const organizationRef = useRef(organizationId);
+  useEffect(() => { organizationRef.current = organizationId; }, [organizationId]);
+  useEffect(() => {
+    if (!organizationId || registryRevision === null || observedStatus === null) return;
+    if (!isStatusAheadOfRegistry(registryRevision.status, observedStatus)) return;
+    const key = `${registryRevision.id}:${registryRevision.status}:${observedStatus}`;
+    if (registryReconciledFor.current === key) return;
+    registryReconciledFor.current = key;
+    const org = organizationId;
+    listPlanRevisions(org)
+      .then((rows) => { if (organizationRef.current === org) setRevisions(rows); })
+      .catch(() => { /* the freshest known status already governs; nothing to add */ });
+  }, [organizationId, registryRevision, observedStatus]);
+
   useEffect(() => {
     if (!revisionId) return;
     let cancelled = false;
@@ -550,7 +718,7 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
     // still current, so a failure leaves the evidence unattributed and the
     // render gate keeps showing the waiting state rather than stale rows.
     reloadRevision(revisionId).catch((e: unknown) => {
-      if (!cancelled) setError(e instanceof CentralNeedsError ? e.code : 'load_failed');
+      if (!cancelled) setError(refusalOf(e, 'load_failed'));
     });
     return () => { cancelled = true; };
   }, [revisionId, reloadRevision, resetRevisionScopedState]);
@@ -561,7 +729,7 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
     setSessionLoading(true);
     Promise.all([listSourceRecords(activeSessionId), listDispositions(activeSessionId)])
       .then(([r, d]) => { if (!cancelled) { setRecords(r); setDispositions(d); } })
-      .catch((e: unknown) => !cancelled && setError(e instanceof CentralNeedsError ? e.code : 'load_failed'))
+      .catch((e: unknown) => !cancelled && setError(refusalOf(e, 'load_failed')))
       .finally(() => { if (!cancelled) setSessionLoading(false); });
     return () => { cancelled = true; };
   }, [activeSessionId]);
@@ -592,9 +760,15 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
       setNotice(result.idempotentReplay ? 'cn2b_notice_already_verified' : 'cn2b_notice_verified');
       setPendingFile(null);
       preview.reset();
-      await reloadRevision(revisionId);
+      // UI-F2 — the server confirmed the verification; a failed re-read after
+      // it is reported as a failed re-read, never as a failed verification.
+      try {
+        await reloadRevision(revisionId);
+      } catch {
+        setError('state_reread_failed');
+      }
     } catch (e: unknown) {
-      setError(e instanceof CentralNeedsError ? e.code : 'verify_failed');
+      setError(refusalOf(e, 'verify_failed'));
     } finally {
       setBusy(null);
     }
@@ -607,9 +781,14 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
     setError(null);
     try {
       await abandonImportSession(sessionId, reason.trim());
-      if (revisionId) await reloadRevision(revisionId);
+      // UI-F2 — confirmed by the server; a failed re-read is not a failed abandon.
+      try {
+        if (revisionId) await reloadRevision(revisionId);
+      } catch {
+        setError('state_reread_failed');
+      }
     } catch (e: unknown) {
-      setError(e instanceof CentralNeedsError ? e.code : 'abandon_failed');
+      setError(refusalOf(e, 'abandon_failed'));
     } finally {
       setBusy(null);
     }
@@ -639,13 +818,22 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
     setError(null);
     setNotice(null);
     try {
-      const opened = await openPlanRevision(organizationId, planYear, false);
-      const rows = await listPlanRevisions(organizationId);
-      setRevisions(rows);
+      let opened: Awaited<ReturnType<typeof openPlanRevision>>;
+      try {
+        opened = await openPlanRevision(organizationId, planYear, false);
+      } catch (e: unknown) {
+        setError(refusalOf(e, 'open_revision_failed'));
+        return;
+      }
+      // UI-N2 — the server confirmed the open: a failed registry re-read is
+      // reported as such, never as the open's refusal.
+      try {
+        setRevisions(await listPlanRevisions(organizationId));
+      } catch {
+        setError('state_reread_failed');
+      }
       setRevisionId(opened.planRevisionId);
       setNotice(opened.idempotent ? 'cn2b_notice_revision_existing' : 'cn2b_notice_revision_opened');
-    } catch (e: unknown) {
-      setError(e instanceof CentralNeedsError ? e.code : 'open_revision_failed');
     } finally {
       setBusy(null);
     }
@@ -703,23 +891,32 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
     setError(null);
     setNotice(null);
     try {
-      const opened = await openCorrectionRevision(organizationId, target.planYear, target.revisionId, reason);
-      const rows = await listPlanRevisions(organizationId);
-      setRevisions(rows);
+      let opened: Awaited<ReturnType<typeof openCorrectionRevision>>;
+      try {
+        opened = await openCorrectionRevision(organizationId, target.planYear, target.revisionId, reason);
+      } catch (e: unknown) {
+        const refusal = refusalOf(e, 'open_revision_failed');
+        setError(refusal);
+        if (refusal instanceof CentralNeedsError && CORRECTION_STATE_MOVED.has(refusal.businessCode)) {
+          // Refresh the read model so the person decides again on current facts.
+          // Deliberately no retry: the refusal above is what they need to see.
+          try {
+            setRevisions(await listPlanRevisions(organizationId));
+          } catch {
+            /* the refusal already shown is the actionable message */
+          }
+        }
+        return;
+      }
+      // UI-N2 — the server confirmed the correction: a failed registry re-read
+      // is reported as such, never as the open's refusal.
+      try {
+        setRevisions(await listPlanRevisions(organizationId));
+      } catch {
+        setError('state_reread_failed');
+      }
       setRevisionId(opened.planRevisionId);
       setNotice('cn2b_notice_correction_opened');
-    } catch (e: unknown) {
-      const code = e instanceof CentralNeedsError ? e.code : 'open_revision_failed';
-      setError(code);
-      if (CORRECTION_STATE_MOVED.has(code)) {
-        // Refresh the read model so the person decides again on current facts.
-        // Deliberately no retry: the refusal above is what they need to see.
-        try {
-          setRevisions(await listPlanRevisions(organizationId));
-        } catch {
-          /* the refusal already shown is the actionable message */
-        }
-      }
     } finally {
       setBusy(null);
     }
@@ -762,7 +959,7 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
       setSourceFiles([]);
       setEntryHits([]);
       // A refused search is reported as a refusal, never as "nothing matched".
-      setSourceSearchError(e instanceof CentralNeedsError ? e.code : 'load_failed');
+      setSourceSearchError(refusalOf(e, 'load_failed'));
       setSourceSearchPhase('failed');
     }
   }, [revisionId]);
@@ -777,38 +974,82 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
     setSourceSearchPhase('idle');
   }, []);
 
+  /**
+   * C5 §14/§17 — a lifecycle refusal that means the revision moved (it is no
+   * longer submitted, an eligibility changed, readiness changed) re-reads the
+   * registry and the revision, so the person decides again on current facts.
+   * Deliberately never a retry: the refusal already shown is what they act on,
+   * and a retryable contention only says "try again".
+   */
+  const rereadAfterRefusal = useCallback(async (e: unknown) => {
+    if (!revisionId) return;
+    const moved = e instanceof CentralNeedsError && REVISION_STATE_MOVED.has(e.businessCode);
+    // UI-F2 — an unknown outcome is re-read too, so the person sees whether it
+    // took effect instead of being told either way. A rolled-back contention
+    // is not unknown: it only says "try again" and re-reads nothing.
+    if (!moved && !outcomeUnknown(e)) return;
+    try {
+      if (organizationId) setRevisions(await listPlanRevisions(organizationId));
+      await reloadRevision(revisionId);
+    } catch {
+      /* the refusal already shown is the actionable message */
+    }
+  }, [revisionId, organizationId, reloadRevision]);
+
+  /**
+   * C5 §14 (UI-F2) — the re-read AFTER the server confirmed an action. Its
+   * failure is reported as what it is — the state could not be re-read — and
+   * never as a failure of the action the server already confirmed.
+   */
+  const rereadAfterSuccess = useCallback(async (id: string) => {
+    try {
+      if (organizationId) setRevisions(await listPlanRevisions(organizationId));
+      await reloadRevision(id);
+    } catch {
+      setError('state_reread_failed');
+    }
+  }, [organizationId, reloadRevision]);
+
+  /**
+   * One lifecycle action: the RPC's own refusal is shown and followed by the
+   * §17 re-read; once the RPC resolves (the server's confirmation) its outcome
+   * is shown, and only then is the state re-read, on its own terms.
+   */
+  const runLifecycleAction = useCallback(async (
+    id: string, action: () => Promise<void>, fallback: string, successNotice: string,
+  ) => {
+    try {
+      await action();
+    } catch (e: unknown) {
+      setError(refusalOf(e, fallback));
+      await rereadAfterRefusal(e);
+      return;
+    }
+    setNotice(successNotice);
+    await rereadAfterSuccess(id);
+  }, [rereadAfterRefusal, rereadAfterSuccess]);
+
   const onSubmit = useCallback(async () => {
     if (!revisionId) return;
     setBusy('submitting');
     setError(null);
     try {
-      await submitRevision(revisionId);
-      const rows = organizationId ? await listPlanRevisions(organizationId) : [];
-      setRevisions(rows);
-      await reloadRevision(revisionId);
-      setNotice('cn2b_notice_submitted');
-    } catch (e: unknown) {
-      setError(e instanceof CentralNeedsError ? e.code : 'submit_failed');
+      await runLifecycleAction(revisionId, () => submitRevision(revisionId), 'submit_failed', 'cn2b_notice_submitted');
     } finally {
       setBusy(null);
     }
-  }, [revisionId, organizationId, reloadRevision]);
+  }, [revisionId, runLifecycleAction]);
 
   const onApprove = useCallback(async () => {
     if (!revisionId) return;
     setBusy('approving');
     setError(null);
     try {
-      await approveRevision(revisionId);
-      const rows = organizationId ? await listPlanRevisions(organizationId) : [];
-      setRevisions(rows);
-      setNotice('cn2b_notice_approved');
-    } catch (e: unknown) {
-      setError(e instanceof CentralNeedsError ? e.code : 'approve_failed');
+      await runLifecycleAction(revisionId, () => approveRevision(revisionId), 'approve_failed', 'cn2b_notice_approved');
     } finally {
       setBusy(null);
     }
-  }, [revisionId, organizationId]);
+  }, [revisionId, runLifecycleAction]);
 
   const onReject = useCallback(async () => {
     if (!revisionId) return;
@@ -817,16 +1058,11 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
     setBusy('rejecting');
     setError(null);
     try {
-      await rejectRevision(revisionId, reason.trim());
-      const rows = organizationId ? await listPlanRevisions(organizationId) : [];
-      setRevisions(rows);
-      setNotice('cn2b_notice_rejected');
-    } catch (e: unknown) {
-      setError(e instanceof CentralNeedsError ? e.code : 'reject_failed');
+      await runLifecycleAction(revisionId, () => rejectRevision(revisionId, reason.trim()), 'reject_failed', 'cn2b_notice_rejected');
     } finally {
       setBusy(null);
     }
-  }, [revisionId, organizationId, lang]);
+  }, [revisionId, lang, runLifecycleAction]);
 
   const onDownloadSource = useCallback(async (batchId: string) => {
     setError(null);
@@ -834,7 +1070,7 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
       const { url } = await requestSourceDownload(batchId);
       window.open(url, '_blank', 'noopener,noreferrer');
     } catch (e: unknown) {
-      setError(e instanceof CentralNeedsError ? e.code : 'download_failed');
+      setError(refusalOf(e, 'download_failed'));
     }
   }, []);
 
@@ -858,8 +1094,10 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
     readiness,
   }), [readiness, revision, revisionDataReady, revisionReloading, readinessRefreshing]);
 
+  // C5 §17 — routed by the revision's FRESHEST known status (UI-F3: the
+  // readiness read's status counts) BEFORE any blocker projection.
   const recommendedStage = useMemo(
-    () => recommendedCentralNeedsStage(revision !== null, stageProgress),
+    () => recommendedCentralNeedsStage(revision !== null, stageProgress, revision?.status ?? null),
     [revision, stageProgress],
   );
 
@@ -913,6 +1151,25 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
     // Resume once from server-backed progress; later readiness changes must not move the stage under the operator.
     stageWasChosen.current = true;
   }, [recommendedStage, revisionDataReady, revisionId, revisionReloading, revisionsLoading]);
+
+  /**
+   * C5 §17 (UI-F3) — status routing comes before blocker projection, and not
+   * only on first paint: when the SELECTED revision stops being a draft while
+   * it is open (someone else submitted it, and a reload or a refused edit
+   * brought that status back), the workspace lands on its readiness/terminal
+   * page instead of leaving the person on an edit stage whose writes the
+   * server now refuses. Only that one transition routes; blockers never do.
+   */
+  const statusSeen = useRef<{ id: string; status: RevisionStatus } | null>(null);
+  useEffect(() => {
+    if (revision === null) { statusSeen.current = null; return; }
+    const previous = statusSeen.current;
+    statusSeen.current = { id: revision.id, status: revision.status };
+    if (!initialStageResolved) return;
+    if (previous?.id === revision.id && previous.status === 'draft' && revision.status !== 'draft') {
+      setActiveStage('readiness');
+    }
+  }, [revision, initialStageResolved]);
 
   useEffect(() => {
     const activities = { review: reviewActivity, beneficiaries: beneficiaryActivity, 'need-lines': needLineActivity } as const;
@@ -1328,9 +1585,12 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
               records={records}
               dispositions={dispositions}
               overrides={overrides}
+              overrideReadFailure={overrideReadFailure}
               organizationId={organizationId}
               canEdit={canEdit && isDraft}
               onChanged={() => void onDispositionsChanged()}
+              onOverridesChanged={() => { if (revisionId) void reloadOverrides(revisionId); }}
+              onRefused={(refusal) => void rereadAfterRefusal(refusal)}
               onActivityChange={setReviewActivity}
             />
           </Panel>
@@ -1350,7 +1610,8 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
           editable={canEdit && isDraft}
           columns={beneficiaryColumns}
           activeCareInstitutions={careInstitutions}
-          onChanged={() => void reloadRevision(revision.id)}
+          onChanged={() => refreshRevision(revision.id)}
+          onRefused={(refusal) => void rereadAfterRefusal(refusal)}
           onActivityChange={setBeneficiaryActivity}
           beneficiaryRegions={beneficiaryRegions}
         />
@@ -1381,10 +1642,14 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
             dispositions={dispositions}
             records={records}
             overrides={overrides}
+            overrideReadFailure={overrideReadFailure}
             beneficiaryColumns={beneficiaryColumns}
             needLines={needLines}
             claimedSources={claimedSources}
-            onChanged={() => void reloadRevision(revision.id)}
+            onChanged={() => refreshRevision(revision.id)}
+            /* C5 §14 (UI-F1/UI-F5) — the chain alone, marked not loaded at once. */
+            onReloadOverrides={() => void reloadOverrides(revision.id)}
+            onRefused={(refusal) => void rereadAfterRefusal(refusal)}
             onActivityChange={setNeedLineActivity}
           />
         </Panel>
@@ -1397,8 +1662,33 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
       <p className="cn2b-hint" role="status">{t('cn2b_revision_loading', lang)}</p>
     ) : (
       <Panel titleKey="cn2b_panel_readiness" icon="alerts">
+        {/*
+          C5 §17 — a revision that is no longer a draft lands here by its
+          status, with its own terminal sentence. Whatever blockers the server
+          still lists are shown as information only: nothing here is an edit
+          task, and no stage is recommended for editing.
+        */}
+        {revision && revision.status !== 'draft' && (
+          <p className="cn2b-notice" data-testid="cn2b-terminal-landing" data-status={revision.status}>
+            <strong>{t(`cn2b_revstatus_${revision.status}`, lang)}</strong> — {t(TERMINAL_LANDING_KEY[revision.status], lang)}
+          </p>
+        )}
         {!readiness ? (
           <PhoenixEmptyState title={t('cn2b_readiness_unknown', lang)} />
+        ) : !isDraft ? (
+          readiness.blockers.length > 0 && (
+            <>
+              <p className="cn2b-hint" data-testid="cn2b-terminal-blockers-informational">{t('cn2b_terminal_blockers_informational', lang)}</p>
+              <ul className="cn2b-blockers" data-informational="true">
+                {readiness.blockers.map((b, i) => (
+                  <li key={`${b.blocker}-${i}`}>
+                    <strong>{blockerLabel(b.blocker, b.detail, lang)}</strong>
+                    {b.detail && <code className="cn2b-code"> {b.detail}</code>}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )
         ) : readiness.ready ? (
           <p className="cn2b-hint"><StateBadge state="ready" /> {t('cn2b_readiness_ready', lang)}</p>
         ) : (
@@ -1407,7 +1697,7 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
             <ul className="cn2b-blockers">
               {readiness.blockers.map((b, i) => (
                 <li key={`${b.blocker}-${i}`}>
-                  <strong>{blockerLabel(b.blocker, lang)}</strong>
+                  <strong>{blockerLabel(b.blocker, b.detail, lang)}</strong>
                   {b.detail && <code className="cn2b-code"> {b.detail}</code>}
                 </li>
               ))}
@@ -1479,7 +1769,8 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
           records={records}
           dispositions={dispositions}
           activeSessionId={activeSessionId}
-          onChanged={() => void reloadRevision(revisionId as string)}
+          onChanged={() => refreshRevision(revisionId as string)}
+          onRefused={(refusal) => void rereadAfterRefusal(refusal)}
           onSwitchToAdvanced={() => setMode('advanced')}
           beneficiaryRegions={beneficiaryRegions}
           sessions={sessions}
@@ -1511,7 +1802,8 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
               {revisionsLoading ? t('cn2b_revisions_loading', lang) : t('cn2b_no_revisions', lang)}
             </span>
           )}
-          {revisionDataReady && readiness && (readiness.ready ? <StateBadge state="ready" /> : <StateBadge state="incomplete" />)}
+          {/* C5 §17 — the ready/incomplete verdict is a draft's; a closed revision carries its status chip only. */}
+          {revisionDataReady && readiness && isDraft && (readiness.ready ? <StateBadge state="ready" /> : <StateBadge state="incomplete" />)}
           {/*
             Back to the Simple view. Presentation only — see the `mode` state
             declaration. Neither branch reloads or recomputes any of the

@@ -189,6 +189,19 @@ describe('C2 — Advanced Mode correction', () => {
     expect(prompt).toHaveBeenCalledTimes(1);
   });
 
+  it('UI-N2: a correction the server confirmed is not reported as refused when the registry re-read after it fails', async () => {
+    loadRegistry([rev('rev-2025', 2025, 1, 'approved')]);
+    prompt.mockReturnValue(REASON);
+    const { planStage } = await renderAdvanced('rev-2025');
+    listPlanRevisions.mockRejectedValueOnce(new CentralNeedsError('central_needs_request_failed'));
+    fireEvent.click(control(planStage));
+    await waitFor(() => expect(openCorrectionRevision).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText(T.cn2b_notice_correction_opened.en)).toBeInTheDocument();
+    expect(await screen.findByText(T.cn2b_err_state_reread_failed.en)).toBeInTheDocument();
+    expect(screen.queryByText(T.cn2b_err_central_needs_request_failed.en)).toBeNull();
+    expect(openCorrectionRevision).toHaveBeenCalledTimes(1);
+  });
+
   it('withholds the correction from an older revision while a newer one of the same plan exists', async () => {
     // Newest first, as the registry orders it: Rev2 (rejected) is newest in plan 2025.
     loadRegistry([rev('rev-2025-2', 2025, 2, 'rejected'), rev('rev-2025-1', 2025, 1, 'approved')]);

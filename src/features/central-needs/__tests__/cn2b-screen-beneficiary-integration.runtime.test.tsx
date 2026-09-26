@@ -105,7 +105,7 @@ const DISPOSITION: RecordDisposition = {
 };
 const RECORD: SourceRecord = {
   id: 'rec-1', importSessionId: SESSION_ID, recordOrdinal: 1, targetEntity: ROW, fieldName: 'Hospital A',
-  sourceValues: { value: 100 }, sourceProvenance: { sheetIndex: 0, coordinate: { col: 5 } },
+  sourceValues: { value: 100, valueType: 'number', isFormula: false, formula: null }, sourceProvenance: { sheetIndex: 0, coordinate: { col: 5 } },
 };
 const UNCONFIRMED_COLUMN: BeneficiaryColumnSummary = {
   importSessionId: SESSION_ID, originalFilename: 'need-2026.xlsx', archiveEntryPath: null,

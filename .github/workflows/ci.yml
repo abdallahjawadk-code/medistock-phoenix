@@ -217,21 +217,21 @@ jobs:
         with:
           version: 2.115.0
 
-      # The acceptance target is M216, and M216 is REAL SQL: it opens with a
-      # fail-closed precondition block that requires the M209-M215 tables and
-      # functions by name (M213's column mapping, M214's review readiness,
-      # M215's correction lifecycle) and refuses if its own table already
+      # The acceptance target is M217, and M217 is REAL SQL: its prelude
+      # requires the M209-M216 tables and functions by name (M215's family
+      # lock, M216's region resolver and safe coordinate extractor, the
+      # replaced Central Needs RPCs) and refuses if any C5 object already
       # exists. Pushed at an empty database it would abort on the first missing
       # object, so the acceptance database first receives the canonical chain
-      # 001->215 — Production's ceiling before M216 — with the same replay, and
+      # 001->216 — Production's ceiling before M217 — with the same replay, and
       # the same tooling, the required rig step above already uses. Only then
-      # does the shadow-workspace push of M216 mean what Production will mean.
-      - name: Replay migrations 001->215 onto the TLS-only acceptance database
+      # does the shadow-workspace push of M217 mean what Production will mean.
+      - name: Replay migrations 001->216 onto the TLS-only acceptance database
         env:
           PHOENIX_RIG_PG: postgresql://postgres:acceptance@127.0.0.1:55433/postgres?sslmode=require
           PHOENIX_RIG_DB: acceptance_rig
           NODE_EXTRA_CA_CERTS: /tmp/tlspg/server.crt
-        run: node tools/pg-rig/apply.mjs 215
+        run: node tools/pg-rig/apply.mjs 216
 
       - name: Mixed-history / shadow-workspace acceptance (TLS-only, disposable)
         env:

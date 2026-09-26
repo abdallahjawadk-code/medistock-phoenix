@@ -389,14 +389,27 @@ async function main() {
          (plan_revision_id, organization_id, source_file_id, status,
           preview_digest, authoritative_digest, parser_identity, completed_at)
        VALUES ($1,$2,$3,'completed',$4,$4,$5::jsonb, now()) RETURNING id`,
+      // The same parser identity every Central Needs rig fixture records
+      // (212/213/216 dynamic suites), sheetjs tarball digest included.
       [cnRevision, ORG_C_AUTHORITY, cnFile, 'f'.repeat(64), JSON.stringify({
-        contractVersion: '1.0.0', sheetjsVersion: '0.20.3', runtime: 'node',
+        contractVersion: '1.0.0', sheetjsVersion: '0.20.3',
+        sheetjsTarballSha256: '8dc73fc3b00203e72d176e85b50938627c7b086e607c682e8d3c22c02bb99fe8',
+        runtime: 'node',
       })],
     )).rows[0].id;
 
     // Four rows: one for the exact-decimal proof, two for the float-drift proof,
-    // and one carrying a value no JavaScript number can hold exactly — kept as
-    // a JSON STRING here so the evidence itself is not rounded by this seed.
+    // and one carrying a value no JavaScript number can hold exactly.
+    //
+    // C5 (M217, contract §18): every cell carries the CN-2A parser envelope
+    // {value, valueType, isFormula: false, formula: null} — a record without
+    // valueType is invalid evidence under the frozen C5 classifier, and a
+    // numeric-looking TEXT cell would need an explicit numeric override before
+    // it could feed a need line. Every quantity here is a native NUMBER. The
+    // 12345678901234567.891 cell is one too, but no JavaScript number can hold
+    // it, so its jsonb is built as SQL text with that exact decimal spliced in
+    // as a JSON number literal (exactNumber): PostgreSQL stores jsonb numbers
+    // as exact numeric, so the evidence is never rounded by this seed.
     //
     // CN-2B corrective (M213): every cell also carries the physical-column
     // provenance the parser persists (sheetIndex + coordinate), because M213
@@ -416,8 +429,20 @@ async function main() {
       { row: 1, entity: 'sheet:0:row:1', cells: [['requested', CN_COLUMNS.requested, 900], ['final', CN_COLUMNS.institutionA, 120.1239]] },
       { row: 2, entity: 'sheet:0:row:2', cells: [['final', CN_COLUMNS.institutionB, 0.1]] },
       { row: 3, entity: 'sheet:0:row:3', cells: [['final', CN_COLUMNS.institutionB, 0.2]] },
-      { row: 4, entity: 'sheet:0:row:4', cells: [['final', CN_COLUMNS.institutionA, '12345678901234567.891']] },
+      { row: 4, entity: 'sheet:0:row:4', cells: [['final', CN_COLUMNS.institutionA, { exactNumber: '12345678901234567.891' }]] },
     ];
+    const cnSourceValues = (value) => {
+      if (value !== null && typeof value === 'object') {
+        if (!/^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/.test(value.exactNumber)) {
+          throw new Error(`Central Needs seed: exactNumber is not an exact decimal: ${value.exactNumber}`);
+        }
+        return `{"value":${value.exactNumber},"valueType":"number","isFormula":false,"formula":null}`;
+      }
+      if (typeof value !== 'number' || !Number.isFinite(value)) {
+        throw new Error(`Central Needs seed: a quantity cell must be a finite number: ${String(value)}`);
+      }
+      return JSON.stringify({ value, valueType: 'number', isFormula: false, formula: null });
+    };
     let cnOrdinal = 0;
     for (const row of cnRows) {
       for (const [field, col, value] of row.cells) {
@@ -437,7 +462,7 @@ async function main() {
              (import_session_id, organization_id, record_ordinal, target_entity, field_name,
               source_values, source_provenance)
            VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb) RETURNING id`,
-          [cnSession, ORG_C_AUTHORITY, cnOrdinal, row.entity, field, JSON.stringify({ value }),
+          [cnSession, ORG_C_AUTHORITY, cnOrdinal, row.entity, field, cnSourceValues(value),
             JSON.stringify(provenance)],
         )).rows[0].id;
         cnRecords[`${row.entity}::${field}`] = id;

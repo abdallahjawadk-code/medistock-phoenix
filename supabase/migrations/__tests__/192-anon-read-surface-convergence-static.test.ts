@@ -93,11 +93,16 @@ describe('192 · registration and file hygiene', () => {
     // revokes ALL from PUBLIC and anon (SELECT to authenticated only) and it grants anon nothing,
     // so what this suite asserts is unaffected; listed to keep this successor guard exhaustive.
     const NEXT_24 = '216_phoenix_central_needs_region_persistence.sql';
+    // C5/M217: the Central Needs safety convergence — its new classifier REVOKEs PUBLIC and anon,
+    // its lineage helper and fence function REVOKE every client role, replaced client RPCs keep
+    // REVOKE PUBLIC, anon, and it grants anon nothing, so what this suite asserts is unaffected;
+    // listed to keep this successor guard exhaustive.
+    const NEXT_25 = '217_phoenix_central_needs_c5_safety_convergence.sql';
     expect(REVIEWED_MIGRATION_FILES.filter(f => f.startsWith('212_'))).toEqual([NEXT_20]);
-    expect(getMaximumReviewedMigrationNumber()).toBe(216);
-    expect(getNextUnreviewedMigrationNumber()).toBe(217);
-    expect(REVIEWED_MIGRATION_FILES.slice(REVIEWED_MIGRATION_FILES.indexOf(NAME) + 1)).toEqual([NEXT, NEXT_2, NEXT_3, NEXT_4, NEXT_5, NEXT_6, NEXT_7, NEXT_8, NEXT_9, NEXT_10, NEXT_11, NEXT_12, NEXT_13, NEXT_14, NEXT_15, NEXT_16, NEXT_17, NEXT_18, NEXT_19, NEXT_20, NEXT_21, NEXT_22, NEXT_23, NEXT_24]);
-    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1]).toBe(NEXT_24);
+    expect(getMaximumReviewedMigrationNumber()).toBe(217);
+    expect(getNextUnreviewedMigrationNumber()).toBe(218);
+    expect(REVIEWED_MIGRATION_FILES.slice(REVIEWED_MIGRATION_FILES.indexOf(NAME) + 1)).toEqual([NEXT, NEXT_2, NEXT_3, NEXT_4, NEXT_5, NEXT_6, NEXT_7, NEXT_8, NEXT_9, NEXT_10, NEXT_11, NEXT_12, NEXT_13, NEXT_14, NEXT_15, NEXT_16, NEXT_17, NEXT_18, NEXT_19, NEXT_20, NEXT_21, NEXT_22, NEXT_23, NEXT_24, NEXT_25]);
+    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1]).toBe(NEXT_25);
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^193_/.test(f))).toEqual([NEXT]);
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^194_/.test(f))).toEqual([NEXT_2]);
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^195_/.test(f))).toEqual([NEXT_3]);
@@ -118,9 +123,10 @@ describe('192 · registration and file hygiene', () => {
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^214_/.test(f))).toEqual([NEXT_22]);
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^215_/.test(f))).toEqual([NEXT_23]);
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^216_/.test(f))).toEqual([NEXT_24]);
-    // The ceiling is now 216; `[2-9]\d\d` would match the ceiling itself, so
+    expect(REVIEWED_MIGRATION_FILES.filter(f => /^217_/.test(f))).toEqual([NEXT_25]);
+    // The ceiling is now 217; `[2-9]\d\d` would match the ceiling itself, so
     // this asserts numerically that nothing sits ABOVE it.
-    expect(REVIEWED_MIGRATION_FILES.filter(f => Number(f.slice(0, 3)) > 216)).toHaveLength(0);
+    expect(REVIEWED_MIGRATION_FILES.filter(f => Number(f.slice(0, 3)) > 217)).toHaveLength(0);
     expect(isReviewedMigrationFile('211_unreviewed_test_migration.sql')).toBe(false);
   });
 
@@ -136,11 +142,11 @@ describe('192 · registration and file hygiene', () => {
   });
 
   it('edits no historical migration — it is self-contained', () => {
-    // 203-216 (material-dispensing-suspension through the C4/M216 beneficiary-
-    // region persistence) are newer chain members and do not edit M192, so
-    // this count moves by exactly twelve more.
+    // 203-217 (material-dispensing-suspension through the C5/M217 Central
+    // Needs safety convergence) are newer chain members and do not edit M192,
+    // so this count moves by exactly thirteen more.
     const others = readdirSync(MIGRATIONS_DIR).filter(f => f.endsWith('.sql') && f !== NAME);
-    expect(others).toHaveLength(215);
+    expect(others).toHaveLength(216);
   });
 });
 

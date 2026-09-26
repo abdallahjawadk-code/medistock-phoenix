@@ -346,6 +346,9 @@ const M214_NAME = 'fix_central_needs_review_readiness_volatility';
 const M215_FILENAME = '215_phoenix_central_needs_governed_correction_lifecycle.sql';
 const M215_VERSION = '20260922153813';
 const M216_FILENAME = '216_phoenix_central_needs_region_persistence.sql';
+// The PRE-DISPATCH fixture version the M216 rehearsal below was written with,
+// kept as that historical record. It is NOT Production's M216 identity: the
+// dispatch recorded 20260924124100 (see the sealed-216 block further down).
 const M216_VERSION = '20260923215400';
 
 /** Local catalogue 1..216 with the REAL filenames of 173, 174 and 213-216. */
@@ -518,6 +521,93 @@ describe('historical remote-name exception — canonical 214, and Production thr
   it('refuses a pinned M216 version that is not strictly newer than the real M215 row', () => {
     expectRefusal(() => assertRemoteHistoryVersionUsable(M215_VERSION, productionThrough215()), 'TARGET_VERSION_ALREADY_PRESENT');
     expectRefusal(() => assertRemoteHistoryVersionUsable('20260922153812', productionThrough215()), 'TARGET_VERSION_NOT_NEWEST');
+  });
+});
+
+// ===========================================================================
+// PRODUCTION THROUGH THE SEALED 216 ROW — the real state before M217 (C5).
+//
+// The M216 block above rehearses the M216 dispatch with the pre-dispatch
+// fixture version and is kept as that historical record. The dispatch itself
+// (executor run 36026915933) recorded M216 as
+//
+//     version 20260924124100   name 216_phoenix_central_needs_region_persistence
+//
+// That SEALED row — prefixed, so no third name exception — is what Production
+// carries now and what the M217 target must follow (C5 v1.9 §19). It is
+// written out literally here, not derived from the code under test.
+// ===========================================================================
+const M216_SEALED_VERSION = '20260924124100';
+const M216_NAME = '216_phoenix_central_needs_region_persistence';
+const M217_FILENAME = '217_phoenix_central_needs_c5_safety_convergence.sql';
+const M217_NAME = '217_phoenix_central_needs_c5_safety_convergence';
+/** A fixture target strictly newer than the sealed row; a real dispatch generates it fresh. */
+const M217_VERSION = '20260926120000';
+
+/** Local catalogue 1..217: the 1..216 catalogue plus the canonical M217 file. */
+const LOCAL_217 = [...LOCAL_216, { version: 217, filename: M217_FILENAME }];
+
+/** Production through canonical 216: 172 three-digit rows + 44 timestamp rows = 216 rows. */
+function productionThrough216(overrides: Record<number, { version?: string; name?: string }> = {}) {
+  return [...productionThrough215(overrides), { version: M216_SEALED_VERSION, name: M216_NAME, ...(overrides[216] ?? {}) }];
+}
+
+describe('Production through the sealed 216 row — M217 pending', () => {
+  it('the fixture carries the real 173 / 214 / 215 rows and the SEALED 216 row literally, in strict timestamp order', () => {
+    const rows = productionThrough216();
+    expect(rows).toHaveLength(216);
+    expect(rows.at(-1)).toEqual({ version: '20260924124100', name: '216_phoenix_central_needs_region_persistence' });
+    expect(rows.some((r) => r.version === M216_VERSION)).toBe(false); // the pre-dispatch fixture is not Production truth
+    const stamped = rows.filter((r) => /^\d{14}$/.test(r.version)).map((r) => r.version);
+    expect(stamped).toHaveLength(44);
+    expect(new Set(stamped).size).toBe(44);
+    expect([...stamped].sort()).toEqual(stamped);
+    expect(M215_VERSION < M216_SEALED_VERSION && M216_SEALED_VERSION < M217_VERSION).toBe(true);
+  });
+
+  it('reconciles cleanly: ceiling 216, pendingCanonical === [217], the sealed row at canonical 216', () => {
+    const r = reconcileMigrationHistory(productionThrough216(), LOCAL_217);
+    expect(r.numericRowCount).toBe(172);
+    expect(r.timestampRowCount).toBe(44);
+    expect(r.canonicalCeiling).toBe(216);
+    expect(r.appliedCanonical).toEqual(Array.from({ length: 216 }, (_, i) => i + 1));
+    expect(r.pendingCanonical).toEqual([217]);
+    expect(r.mapping.find((m) => m.canonical === 216)).toMatchObject({ remoteVersion: M216_SEALED_VERSION, remoteName: M216_NAME, era: 'timestamp' });
+    expect(r.mapping.find((m) => m.canonical === 214)).toMatchObject({ remoteVersion: M214_VERSION, remoteName: M214_NAME });
+    expect(r.mapping.find((m) => m.canonical === 173)).toMatchObject({ remoteVersion: '20260810200846', remoteName: M173_NAME });
+  });
+
+  it('the sealed 216 row needs no name exception; an unprefixed 216 or 217 row is still refused', () => {
+    expect(expectedRemoteName(216, M216_FILENAME, M216_SEALED_VERSION)).toBe(M216_NAME);
+    expect(HISTORICAL_REMOTE_NAME_EXCEPTIONS).toHaveLength(2);
+    expectRefusal(() => reconcileMigrationHistory(productionThrough216({ 216: { name: 'phoenix_central_needs_region_persistence' } }), LOCAL_217),
+      'REMOTE_NAME_MISMATCH');
+    expectRefusal(() => reconcileMigrationHistory(
+      [...productionThrough216(), { version: M217_VERSION, name: 'phoenix_central_needs_c5_safety_convergence' }], LOCAL_217),
+    'REMOTE_NAME_MISMATCH');
+  });
+
+  it('the M217 remote_history_version must be strictly newer than the sealed 216 row', () => {
+    expect(assertRemoteHistoryVersionUsable(M217_VERSION, productionThrough216())).toBe(M217_VERSION);
+    expectRefusal(() => assertRemoteHistoryVersionUsable(M216_SEALED_VERSION, productionThrough216()), 'TARGET_VERSION_ALREADY_PRESENT');
+    expectRefusal(() => assertRemoteHistoryVersionUsable('20260924124059', productionThrough216()), 'TARGET_VERSION_NOT_NEWEST');
+    // the pre-dispatch fixture value is older than the sealed row, so it can never be reused as a target
+    expectRefusal(() => assertRemoteHistoryVersionUsable(M216_VERSION, productionThrough216()), 'TARGET_VERSION_NOT_NEWEST');
+  });
+
+  it('after M217 lands at its pinned version, post-apply acceptance reaches 217 with nothing pending', () => {
+    const after = [...productionThrough216(), { version: M217_VERSION, name: M217_NAME }];
+    const { reconciled, laterCatalogueTail } = assertPostApplyAcceptance({
+      remoteRows: after, localMigrations: LOCAL_217, expectedCeiling: 217,
+      expectedRemoteVersion: M217_VERSION, expectedName: M217_NAME, expectedRowCount: 217,
+    });
+    expect(reconciled.canonicalCeiling).toBe(217);
+    expect(reconciled.pendingCanonical).toEqual([]);
+    expect(laterCatalogueTail).toEqual([]);
+    expectRefusal(() => assertPostApplyAcceptance({
+      remoteRows: productionThrough216(), localMigrations: LOCAL_217, expectedCeiling: 217,
+      expectedRemoteVersion: M217_VERSION, expectedName: M217_NAME, expectedRowCount: 217,
+    }), 'TARGET_ROW_NOT_SINGLE');
   });
 });
 

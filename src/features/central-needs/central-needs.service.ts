@@ -106,9 +106,18 @@ export interface FieldOverride {
   fieldName: string;
   previousValue: unknown;
   finalValue: unknown;
+  /**
+   * C5 §15 — `final_value::text` exactly as PostgreSQL printed it. A numeric
+   * override's exact decimal lives here: `finalValue` went through JSON.parse,
+   * which rounds a value JavaScript cannot represent. Always set by
+   * `listOverrides`; optional only so older fixtures stay valid.
+   */
+  finalValueText?: string | null;
   overrideReason: string;
   overrideNote: string | null;
   createdAt: string;
+  /** C5 §13 — `created_at::text` verbatim: the exact keyset cursor text. Always set by `listOverrides`. */
+  createdAtText?: string;
 }
 
 /** The canonical unit vocabulary, mirroring `central_items.unit`'s own CHECK. */
@@ -263,18 +272,91 @@ export interface ReviewReadiness {
   blockers: ReviewBlocker[];
 }
 
-/** A refusal from a canonical RPC, carrying its stable machine-readable code. */
+/**
+ * A refusal from a canonical RPC or a read (C5 §14).
+ *
+ * The fields are kept SEPARATE and never re-derived from one another:
+ *   * `businessCode` — the stable machine token every workflow decision reads;
+ *   * `sqlstate`     — PostgREST's `error.code`, diagnostic/infrastructure only;
+ *   * `message`, `details`, `hint` — verbatim from the server. Reason-specific
+ *     copy reads the `reason=` token of `details` (`reasonOf`), never human text;
+ *   * `retryable`    — a transient contention (deadlock, lock or statement
+ *     timeout, serialization). The person may try again; nothing here retries.
+ *
+ * `code` stays as an alias of `businessCode` for the existing call sites.
+ */
 export class CentralNeedsError extends Error {
-  constructor(public readonly code: string, message?: string) {
-    super(message ?? code);
+  public readonly businessCode: string;
+  public readonly code: string;
+  public readonly sqlstate: string | null;
+  public readonly details: string | null;
+  public readonly hint: string | null;
+  public readonly retryable: boolean;
+
+  constructor(
+    businessCode: string,
+    message?: string,
+    diagnostics: { sqlstate?: string | null; details?: string | null; hint?: string | null; retryable?: boolean } = {},
+  ) {
+    super(message ?? businessCode);
     this.name = 'CentralNeedsError';
+    this.businessCode = businessCode;
+    this.code = businessCode;
+    this.sqlstate = diagnostics.sqlstate ?? null;
+    this.details = diagnostics.details ?? null;
+    this.hint = diagnostics.hint ?? null;
+    this.retryable = diagnostics.retryable === true;
   }
 }
 
-function fail(error: { message?: string } | null): never {
-  const message = typeof error?.message === 'string' ? error.message : 'unknown_error';
-  const token = message.match(/[a-z0-9_]{4,}/i);
-  throw new CentralNeedsError(token ? token[0] : 'unknown_error', message);
+/** A server message IS a business code only when it is exactly one stable token. */
+const BUSINESS_TOKEN = /^[a-z][a-z0-9_]*$/;
+
+/**
+ * C5 §4 — SQLSTATEs the database never catches or translates: deadlock,
+ * lock_not_available, query_canceled (lock/statement timeout) and
+ * serialization_failure. They carry no business meaning of their own.
+ */
+const RETRYABLE_SQLSTATES: ReadonlySet<string> = new Set(['40P01', '55P03', '57014', '40001']);
+
+/**
+ * Maps a PostgREST error to a `CentralNeedsError` without inventing a code.
+ * Anything that is not an exact token — `deadlock detected`, `canceling
+ * statement due to lock timeout`, a transport failure — becomes
+ * `central_needs_request_failed` with its SQLSTATE kept; a privilege refusal
+ * without a token (for example a revoked EXECUTE during an activation freeze)
+ * becomes `central_needs_action_unavailable`.
+ */
+export function centralNeedsErrorFromPostgrest(
+  error: { message?: unknown; code?: unknown; details?: unknown; hint?: unknown } | null,
+): CentralNeedsError {
+  const message = typeof error?.message === 'string' ? error.message : '';
+  const sqlstate = typeof error?.code === 'string' && error.code !== '' ? error.code : null;
+  const businessCode = BUSINESS_TOKEN.test(message)
+    ? message
+    : sqlstate === '42501' ? 'central_needs_action_unavailable' : 'central_needs_request_failed';
+  return new CentralNeedsError(businessCode, message === '' ? businessCode : message, {
+    sqlstate,
+    details: typeof error?.details === 'string' ? error.details : null,
+    hint: typeof error?.hint === 'string' ? error.hint : null,
+    retryable: sqlstate !== null && RETRYABLE_SQLSTATES.has(sqlstate),
+  });
+}
+
+function fail(error: { message?: unknown; code?: unknown; details?: unknown; hint?: unknown } | null): never {
+  throw centralNeedsErrorFromPostgrest(error);
+}
+
+/** The pinned `reason=` token of a server DETAIL (C5 §7.2 / §14). Never read from human copy. */
+export function reasonOf(details: string | null | undefined): string | null {
+  const match = (details ?? '').match(/(?:^|\s)reason=([^\s]+)/);
+  return match ? match[1] : null;
+}
+
+/** The `source_record=` token of a server DETAIL — the exact cell a lineage refusal names. */
+export function sourceRecordOf(details: string | null | undefined): string | null {
+  const match = (details ?? '').match(/(?:^|\s)source_record=([^\s]+)/);
+  return match ? match[1] : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -546,24 +628,182 @@ export async function listDispositions(importSessionId: string): Promise<RecordD
   }));
 }
 
+/**
+ * C5 §13 — requested keyset page size only. It is deliberately below
+ * PostgREST's `max_rows` (supabase/config.toml), and correctness never depends
+ * on the server honouring it: a page shorter than requested may still be a
+ * capped page, so only an explicitly EMPTY next page ends the read.
+ */
+const OVERRIDE_PAGE_SIZE = 500;
+
+const OVERRIDE_COLUMNS = 'id, source_record_id, target_entity, field_name, previous_value, final_value, '
+  + 'final_value_text:final_value::text, override_reason, override_note, created_at, created_at_text:created_at::text';
+
+/** One override's keyset position: the exact server timestamp text, its exact instant, and its id. */
+interface OverrideKey {
+  text: string;
+  micros: bigint;
+  id: string;
+}
+
+const TIMESTAMPTZ_TEXT =
+  /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,6}))?(?:([+-])(\d{2})(?::?(\d{2}))?(?::?(\d{2}))?|Z)$/;
+
+/**
+ * The exact instant of a PostgreSQL `timestamptz::text`, in microseconds since
+ * the epoch, or null when the text is not one. Never a JavaScript Date: a Date
+ * keeps milliseconds only, and two overrides one microsecond apart (the M217
+ * chronology rule) must still compare as different.
+ */
+function timestampMicros(text: string): bigint | null {
+  const m = TIMESTAMPTZ_TEXT.exec(text);
+  if (!m) return null;
+  const [, y, mo, d, h, mi, s, frac = '', sign, oh = '0', om = '0', os = '0'] = m;
+  const ms = Date.UTC(Number(y), Number(mo) - 1, Number(d), Number(h), Number(mi), Number(s));
+  if (!Number.isFinite(ms)) return null;
+  const offsetSeconds = BigInt(Number(oh) * 3600 + Number(om) * 60 + Number(os));
+  const offsetMicros = (sign === '-' ? -offsetSeconds : sign === '+' ? offsetSeconds : 0n) * 1_000_000n;
+  return BigInt(ms) * 1000n + BigInt(frac.padEnd(6, '0')) - offsetMicros;
+}
+
+function compareOverrideKeys(a: OverrideKey, b: OverrideKey): number {
+  if (a.micros !== b.micros) return a.micros < b.micros ? -1 : 1;
+  if (a.id === b.id) return 0;
+  return a.id < b.id ? -1 : 1;
+}
+
+/** A PostgREST logic-tree value: the timestamp text carries `:` `.` `+` and a space, so it is quoted. */
+const quotedFilterValue = (text: string) => `"${text.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+
+/*
+ * C5 §13 (UI-F7) — THE POSTGREST SYNTAX THIS KEYSET READ ASSUMES.
+ *
+ * These are assumptions about PostgREST and postgrest-js, read from their
+ * grammar and source; they are NOT yet proven against a live PostgREST (a
+ * live-stack probe that pages >= 2 pages with microsecond ties under a non-UTC
+ * session TimeZone is a pending pre-activation item). Every one of them FAILS
+ * CLOSED if wrong: a rejected request, an unparsable value or a reordered page
+ * throws, the caller marks the chain unavailable, and every override-dependent
+ * write is withheld — never a partial or mixed chain.
+ *
+ *  1. Select casts with aliases — `created_at_text:created_at::text` and
+ *     `final_value_text:final_value::text` — are PostgREST select syntax
+ *     (`alias:column::type`). If the cast were not applied, `created_at_text`
+ *     would be missing and every row fails the exact-keyset check below.
+ *  2. `.or(f)` (postgrest-js) only appends the query parameter `or=(f)`
+ *     verbatim; nothing is escaped for us. Two `or` parameters on one request
+ *     are two top-level logic trees, which PostgREST ANDs — the ceiling AND the
+ *     cursor. Were they ORed instead, the first later page would re-deliver
+ *     already-read rows and the duplicate-id check throws.
+ *  3. Logic-tree values are double-quoted, with `\` and `"` backslash-escaped
+ *     (PostgREST's quoted-value grammar), because the timestamp text contains a
+ *     space, `:`, `.` and `+`, and must never be split on the tree's reserved
+ *     `,` `(` `)`. URLSearchParams then encodes the space as `+` and `+` as
+ *     `%2B`; PostgREST's form-urlencoded query decoding turns them back into
+ *     the exact text sent. A mis-decoded `+03` offset would move the instant;
+ *     the server would then return rows the client's own exact microsecond
+ *     comparison rejects (out of order, or above the ceiling).
+ *  4. The compared value is the row's own `created_at::text`, so the
+ *     `created_at.eq."…"` / `created_at.lt."…"` filters re-parse the very text
+ *     PostgreSQL printed. That text carries its UTC offset, so the round trip
+ *     is exact to the microsecond whatever the session TimeZone. It must be ISO
+ *     DateStyle (`YYYY-MM-DD HH:MM:SS[.ffffff]±HH[:MM[:SS]]`, the PostgreSQL and
+ *     Supabase default): any other DateStyle, a BC date or `infinity` fails
+ *     TIMESTAMPTZ_TEXT and the chain is unavailable (fail closed). The text
+ *     shapes themselves — `+03`, `+05:30`, a historical `+03:06:52`, and the
+ *     SQL-DateStyle form that must be refused — were printed by PostgreSQL 17
+ *     on the loopback rig (and the `::timestamptz` round trip compared equal);
+ *     they are pinned in the keyset tests. Only the PostgREST transport of
+ *     points 1-3 is unproven.
+ *  5. `id.lt.<uuid>` / `id.lte.<uuid>` are unquoted: a uuid is hex digits and
+ *     hyphens only. PostgreSQL orders uuid by its 16 bytes, which is the
+ *     lexicographic order of its canonical lowercase text (`uuid_out`), so the
+ *     client's string comparison of ids matches the server's `id DESC` tie-break.
+ *  6. `max_rows` (supabase/config.toml: 1000) may cap any page below the
+ *     requested OVERRIDE_PAGE_SIZE; correctness never depends on either number,
+ *     because only an explicitly EMPTY page ends the read.
+ */
+
+/**
+ * C5 §13 — the revision's COMPLETE override chain, newest first, in the exact
+ * server order `created_at DESC, id DESC`. Consumers never re-sort it: the
+ * first row of a source record is that record's head (§14).
+ *
+ *   * Page 1's first row `(created_at_text, id)` is the snapshot CEILING.
+ *   * Every later page is strictly older than the cursor — the last row read,
+ *     carried as its exact timestamp TEXT plus id — AND not newer than the
+ *     ceiling, so an override recorded while the read runs is never mixed in.
+ *   * Only an explicitly empty page ends the read. A page exactly at the
+ *     server's `max_rows`, or any other short page, is followed by another
+ *     keyset request.
+ *
+ * FAIL CLOSED: a read error, an unparsable timestamp, a repeated id, a row not
+ * strictly older than the one before it, or a later-page row newer than the
+ * ceiling throws. The caller then marks overrides unavailable and withholds
+ * every override-dependent write; a partial chain is never returned.
+ */
 export async function listOverrides(planRevisionId: string): Promise<FieldOverride[]> {
-  const { data, error } = await supabase
-    .from('central_needs_field_overrides')
-    .select('id, source_record_id, target_entity, field_name, previous_value, final_value, override_reason, override_note, created_at')
-    .eq('plan_revision_id', planRevisionId)
-    .order('created_at', { ascending: true });
-  if (error) fail(error);
-  return (data ?? []).map((r) => ({
-    id: r.id as string,
-    sourceRecordId: r.source_record_id as string,
-    targetEntity: r.target_entity as string,
-    fieldName: r.field_name as string,
-    previousValue: r.previous_value,
-    finalValue: r.final_value,
-    overrideReason: r.override_reason as string,
-    overrideNote: (r.override_note as string | null) ?? null,
-    createdAt: r.created_at as string,
-  }));
+  const out: FieldOverride[] = [];
+  const seen = new Set<string>();
+  let ceiling: OverrideKey | null = null;
+  let cursor: OverrideKey | null = null;
+
+  for (;;) {
+    let query = supabase
+      .from('central_needs_field_overrides')
+      .select(OVERRIDE_COLUMNS)
+      .eq('plan_revision_id', planRevisionId);
+    if (ceiling !== null && cursor !== null) {
+      // Two top-level logic trees, ANDed by PostgREST (UI-F7 assumption 2):
+      // not newer than the ceiling, AND strictly older than the cursor.
+      query = query
+        .or(`created_at.lt.${quotedFilterValue(ceiling.text)},and(created_at.eq.${quotedFilterValue(ceiling.text)},id.lte.${ceiling.id})`)
+        .or(`created_at.lt.${quotedFilterValue(cursor.text)},and(created_at.eq.${quotedFilterValue(cursor.text)},id.lt.${cursor.id})`);
+    }
+    const { data, error } = await query
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
+      .limit(OVERRIDE_PAGE_SIZE);
+    if (error) fail(error);
+    const batch = (data ?? []) as unknown as Array<Record<string, unknown>>;
+    if (batch.length === 0) break;
+
+    for (const r of batch) {
+      const id = r.id;
+      const text = r.created_at_text;
+      const micros = typeof text === 'string' ? timestampMicros(text) : null;
+      if (typeof id !== 'string' || id === '' || typeof text !== 'string' || micros === null) {
+        throw new CentralNeedsError('field_overrides_read_inconsistent', `override row without an exact keyset (${String(id)})`);
+      }
+      if (seen.has(id)) {
+        throw new CentralNeedsError('field_overrides_read_inconsistent', `duplicate override ${id}`);
+      }
+      const key: OverrideKey = { text, micros, id };
+      if (ceiling === null) ceiling = key;
+      else if (compareOverrideKeys(key, ceiling) > 0) {
+        throw new CentralNeedsError('field_overrides_read_inconsistent', `override ${id} is newer than the read ceiling`);
+      }
+      if (cursor !== null && compareOverrideKeys(key, cursor) >= 0) {
+        throw new CentralNeedsError('field_overrides_read_inconsistent', `out-of-order override ${id}`);
+      }
+      seen.add(id);
+      cursor = key;
+      out.push({
+        id,
+        sourceRecordId: r.source_record_id as string,
+        targetEntity: r.target_entity as string,
+        fieldName: r.field_name as string,
+        previousValue: r.previous_value,
+        finalValue: r.final_value,
+        finalValueText: typeof r.final_value_text === 'string' ? r.final_value_text : null,
+        overrideReason: r.override_reason as string,
+        overrideNote: (r.override_note as string | null) ?? null,
+        createdAt: r.created_at as string,
+        createdAtText: text,
+      });
+    }
+  }
+  return out;
 }
 
 /** A plain decimal exactly as PostgreSQL prints `numeric::text` — never an exponent. */
@@ -1309,14 +1549,20 @@ export async function listScopeColumnMappings(input: {
   return out;
 }
 
+/**
+ * Records one reasoned override. The new override's id is returned for the
+ * record only — it is never pinned automatically (C5 §14): after an override
+ * is created the caller re-reads the chain, and any need-line designation that
+ * relied on an older head is cleared for the reviewer to choose again.
+ */
 export async function recordFieldOverride(input: {
   sourceRecordId: string;
   finalValue: unknown;
   overrideReason: string;
   overrideNote?: string | null;
   overrideReference?: string | null;
-}): Promise<void> {
-  const { error } = await supabase.rpc('phoenix_central_needs_record_field_override', {
+}): Promise<{ overrideId: string | null }> {
+  const { data, error } = await supabase.rpc('phoenix_central_needs_record_field_override', {
     p_source_record_id: input.sourceRecordId,
     p_final_value: input.finalValue,
     p_override_reason: input.overrideReason,
@@ -1324,6 +1570,8 @@ export async function recordFieldOverride(input: {
     p_override_reference: input.overrideReference ?? null,
   });
   if (error) fail(error);
+  const row = (data ?? null) as Record<string, unknown> | null;
+  return { overrideId: typeof row?.override_id === 'string' ? row.override_id : null };
 }
 
 export async function abandonImportSession(importSessionId: string, reason: string): Promise<void> {

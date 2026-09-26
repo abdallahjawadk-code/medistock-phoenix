@@ -232,7 +232,17 @@ describe('no client-side document-number sequence exists',()=>{
     // under the revision FOR UPDATE lock and backed by UNIQUE (region_id,
     // version_no) — never allocated by a client and never a document/reference
     // number. Registered by exact number; boundary moves to 216.
-    const beyond=migrations.filter(f=>/^(1[89]\d|[2-9]\d\d)_/.test(f)&&!/^(179|180|181|182|183|184|185|186|187|188|189|190|191|192|193|194|195|196|197|198|199|200|201|202|203|204|205|206|207|208|209|210|211|212|213|214|215|216)_/.test(f));
+    // C5 / M217: the Central Needs safety convergence — one pure numeric
+    // classifier, one shared quantity-lineage helper, a NOT VALID source-value
+    // CHECK, the approval-gate fence and behaviour-only Central Needs function
+    // replacements. It introduces no sequence, counter, generated numeric
+    // identity or document number: the override chronology is a created_at
+    // timestamp (strictly after the current head) computed SERVER-SIDE under the
+    // revision FOR UPDATE lock, and the gate/approve audit payloads carry
+    // txid_current()::text as same-transaction evidence — a database
+    // transaction id, never a client-allocated document/reference number.
+    // Registered by exact number; boundary moves to 217.
+    const beyond=migrations.filter(f=>/^(1[89]\d|[2-9]\d\d)_/.test(f)&&!/^(179|180|181|182|183|184|185|186|187|188|189|190|191|192|193|194|195|196|197|198|199|200|201|202|203|204|205|206|207|208|209|210|211|212|213|214|215|216|217)_/.test(f));
     expect(beyond).toEqual([]);
     for(const f of [
       '211_phoenix_central_needs_batch_and_disposition.sql',

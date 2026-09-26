@@ -68,6 +68,7 @@ import { PhoenixCard } from '@/shared/ui/PhoenixCard';
 import { PhoenixButton } from '@/shared/ui/PhoenixButton';
 import type { OrgRow } from '@/shared/supabase/services/organizations.service';
 import {
+  CentralNeedsError,
   setBeneficiaryColumns,
   type BeneficiaryColumnDecision,
   type BeneficiaryColumnSummary,
@@ -95,6 +96,13 @@ interface Props {
    * whole-column write. Optional for older harnesses (read as "none").
    */
   beneficiaryRegions?: RegionReadState;
+  /**
+   * C5 §17 — every server refusal of a write from this panel. The screen
+   * re-reads the registry and the revision when the refusal means the
+   * revision's lifecycle moved (e.g. `plan_revision_not_editable`) or when the
+   * outcome is unknown; nothing is retried.
+   */
+  onRefused?: (refusal: CentralNeedsError) => void;
 }
 
 type ColumnKey = string; // `${importSessionId}:${sheetIndex}:${columnIndex}`
@@ -165,7 +173,7 @@ export function mappingFor(col: BeneficiaryColumnSummary, choice: string): SetBe
 
 export function CentralNeedsBeneficiaryColumnPanel({
   lang, planRevisionId, editable, columns, activeCareInstitutions, onChanged, onActivityChange,
-  beneficiaryRegions = { phase: 'ready', versions: [] },
+  beneficiaryRegions = { phase: 'ready', versions: [] }, onRefused,
 }: Props) {
   const [pendingChoice, setPendingChoice] = useState<Record<ColumnKey, string>>({});
   const [pendingReason, setPendingReason] = useState<Record<ColumnKey, string>>({});
@@ -333,7 +341,8 @@ export function CentralNeedsBeneficiaryColumnPanel({
       setGroupConfirm(null);
       onChanged();
     } catch (e) {
-      setError(centralNeedsErrorText((e as { code?: string }).code ?? 'unknown_error', lang));
+      setError(centralNeedsErrorText(e instanceof CentralNeedsError ? e : (e as { code?: string }).code ?? 'unknown_error', lang));
+      if (e instanceof CentralNeedsError) onRefused?.(e);
     } finally {
       setBusy(false);
     }

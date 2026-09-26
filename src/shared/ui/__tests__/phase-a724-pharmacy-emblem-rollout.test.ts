@@ -659,6 +659,22 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
       'supabase/migrations/216_phoenix_central_needs_region_persistence.sql',
       'supabase/migrations/__tests__/216-central-needs-region-persistence-static.test.ts',
       'supabase/migrations/__tests__/216-central-needs-region-persistence.dynamic.test.ts',
+      // C5/M217: the Central Needs safety convergence (contract freeze v1.9) —
+      // one reviewed, forward-only migration plus its static, dynamic,
+      // lifecycle-chain and activation-rehearsal proofs. It adds no branding
+      // asset, no table, no RLS policy and no permission key: its classifier,
+      // lineage helper, NOT VALID source-value CHECK and approval-gate fence
+      // sit only on Central Needs relations, every replaced function keeps its
+      // signature and existing Central Needs authorization with M209's own keys,
+      // and it is ACL-neutral for submit, approve and reject, so A7.2.4's own
+      // subject is untouched by it. Registered by EXACT filename, exactly as
+      // M209-M216 were. No wildcard and no directory exemption, so every other
+      // file under supabase/ still fails this guard closed.
+      'supabase/migrations/217_phoenix_central_needs_c5_safety_convergence.sql',
+      'supabase/migrations/__tests__/217-central-needs-c5-safety-convergence-static.test.ts',
+      'supabase/migrations/__tests__/217-central-needs-c5-safety-convergence.dynamic.test.ts',
+      'supabase/migrations/__tests__/217-central-needs-c5-lifecycle-chain.dynamic.test.ts',
+      'supabase/migrations/__tests__/217-central-needs-c5-activation-rehearsal.dynamic.test.ts',
       // INTERACTIVE-GUIDE-IG1: one new file under the watched `src/app`
       // prefix, registered by EXACT filename like every entry above.
       //
