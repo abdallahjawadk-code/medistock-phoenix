@@ -1,0 +1,516 @@
+name: C5 Production Activation Orchestrator
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - '.github/workflows/c5-production-activation-orchestrator.yml'
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: c5-production-activation
+  cancel-in-progress: false
+
+env:
+  C5_EXPECTED_PRE_ORCHESTRATOR_MASTER: 28941ea574440651ea6fea468ed0c4d797dc3980
+  PHOENIX_C5_EXPECTED_PRIOR_ATTEMPTS: '0'
+  PHOENIX_C5_EXPECTED_LEDGER_SHA256: b8be0cd2fe16bea59a18fb632d8b692e87a1ed63b5aaf23cf49954afafa3a853
+  PHOENIX_C5_ACTIVATION_AUTHORIZATION: EXECUTE_C5_PRODUCTION_ACTIVATION_UNDER_SEPARATE_OWNER_PRODUCTION_AUTHORIZATION
+  PHOENIX_C5_REJECT_OPERATOR_ID: a0e492a2-231c-40ff-9996-814756bf1eaa
+  PHOENIX_MIGRATION_FILENAME: 217_phoenix_central_needs_c5_safety_convergence.sql
+  PHOENIX_MIGRATION_SHA256: 7ca1fa69aecd9cfefd19fe3fd9555de10eb5edf6fc7ea68d539404549ce5e53a
+  PHOENIX_EXPECTED_CURRENT_CEILING: '216'
+  PHOENIX_EXPECTED_NEXT_CEILING: '217'
+
+jobs:
+  gate:
+    name: Gate exact orchestrator-only merge and wait for CI
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out exact merge commit
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+
+      - name: Prove one-campaign identity and exact orchestrator-only merge
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_RUN_ATTEMPT}" != "1" ]; then
+            echo "::error::This C5 Production campaign is single-use and cannot be re-run."
+            exit 1
+          fi
+          first_parent="$(git rev-parse "${GITHUB_SHA}^1")"
+          if [ "$first_parent" != "$C5_EXPECTED_PRE_ORCHESTRATOR_MASTER" ]; then
+            echo "::error::Unexpected pre-orchestrator master parent: ${first_parent}."
+            exit 1
+          fi
+          mapfile -t changed < <(git diff --name-only "${GITHUB_SHA}^1" "${GITHUB_SHA}")
+          if [ "${#changed[@]}" -ne 1 ] || [ "${changed[0]}" != ".github/workflows/c5-production-activation-orchestrator.yml" ]; then
+            printf '::error::Unexpected merge delta. Expected only the orchestrator workflow; got:\n'
+            printf ' - %s\n' "${changed[@]}"
+            exit 1
+          fi
+
+      - name: Verify sealed M217 identity and catalogue ceiling
+        shell: bash
+        run: |
+          set -euo pipefail
+          file="supabase/migrations/${PHOENIX_MIGRATION_FILENAME}"
+          test -f "$file"
+          actual="$(sha256sum "$file" | awk '{print $1}')"
+          if [ "$actual" != "$PHOENIX_MIGRATION_SHA256" ]; then
+            echo "::error::M217 SHA-256 mismatch."
+            exit 1
+          fi
+          highest="$(find supabase/migrations -maxdepth 1 -type f -printf '%f\n' | sed -n 's/^\([0-9][0-9][0-9]\)_.*/\1/p' | sort -n | tail -n1)"
+          if [ "$highest" != "217" ]; then
+            echo "::error::Unexpected migration catalogue ceiling: ${highest:-none}; expected 217."
+            exit 1
+          fi
+
+      - name: Wait for CI success on this exact master commit
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          deadline=$((SECONDS + 1200))
+          while true; do
+            json="$(curl -fsSL \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${GITHUB_SHA}&event=push&per_page=100")"
+
+            row="$(printf '%s' "$json" | jq -c '[.workflow_runs[] | select(.name == "CI")] | sort_by(.created_at) | last // empty')"
+            if [ -n "$row" ]; then
+              status="$(printf '%s' "$row" | jq -r '.status')"
+              conclusion="$(printf '%s' "$row" | jq -r '.conclusion // ""')"
+              url="$(printf '%s' "$row" | jq -r '.html_url')"
+              echo "CI status=${status} conclusion=${conclusion} ${url}"
+              if [ "$status" = "completed" ]; then
+                if [ "$conclusion" != "success" ]; then
+                  echo "::error::CI did not succeed on the orchestrator merge commit."
+                  exit 1
+                fi
+                break
+              fi
+            fi
+
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              echo "::error::Timed out waiting for CI on ${GITHUB_SHA}."
+              exit 1
+            fi
+            sleep 15
+          done
+
+  activate:
+    name: Execute C5 v1.9 Production activation
+    needs: gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    environment: production
+    env:
+      PHOENIX_PRODUCTION_DATABASE_URL: ${{ secrets.PHOENIX_PRODUCTION_DATABASE_URL }}
+    steps:
+      - name: Check out exact authorized master commit
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Establish sealed activation inputs
+        id: inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${PHOENIX_PRODUCTION_DATABASE_URL:-}" ]; then
+            echo "::error::PHOENIX_PRODUCTION_DATABASE_URL is unavailable in the production environment."
+            exit 1
+          fi
+          if [ -n "${PGOPTIONS:-}" ] || [ -n "${PGREPLICATION:-}" ]; then
+            echo "::error::PGOPTIONS/PGREPLICATION must be absent for DIR-01."
+            exit 1
+          fi
+
+          evidence_dir="${RUNNER_TEMP}/c5-evidence-${GITHUB_RUN_ID}"
+          mkdir -p "$evidence_dir"
+          remote_history_version="$(date -u +%Y%m%d%H%M%S)"
+
+          echo "EVIDENCE_DIR=${evidence_dir}" >> "$GITHUB_ENV"
+          echo "PHOENIX_REMOTE_HISTORY_VERSION=${remote_history_version}" >> "$GITHUB_ENV"
+          echo "remote_history_version=${remote_history_version}" >> "$GITHUB_OUTPUT"
+          echo "Evidence root: ${evidence_dir}"
+          echo "Remote history version: ${remote_history_version}"
+
+      - name: C5 preflight
+        id: preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          out="${RUNNER_TEMP}/c5-preflight-output"
+          : > "$out"
+          set +e
+          GITHUB_OUTPUT="$out" node tools/phoenix-demo/c5-activation-runbook.mjs \
+            --phase=preflight \
+            --target=production \
+            --evidence-dir="$EVIDENCE_DIR"
+          rc=$?
+          set -e
+          outcome="$(awk -F= '$1=="c5_activation_outcome"{v=$2} END{print v}' "$out")"
+          attempt="$(awk -F= '$1=="c5_activation_attempt"{v=$2} END{print v}' "$out")"
+          echo "outcome=${outcome}" >> "$GITHUB_OUTPUT"
+          echo "attempt=${attempt}" >> "$GITHUB_OUTPUT"
+          if [ "$rc" -ne 0 ] || [ "$outcome" != "PREFLIGHT_PASS" ]; then
+            echo "::error::C5 preflight refused or held before T0: ${outcome:-unknown}."
+            exit 1
+          fi
+
+      - name: C5 freeze
+        id: freeze
+        shell: bash
+        run: |
+          set -euo pipefail
+          out="${RUNNER_TEMP}/c5-freeze-output"
+          : > "$out"
+          set +e
+          GITHUB_OUTPUT="$out" node tools/phoenix-demo/c5-activation-runbook.mjs \
+            --phase=freeze \
+            --target=production \
+            --evidence-dir="$EVIDENCE_DIR" \
+            --attempt="${{ steps.preflight.outputs.attempt }}"
+          rc=$?
+          set -e
+          outcome="$(awk -F= '$1=="c5_activation_outcome"{v=$2} END{print v}' "$out")"
+          echo "outcome=${outcome}" >> "$GITHUB_OUTPUT"
+          if [ "$rc" -ne 0 ] || [ "$outcome" != "FROZEN" ]; then
+            echo "::error::Freeze did not reach FROZEN; invoking governed stop classification."
+            set +e
+            node tools/phoenix-demo/c5-activation-runbook.mjs \
+              --phase=stop \
+              --target=production \
+              --evidence-dir="$EVIDENCE_DIR" \
+              --attempt="${{ steps.preflight.outputs.attempt }}"
+            stop_rc=$?
+            set -e
+            echo "::error::Stop classification exit=${stop_rc}; activation halted."
+            exit 1
+          fi
+
+      - name: C5 resolve to READY_FOR_M217
+        id: resolve
+        shell: bash
+        run: |
+          set -euo pipefail
+          attempt="${{ steps.preflight.outputs.attempt }}"
+          for n in $(seq 1 21); do
+            out="${RUNNER_TEMP}/c5-resolve-${n}-output"
+            : > "$out"
+            set +e
+            GITHUB_OUTPUT="$out" node tools/phoenix-demo/c5-activation-runbook.mjs \
+              --phase=resolve \
+              --target=production \
+              --evidence-dir="$EVIDENCE_DIR" \
+              --attempt="$attempt"
+            rc=$?
+            set -e
+            outcome="$(awk -F= '$1=="c5_activation_outcome"{v=$2} END{print v}' "$out")"
+
+            if [ "$rc" -eq 0 ] && [ "$outcome" = "READY_FOR_M217" ]; then
+              echo "outcome=${outcome}" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+
+            if [ "$rc" -eq 2 ] && [ "$outcome" = "DRAIN_WAIT" ]; then
+              echo "Drain wait ${n}/21; sleeping 15 seconds."
+              sleep 15
+              continue
+            fi
+
+            echo "::error::Resolve stopped with rc=${rc}, outcome=${outcome:-unknown}; invoking governed stop."
+            set +e
+            node tools/phoenix-demo/c5-activation-runbook.mjs \
+              --phase=stop \
+              --target=production \
+              --evidence-dir="$EVIDENCE_DIR" \
+              --attempt="$attempt"
+            stop_rc=$?
+            set -e
+            echo "::error::Stop classification exit=${stop_rc}; activation halted."
+            exit 1
+          done
+
+          echo "::error::DRAIN_WAIT persisted beyond the bounded wait; invoking governed stop."
+          set +e
+          node tools/phoenix-demo/c5-activation-runbook.mjs \
+            --phase=stop \
+            --target=production \
+            --evidence-dir="$EVIDENCE_DIR" \
+            --attempt="$attempt"
+          stop_rc=$?
+          set -e
+          echo "::error::Stop classification exit=${stop_rc}; activation halted."
+          exit 1
+
+      - name: Guard the pinned-executor dispatch boundary
+        id: before_dispatch
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          attempt="${{ steps.preflight.outputs.attempt }}"
+
+          set +e
+          master_json="$(curl -fsSL \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/git/ref/heads/master")"
+          api_rc=$?
+          set -e
+
+          if [ "$api_rc" -ne 0 ]; then
+            echo "::error::Could not re-attest master immediately before executor dispatch."
+            set +e
+            node tools/phoenix-demo/c5-activation-runbook.mjs \
+              --phase=stop \
+              --target=production \
+              --evidence-dir="$EVIDENCE_DIR" \
+              --attempt="$attempt" \
+              --executor-conclusion=not_dispatched
+            stop_rc=$?
+            set -e
+            echo "::error::Stop classification exit=${stop_rc}; activation halted."
+            exit 1
+          fi
+
+          master_sha="$(printf '%s' "$master_json" | jq -r '.object.sha')"
+          if [ "$master_sha" != "$GITHUB_SHA" ]; then
+            echo "::error::Master drift before executor dispatch: expected ${GITHUB_SHA}, got ${master_sha}."
+            set +e
+            node tools/phoenix-demo/c5-activation-runbook.mjs \
+              --phase=stop \
+              --target=production \
+              --evidence-dir="$EVIDENCE_DIR" \
+              --attempt="$attempt" \
+              --executor-conclusion=not_dispatched
+            stop_rc=$?
+            set -e
+            echo "::error::Stop classification exit=${stop_rc}; activation halted."
+            exit 1
+          fi
+
+          json="$(curl -fsSL \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/apply-production-migration.yml/runs?event=workflow_dispatch&branch=master&per_page=100")"
+          printf '%s' "$json" | jq -r '.workflow_runs[].id' | sort -n > "${RUNNER_TEMP}/executor-before.txt"
+
+      - name: Dispatch the pinned M217 executor
+        id: dispatch
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          attempt="${{ steps.preflight.outputs.attempt }}"
+          payload="$(jq -n \
+            --arg ref "master" \
+            --arg confirm_sha "$GITHUB_SHA" \
+            --arg migration_filename "$PHOENIX_MIGRATION_FILENAME" \
+            --arg migration_sha256 "$PHOENIX_MIGRATION_SHA256" \
+            --arg expected_current_ceiling "$PHOENIX_EXPECTED_CURRENT_CEILING" \
+            --arg expected_next_ceiling "$PHOENIX_EXPECTED_NEXT_CEILING" \
+            --arg remote_history_version "$PHOENIX_REMOTE_HISTORY_VERSION" \
+            '{ref:$ref, inputs:{
+              confirm_sha:$confirm_sha,
+              migration_filename:$migration_filename,
+              migration_sha256:$migration_sha256,
+              expected_current_ceiling:$expected_current_ceiling,
+              expected_next_ceiling:$expected_next_ceiling,
+              remote_history_version:$remote_history_version,
+              confirmation:"APPLY_PRODUCTION_MIGRATION"
+            }}')"
+
+          response_file="${RUNNER_TEMP}/dispatch-response.json"
+          set +e
+          http_code="$(curl -sS -o "$response_file" -w '%{http_code}' -X POST \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/apply-production-migration.yml/dispatches" \
+            -d "$payload")"
+          curl_rc=$?
+          set -e
+
+          if [ "$curl_rc" -ne 0 ] || { [ "$http_code" != "200" ] && [ "$http_code" != "204" ]; }; then
+            echo "::error::Pinned executor dispatch failed before a run was accepted (curl=${curl_rc}, HTTP=${http_code})."
+            set +e
+            node tools/phoenix-demo/c5-activation-runbook.mjs \
+              --phase=stop \
+              --target=production \
+              --evidence-dir="$EVIDENCE_DIR" \
+              --attempt="$attempt" \
+              --executor-conclusion=not_dispatched
+            stop_rc=$?
+            set -e
+            echo "::error::Stop classification exit=${stop_rc}; activation halted."
+            exit 1
+          fi
+
+          run_id=""
+          if [ "$http_code" = "200" ] && [ -s "$response_file" ]; then
+            run_id="$(jq -r '.workflow_run_id // empty' "$response_file")"
+          fi
+
+          if [ -z "$run_id" ]; then
+            deadline=$((SECONDS + 120))
+            while true; do
+              json="$(curl -fsSL \
+                -H "Authorization: Bearer ${GH_TOKEN}" \
+                -H "Accept: application/vnd.github+json" \
+                -H "X-GitHub-Api-Version: 2022-11-28" \
+                "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/apply-production-migration.yml/runs?event=workflow_dispatch&branch=master&per_page=100")"
+
+              run_id="$(printf '%s' "$json" | jq -r --arg sha "$GITHUB_SHA" \
+                '[.workflow_runs[] | select(.head_sha == $sha) | .id] | map(select(. != null)) | sort | reverse | .[]' \
+                | while read -r id; do
+                    if ! grep -qx "$id" "${RUNNER_TEMP}/executor-before.txt"; then
+                      echo "$id"
+                      break
+                    fi
+                  done)"
+
+              if [ -n "${run_id:-}" ]; then
+                break
+              fi
+
+              if [ "$SECONDS" -ge "$deadline" ]; then
+                echo "::error::Dispatch was accepted but the new executor run could not be identified. Freeze remains governed; no automatic restore is safe."
+                exit 1
+              fi
+              sleep 3
+            done
+          fi
+
+          url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${run_id}"
+          echo "run_id=${run_id}" >> "$GITHUB_OUTPUT"
+          echo "url=${url}" >> "$GITHUB_OUTPUT"
+          echo "Pinned executor run: ${url}"
+
+      - name: Wait for pinned executor terminal state
+        id: executor
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          run_id="${{ steps.dispatch.outputs.run_id }}"
+          deadline=$((SECONDS + 3600))
+
+          while true; do
+            json="$(curl -fsSL \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}")"
+
+            status="$(printf '%s' "$json" | jq -r '.status')"
+            conclusion="$(printf '%s' "$json" | jq -r '.conclusion // ""')"
+            head_sha="$(printf '%s' "$json" | jq -r '.head_sha')"
+            workflow_path="$(printf '%s' "$json" | jq -r '.path')"
+            echo "Executor ${run_id}: status=${status} conclusion=${conclusion:-pending}"
+
+            if [ "$head_sha" != "$GITHUB_SHA" ] || [ "$workflow_path" != ".github/workflows/apply-production-migration.yml" ]; then
+              echo "::error::Executor identity drift."
+              exit 1
+            fi
+
+            if [ "$status" = "completed" ]; then
+              case "$conclusion" in
+                success|failure|cancelled) ;;
+                *)
+                  echo "::error::Unexpected terminal executor conclusion: ${conclusion}"
+                  exit 1
+                  ;;
+              esac
+              echo "conclusion=${conclusion}" >> "$GITHUB_OUTPUT"
+              break
+            fi
+
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              echo "::error::Timed out waiting for the pinned executor terminal state."
+              exit 1
+            fi
+            sleep 15
+          done
+
+      - name: C5 post-apply classification, verification and exact ACL restore
+        id: post_apply
+        shell: bash
+        run: |
+          set -euo pipefail
+          out="${RUNNER_TEMP}/c5-post-apply-output"
+          : > "$out"
+          set +e
+          GITHUB_OUTPUT="$out" node tools/phoenix-demo/c5-activation-runbook.mjs \
+            --phase=post-apply \
+            --target=production \
+            --evidence-dir="$EVIDENCE_DIR" \
+            --attempt="${{ steps.preflight.outputs.attempt }}" \
+            --executor-run-id="${{ steps.dispatch.outputs.run_id }}" \
+            --executor-conclusion="${{ steps.executor.outputs.conclusion }}"
+          rc=$?
+          set -e
+          outcome="$(awk -F= '$1=="c5_activation_outcome"{v=$2} END{print v}' "$out")"
+          echo "outcome=${outcome}" >> "$GITHUB_OUTPUT"
+
+          if [ "$rc" -ne 0 ] || [ "$outcome" != "C5_ACTIVATION_PASS" ]; then
+            echo "::error::Post-apply did not close C5 with C5_ACTIVATION_PASS: ${outcome:-unknown}."
+            exit 1
+          fi
+
+      - name: Write run summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## C5 Production Activation"
+            echo
+            echo "- Commit: \`${GITHUB_SHA}\`"
+            echo "- M217 SHA-256: \`${PHOENIX_MIGRATION_SHA256}\`"
+            echo "- Remote history version: \`${PHOENIX_REMOTE_HISTORY_VERSION:-not-generated}\`"
+            echo "- Attempt: \`${{ steps.preflight.outputs.attempt || 'not-started' }}\`"
+            echo "- Preflight: \`${{ steps.preflight.outputs.outcome || 'not-run' }}\`"
+            echo "- Freeze: \`${{ steps.freeze.outputs.outcome || 'not-run' }}\`"
+            echo "- Resolve: \`${{ steps.resolve.outputs.outcome || 'not-run' }}\`"
+            echo "- Executor run: \`${{ steps.dispatch.outputs.run_id || 'not-dispatched' }}\`"
+            echo "- Executor conclusion: \`${{ steps.executor.outputs.conclusion || 'not-terminal' }}\`"
+            echo "- Final outcome: \`${{ steps.post_apply.outputs.outcome || 'not-run' }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload sealed C5 evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: c5-production-activation-evidence-${{ github.run_id }}
+          path: ${{ runner.temp }}/c5-evidence-${{ github.run_id }}
+          if-no-files-found: warn
+          retention-days: 30
