@@ -16,6 +16,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
+  C5_EXPECTED_PRE_ORCHESTRATOR_MASTER: 28941ea574440651ea6fea468ed0c4d797dc3980
   PHOENIX_C5_EXPECTED_PRIOR_ATTEMPTS: '0'
   PHOENIX_C5_EXPECTED_LEDGER_SHA256: b8be0cd2fe16bea59a18fb632d8b692e87a1ed63b5aaf23cf49954afafa3a853
   PHOENIX_C5_ACTIVATION_AUTHORIZATION: EXECUTE_C5_PRODUCTION_ACTIVATION_UNDER_SEPARATE_OWNER_PRODUCTION_AUTHORIZATION
@@ -37,10 +38,19 @@ jobs:
           persist-credentials: false
           fetch-depth: 2
 
-      - name: Prove this merge only added the C5 orchestrator
+      - name: Prove one-campaign identity and exact orchestrator-only merge
         shell: bash
         run: |
           set -euo pipefail
+          if [ "${GITHUB_RUN_ATTEMPT}" != "1" ]; then
+            echo "::error::This C5 Production campaign is single-use and cannot be re-run."
+            exit 1
+          fi
+          first_parent="$(git rev-parse "${GITHUB_SHA}^1")"
+          if [ "$first_parent" != "$C5_EXPECTED_PRE_ORCHESTRATOR_MASTER" ]; then
+            echo "::error::Unexpected pre-orchestrator master parent: ${first_parent}."
+            exit 1
+          fi
           mapfile -t changed < <(git diff --name-only "${GITHUB_SHA}^1" "${GITHUB_SHA}")
           if [ "${#changed[@]}" -ne 1 ] || [ "${changed[0]}" != ".github/workflows/c5-production-activation-orchestrator.yml" ]; then
             printf '::error::Unexpected merge delta. Expected only the orchestrator workflow; got:\n'
