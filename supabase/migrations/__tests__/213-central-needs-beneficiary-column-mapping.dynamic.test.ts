@@ -437,8 +437,27 @@ run('CN-2B/213 beneficiary column mapping — dynamic', () => {
   describe('N. draft-only mutation', () => {
     it('attempting to modify a mapping after the revision is no longer draft is refused', async () => {
       const s = await scenario();
-      const sess = await addSession(s.revId, 0, [{ row: 1, entity: 'sheet:0:row:1', columns: [{ col: 1, value: 10 }] }]);
-      await admin(`UPDATE central_needs_plan_revisions SET status = 'submitted' WHERE id = $1`, [s.revId]);
+      // C6-F1 (218): a direct DRAFT -> SUBMITTED write is refused by the
+      // submission fence, so the revision is submitted canonically: its one row
+      // dispositioned not_applicable (READY with no column decision and no need
+      // line), its session registered in a trusted batch, then the real submit RPC.
+      const sess = await addSession(s.revId, 0,
+        [{ row: 1, entity: 'sheet:0:row:1', decision: 'not_applicable', columns: [{ col: 1, value: 10 }] }]);
+      ordinalSeq += 1;
+      const [{ id: batchId }] = await admin(
+        `INSERT INTO central_needs_import_batches
+           (plan_revision_id, organization_id, container_kind, container_filename, container_sha256,
+            storage_locator, accepted_entry_count, parser_identity)
+         VALUES ($1,$2,'file','needs.xls',$3,'permanent/n',1,$4::jsonb) RETURNING id`,
+        [s.revId, ORG_OWNER, `${ordinalSeq}`.padStart(64, 'c'), JSON.stringify(PARSER_IDENTITY)]);
+      await admin(
+        `INSERT INTO central_needs_import_batch_entries
+           (batch_id, plan_revision_id, organization_id, entry_ordinal, entry_sha256, import_session_id)
+         VALUES ($1,$2,$3,1,$4,$5)`,
+        [batchId, s.revId, ORG_OWNER, `${ordinalSeq}`.padStart(64, 'e'), sess.sessionId]);
+      expect(await blockers(s.revId)).toEqual([]);
+      expect(await call(U_EDIT, `SELECT public.phoenix_central_needs_submit_revision($1) AS result`, [s.revId]))
+        .toMatchObject({ status: 'submitted' });
       const r = await refusal(setColumns(U_EDIT, s.revId, cols(
         { importSessionId: sess.sessionId, sheetIndex: 0, columnIndex: 1, beneficiaryOrganizationId: ORG_BENE_A })));
       expect(r).toMatchObject({ code: '23514', message: 'plan_revision_not_editable' });

@@ -246,6 +246,29 @@ run('CN-2B/212 operational need lines — dynamic', () => {
     return { planId, revId, sessionId, records, rows, year: y };
   }
 
+  /**
+   * C6-F1 (218): a direct DRAFT -> SUBMITTED write is refused by the submission
+   * fence, so a fixture reaches SUBMITTED canonically, in every chain mode, as
+   * the approved-revision fixture below does: its completed session registered
+   * in a trusted batch, readiness proven empty, then the real submit RPC.
+   */
+  async function submitCanonically(s: { revId: string; sessionId: string; year: number }) {
+    const [{ id: batchId }] = await admin(
+      `INSERT INTO central_needs_import_batches
+         (plan_revision_id, organization_id, container_kind, container_filename, container_sha256,
+          storage_locator, accepted_entry_count, parser_identity)
+       VALUES ($1,$2,'file','needs.xls',$3,'permanent/x',1,$4::jsonb) RETURNING id`,
+      [s.revId, ORG_OWNER, `${s.year}`.padStart(64, 'c'), JSON.stringify(PARSER_IDENTITY)]);
+    await admin(
+      `INSERT INTO central_needs_import_batch_entries
+         (batch_id, plan_revision_id, organization_id, entry_ordinal, entry_sha256, import_session_id)
+       VALUES ($1,$2,$3,1,$4,$5)`,
+      [batchId, s.revId, ORG_OWNER, `${s.year}`.padStart(64, 'e'), s.sessionId]);
+    expect(await blockers(s.revId)).toEqual([]);
+    expect(await call(U_EDIT, `SELECT public.phoenix_central_needs_submit_revision($1) AS result`, [s.revId]))
+      .toMatchObject({ status: 'submitted' });
+  }
+
   /** `[{ sourceRecordId, designatedQuantity, appliedOverrideId }]` as jsonb text. */
   const sources = (...items: Array<[string, string | number] | [string, string | number, string | null]>) =>
     JSON.stringify(items.map(([id, qty, override]) => ({
@@ -798,8 +821,12 @@ run('CN-2B/212 operational need lines — dynamic', () => {
   // ---- E. REVISION LIFECYCLE --------------------------------------------
   describe('E. revision lifecycle', () => {
     it('refuses mapping on a non-draft revision — plan_revision_not_editable', async () => {
-      const s = await scenario({ status: 'submitted' });
+      // C6-F1 (218): submitted canonically — the one mapped cell feeds its line,
+      // which makes the revision READY — never by a direct UPDATE.
+      const s = await scenario({ rows: [{ entity: 'sheet:0:row:5', fields: [{ name: 'final', value: 100 }] }] });
       const id = s.records.get('sheet:0:row:5::final')!;
+      await setLine(U_EDIT, s.revId, { sources: sources([id, '100']) });
+      await submitCanonically(s);
       expect(await refusal(setLine(U_EDIT, s.revId, { sources: sources([id, '100']) })))
         .toMatchObject({ code: '23514', message: 'plan_revision_not_editable' });
     });
@@ -1638,10 +1665,12 @@ run('CN-2B/212 operational need lines — dynamic', () => {
     });
 
     it('refuses deletion on a non-draft revision, leaving the line intact', async () => {
-      const s = await scenario();
+      // C6-F1 (218): submitted canonically — the one mapped cell feeds the line,
+      // which makes the revision READY — never by a direct UPDATE.
+      const s = await scenario({ rows: [{ entity: 'sheet:0:row:5', fields: [{ name: 'final', value: 100 }] }] });
       const id = s.records.get('sheet:0:row:5::final')!;
       const line = await setLine(U_EDIT, s.revId, { sources: sources([id, '100']) });
-      await admin(`UPDATE central_needs_plan_revisions SET status='submitted' WHERE id=$1`, [s.revId]);
+      await submitCanonically(s);
       expect(await refusal(deleteLine(U_EDIT, line.need_line_id, 'too late', [id])))
         .toMatchObject({ code: '23514', message: 'plan_revision_not_editable' });
       expect(await linksOf(line.need_line_id)).toHaveLength(1);

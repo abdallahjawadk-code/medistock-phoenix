@@ -71,19 +71,19 @@ describe('CN-1B/210 static — registration and file hygiene', () => {
     const files = readdirSync(MIGRATIONS).filter((f) => /^\d{3}_.*\.sql$/.test(f)).sort();
     expect(files).toContain(FILENAME);
     expect(files.indexOf(FILENAME)).toBe(209);
-    expect(files.filter((f) => Number(f.slice(0, 3)) > 217)).toEqual([]);
-    expect(files).toHaveLength(217);
+    expect(files.filter((f) => Number(f.slice(0, 3)) > 218)).toEqual([]);
+    expect(files).toHaveLength(218);
     expect(isReviewedMigrationFile(FILENAME)).toBe(true);
     // 210 is no longer last: CN-2B/211 sits directly after it, and 211's own
     // static suite owns the ceiling assertions from here on. The 210 -> 211
     // relationship below is HISTORICAL and never moves; only the ceiling does,
-    // now to the C5/M217 Central Needs safety convergence migration.
+    // now to the C6-F1/M218 Central Needs submission integrity fence migration.
     expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.indexOf(FILENAME) + 1])
       .toBe('211_phoenix_central_needs_batch_and_disposition.sql');
     expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1])
-      .toBe('217_phoenix_central_needs_c5_safety_convergence.sql');
-    expect(getMaximumReviewedMigrationNumber()).toBe(217);
-    expect(getNextUnreviewedMigrationNumber()).toBe(218);
+      .toBe('218_phoenix_central_needs_submission_integrity_fence.sql');
+    expect(getMaximumReviewedMigrationNumber()).toBe(218);
+    expect(getNextUnreviewedMigrationNumber()).toBe(219);
   });
 
   it('carries no CR bytes — LF only', () => {

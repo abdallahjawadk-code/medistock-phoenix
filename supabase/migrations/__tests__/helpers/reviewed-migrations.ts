@@ -262,6 +262,20 @@ export const REVIEWED_MIGRATION_FILES: readonly string[] = Object.freeze([
   // submit, approve and reject. No table, column, enum, policy or permission
   // key, and no stock, movement, allocation or transfer SQL.
   '217_phoenix_central_needs_c5_safety_convergence.sql',
+  // C6-F1 / M218: Central Needs submission integrity fence (with R1). One
+  // PRIVATE lifecycle attestation table (no privilege for PUBLIC, anon,
+  // authenticated or service_role; RLS enabled and forced, no policy), internal
+  // SECURITY DEFINER digest and state-lock helpers (no client EXECUTE), and one
+  // BEFORE UPDATE submission-gate fence on plan revisions (DRAFT -> SUBMITTED
+  // requires the same-transaction private SUBMIT attestation); the M217
+  // approval fence now requires the private APPROVE attestation. Submit
+  // (attests the submission-state digest after readiness) and approve (refuses
+  // without canonical submission provenance or on a changed state) are replaced
+  // with unchanged signatures, ACL-neutral. audit_logs is history, never
+  // authority. Fails closed while any revision is SUBMITTED. No new column on an
+  // existing table, enum, policy or permission key, and no stock, movement,
+  // allocation or transfer SQL.
+  '218_phoenix_central_needs_submission_integrity_fence.sql',
 ]);
 
 const REVIEWED_SET: ReadonlySet<string> = new Set(REVIEWED_MIGRATION_FILES);

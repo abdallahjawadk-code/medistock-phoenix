@@ -53,14 +53,16 @@ const gitBlob = (content: Buffer) =>
   createHash('sha1').update(Buffer.concat([Buffer.from(`blob ${content.length}\0`), content])).digest('hex');
 
 describe('C4/M216 static — file hygiene and protected surface', () => {
-  it('216 is the next migration after 215, and only C5/M217 sits above it', () => {
+  it('216 is the next migration after 215, and only C5/M217 and C6-F1/M218 sit above it', () => {
     // C5/M217 (Central Needs safety convergence) is the reviewed successor and
-    // now the ceiling; its own static suite owns the ceiling assertions. The
-    // 215 -> 216 -> 217 order is exact, so any other file >= 216 fails closed.
+    // C6-F1/M218 (Central Needs submission integrity fence) now the ceiling; its
+    // own static suite owns the ceiling assertions. The 215 -> 216 -> 217 -> 218
+    // order is exact, so any other file >= 216 fails closed.
     const files = readdirSync(MIGRATIONS).filter((f) => /^\d{3}_.*\.sql$/.test(f)).sort();
     expect(files).toContain(FILENAME);
     expect(files.filter((f) => Number(f.slice(0, 3)) >= 216))
-      .toEqual([FILENAME, '217_phoenix_central_needs_c5_safety_convergence.sql']);
+      .toEqual([FILENAME, '217_phoenix_central_needs_c5_safety_convergence.sql',
+        '218_phoenix_central_needs_submission_integrity_fence.sql']);
   });
 
   it('leaves M209-M215 byte-identical (git blob ids of the frozen baseline)', () => {

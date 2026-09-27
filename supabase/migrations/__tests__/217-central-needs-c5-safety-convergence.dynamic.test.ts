@@ -303,6 +303,16 @@ run('C5/M217 Central Needs safety convergence — dynamic (PostgreSQL)', { timeo
                                         'grantable', a.is_grantable) AS x
                 FROM aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a) t) AS tuples
       FROM pg_proc p WHERE p.oid = ANY ($1::regprocedure[]) ORDER BY 1`, [LIFECYCLE_SIGS]);
+  /**
+   * The lifecycle ACL without service_role's EXECUTE: M217 is ACL-neutral, and
+   * the later chain (M218 FINAL, which this suite also applies) revokes exactly
+   * that one privilege — service_role is no lifecycle caller.
+   */
+  const withoutServiceRoleExecute = (rows: any[]) => rows.map((r: any) => ({
+    ...r,
+    acl: typeof r.acl === 'string' ? r.acl.replace(/,service_role=X\/[\w"]+|service_role=X\/[\w"]+,?/, '') : r.acl,
+    tuples: r.tuples.filter((t: any) => !(t.grantee === 'service_role' && t.privilege === 'EXECUTE')),
+  }));
 
   // ---- evidence and workflow helpers -------------------------------------
   const mkOrg = async (tag: string, kind: 'care_institution' | 'pharmacy_department_authority' = 'care_institution') => {
@@ -723,9 +733,10 @@ run('C5/M217 Central Needs safety convergence — dynamic (PostgreSQL)', { timeo
     // (j) ACL neutrality
     // -----------------------------------------------------------------------
     describe('(j) ACL neutrality of submit, approve and reject', () => {
-      it('the proacl and the aclexplode tuple set of all three are identical before and after M217', () => {
+      it('the proacl and the aclexplode tuple set of all three are identical before and after M217 (M218 FINAL then revokes only service_role EXECUTE)', () => {
         expect(aclBefore).toHaveLength(3);
-        expect(aclAfter).toEqual(aclBefore);
+        expect(aclBefore.some((a: any) => a.tuples.some((t: any) => t.grantee === 'service_role' && t.privilege === 'EXECUTE'))).toBe(true);
+        expect(aclAfter).toEqual(withoutServiceRoleExecute(aclBefore));
         for (const a of aclAfter) expect(a.acl, a.fn).not.toBeNull();
       });
     });
@@ -742,7 +753,7 @@ run('C5/M217 Central Needs safety convergence — dynamic (PostgreSQL)', { timeo
           const r = await rig.asAdmin((c: any) => tryApplyM217(c));
           expect(r).toMatchObject({ message: '217_already_applied' });
         } finally { await h.rollback(); }
-        expect(await lifecycleAcl()).toEqual(aclBefore);
+        expect(await lifecycleAcl()).toEqual(withoutServiceRoleExecute(aclBefore));
       });
     });
 
@@ -948,8 +959,15 @@ run('C5/M217 Central Needs safety convergence — dynamic (PostgreSQL)', { timeo
         expect(await judge(R.txtHead, '25', O.txt)).toBeNull();
       });
 
-      it('a non-DRAFT owner -> NULL; a missing, NULL or deleted link id -> NULL', async () => {
-        for (const status of ['submitted', 'rejected', 'superseded']) {
+      it('a non-DRAFT owner -> NULL; a missing, NULL or deleted link id -> NULL; a direct DRAFT -> SUBMITTED write is refused (M218)', async () => {
+        // M218 (C6-F1): a privileged direct DRAFT -> SUBMITTED write is refused by
+        // the submission fence, so SUBMITTED cannot be probed this way; the
+        // rejected and superseded owners below prove the non-DRAFT NULL.
+        const direct = await refusal(judge(R.amb, '25', null, async (c: any) => {
+          await c.query(`UPDATE central_needs_plan_revisions SET status = 'submitted' WHERE id = $1`, [fx.rev]);
+        }));
+        expect(direct).toMatchObject({ code: '23514', message: 'central_needs_submission_gate_missing', detail: `revision=${fx.rev}` });
+        for (const status of ['rejected', 'superseded']) {
           const reason = await judge(R.amb, '25', null, async (c: any) => {
             await c.query(`UPDATE central_needs_plan_revisions SET status = $2 WHERE id = $1`, [fx.rev, status]);
           });
@@ -1235,9 +1253,14 @@ run('C5/M217 Central Needs safety convergence — dynamic (PostgreSQL)', { timeo
         expect(readiness).toMatchObject({ ready: false, blockers: [unsafe] });
         const refusedSubmit = await refused(d.rev, () => call(U_EDIT, SUBMIT, [d.rev]), 'plan_revision_not_ready_for_review');
         expect(refusedSubmit.detail).toBe(`blocker=need_line_quantity_lineage_unsafe ${unsafe.detail}`);
-        // DRAFT only: the same link under a non-DRAFT owner is not reported.
+        // M218 (C6-F1): a privileged direct DRAFT -> SUBMITTED write is refused by
+        // the submission fence; no submitted state is fabricated.
+        const direct = await refusal(probe((c: any) =>
+          c.query(`UPDATE central_needs_plan_revisions SET status = 'submitted' WHERE id = $1`, [d.rev])));
+        expect(direct).toMatchObject({ code: '23514', message: 'central_needs_submission_gate_missing', detail: `revision=${d.rev}` });
+        // DRAFT only: the same link under a non-DRAFT (rejected) owner is not reported.
         const nonDraft = await probe(async (c: any) => {
-          await c.query(`UPDATE central_needs_plan_revisions SET status = 'submitted' WHERE id = $1`, [d.rev]);
+          await c.query(`UPDATE central_needs_plan_revisions SET status = 'rejected' WHERE id = $1`, [d.rev]);
           return (await c.query(`SELECT blocker FROM public._phoenix_central_needs_review_blockers_v1($1)`, [d.rev])).rows;
         });
         expect(nonDraft).toEqual([]);
@@ -1387,22 +1410,28 @@ run('C5/M217 Central Needs safety convergence — dynamic (PostgreSQL)', { timeo
     // (h) the approval fence
     // -----------------------------------------------------------------------
     describe('(h) the approval fence', () => {
-      it('attacker = superuser and service_role: a direct INSERT of an APPROVED revision without a gate is refused 23514', async () => {
+      it('attacker = superuser and service_role: a direct INSERT of an APPROVED revision without a gate is refused — 23514 by the fence (superuser), 42501 by privilege (service_role, M218 FINAL)', async () => {
         const d = await openDraft();
         for (const [who, fn] of [
           ['superuser', (sql: string, params: unknown[]) => admin(sql, params)],
           ['service_role', (sql: string, params: unknown[]) => call(null, sql, params, 'service_role')],
         ] as const) {
           const id = (await admin(`SELECT gen_random_uuid() AS id`))[0].id;
-          const r = await refused(d.rev, () => fn(
+          const insert = () => fn(
             `INSERT INTO public.central_needs_plan_revisions (id, plan_id, organization_id, revision_number, status, approved_by, approved_at)
-             VALUES ($1,$2,$3,2,'approved',$4,now())`, [id, d.planId, ORG_OWNER, U_APPROVE]), 'central_needs_approval_gate_missing');
+             VALUES ($1,$2,$3,2,'approved',$4,now())`, [id, d.planId, ORG_OWNER, U_APPROVE]);
+          if (who === 'service_role') {
+            // M218 FINAL: service_role holds no Central Needs write privilege at all.
+            await refused(d.rev, insert, 'permission denied for table central_needs_plan_revisions', '42501');
+            continue;
+          }
+          const r = await refused(d.rev, insert, 'central_needs_approval_gate_missing');
           expect(r.detail, who).toBe(`revision=${id}`);
         }
         expect(await statuses(d.planId)).toEqual(['1:draft']);
       });
 
-      it('attacker = superuser and service_role: a direct UPDATE to APPROVED from submitted, draft, superseded or rejected is refused 23514, nothing changed', async () => {
+      it('attacker = superuser and service_role: a direct UPDATE to APPROVED from submitted, draft, superseded or rejected is refused — 23514 by the fence (superuser), 42501 by privilege (service_role, M218 FINAL) — nothing changed', async () => {
         // Sources reached canonically: submitted (submit RPC), draft (open RPC),
         // superseded (the correction-approve path) and rejected (the reject RPC).
         const s = await submittedPlan([{ beneficiary: ORG_BENE_A }]);
@@ -1427,9 +1456,15 @@ run('C5/M217 Central Needs safety convergence — dynamic (PostgreSQL)', { timeo
             ['service_role', (sql: string, params: unknown[]) => call(null, sql, params, 'service_role')],
           ] as const) {
             // refused(): exact code and SQLSTATE, a byte-identical revision family/lines/links and a zero audit delta.
-            const r = await refused(rev, () => fn(
+            const update = () => fn(
               `UPDATE public.central_needs_plan_revisions SET status = 'approved', approved_by = $2, approved_at = now() WHERE id = $1`,
-              [rev, U_APPROVE]), 'central_needs_approval_gate_missing');
+              [rev, U_APPROVE]);
+            if (who === 'service_role') {
+              // M218 FINAL: service_role holds no Central Needs write privilege at all.
+              await refused(rev, update, 'permission denied for table central_needs_plan_revisions', '42501');
+              continue;
+            }
+            const r = await refused(rev, update, 'central_needs_approval_gate_missing');
             expect(r.detail, `${who} from ${from}`).toBe(`revision=${rev}`);
           }
           expect(await statuses(planOf[rev]), from).toEqual(family);
@@ -1437,7 +1472,7 @@ run('C5/M217 Central Needs safety convergence — dynamic (PostgreSQL)', { timeo
         }
       });
 
-      it('a hand-written same-transaction gate passes ONLY when exact (privileged hand-written gates are policy-forbidden)', async () => {
+      it('a hand-written same-transaction audit gate never admits APPROVED — not even an exact one (M218 R1: the private APPROVE attestation is the only authority)', async () => {
         const s = await submittedPlan([{ beneficiary: ORG_BENE_A }]);
         const other = await submittedPlan([{ beneficiary: ORG_BENE_A }]);
         const attempt = (gate: { actor?: string | null; org?: string; entity?: string; action?: string; entityType?: string;
@@ -1453,7 +1488,9 @@ run('C5/M217 Central Needs safety convergence — dynamic (PostgreSQL)', { timeo
             [s.rev, U_APPROVE]).then(() => 'passed', (e: any) => `${e.code} ${e.message}`);
         });
         const denied = '23514 central_needs_approval_gate_missing';
-        expect(await attempt({})).toBe('passed');
+        // M218 (C6-F1 R1): audit_logs is forensic history, not authority — the
+        // exact M217-shaped gate row written by a privileged writer is refused.
+        expect(await attempt({})).toBe(denied);
         expect(await attempt({ txid: `(txid_current() - 1)::text` })).toBe(denied);
         expect(await attempt({ actor: U_EDIT })).toBe(denied);
         expect(await attempt({ org: ORG_OTHER })).toBe(denied);
@@ -1476,7 +1513,8 @@ run('C5/M217 Central Needs safety convergence — dynamic (PostgreSQL)', { timeo
         const r = await refusal(rig.asUser(U_APPROVE, (c: any) => c.query(
           `UPDATE public.central_needs_plan_revisions SET status = 'approved', approved_by = $2, approved_at = now() WHERE id = $1`,
           [s.rev, U_APPROVE]), { role: 'service_role', commit: true }));
-        expect(r).toMatchObject({ code: '23514', message: 'central_needs_approval_gate_missing' });
+        // M218 FINAL: service_role cannot even write the status (no Central Needs write privilege).
+        expect(r).toMatchObject({ code: '42501', message: 'permission denied for table central_needs_plan_revisions' });
         expect(await statuses(s.planId)).toEqual(['1:submitted']);
         // authenticated can never write a gate at all.
         const [{ ins }] = await admin(`SELECT has_table_privilege('authenticated', 'public.audit_logs', 'INSERT')
@@ -1620,6 +1658,10 @@ run('C5/M217 Central Needs safety convergence — dynamic (PostgreSQL)', { timeo
         await admin(`UPDATE warehouses SET organization_id = $2, status = 'inactive' WHERE id = $1`, [wh, ORG_BENE_B]);
         await a2Refused(s.rev, `blocker=need_line_warehouse_org_mismatch need_line=${s.lineIds[0]} beneficiary=${b} warehouse=${wh} reason=not_owned`);
         // not_care_institution: attacker = a privileged post-submit line injection naming an authority.
+        // M218 FINAL: only the root of trust can write a submitted revision's
+        // lines (no non-root role holds the privilege), and approve does not
+        // re-hash the sealed state — so this root injection reaches A2, which
+        // still judges the beneficiary's eligibility fresh and refuses it.
         s = await submittedPlan([{ beneficiary: ORG_BENE_A }]);
         const injected = await bypass(async (c: any) => {
           const [{ id: rec }] = (await c.query(
@@ -1636,6 +1678,7 @@ run('C5/M217 Central Needs safety convergence — dynamic (PostgreSQL)', { timeo
                          VALUES ($1,$2,$3,1)`, [id, ORG_OWNER, rec]);
           return id as string;
         });
+        expect(injected).toMatch(/^[0-9a-f-]{36}$/);
         await a2Refused(s.rev, `blocker=need_line_beneficiary_ineligible need_line=${injected} beneficiary=${ORG_AUTH} reason=not_care_institution`);
       });
 

@@ -113,14 +113,19 @@ describe('182 registration and shape', () => {
       // function replacements; no facility-scoped RBAC SQL (no scope ledger, role, permission key, role default or
       // policy), so nothing this suite asserts moves. It is now the reviewed ceiling.
       '217_phoenix_central_needs_c5_safety_convergence.sql',
+      // C6-F1/M218: Central Needs submission integrity fence — one no-client-EXECUTE submission-gate fence trigger
+      // on plan revisions and behaviour-only, ACL-neutral submit/approve replacements; no facility-scoped RBAC SQL
+      // (no scope ledger, role, permission key, role default or policy), so nothing this suite asserts moves. It is
+      // now the reviewed ceiling.
+      '218_phoenix_central_needs_submission_integrity_fence.sql',
     ];
     const i = REVIEWED_MIGRATION_FILES.indexOf(NAME);
     expect(REVIEWED_MIGRATION_FILES.slice(i + 1)).toEqual(SUCCESSORS);
     expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1])
       .toBe(SUCCESSORS[SUCCESSORS.length - 1]);
-    // The ceiling is now 217; `[2-9]\d\d` would match it, so this asserts
+    // The ceiling is now 218; `[2-9]\d\d` would match it, so this asserts
     // numerically that nothing sits ABOVE the ceiling.
-    expect(REVIEWED_MIGRATION_FILES.filter(f => Number(f.slice(0, 3)) > 217)).toHaveLength(0);
+    expect(REVIEWED_MIGRATION_FILES.filter(f => Number(f.slice(0, 3)) > 218)).toHaveLength(0);
   });
 
   it('is a single transaction, manual-apply only', () => {

@@ -80,9 +80,18 @@ describe('M197 static — identity and placement', () => {
       // nor re-grants any of the six functions 197 converges, so what this
       // suite converges is untouched. It is now the reviewed ceiling.
       '217_phoenix_central_needs_c5_safety_convergence.sql',
+      // C6-F1/M218: the Central Needs submission integrity fence (submission-gate
+      // fence trigger on plan revisions, submit and approve replaced), with no
+      // stock, movement, allocation or transfer SQL. It grants no EXECUTE to
+      // PUBLIC (its internal functions REVOKE PUBLIC and every client role, and
+      // CREATE OR REPLACE keeps submit's and approve's ACLs; it issues no GRANT
+      // or REVOKE on them) and neither creates, replaces nor re-grants any of
+      // the six functions 197 converges, so what this suite converges is
+      // untouched. It is now the reviewed ceiling.
+      '218_phoenix_central_needs_submission_integrity_fence.sql',
     ]);
-    expect(files.filter((f) => Number(f.slice(0, 3)) > 217)).toEqual([]);
-    expect(files).toHaveLength(217);
+    expect(files.filter((f) => Number(f.slice(0, 3)) > 218)).toEqual([]);
+    expect(files).toHaveLength(218);
   });
 
   it('carries no MANUAL APPLY ONLY banner, so the pinned executor will accept it', () => {

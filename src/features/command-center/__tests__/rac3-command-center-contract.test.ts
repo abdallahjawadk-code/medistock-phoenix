@@ -431,7 +431,14 @@ describe('RAC-3 · I) no backend or migration change', () => {
     // and activation-rehearsal suites live under supabase/migrations/__tests__/,
     // which this guard already exempts, and are not SQL.
     const M217 = 'supabase/migrations/217_phoenix_central_needs_c5_safety_convergence.sql';
-    const ALLOWED_SQL = [M200, M201, M202, M203, M204, M205, M206, M207, M208, M209, M210, M211, M212, M213, M214, M215, M216, M217];
+    // C6-F1/M218: the Central Needs submission integrity fence (submission-gate
+    // fence trigger on plan revisions, ACL-neutral submit/approve replacements);
+    // it touches no command-centre object. Registered by EXACT filename, exactly
+    // as M200-M217 were, so this guard still fails closed for any OTHER migration
+    // or supabase/ file. Its static and dynamic suites live under
+    // supabase/migrations/__tests__/, which this guard already exempts.
+    const M218 = 'supabase/migrations/218_phoenix_central_needs_submission_integrity_fence.sql';
+    const ALLOWED_SQL = [M200, M201, M202, M203, M204, M205, M206, M207, M208, M209, M210, M211, M212, M213, M214, M215, M216, M217, M218];
     const changed = execSync(
       'git diff --name-only b707f073d60b4cc61205c35003ab491f3aed7468',
       { cwd: process.cwd(), encoding: 'utf8' },
