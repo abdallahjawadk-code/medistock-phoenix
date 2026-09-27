@@ -1086,6 +1086,21 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
     }
   }, [activeSessionId, revisionId]);
 
+  /**
+   * C6-B1 — a CONFIRMED Simple Mode material decision. Its disposition lives in
+   * the active session, so the session's dispositions and the revision's
+   * readiness are re-read through the same path Advanced's disposition table
+   * uses; and because a 'mapped' row can make a beneficiary column require
+   * review (M217 review_required), the revision re-read that already followed
+   * every Simple write still runs, so Simple routes to that review. The queue
+   * moves only on what the server re-reads — never on the click. A failed
+   * re-read is reported as exactly that: the write itself was confirmed.
+   */
+  const onSimpleMaterialResolved = useCallback(() => {
+    onDispositionsChanged().catch(() => setError('state_reread_failed'));
+    if (revisionId) refreshRevision(revisionId);
+  }, [onDispositionsChanged, refreshRevision, revisionId]);
+
   const stageProgress = useMemo(() => deriveCentralNeedsStageProgress({
     hasRevision: revision !== null,
     revisionStatus: revision?.status ?? null,
@@ -1770,6 +1785,7 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
           dispositions={dispositions}
           activeSessionId={activeSessionId}
           onChanged={() => refreshRevision(revisionId as string)}
+          onMaterialResolved={onSimpleMaterialResolved}
           onRefused={(refusal) => void rereadAfterRefusal(refusal)}
           onSwitchToAdvanced={() => setMode('advanced')}
           beneficiaryRegions={beneficiaryRegions}

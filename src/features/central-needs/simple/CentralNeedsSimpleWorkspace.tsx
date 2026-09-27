@@ -102,6 +102,15 @@ interface Props {
   activeSessionId: string | null;
   onChanged: () => void;
   /**
+   * C6-B1 — a CONFIRMED material decision. A disposition lives in the active
+   * import session, so the revision re-read behind `onChanged` does not carry
+   * it: the screen re-reads the session's dispositions (and readiness) here, and
+   * the material queue moves only when that server re-read shows the decision.
+   * Institution and region writes keep `onChanged`. Absent (older harnesses),
+   * the material card falls back to `onChanged`.
+   */
+  onMaterialResolved?: () => void;
+  /**
    * C5 §17 (UI-F3) — a server refusal of a card's write, so the screen can re-read
    * the registry and the revision when the revision's lifecycle moved.
    */
@@ -121,7 +130,7 @@ export function CentralNeedsSimpleWorkspace({
   lang, planYear, onPlanYearChange, revisionsLoading, revision, isDraft, revisionDataReady,
   canImport, canEdit, busy, activity, onOpenRevision, newerRevisionNumber = null, preview, pendingFile, onPickFile, onVerify, error, notice,
   readiness, batches = [], beneficiaryColumns, careInstitutions, records, dispositions, activeSessionId,
-  onChanged, onRefused, onSwitchToAdvanced, beneficiaryRegions, sessions,
+  onChanged, onMaterialResolved, onRefused, onSwitchToAdvanced, beneficiaryRegions, sessions,
 }: Props) {
   /**
    * THE ONLY navigation state in Simple Mode (defects 4 and 5), and it is
@@ -638,13 +647,18 @@ export function CentralNeedsSimpleWorkspace({
             </p>
             <p className="cn2b-simple-review-head__hint">{t('cn2b_simple_material_step_hint', lang)}</p>
           </div>
+          {/*
+            C6-B1 — keyed by the row it decides: once the queue advances, the next
+            row gets a fresh card, never the previous row's open form or reason.
+          */}
           <SimpleMaterialCard
+            key={`${activeSessionId}:${undispositionedEntities[0]}`}
             lang={lang}
             importSessionId={activeSessionId}
             editable={canWrite}
             targetEntity={undispositionedEntities[0]}
             fields={fieldsByEntity.get(undispositionedEntities[0]) ?? []}
-            onResolved={onChanged}
+            onResolved={onMaterialResolved ?? onChanged}
             onRefused={onRefused}
           />
           <div className="cn2b-simple-review-foot">
