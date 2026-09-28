@@ -93,7 +93,7 @@ jobs:
           PHOENIX_PRODUCTION_DATABASE_URL: ${{ secrets.PHOENIX_PRODUCTION_DATABASE_URL }}
         run: node tools/phoenix-demo/prod-preflight.mjs
 
-      - uses: supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520 # v3.0.0 (pinned by hash for supply-chain safety, matching this repo's other actions)
+      - uses: supabase/setup-cli@45a513f8c64c0bc8e0e3dfe572b5c95be85f6359 # v3.0.0 (pinned by hash for supply-chain safety, matching this repo's other actions)
         if: inputs.mode == 'dry_run_migrate' || inputs.mode == 'migrate_and_seed'
 
       - name: Migration preview (dry-run — prints planned statements, writes nothing)
