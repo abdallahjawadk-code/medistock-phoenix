@@ -35,7 +35,8 @@
  *       non-root role (anon, authenticated, service_role, phoenix_demo_purger,
  *       every other application or BYPASSRLS role) into a root-of-trust or
  *       capable role or into another role's privilege surface, and no
- *       non-root role is capable itself
+ *       non-root role is capable itself (capable = mutation, code injection
+ *       or control; read visibility, e.g. pg_read_all_data, is not: HC1)
  *
  * PRIVILEGED SQL. Read-only inspection, organization status transitions (the
  * organization lifecycle is outside Central Needs; M202's own transitions are
@@ -105,7 +106,8 @@ const W20 = {
 /**
  * N20 — the role graph, one catalog query. ROOT: a true
  * superuser or the database owner, nothing else. SOURCES: every other non-predefined role. TARGETS: CAPABILITY
- * roles (root-of-trust powers; a source holding one is reported SELF) and IDENTITY roles (a privilege surface of
+ * roles (root-of-trust powers — mutation, code injection, control; never mere read visibility, M218-HC1: a hosted
+ * read observer inheriting pg_read_all_data is not capable; a source holding one is reported SELF) and IDENTITY roles (a privilege surface of
  * their own: object ownership, explicit EXECUTE on a SECURITY DEFINER routine, explicit relation writes, BYPASSRLS;
  * never SELF, but a path into one is a finding). A recursive walk of pg_auth_members (+ the implicit datdba ->
  * pg_database_owner edge) records, per path, SET / INHERIT / SET-then-INHERIT / ADMIN; pg_has_role must agree with
@@ -165,31 +167,40 @@ source AS (
    WHERE r.oid NOT IN (SELECT root.oid FROM root)
      AND r.rolname !~ '^pg_'
 ),
--- CAPABILITY: a role that is root or holds a root-of-trust power itself. A source holding one is reported SELF, and
--- a path into one is reported. Effective privileges (has_*_privilege) count direct grants, PUBLIC, inherited
--- membership and predefined-role powers; never a membership usable only through SET ROLE (the walk handles that).
--- A type's implicit PUBLIC USAGE (NULL typacl) is not counted: it is inert without USAGE on the schema, which is.
+-- CAPABILITY: a role that is root or holds a root-of-trust power itself — a MUTATION, code-injection or control
+-- capability (M218-HC1: READ VISIBILITY != MUTATION AUTHORITY; schema or type USAGE, SELECT and pg_read_all_data are
+-- not powers — a type's USAGE is read-only and only creates dependencies — while sequence USAGE is: nextval mutates).
+-- A source holding one is reported SELF, and a path into one is reported. Effective privileges (has_*_privilege)
+-- count direct grants, PUBLIC, inherited membership and predefined-role powers; never a membership usable only
+-- through SET ROLE (the walk handles that).
 capability (oid, why) AS (
   SELECT r.oid, 'superuser' FROM role r WHERE r.rolsuper
   UNION ALL SELECT db.datdba, 'database owner' FROM db
   UNION ALL SELECT r.oid, 'predefined ' || r.rolname FROM role r
    WHERE r.rolname IN ('pg_database_owner', 'pg_write_all_data', 'pg_maintain', 'pg_execute_server_program',
-                       'pg_write_server_files', 'pg_read_server_files', 'pg_read_all_data')
+                       'pg_write_server_files', 'pg_read_server_files')
   UNION ALL SELECT cn.relowner, 'Central Needs table owner' FROM cn
   UNION ALL SELECT priv.nspowner, 'phoenix_private owner' FROM priv
   UNION ALL SELECT o.owner, 'owner of a phoenix_private ' || o.kind FROM priv_obj o
-  UNION ALL SELECT r.oid, 'grantee on phoenix_private or an object in it'
-    FROM (SELECT (pg_catalog.aclexplode(priv.nspacl)).grantee FROM priv WHERE priv.nspacl IS NOT NULL
-          UNION SELECT (pg_catalog.aclexplode(o.acl)).grantee FROM priv_obj o WHERE o.acl IS NOT NULL) g
+  UNION ALL SELECT r.oid, 'explicit CREATE, write or EXECUTE grant on phoenix_private or an object in it'
+    FROM (SELECT a.grantee, a.privilege_type, 'schema'::text AS kind, NULL::text AS sub
+            FROM priv CROSS JOIN LATERAL pg_catalog.aclexplode(priv.nspacl) a WHERE priv.nspacl IS NOT NULL
+          UNION ALL
+          SELECT a.grantee, a.privilege_type, o.kind, o.sub
+            FROM priv_obj o CROSS JOIN LATERAL pg_catalog.aclexplode(o.acl) a WHERE o.acl IS NOT NULL) g
     JOIN role r ON r.oid = g.grantee OR g.grantee = 0
-  UNION ALL SELECT r.oid, 'effective ' || p.priv || ' on schema phoenix_private'
-    FROM role r CROSS JOIN priv CROSS JOIN (VALUES ('USAGE'), ('CREATE')) AS p(priv)
-   WHERE pg_catalog.has_schema_privilege(r.oid, priv.oid, p.priv)
-  UNION ALL SELECT r.oid, 'effective privilege on a phoenix_private relation'
+   WHERE (g.kind = 'schema' AND g.privilege_type = 'CREATE')
+      OR (g.kind = 'relation' AND (g.privilege_type IN ('INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER', 'MAINTAIN')
+                                   OR (g.sub = 'S' AND g.privilege_type = 'USAGE')))
+      OR (g.kind = 'routine' AND g.privilege_type = 'EXECUTE')
+  UNION ALL SELECT r.oid, 'effective CREATE on schema phoenix_private'
+    FROM role r CROSS JOIN priv
+   WHERE pg_catalog.has_schema_privilege(r.oid, priv.oid, 'CREATE')
+  UNION ALL SELECT r.oid, 'effective write on a phoenix_private relation'
     FROM role r JOIN priv_obj o ON o.kind = 'relation'
-   WHERE CASE WHEN o.sub = 'S' THEN pg_catalog.has_sequence_privilege(r.oid, o.oid, 'USAGE, SELECT, UPDATE')
-              ELSE pg_catalog.has_table_privilege(r.oid, o.oid, 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN')
-                   OR pg_catalog.has_any_column_privilege(r.oid, o.oid, 'SELECT, INSERT, UPDATE, REFERENCES') END
+   WHERE CASE WHEN o.sub = 'S' THEN pg_catalog.has_sequence_privilege(r.oid, o.oid, 'USAGE, UPDATE')
+              ELSE pg_catalog.has_table_privilege(r.oid, o.oid, 'INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN')
+                   OR pg_catalog.has_any_column_privilege(r.oid, o.oid, 'INSERT, UPDATE, REFERENCES') END
   UNION ALL SELECT r.oid, 'effective EXECUTE on a phoenix_private routine'
     FROM role r JOIN priv_obj o ON o.kind = 'routine'
    WHERE pg_catalog.has_function_privilege(r.oid, o.oid, 'EXECUTE')
@@ -348,6 +359,36 @@ const RG_SOURCES = 'SELECT s.rolname AS source, r.rolbypassrls AS bypassrls, pg_
 const RG_TARGETS = 'SELECT pg_catalog.pg_get_userbyid(t.oid) AS target, pg_catalog.quote_ident(pg_catalog.pg_get_userbyid(t.oid)) AS ident, t.capable, t.why FROM target t ORDER BY 1';
 const RG_FINDINGS = 'SELECT f.* FROM finding f ORDER BY f.source, f.target, f.kind, f.path';
 const RG_CROSSCHECKS = `SELECT f.* FROM finding f WHERE f.kind LIKE 'CROSSCHECK%' ORDER BY f.source, f.target`;
+/**
+ * N20 explicit hardening (mirrors M218 VERIFY D; outside the capability model): the EXPLICIT ACLs of phoenix_private
+ * and of every relation, column and routine in it name no role but the owner. A hosted read observer's access comes
+ * from pg_read_all_data and never appears here; any explicit grant — even a read — does.
+ */
+const RG_PRIVATE_ACL = `
+  SELECT 'schema' AS kind, n.nspname::text AS object, a.privilege_type,
+         CASE WHEN a.grantee = 0 THEN 'PUBLIC' ELSE pg_catalog.pg_get_userbyid(a.grantee)::text END AS grantee
+    FROM pg_catalog.pg_namespace n
+   CROSS JOIN LATERAL pg_catalog.aclexplode(coalesce(n.nspacl, pg_catalog.acldefault('n', n.nspowner))) a
+   WHERE n.nspname = 'phoenix_private' AND a.grantee <> n.nspowner
+  UNION ALL
+  SELECT 'relation', c.relname::text, a.privilege_type,
+         CASE WHEN a.grantee = 0 THEN 'PUBLIC' ELSE pg_catalog.pg_get_userbyid(a.grantee)::text END
+    FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+   CROSS JOIN LATERAL pg_catalog.aclexplode(coalesce(c.relacl, pg_catalog.acldefault(CASE WHEN c.relkind = 'S' THEN 's' ELSE 'r' END::"char", c.relowner))) a
+   WHERE n.nspname = 'phoenix_private' AND a.grantee <> c.relowner
+  UNION ALL
+  SELECT 'column', c.relname::text || '.' || att.attname::text, a.privilege_type,
+         CASE WHEN a.grantee = 0 THEN 'PUBLIC' ELSE pg_catalog.pg_get_userbyid(a.grantee)::text END
+    FROM pg_catalog.pg_attribute att JOIN pg_catalog.pg_class c ON c.oid = att.attrelid
+    JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+   CROSS JOIN LATERAL pg_catalog.aclexplode(att.attacl) a
+   WHERE n.nspname = 'phoenix_private' AND att.attacl IS NOT NULL AND a.grantee <> c.relowner
+  UNION ALL
+  SELECT 'routine', p.oid::pg_catalog.regprocedure::text, a.privilege_type,
+         CASE WHEN a.grantee = 0 THEN 'PUBLIC' ELSE pg_catalog.pg_get_userbyid(a.grantee)::text END
+    FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
+   CROSS JOIN LATERAL pg_catalog.aclexplode(coalesce(p.proacl, pg_catalog.acldefault('f', p.proowner))) a
+   WHERE n.nspname = 'phoenix_private' AND a.grantee <> p.proowner`;
 const roleGraph = (select: string, graph = ROLE_GRAPH) => `${graph}\n${select}`;
 const rgMutant = (from: string, to: string) => ROLE_GRAPH.replace(from, to);
 
@@ -1162,7 +1203,10 @@ run('C6 — real-corpus negative / adversarial matrix (disposable rig) — dynam
     const targets = await admin<{ target: string; ident: string; capable: boolean; why: string }>(roleGraph(RG_TARGETS));
     const target = (name: string) => targets.find((t) => t.target === name)!;
     expect(targets.filter((t) => t.capable).map((t) => t.target)).toEqual(expect.arrayContaining([owner, 'pg_database_owner', 'pg_write_all_data',
-      'pg_maintain', 'pg_execute_server_program', 'pg_write_server_files', 'pg_read_server_files', 'pg_read_all_data']));
+      'pg_maintain', 'pg_execute_server_program', 'pg_write_server_files', 'pg_read_server_files']));
+    // M218-HC1: read visibility is not a capability — pg_read_all_data (USAGE on every schema, SELECT on every
+    // relation, phoenix_private included) is no target at all.
+    expect(targets.map((t) => t.target)).not.toContain('pg_read_all_data');
     for (const why of ['superuser', 'database owner', 'Central Needs table owner', 'phoenix_private owner', 'owner of a phoenix_private routine',
       'owner of a routine the Central Needs lifecycle runs', 'owner of a routine a Central Needs or phoenix_private relation depends on']) {
       expect(target(owner).why).toContain(why);
@@ -1177,6 +1221,9 @@ run('C6 — real-corpus negative / adversarial matrix (disposable rig) — dynam
     // kind — SET, INHERIT, SET then INHERIT, ADMIN, bare membership — leads from a source into any target, and
     // pg_has_role (MEMBER / USAGE / SET / WITH ADMIN OPTION) agrees with the walk for every pair.
     expect(await admin(roleGraph(RG_FINDINGS))).toEqual([]);
+    // And the explicit hardening M218 VERIFY D proves at apply time still holds: no explicit grant on the private schema
+    // or anything in it, to anyone but its owner (M218-HC1 tolerates only inherited read visibility, never a grant).
+    expect(await admin(RG_PRIVATE_ACL)).toEqual([]);
 
     // Refusal, from each source's OWN session (SET ROLE is checked against the session user): every target refused.
     await rig.asAdmin(async (c: any) => {
@@ -1213,7 +1260,8 @@ run('C6 — real-corpus negative / adversarial matrix (disposable rig) — dynam
     // the cross-check — MEMBER/USAGE, SET and ADMIN columns alike.
     const tag = `c6_rg_${process.pid}_${Date.now().toString(36)}`;
     const p = { set: `${tag}_set`, inh: `${tag}_inh`, mid: `${tag}_mid`, adm: `${tag}_adm`, mem: `${tag}_mem`, mix: `${tag}_mix`,
-      hop: `${tag}_hop`, own: `${tag}_own`, svc: `${tag}_svc` };
+      hop: `${tag}_hop`, own: `${tag}_own`, svc: `${tag}_svc`, obs: `${tag}_obs`, obsx: `${tag}_obsx`, obsi: `${tag}_obsi`,
+      obsw: `${tag}_obsw` };
     for (const point of [RG_IMPLICIT_DBA_EDGE, RG_SET_STEP, RG_LAST_ADMIN]) expect(ROLE_GRAPH.split(point), point).toHaveLength(2);
     const probe = await rig.asAdmin(async (c: any) => {
       await c.query('BEGIN');
@@ -1236,8 +1284,23 @@ run('C6 — real-corpus negative / adversarial matrix (disposable rig) — dynam
           `CREATE ROLE ${p.own} NOLOGIN`, `GRANT phoenix_demo_purger TO ${p.own} WITH INHERIT FALSE, SET TRUE`,
           // (g) INHERIT into the BYPASSRLS API role that keeps EXECUTE on the retained Central Needs writers
           `CREATE ROLE ${p.svc} NOLOGIN`, `GRANT service_role TO ${p.svc} WITH INHERIT TRUE, SET FALSE`,
+          // (h) M218-HC1: a hosted-style read observer — BYPASSRLS, inheriting pg_read_all_data, nothing else: NOT a finding
+          `CREATE ROLE ${p.obs} NOLOGIN BYPASSRLS`, `GRANT pg_read_all_data TO ${p.obs}`,
+          // (i) M218-HC1: the same observer with a SET-only path into pg_write_all_data: a finding (role escalation)
+          `CREATE ROLE ${p.obsx} NOLOGIN BYPASSRLS`, `GRANT pg_read_all_data TO ${p.obsx}`,
+          `GRANT pg_write_all_data TO ${p.obsx} WITH INHERIT FALSE, SET TRUE`,
+          // (j) M218-HC1: an observer with an INHERIT path into the database owner: a finding (and capable itself)
+          `CREATE ROLE ${p.obsi} NOLOGIN BYPASSRLS`, `GRANT pg_read_all_data TO ${p.obsi}`,
+          `GRANT ${ownerIdent} TO ${p.obsi} WITH INHERIT TRUE, SET FALSE`,
+          // (k) M218-HC1: an observer with an explicit write on the private store: capable itself (explicit + effective)
+          `CREATE ROLE ${p.obsw} NOLOGIN BYPASSRLS`, `GRANT pg_read_all_data TO ${p.obsw}`,
+          `GRANT UPDATE ON phoenix_private.central_needs_lifecycle_attestations TO ${p.obsw}`,
         ]) await c.query(sql);
         const findings = (await c.query(roleGraph(RG_FINDINGS))).rows;
+        // The observer really holds read visibility of the private store (so its absence below is not vacuous).
+        const [observer] = (await c.query(`SELECT has_schema_privilege($1::name, 'phoenix_private', 'USAGE') AS private_usage,
+          has_table_privilege($1::name, 'phoenix_private.central_needs_lifecycle_attestations', 'SELECT') AS store_select,
+          has_table_privilege($1::name, 'phoenix_private.central_needs_lifecycle_attestations', 'INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN') AS store_write`, [p.obs])).rows;
         const noImplicit = (await c.query(roleGraph(RG_CROSSCHECKS, rgMutant(RG_IMPLICIT_DBA_EDGE, 'JOIN role r ON false')))).rows;
         const setFromInherit = (await c.query(roleGraph(RG_CROSSCHECKS, rgMutant(RG_SET_STEP, 'w.all_set AND e.inh,')))).rows;
         const noLastAdmin = (await c.query(roleGraph(RG_CROSSCHECKS, rgMutant(RG_LAST_ADMIN, 'false,')))).rows;
@@ -1260,7 +1323,7 @@ run('C6 — real-corpus negative / adversarial matrix (disposable rig) — dynam
         await c.query(`SET LOCAL SESSION AUTHORIZATION ${p.svc}`);
         const svcSet = await refusal(c.query('SET LOCAL ROLE service_role'));
         await c.query('ROLLBACK TO SAVEPOINT rg');
-        return { findings, noImplicit, setFromInherit, noLastAdmin, blind, became, becamePurger, inhSet, svcSet };
+        return { findings, observer, noImplicit, setFromInherit, noLastAdmin, blind, became, becamePurger, inhSet, svcSet };
       } finally {
         await c.query('ROLLBACK');
       }
@@ -1276,8 +1339,19 @@ run('C6 — real-corpus negative / adversarial matrix (disposable rig) — dynam
       `${p.mix} → pg_write_server_files: SET_THEN_INHERIT`, `${p.hop} → pg_write_server_files: INHERIT`,
       `${p.own} → phoenix_demo_purger: SET`,
       `${p.svc} → service_role: INHERIT`,
+      `${p.obsx} → pg_write_all_data: SET`,
+      `${p.obsi} → ${owner}: INHERIT`, `${p.obsi} → pg_database_owner: INHERIT`, `${p.obsi} → ${p.obsi}: SELF`,
+      ...viaOwner.map((r) => `${p.obsi} → ${r}: INHERIT`),
+      `${p.obsw} → ${p.obsw}: SELF`,
     ].sort());
+    // M218-HC1: the pure read observer is tolerated for what it reads — no SELF, no path — although it does read.
+    expect(probe.observer).toEqual({ private_usage: true, store_select: true, store_write: false });
+    expect(probe.findings.filter((r: any) => r.source === p.obs || r.target === p.obs)).toEqual([]);
     const at = (s: string, t: string) => probe.findings.find((r: any) => r.source === s && r.target === t);
+    expect(at(p.obsx, 'pg_write_all_data')).toMatchObject({ path: `${p.obsx} -[.S.]-> pg_write_all_data`, set_reachable: true, inherit_reachable: false });
+    expect(at(p.obsi, owner)).toMatchObject({ path: `${p.obsi} -[I..]-> ${owner}`, set_reachable: false, inherit_reachable: true });
+    expect(at(p.obsw, p.obsw).why_target).toContain('explicit CREATE, write or EXECUTE grant on phoenix_private or an object in it');
+    expect(at(p.obsw, p.obsw).why_target).toContain('effective write on a phoenix_private relation');
     expect(at(p.set, 'pg_write_all_data')).toMatchObject({ path: `${p.set} -[.S.]-> pg_write_all_data`, set_reachable: true, inherit_reachable: false, admin_on_path: false });
     expect(at(p.inh, owner)).toMatchObject({ path: `${p.inh} -[I..]-> ${p.mid} -[I..]-> ${owner}`, set_reachable: false, inherit_reachable: true, admin_on_path: false });
     expect(at(p.inh, 'pg_database_owner').path).toBe(`${p.inh} -[I..]-> ${p.mid} -[I..]-> ${owner} -[IS. implicit]-> pg_database_owner`);
@@ -1289,7 +1363,8 @@ run('C6 — real-corpus negative / adversarial matrix (disposable rig) — dynam
     expect(kinds(probe.noImplicit)).toEqual([
       `${p.inh} → pg_database_owner: CROSSCHECK pg_has_role(member,usage,set,admin)=t,t,f,f walk=f,f,f,f`,
       `${p.mid} → pg_database_owner: CROSSCHECK pg_has_role(member,usage,set,admin)=t,t,f,f walk=f,f,f,f`,
-    ]);
+      `${p.obsi} → pg_database_owner: CROSSCHECK pg_has_role(member,usage,set,admin)=t,t,f,f walk=f,f,f,f`,
+    ].sort());
     expect(kinds(probe.setFromInherit)).toEqual(expect.arrayContaining([
       `${p.set} → pg_write_all_data: CROSSCHECK pg_has_role(member,usage,set,admin)=t,f,t,f walk=t,f,f,f`,
       `${p.own} → phoenix_demo_purger: CROSSCHECK pg_has_role(member,usage,set,admin)=t,f,t,f walk=t,f,f,f`,

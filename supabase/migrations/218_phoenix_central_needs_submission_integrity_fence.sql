@@ -30,6 +30,19 @@
 --   holds a Central Needs write, TRUNCATE, TRIGGER, REFERENCES or MAINTAIN
 --   privilege, TRIGGER on any public relation, or CREATE on schema public or
 --   phoenix_private.
+--   READ VISIBILITY != MUTATION AUTHORITY (M218-HC1): the seal is a
+--   mutation-capability seal. Effective read-only access — USAGE on a schema,
+--   SELECT on a relation — authorizes no lifecycle transition and is not a
+--   breach. A hosted platform read observer that inherits PostgreSQL's
+--   predefined pg_read_all_data (USAGE on every schema, SELECT on every
+--   relation) is therefore tolerated for what it can read; it is NOT root, and
+--   any write, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN or CREATE privilege it
+--   acquires on a guarded object is a breach like any other role's (an owner
+--   is exempt on its own object; ownership of the Central Needs and private
+--   objects is the migration owner's, VERIFY A). The capability test is by
+--   privilege, never by role name, and counts inherited (effective)
+--   privileges; a SET-only escalation path is certified by the role graph
+--   (C6 N20).
 --
 -- THE INVARIANT (the authoritative chain)
 --   UNTRUSTED CALLER -> EXPLICIT RPC CAPABILITY -> SECURITY-DEFINER BOUNDARY
@@ -149,10 +162,18 @@
 --     SUBMIT attestation for the revision fails closed on the store's
 --     once_key (SQLSTATE 23505).
 --   * Functions later created in phoenix_private receive EXECUTE for
---     service_role from the global function default; no non-root role has
---     USAGE on the schema, so none can reach them. Default privileges held by
---     roles other than the migration owner are outside this migration's
---     authority and are not changed.
+--     service_role from the global function default. The explicit ACLs of
+--     phoenix_private and its relations and routines are proven owner-only
+--     when this migration applies (VERIFY D: schema ACL and object set; the
+--     store check in B/C; VERIFY E: routine ACLs); after M218-HC1 the run-time
+--     seal re-checks mutation capabilities only, not explicit read grants. A
+--     hosted read observer (a member of pg_read_all_data) can resolve names
+--     there, but pg_read_all_data confers no EXECUTE: every future routine in
+--     phoenix_private must REVOKE ALL FROM PUBLIC, service_role itself. Such an
+--     observer can also reference the store's row type and take ACCESS SHARE
+--     locks, as on every relation — an availability exposure, not an integrity
+--     one. Default privileges held by roles other than the migration owner
+--     are outside this migration's authority and are not changed.
 -- ===========================================================================
 
 BEGIN;
@@ -399,7 +420,10 @@ $precondition$;
 -- 2. The private trusted schema. Owned by the migration owner (the root of
 --    trust); no privilege of any kind for PUBLIC, anon, authenticated or
 --    service_role — not USAGE, not CREATE. It is not a Data API schema, and no
---    client policy stands in for this isolation.
+--    client policy stands in for this isolation. PRIVATE means private from
+--    the application and the Data API: a hosted platform read observer that
+--    inherits pg_read_all_data may still read it (M218-HC1), which authorizes
+--    nothing — the seal (section 5) forbids every mutation capability.
 -- ----------------------------------------------------------------------------
 CREATE SCHEMA phoenix_private;
 REVOKE ALL ON SCHEMA phoenix_private FROM PUBLIC, anon, authenticated, service_role;
@@ -440,7 +464,11 @@ CREATE TABLE phoenix_private.central_needs_lifecycle_attestations (
 REVOKE ALL ON TABLE phoenix_private.central_needs_lifecycle_attestations FROM PUBLIC, anon, authenticated, service_role;
 
 -- Defence in depth behind the schema isolation: RLS on and FORCED, and no
--- policy at all, so even a future accidental grant exposes no row.
+-- policy at all, so a future accidental grant exposes no row to a reader
+-- without BYPASSRLS. A BYPASSRLS read observer (a hosted role inheriting
+-- pg_read_all_data, M218-HC1) does see the rows; reading an attestation
+-- authorizes nothing (both fences require one written in the same
+-- transaction by the canonical owner-run RPC).
 ALTER TABLE phoenix_private.central_needs_lifecycle_attestations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE phoenix_private.central_needs_lifecycle_attestations FORCE ROW LEVEL SECURITY;
 
@@ -664,14 +692,18 @@ COMMENT ON FUNCTION phoenix_private.central_needs_submission_state_digest_v1(uui
   'C6-F1 FINAL (218) internal: deterministic SHA-256 of the readiness-sensitive, revision-owned state of one plan revision (sessions, files, records, mappings, overrides, batches, entries, column mappings, region versions, need lines, links; explicit positional rows, uuid order, UTC timestamps with era). STABLE: computed once, by the canonical submit, in the same statement (snapshot) as readiness, and written into the private SUBMIT attestation. Not reachable by any non-root role.';
 
 -- ----------------------------------------------------------------------------
--- 5. The seal predicate. One row per non-root capability that could change a
---    submitted revision's state or inject code into an owner-run lifecycle
---    transaction. Non-root: every role that is not a true superuser, not the
---    database owner and not a predefined pg_* role (a member of one is
---    enumerated itself); an object's owner is exempt on its own object.
---    Effective privileges (has_*_privilege) cover direct grants, PUBLIC and
---    inherited membership. VERIFY requires it empty; submit and approve refuse
---    while it is not (central_needs_capability_seal_breached).
+-- 5. The seal predicate — a MUTATION-capability seal. One row per non-root
+--    capability that could change a submitted revision's state or inject code
+--    into an owner-run lifecycle transaction. Non-root: every role that is not
+--    a true superuser, not the database owner and not a predefined pg_* role
+--    (a member of one is enumerated itself); an object's owner is exempt on
+--    its own object. Effective privileges (has_*_privilege) cover direct
+--    grants, PUBLIC and inherited membership (a membership usable only
+--    through SET ROLE is certified by the role graph, C6 N20). Read
+--    visibility (USAGE, SELECT) is not a capability (M218-HC1): a member of
+--    pg_read_all_data is reported only for what it can change, like every
+--    other role. VERIFY requires it empty; submit and approve refuse while it
+--    is not (central_needs_capability_seal_breached).
 -- ----------------------------------------------------------------------------
 CREATE FUNCTION phoenix_private.central_needs_capability_breaches_v1()
 RETURNS SETOF text
@@ -727,14 +759,16 @@ AS $$
      AND u.oid <> c.relowner
      AND pg_catalog.has_table_privilege(u.oid, c.oid, 'TRIGGER')
   UNION ALL
-  -- (c) no non-root CREATE on public or the private schema, no non-root USAGE
-  --     on the private schema
+  -- (c) no non-root CREATE on public or the private schema: a new object there
+  --     is code or state an owner-run transaction could resolve. USAGE alone
+  --     only looks names up (M218-HC1: pg_read_all_data holds it on every
+  --     schema), so it is not a breach; the private relations and routines
+  --     keep owner-only ACLs, proven when M218 applies (VERIFY B/C, D, E).
   SELECT pg_catalog.format('%s holds %s on schema %I', u.rolname, p.priv, s.nspname)
     FROM nonroot u
    CROSS JOIN guarded_schema s
-   CROSS JOIN (VALUES ('CREATE'), ('USAGE')) AS p(priv)
+   CROSS JOIN (VALUES ('CREATE')) AS p(priv)
    WHERE u.oid <> s.nspowner
-     AND (p.priv = 'CREATE' OR s.nspname = 'phoenix_private')
      AND pg_catalog.has_schema_privilege(u.oid, s.oid, p.priv)
   UNION ALL
   -- (d) no object in public or the private schema owned by an API role
@@ -755,7 +789,7 @@ $$;
 REVOKE ALL ON FUNCTION phoenix_private.central_needs_capability_breaches_v1() FROM PUBLIC, anon, authenticated, service_role;
 
 COMMENT ON FUNCTION phoenix_private.central_needs_capability_breaches_v1() IS
-  'C6-F1 FINAL (218) internal: the seal predicate. Lists every non-root capability (effective: direct, PUBLIC or inherited) that could change a submitted Central Needs revision or inject code into an owner-run lifecycle transaction: Central Needs write/TRUNCATE/REFERENCES/TRIGGER/MAINTAIN, TRIGGER on any public relation, CREATE on public or phoenix_private, USAGE on phoenix_private, objects in those schemas owned by anon/authenticated/service_role. Empty after M218 (VERIFY); submit and approve refuse while it is not.';
+  'C6-F1 FINAL (218, HC1) internal: the mutation-capability seal. Lists every non-root capability (effective: direct, PUBLIC or inherited) that could change a submitted Central Needs revision or inject code into an owner-run lifecycle transaction: Central Needs or private-store write/TRUNCATE/REFERENCES/TRIGGER/MAINTAIN (table or column level), TRIGGER on any public relation, CREATE on public or phoenix_private, objects in those schemas owned by anon/authenticated/service_role. Read visibility (USAGE, SELECT — e.g. a hosted observer inheriting pg_read_all_data) authorizes nothing and is not listed. Empty after M218 (VERIFY); submit and approve refuse while it is not.';
 
 -- ----------------------------------------------------------------------------
 -- 6. The submission fence. A revision may move from DRAFT to SUBMITTED only in
@@ -1539,10 +1573,12 @@ BEGIN
 
   -- ==========================================================================
   -- B/C. SERVICE_ROLE, AUTHENTICATED, ANON — and every other non-root role:
-  --    the seal predicate is empty (no Central Needs write, TRUNCATE,
-  --    REFERENCES, TRIGGER or MAINTAIN; no TRIGGER on any public relation; no
-  --    CREATE on public or phoenix_private; no USAGE on phoenix_private; no
-  --    API-role-owned object there).
+  --    the seal predicate is empty (no Central Needs or private-store write,
+  --    TRUNCATE, REFERENCES, TRIGGER or MAINTAIN; no TRIGGER on any public
+  --    relation; no CREATE on public or phoenix_private; no API-role-owned
+  --    object there). Read-only visibility is not checked here (HC1); the
+  --    explicit ACLs of the private schema and store are (D, and the store
+  --    check below).
   -- ==========================================================================
   SELECT string_agg(b.breach, '; ' ORDER BY b.breach) INTO v_code
     FROM phoenix_private.central_needs_capability_breaches_v1() AS b(breach);

@@ -582,9 +582,26 @@ guard('C6-F1/M218 static — the seal predicate (§7, §9.4)', () => {
     expect(T).toContain("(VALUES ('INSERT'), ('UPDATE'), ('DELETE'), ('TRUNCATE'), ('REFERENCES'), ('TRIGGER'), ('MAINTAIN')) AS p(priv) WHERE u.oid <> cn.relowner AND pg_catalog.has_table_privilege(u.oid, cn.oid, p.priv)");
     expect(T).toContain("(VALUES ('INSERT'), ('UPDATE'), ('REFERENCES')) AS p(priv) WHERE u.oid <> cn.relowner AND NOT pg_catalog.has_table_privilege(u.oid, cn.oid, p.priv) AND pg_catalog.has_any_column_privilege(u.oid, cn.oid, p.priv)");
     expect(T).toContain("WHERE c.relkind IN ('r', 'p', 'v', 'm', 'f') AND u.oid <> c.relowner AND pg_catalog.has_table_privilege(u.oid, c.oid, 'TRIGGER')");
-    expect(T).toContain("WHERE u.oid <> s.nspowner AND (p.priv = 'CREATE' OR s.nspname = 'phoenix_private') AND pg_catalog.has_schema_privilege(u.oid, s.oid, p.priv)");
+    expect(T).toContain("CROSS JOIN (VALUES ('CREATE')) AS p(priv) WHERE u.oid <> s.nspowner AND pg_catalog.has_schema_privilege(u.oid, s.oid, p.priv)");
     expect(T).toContain("WHERE r.rolname IN ('anon', 'authenticated', 'service_role')");
     expect(T).toContain("WHERE n.nspname IN ('public', 'phoenix_private')");
+  });
+
+  it('M218-HC1: a MUTATION-capability seal — no read privilege (USAGE, SELECT) is ever a breach, and tolerance is by capability, never by a hosted role name', () => {
+    // Literals are what this checks, so the body is comment-stripped but NOT literal-blanked (executableSql would
+    // blank them). The EXACT literal inventory: every privilege named is a mutation, code-injection or ownership
+    // capability (no USAGE / SELECT in any case or combination), and the only role names are the API roles of the
+    // ownership branch (d) — non-root is defined by attributes, never by a hosted role name.
+    const code = stripSqlComments(bodyOf(fn(BREACHES)));
+    expect(code).toContain("(VALUES ('CREATE')) AS p(priv)");
+    const literals = [...new Set([...code.matchAll(/'((?:[^']|'')*)'/g)].map((m) => m[1]))].sort();
+    expect(literals).toEqual([
+      '%s holds %s on %I.%I', '%s holds %s on schema %I', '%s holds TRIGGER on public.%I', '%s holds a column-level %s on %I.%I',
+      '%s owns %s %I.%I',
+      'CREATE', 'DELETE', 'INSERT', 'MAINTAIN', 'REFERENCES', 'TRIGGER', 'TRUNCATE', 'UPDATE',
+      '^pg_', 'anon', 'authenticated', ...CN_TABLES, 'central_needs_lifecycle_attestations',
+      'f', 'm', 'operator', 'p', 'phoenix_private', 'public', 'r', 'relation', 'routine', 'service_role', 'type', 'v',
+    ].sort());
   });
 });
 

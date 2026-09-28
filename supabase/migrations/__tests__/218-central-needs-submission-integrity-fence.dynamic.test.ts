@@ -842,7 +842,7 @@ run('C6-F1/M218 FINAL capability-isolated sealed submission — dynamic (Postgre
       expect(await m218Objects()).toEqual(NOTHING);
     });
 
-    it('VERIFY A/B/C is not vacuous: root ownership, and every non-root capability — Central Needs DML (table, column, PUBLIC, inherited), TRIGGER anywhere in public, CREATE, private USAGE, API-role-owned objects, the service_role EXECUTE surface, the store ACL', async () => {
+    it('VERIFY A/B/C is not vacuous: root ownership, and every non-root capability — Central Needs DML (table, column, PUBLIC, inherited), TRIGGER anywhere in public, CREATE, API-role-owned objects, the service_role EXECUTE surface, the store ACL; an explicit private-schema grant is still refused (by VERIFY D: HC1)', async () => {
       const text = m218Uncommitted();
       const breach = (b: string) => fail(`a non-root capability remains: ${b}`);
       expect(await rehearseM218(beforeVerify(text, `CREATE ROLE p218f_a1 NOLOGIN; ALTER TABLE public.central_needs_need_lines OWNER TO p218f_a1;`)))
@@ -873,8 +873,16 @@ run('C6-F1/M218 FINAL capability-isolated sealed submission — dynamic (Postgre
         .toEqual(breach('service_role holds CREATE on schema public'));
       expect(await rehearseM218(beforeVerify(text, 'GRANT CREATE ON SCHEMA public TO phoenix_demo_purger;')))
         .toEqual(breach('phoenix_demo_purger holds CREATE on schema public'));
-      expect(await rehearseM218(beforeVerify(text, `GRANT USAGE ON SCHEMA ${PRIVATE} TO service_role;`)))
-        .toEqual(breach('service_role holds USAGE on schema phoenix_private'));
+      // HC1: USAGE is read visibility, not a seal capability — but the explicit private ACL stays owner-only (VERIFY D),
+      // for every explicit grantee: API roles, PUBLIC, and a hosted-style read observer alike.
+      for (const grantee of ['service_role', 'anon', 'authenticated', 'PUBLIC']) {
+        expect(await rehearseM218(beforeVerify(text, `GRANT USAGE ON SCHEMA ${PRIVATE} TO ${grantee};`)), grantee)
+          .toEqual(fail('a role other than the owner holds a privilege on phoenix_private'));
+      }
+      const explicitObserver = nextRole('hc1_explicit_observer');
+      expect(await rehearseM218(beforeVerify(text, `GRANT USAGE ON SCHEMA ${PRIVATE} TO ${explicitObserver};`),
+        [`CREATE ROLE ${explicitObserver} NOLOGIN BYPASSRLS`, `GRANT pg_read_all_data TO ${explicitObserver}`]))
+        .toEqual(fail('a role other than the owner holds a privilege on phoenix_private'));
       expect(await rehearseM218(beforeVerify(text, `GRANT CREATE ON SCHEMA ${PRIVATE} TO authenticated;`)))
         .toEqual(breach('authenticated holds CREATE on schema phoenix_private'));
       expect(await rehearseM218(beforeVerify(text, `CREATE FUNCTION public.p218f_left_behind(text) RETURNS text LANGUAGE sql AS $f$ SELECT $1 $f$;
@@ -1170,6 +1178,136 @@ run('C6-F1/M218 FINAL capability-isolated sealed submission — dynamic (Postgre
       }
       expect(await rehearseM218(m218Uncommitted())).toBeNull();
       expect(await m218Objects()).toEqual(NOTHING);
+    });
+
+    // =======================================================================
+    // M218-HC1 — hosted read observers: READ VISIBILITY != MUTATION AUTHORITY.
+    // Hosted Supabase has roles that inherit pg_read_all_data (USAGE on every
+    // schema, SELECT on every relation). Reading authorizes no transition, so
+    // it must not stop M218; every mutation capability still must. Disposable
+    // roles only, inside rehearsals that are always rolled back.
+    // =======================================================================
+    describe('M218-HC1 hosted read observers', () => {
+      const breach = (b: string) => fail(`a non-root capability remains: ${b}`);
+      const observer = (role: string) => [`CREATE ROLE ${role} NOLOGIN BYPASSRLS`, `GRANT pg_read_all_data TO ${role}`];
+      const READ_ONLY = { private_usage: true, private_create: false, public_create: false, store_select: true, store_write: false,
+        cn_write: false, public_trigger: false, secdef_execute: false, private_execute: false, breaches: 0 };
+      const STORE_REL = 'phoenix_private.central_needs_lifecycle_attestations';
+      /** REHEARSAL ONLY: `setup`, then M218 and — when it applied — what `role` can do afterwards; ONE transaction, always rolled back. */
+      const rehearseAndInspect = (setup: string[], role: string, text = m218Uncommitted()) => rig.asAdmin(async (c: any) => {
+        await c.query('BEGIN');
+        try {
+          for (const s of setup) await c.query(s);
+          const refusal = await c.query(text).then(() => null,
+            (e: any) => ({ code: String(e.code), message: String(e.message), detail: e.detail } as Refusal));
+          if (refusal) return { refusal, caps: null };
+          const [caps] = (await c.query(`SELECT
+              pg_catalog.has_schema_privilege($1::name, '${PRIVATE}', 'USAGE') AS private_usage,
+              pg_catalog.has_schema_privilege($1::name, '${PRIVATE}', 'CREATE') AS private_create,
+              pg_catalog.has_schema_privilege($1::name, 'public', 'CREATE') AS public_create,
+              pg_catalog.has_table_privilege($1::name, '${STORE}', 'SELECT') AS store_select,
+              pg_catalog.has_table_privilege($1::name, '${STORE}', 'INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN')
+                OR pg_catalog.has_any_column_privilege($1::name, '${STORE}', 'INSERT, UPDATE, REFERENCES') AS store_write,
+              EXISTS (SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+                       WHERE n.nspname = 'public' AND c.relkind = 'r' AND c.relname LIKE 'central\\_needs\\_%'
+                         AND pg_catalog.has_table_privilege($1::name, c.oid, 'INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN')) AS cn_write,
+              EXISTS (SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+                       WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p', 'v', 'm', 'f')
+                         AND pg_catalog.has_table_privilege($1::name, c.oid, 'TRIGGER')) AS public_trigger,
+              EXISTS (SELECT 1 FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
+                       WHERE n.nspname IN ('public', '${PRIVATE}') AND p.prosecdef
+                         AND pg_catalog.has_function_privilege($1::name, p.oid, 'EXECUTE')) AS secdef_execute,
+              EXISTS (SELECT 1 FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
+                       WHERE n.nspname = '${PRIVATE}' AND pg_catalog.has_function_privilege($1::name, p.oid, 'EXECUTE')) AS private_execute,
+              (SELECT count(*)::int FROM ${BREACHES}()) AS breaches`, [role])).rows;
+          return { refusal: null, caps };
+        } finally {
+          await c.query('ROLLBACK');
+        }
+      });
+
+      it('HC1 A: a hosted-style read observer (BYPASSRLS, inheriting pg_read_all_data, nothing else) does not stop M218 — it applies; the observer then resolves phoenix_private and reads the store, yet can create, write or trigger nothing, and the seal stays empty', async () => {
+        const obs = nextRole('hc1_read_observer');
+        expect(await rehearseAndInspect(observer(obs), obs)).toEqual({ refusal: null, caps: READ_ONLY });
+        expect(await m218Objects()).toEqual(NOTHING);
+      });
+
+      it('HC1 B: a member of pg_write_all_data refuses M218 — VERIFY B/C names its Central Needs and private-store writes (never a read) — and nothing is applied', async () => {
+        const w = nextRole('hc1_write_all');
+        const out = await rehearseAndInspect([`CREATE ROLE ${w} NOLOGIN`, `GRANT pg_write_all_data TO ${w}`], w);
+        expect(out.caps).toBeNull();
+        expect(out.refusal).toMatchObject({ code: 'P0001' });
+        const message = out.refusal!.message;
+        const PREFIX = 'VERIFY FAILED (218): a non-root capability remains: ';
+        expect(message.startsWith(PREFIX)).toBe(true);
+        // Exactly its writes — INSERT, UPDATE, DELETE on the 13 Central Needs tables and the store — and never a read.
+        const rels = [...CN_TABLES.map((t) => `public.${t}`), STORE_REL];
+        expect(message.slice(PREFIX.length).split('; ').sort())
+          .toEqual(rels.flatMap((r) => ['DELETE', 'INSERT', 'UPDATE'].map((p) => `${w} holds ${p} on ${r}`)).sort());
+        expect(await m218Objects()).toEqual(NOTHING);
+      });
+
+      it('HC1 G: a read observer that is also a member of pg_maintain refuses M218 (MAINTAIN on every guarded relation), and nothing is applied', async () => {
+        const m = nextRole('hc1_read_maintain');
+        const out = await rehearseAndInspect([...observer(m), `GRANT pg_maintain TO ${m}`], m);
+        expect(out.caps).toBeNull();
+        const rels = [...CN_TABLES.map((t) => `public.${t}`), STORE_REL];
+        expect(out.refusal).toEqual(breach(rels.map((r) => `${m} holds MAINTAIN on ${r}`).sort().join('; ')));
+        expect(await m218Objects()).toEqual(NOTHING);
+      });
+
+      it('HC1 C: read + CREATE — CREATE on public held before M218 is converged away (11c) and M218 applies with none left; CREATE on public or phoenix_private still held at VERIFY refuses M218', async () => {
+        const a = nextRole('hc1_read_create');
+        expect(await rehearseAndInspect([...observer(a), `GRANT CREATE ON SCHEMA public TO ${a}`], a)).toEqual({ refusal: null, caps: READ_ONLY });
+        const text = m218Uncommitted();
+        expect(await rehearseM218(beforeVerify(text, `GRANT CREATE ON SCHEMA public TO ${a};`), observer(a)))
+          .toEqual(breach(`${a} holds CREATE on schema public`));
+        expect(await rehearseM218(beforeVerify(text, `GRANT CREATE ON SCHEMA ${PRIVATE} TO ${a};`), observer(a)))
+          .toEqual(breach(`${a} holds CREATE on schema phoenix_private`));
+        expect(await m218Objects()).toEqual(NOTHING);
+      });
+
+      it('HC1 D: read + TRIGGER — a TRIGGER on a public relation held before M218 is converged away (11b); a TRIGGER still held at VERIFY refuses M218', async () => {
+        const t = nextRole('hc1_read_trigger');
+        expect(await rehearseAndInspect([...observer(t), `GRANT TRIGGER ON public.audit_logs TO ${t}`], t)).toEqual({ refusal: null, caps: READ_ONLY });
+        expect(await rehearseM218(beforeVerify(m218Uncommitted(), `GRANT TRIGGER ON public.audit_logs TO ${t};`), observer(t)))
+          .toEqual(breach(`${t} holds TRIGGER on public.audit_logs`));
+        // On a Central Needs table TRIGGER is caught twice, by (a) and by (b), with the same text.
+        const cnTrigger = `${t} holds TRIGGER on public.central_needs_plan_revisions`;
+        expect(await rehearseM218(beforeVerify(m218Uncommitted(), `GRANT TRIGGER ON public.central_needs_plan_revisions TO ${t};`), observer(t)))
+          .toEqual(breach(`${cnTrigger}; ${cnTrigger}`));
+        expect(await m218Objects()).toEqual(NOTHING);
+      });
+
+      it('HC1 E: read + private-store write — any write on the attestation store (table or column level) held at VERIFY refuses M218', async () => {
+        const e = nextRole('hc1_private_write');
+        for (const priv of ['INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER', 'MAINTAIN']) {
+          expect(await rehearseM218(beforeVerify(m218Uncommitted(), `GRANT ${priv} ON ${STORE} TO ${e};`), observer(e)), priv)
+            .toEqual(breach(`${e} holds ${priv} on phoenix_private.central_needs_lifecycle_attestations`));
+        }
+        for (const priv of ['INSERT', 'UPDATE', 'REFERENCES']) {
+          expect(await rehearseM218(beforeVerify(m218Uncommitted(), `GRANT ${priv} (state_digest) ON ${STORE} TO ${e};`), observer(e)), `column ${priv}`)
+            .toEqual(breach(`${e} holds a column-level ${priv} on phoenix_private.central_needs_lifecycle_attestations`));
+        }
+        expect(await m218Objects()).toEqual(NOTHING);
+      });
+
+      it('HC1 F: an observer that INHERITS a write-capable role is that role for the seal — M218 is refused naming both (SET-only paths are the role graph\'s: C6 N20)', async () => {
+        const o = nextRole('hc1_escalating_observer');
+        const mid = nextRole('hc1_writer');
+        const out = await rehearseM218(m218Uncommitted(), [...observer(o), `CREATE ROLE ${mid} NOLOGIN`, `GRANT ${mid} TO ${o}`,
+          `GRANT UPDATE ON public.central_needs_need_lines TO ${mid}`]);
+        expect(out).toEqual(breach([`${o} holds UPDATE on public.central_needs_need_lines`,
+          `${mid} holds UPDATE on public.central_needs_need_lines`].sort().join('; ')));
+        expect(await m218Objects()).toEqual(NOTHING);
+      });
+
+      it('HC1 F2 (documented boundary): the seal counts inherited privileges only — an observer with a SET-only membership in pg_write_all_data does not stop M218; that escalation path is certified by the role graph (C6 N20, probe i)', async () => {
+        const o2 = nextRole('hc1_set_only_observer');
+        expect(await rehearseAndInspect([...observer(o2), `GRANT pg_write_all_data TO ${o2} WITH INHERIT FALSE, SET TRUE`], o2))
+          .toEqual({ refusal: null, caps: READ_ONLY });
+        expect(await m218Objects()).toEqual(NOTHING);
+      });
     });
   });
 
@@ -2489,12 +2627,28 @@ run('C6-F1/M218 FINAL capability-isolated sealed submission — dynamic (Postgre
     // §9.4/§13 — the runtime seal predicate against privilege drift
     // =======================================================================
     describe('the runtime seal predicate (privilege drift)', () => {
+      /** M218-HC1: a hosted-style read observer — BYPASSRLS, inheriting pg_read_all_data, nothing else. */
+      const RT_OBSERVER = (role: string) => [`CREATE ROLE ${role} NOLOGIN BYPASSRLS`, `GRANT pg_read_all_data TO ${role}`];
+      const RT_OBS = nextRole('hc1_rt_observer');
+      const RT_OBS_T = nextRole('hc1_rt_observer_trigger');
+      const RT_OBS_W = nextRole('hc1_rt_observer_write');
+      const RT_OBS_C = nextRole('hc1_rt_observer_create');
+      const RT_WRITE_ALL = nextRole('hc1_rt_write_all');
       const drifts: Array<[string, string[], string]> = [
         ['service_role DML re-granted', ['GRANT UPDATE ON public.central_needs_need_lines TO service_role'],
           'service_role holds UPDATE on public.central_needs_need_lines'],
         ['TRIGGER on audit_logs re-granted', ['GRANT TRIGGER ON public.audit_logs TO authenticated'], 'authenticated holds TRIGGER on public.audit_logs'],
         ['CREATE on public re-granted', ['GRANT CREATE ON SCHEMA public TO service_role'], 'service_role holds CREATE on schema public'],
-        ['USAGE on the private schema', [`GRANT USAGE ON SCHEMA ${PRIVATE} TO anon`], 'anon holds USAGE on schema phoenix_private'],
+        ['CREATE on the private schema', [`GRANT CREATE ON SCHEMA ${PRIVATE} TO anon`], 'anon holds CREATE on schema phoenix_private'],
+        // M218-HC1: a hosted-style read observer is tolerated only for what it reads; each mutation capability it gains is a breach.
+        ['a read observer granted TRIGGER', [...RT_OBSERVER(RT_OBS_T), `GRANT TRIGGER ON public.audit_logs TO ${RT_OBS_T}`],
+          `${RT_OBS_T} holds TRIGGER on public.audit_logs`],
+        ['a read observer granted a private-store write', [...RT_OBSERVER(RT_OBS_W), `GRANT UPDATE ON ${STORE} TO ${RT_OBS_W}`],
+          `${RT_OBS_W} holds UPDATE on phoenix_private.central_needs_lifecycle_attestations`],
+        ['a read observer granted CREATE', [...RT_OBSERVER(RT_OBS_C), `GRANT CREATE ON SCHEMA public TO ${RT_OBS_C}`],
+          `${RT_OBS_C} holds CREATE on schema public`],
+        ['a pg_write_all_data member', [`CREATE ROLE ${RT_WRITE_ALL} NOLOGIN`, `GRANT pg_write_all_data TO ${RT_WRITE_ALL}`],
+          `${RT_WRITE_ALL} holds DELETE on phoenix_private.central_needs_lifecycle_attestations`],
         ['an inherited grant', ['CREATE ROLE p218f_drift_member NOLOGIN', 'GRANT p218f_drift_member TO service_role',
           'GRANT DELETE ON public.central_needs_import_batches TO p218f_drift_member'],
           'p218f_drift_member holds DELETE on public.central_needs_import_batches'],
@@ -2521,6 +2675,62 @@ run('C6-F1/M218 FINAL capability-isolated sealed submission — dynamic (Postgre
         // Converged again, both pass.
         expect(await call(U_EDIT, SUBMIT, [d.rev])).toMatchObject({ ok: true, status: 'submitted' });
         expect(await call(U_APPROVE, APPROVE, [s.rev])).toMatchObject({ ok: true, status: 'approved' });
+      });
+
+      it('M218-HC1: read visibility is no breach at run time — a BYPASSRLS observer inheriting pg_read_all_data, and USAGE on phoenix_private granted to anon, leave the seal empty and submit and approve pass; the observer reads attestations but can forge, replace, delete or authorize nothing (rolled back)', async () => {
+        const d = await readyDraft();
+        const s = await submittedPlan();
+        for (const [rev, user, sql, status] of [[d.rev, U_EDIT, SUBMIT, 'submitted'], [s.rev, U_APPROVE, APPROVE, 'approved']] as const) {
+          const out = await probe(async (c: any) => {
+            // An explicit private grant is refused when M218 applies (VERIFY D); at run time only a MUTATION
+            // capability is a seal breach (HC1), so explicit read visibility granted later is not.
+            for (const stmt of [...RT_OBSERVER(RT_OBS), `GRANT USAGE ON SCHEMA ${PRIVATE} TO anon`]) await c.query(stmt);
+            const [{ n }] = (await c.query(`SELECT count(*)::int AS n FROM ${BREACHES}()`)).rows;
+            await c.query('SET LOCAL ROLE authenticated');
+            await c.query(`SELECT set_config('request.jwt.claim.sub', $1, true)`, [user]);
+            const result = (await c.query(sql, [rev])).rows[0].result;
+            return { n, result };
+          });
+          expect(out.n, sql).toBe(0);
+          expect(out.result, sql).toMatchObject({ ok: true, status });
+        }
+        // Rolled back: nothing of either call survived.
+        expect(await evidence(d.rev)).toEqual({ status: 'draft', submission_gates: 0, submits: 0, approval_gates: 0, approves: 0 });
+        expect(await evidence(s.rev)).toEqual({ status: 'submitted', submission_gates: 1, submits: 1, approval_gates: 0, approves: 0 });
+        // What the observer can and cannot do with the submitted revision's attestation.
+        const seen = await probe(async (c: any) => {
+          for (const stmt of RT_OBSERVER(RT_OBS)) await c.query(stmt);
+          await c.query(`SET LOCAL ROLE ${RT_OBS}`);
+          const outcome = (q: string, p: unknown[] = []) => c.query('SAVEPOINT hc1').then(() => c.query(q, p))
+            .then(async (r: any) => { await c.query('RELEASE SAVEPOINT hc1'); return r.rows.length ? r.rows : 'passed'; },
+              async (e: any) => { await c.query('ROLLBACK TO SAVEPOINT hc1'); return `${e.code} ${e.message}`; });
+          return {
+            read: await outcome(`SELECT phase, contract FROM ${STORE} WHERE plan_revision_id = $1`, [s.rev]),
+            forge: await outcome(`INSERT INTO ${STORE} (plan_revision_id, organization_id, phase, contract, actor_id, txid, state_digest)
+                                  SELECT plan_revision_id, organization_id, 'approve', contract, actor_id, txid, state_digest FROM ${STORE} WHERE plan_revision_id = $1`, [s.rev]),
+            replace: await outcome(`UPDATE ${STORE} SET created_at = created_at WHERE plan_revision_id = $1`, [s.rev]),
+            remove: await outcome(`DELETE FROM ${STORE} WHERE plan_revision_id = $1`, [s.rev]),
+            approveDirect: await outcome(`UPDATE public.central_needs_plan_revisions SET status = 'approved' WHERE id = $1`, [s.rev]),
+            truncate: await outcome(`TRUNCATE ${STORE}`),
+            approveRpc: await outcome(APPROVE, [s.rev]),
+            submitRpc: await outcome(SUBMIT, [s.rev]),
+            digest: await outcome(`SELECT ${DIGEST}($1)`, [s.rev]),
+            seal: await outcome(`SELECT count(*) FROM ${BREACHES}()`),
+          };
+        });
+        expect(seen).toEqual({
+          read: [{ phase: 'submit', contract: CONTRACT }],
+          forge: `42501 permission denied for table central_needs_lifecycle_attestations`,
+          replace: `42501 permission denied for table central_needs_lifecycle_attestations`,
+          remove: `42501 permission denied for table central_needs_lifecycle_attestations`,
+          approveDirect: `42501 permission denied for table central_needs_plan_revisions`,
+          truncate: `42501 permission denied for table central_needs_lifecycle_attestations`,
+          approveRpc: `42501 permission denied for function phoenix_central_needs_approve_revision`,
+          submitRpc: `42501 permission denied for function phoenix_central_needs_submit_revision`,
+          digest: `42501 permission denied for function central_needs_submission_state_digest_v1`,
+          seal: `42501 permission denied for function central_needs_capability_breaches_v1`,
+        });
+        expect(await evidence(s.rev)).toEqual({ status: 'submitted', submission_gates: 1, submits: 1, approval_gates: 0, approves: 0 });
       });
 
       it('the root of trust is never a breach: a superuser role, the table owner and the database owner may hold every privilege', async () => {
