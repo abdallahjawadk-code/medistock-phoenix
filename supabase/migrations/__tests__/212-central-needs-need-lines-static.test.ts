@@ -41,19 +41,19 @@ describe('CN-2B/212 static — registration and file hygiene', () => {
     const files = readdirSync(MIGRATIONS).filter((f) => /^\d{3}_.*\.sql$/.test(f)).sort();
     expect(files).toContain(FILENAME);
     expect(files.indexOf(FILENAME)).toBe(211);
-    expect(files.filter((f) => Number(f.slice(0, 3)) > 218)).toEqual([]);
-    expect(files).toHaveLength(218);
+    expect(files.filter((f) => Number(f.slice(0, 3)) > 219)).toEqual([]);
+    expect(files).toHaveLength(219);
     expect(isReviewedMigrationFile(FILENAME)).toBe(true);
     // 212 is no longer last: 213 sits directly after it, and 213's own
     // static suite owns the ceiling assertions from here on. The 212 -> 213
     // relationship below is HISTORICAL and never moves; the array's LAST entry
-    // is the ceiling, now C6-F1's M218 Central Needs submission integrity fence migration.
+    // is the ceiling, now AUTH-1's M219 sign-up authority hardening migration.
     expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.indexOf(FILENAME) + 1])
       .toBe('213_phoenix_central_needs_beneficiary_column_mapping.sql');
     expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1])
-      .toBe('218_phoenix_central_needs_submission_integrity_fence.sql');
-    expect(getMaximumReviewedMigrationNumber()).toBe(218);
-    expect(getNextUnreviewedMigrationNumber()).toBe(219);
+      .toBe('219_phoenix_auth_signup_authority_hardening.sql');
+    expect(getMaximumReviewedMigrationNumber()).toBe(219);
+    expect(getNextUnreviewedMigrationNumber()).toBe(220);
   });
 
   it('edits no historical migration — it is self-contained', () => {

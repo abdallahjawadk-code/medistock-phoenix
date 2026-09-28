@@ -664,7 +664,7 @@ run('C6-F1/M218 FINAL capability-isolated sealed submission — dynamic (Postgre
   // =========================================================================
   describe('on the 217 chain, before M218', () => {
     beforeAll(async () => {
-      expect(migrationFiles().filter((f: string) => Number(f.slice(0, 3)) > 217)).toEqual([M218]);
+      expect(migrationFiles().filter((f: string) => Number(f.slice(0, 3)) > 217)).toContain(M218);
       expect(await m218Objects()).toEqual(NOTHING);
       aclBefore = await lifecycleAcl();
       tableAclBefore = await tableAcl();
@@ -1317,7 +1317,9 @@ run('C6-F1/M218 FINAL capability-isolated sealed submission — dynamic (Postgre
   // =========================================================================
   describe('on the 001..218 chain', () => {
     beforeAll(async () => {
-      const rest = migrationFiles().filter((f: string) => Number(f.slice(0, 3)) > 217);
+      // AUTH-1/M219 now sits above M218; this block proves the 001..218 chain
+      // exactly, so the replay stops at 218 (M219 has its own suite).
+      const rest = migrationFiles().filter((f: string) => Number(f.slice(0, 3)) > 217 && Number(f.slice(0, 3)) <= 218);
       expect(rest).toEqual([M218]);
       await rig.asAdmin(async (c: any) => {
         for (const f of rest) await applyMigrationSql(c, f, shimSql(f, readFileSync(join(MIGRATIONS_DIR, f), 'utf8')));

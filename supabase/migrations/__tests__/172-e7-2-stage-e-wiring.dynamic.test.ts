@@ -320,6 +320,13 @@ run('E7-2 · Stage-E application wiring (dynamic)',()=>{
       // at 171" remains true. Listed so this guard stays exhaustive and fails
       // closed on any unlisted new file.
       '218_phoenix_central_needs_submission_integrity_fence.sql',
+      // AUTH-1/M219: sign-up authority hardening — the internal
+      // pending_provisioning role value and three ACL-neutral SECURITY DEFINER
+      // replacements (new-user trigger, provisioning, effective permissions);
+      // it adds no migration numbered <= 171 and no corridor, route, dispatch or
+      // stock SQL at all, so "Stage E still ends at 171" remains true. Listed so
+      // this guard stays exhaustive and fails closed on any unlisted new file.
+      '219_phoenix_auth_signup_authority_hardening.sql',
     ];
     it('Stage E still ends at 171 — E7-2 introduced no new SQL',()=>{
       const files=readdirSync(join(__dirname,'..')).filter(f=>/^\d{3}_.*\.sql$/.test(f));

@@ -107,9 +107,15 @@ describe('M198 static — identity and placement', () => {
       // function it creates or replaces and alters none of the thirty, so what this suite
       // converges is untouched. It is now the reviewed ceiling.
       '218_phoenix_central_needs_submission_integrity_fence.sql',
+      // AUTH-1/M219: the sign-up authority hardening (internal 'pending_provisioning' role value
+      // on profiles; three SECURITY DEFINER functions forward-replaced) — it keeps search_path =
+      // public, pg_temp on every function it replaces, including phoenix_handle_new_user, the one
+      // of the thirty it touches, so what this suite converges is untouched. It is now the
+      // reviewed ceiling.
+      '219_phoenix_auth_signup_authority_hardening.sql',
     ]);
-    expect(files.filter((f) => Number(f.slice(0, 3)) > 218)).toEqual([]);
-    expect(files).toHaveLength(218);
+    expect(files.filter((f) => Number(f.slice(0, 3)) > 219)).toEqual([]);
+    expect(files).toHaveLength(219);
   });
 
   it('carries no MANUAL APPLY ONLY banner, so the pinned executor will accept it', () => {

@@ -276,6 +276,17 @@ export const REVIEWED_MIGRATION_FILES: readonly string[] = Object.freeze([
   // existing table, enum, policy or permission key, and no stock, movement,
   // allocation or transfer SQL.
   '218_phoenix_central_needs_submission_integrity_fence.sql',
+  // AUTH-1 / M219: sign-up authority hardening. User metadata is never RBAC
+  // authority: phoenix_handle_new_user reads only a validated display name and
+  // creates the internal, non-assignable, zero-permission pending_provisioning
+  // placeholder (suspended, no organization; a new CHECK pins that shape);
+  // phoenix_admin_provision_profile accepts only that placeholder (the M182 body,
+  // placeholder test changed); get_effective_permissions no longer treats two
+  // NULL organizations as the same scope (the M196 body, one predicate changed).
+  // Owners, SECURITY DEFINER, search_path and grants unchanged; phoenix_my_role /
+  // phoenix_my_org untouched (AUTH-2). No new table, column, policy, grant or
+  // permission key, and no stock, movement, allocation or transfer SQL.
+  '219_phoenix_auth_signup_authority_hardening.sql',
 ]);
 
 const REVIEWED_SET: ReadonlySet<string> = new Set(REVIEWED_MIGRATION_FILES);

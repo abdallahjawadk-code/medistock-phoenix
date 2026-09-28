@@ -89,9 +89,17 @@ describe('M197 static — identity and placement', () => {
       // the six functions 197 converges, so what this suite converges is
       // untouched. It is now the reviewed ceiling.
       '218_phoenix_central_needs_submission_integrity_fence.sql',
+      // AUTH-1/M219: the sign-up authority hardening (internal 'pending_provisioning'
+      // role value and shape CHECK on profiles; three SECURITY DEFINER functions
+      // forward-replaced), with no stock, movement, allocation or transfer SQL. It
+      // issues no GRANT or REVOKE at all; of the six functions 197 converges it
+      // replaces only phoenix_handle_new_user, by CREATE OR REPLACE, which keeps
+      // that function's ACL (PUBLIC regains no EXECUTE), so what this suite
+      // converges is untouched. It is now the reviewed ceiling.
+      '219_phoenix_auth_signup_authority_hardening.sql',
     ]);
-    expect(files.filter((f) => Number(f.slice(0, 3)) > 218)).toEqual([]);
-    expect(files).toHaveLength(218);
+    expect(files.filter((f) => Number(f.slice(0, 3)) > 219)).toEqual([]);
+    expect(files).toHaveLength(219);
   });
 
   it('carries no MANUAL APPLY ONLY banner, so the pinned executor will accept it', () => {

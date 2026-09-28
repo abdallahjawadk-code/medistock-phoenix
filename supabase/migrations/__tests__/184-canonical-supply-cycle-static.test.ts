@@ -125,10 +125,15 @@ describe('184 · registration and file hygiene', () => {
     // so what this suite asserts is unaffected; listed to keep this successor guard
     // exhaustive.
     const NEXT_34 = '218_phoenix_central_needs_submission_integrity_fence.sql';
+    // AUTH-1/M219: the sign-up authority hardening (internal 'pending_provisioning'
+    // profiles role, three SECURITY DEFINER functions replaced ACL-neutrally) — no
+    // supply-cycle SQL, so what this suite asserts is unaffected; listed to keep this
+    // successor guard exhaustive.
+    const NEXT_35 = '219_phoenix_auth_signup_authority_hardening.sql';
     const numbers = REVIEWED_MIGRATION_FILES
       .map(f => Number(f.slice(0, 3)))
       .filter(n => Number.isFinite(n));
-    expect(Math.max(...numbers)).toBe(218);
+    expect(Math.max(...numbers)).toBe(219);
     expect(REVIEWED_MIGRATION_FILES.filter(f => f.startsWith('184_'))).toHaveLength(1);
     expect(REVIEWED_MIGRATION_FILES.filter(f => f.startsWith('185_'))).toEqual([NEXT]);
     expect(REVIEWED_MIGRATION_FILES.filter(f => f.startsWith('186_'))).toEqual([NEXT_2]);
@@ -160,16 +165,17 @@ describe('184 · registration and file hygiene', () => {
     expect(REVIEWED_MIGRATION_FILES.filter(f => f.startsWith('212_'))).toEqual([NEXT_28]);
     expect(REVIEWED_MIGRATION_FILES.filter(f => f.startsWith('213_'))).toEqual([NEXT_29]);
     const i = REVIEWED_MIGRATION_FILES.indexOf(NAME);
-    expect(REVIEWED_MIGRATION_FILES.slice(i + 1)).toEqual([NEXT, NEXT_2, NEXT_3, NEXT_4, NEXT_5, NEXT_6, NEXT_7, NEXT_8, NEXT_9, NEXT_10, NEXT_11, NEXT_12, NEXT_13, NEXT_14, NEXT_15, NEXT_16, NEXT_17, NEXT_18, NEXT_19, NEXT_20, NEXT_21, NEXT_22, NEXT_23, NEXT_24, NEXT_25, NEXT_26, NEXT_27, NEXT_28, NEXT_29, NEXT_30, NEXT_31, NEXT_32, NEXT_33, NEXT_34]);
-    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1]).toBe(NEXT_34);
+    expect(REVIEWED_MIGRATION_FILES.slice(i + 1)).toEqual([NEXT, NEXT_2, NEXT_3, NEXT_4, NEXT_5, NEXT_6, NEXT_7, NEXT_8, NEXT_9, NEXT_10, NEXT_11, NEXT_12, NEXT_13, NEXT_14, NEXT_15, NEXT_16, NEXT_17, NEXT_18, NEXT_19, NEXT_20, NEXT_21, NEXT_22, NEXT_23, NEXT_24, NEXT_25, NEXT_26, NEXT_27, NEXT_28, NEXT_29, NEXT_30, NEXT_31, NEXT_32, NEXT_33, NEXT_34, NEXT_35]);
+    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1]).toBe(NEXT_35);
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^213_/.test(f))).toEqual([NEXT_29]);
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^214_/.test(f))).toEqual([NEXT_30]);
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^215_/.test(f))).toEqual([NEXT_31]);
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^216_/.test(f))).toEqual([NEXT_32]);
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^217_/.test(f))).toEqual([NEXT_33]);
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^218_/.test(f))).toEqual([NEXT_34]);
-    // The next unauthorized number must still fail closed — now 219.
-    expect(REVIEWED_MIGRATION_FILES.filter(f => /^219_/.test(f))).toHaveLength(0);
+    expect(REVIEWED_MIGRATION_FILES.filter(f => /^219_/.test(f))).toEqual([NEXT_35]);
+    // The next unauthorized number must still fail closed — now 220.
+    expect(REVIEWED_MIGRATION_FILES.filter(f => /^220_/.test(f))).toHaveLength(0);
   });
 
   it('carries no CR bytes', () => {

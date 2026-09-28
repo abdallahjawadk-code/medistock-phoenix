@@ -690,6 +690,20 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
       'supabase/migrations/218_phoenix_central_needs_submission_integrity_fence.sql',
       'supabase/migrations/__tests__/218-central-needs-submission-integrity-fence-static.test.ts',
       'supabase/migrations/__tests__/218-central-needs-submission-integrity-fence.dynamic.test.ts',
+      // AUTH-1/M219: the sign-up authority hardening — one reviewed,
+      // forward-only migration plus its static and dynamic proofs. It adds no
+      // branding asset, no table, no RLS policy and no permission key: the
+      // profiles role CHECK gains the internal, zero-permission
+      // 'pending_provisioning' value plus a shape CHECK, and three SECURITY
+      // DEFINER functions (phoenix_handle_new_user,
+      // phoenix_admin_provision_profile, get_effective_permissions) are
+      // replaced with owners, ACLs and search_path unchanged, so A7.2.4's own
+      // subject is untouched by it. Registered by EXACT filename, exactly as
+      // M209-M218 were. No wildcard and no directory exemption, so every other
+      // file under supabase/ still fails this guard closed.
+      'supabase/migrations/219_phoenix_auth_signup_authority_hardening.sql',
+      'supabase/migrations/__tests__/219-auth-signup-authority-hardening-static.test.ts',
+      'supabase/migrations/__tests__/219-auth-signup-authority-hardening.dynamic.test.ts',
       // INTERACTIVE-GUIDE-IG1: one new file under the watched `src/app`
       // prefix, registered by EXACT filename like every entry above.
       //

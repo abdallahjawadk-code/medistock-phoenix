@@ -251,7 +251,14 @@ describe('no client-side document-number sequence exists',()=>{
     // same-transaction evidence — a database transaction id, never a
     // client-allocated document/reference number. Registered by exact number;
     // boundary moves to 218.
-    const beyond=migrations.filter(f=>/^(1[89]\d|[2-9]\d\d)_/.test(f)&&!/^(179|180|181|182|183|184|185|186|187|188|189|190|191|192|193|194|195|196|197|198|199|200|201|202|203|204|205|206|207|208|209|210|211|212|213|214|215|216|217|218)_/.test(f));
+    // AUTH-1 / M219: sign-up authority hardening — the profiles role CHECK gains
+    // the internal pending_provisioning value plus a shape CHECK, and three
+    // SECURITY DEFINER functions are forward-replaced (phoenix_handle_new_user,
+    // phoenix_admin_provision_profile, get_effective_permissions) with owners,
+    // ACLs and search_path unchanged. It introduces no sequence, counter,
+    // generated numeric identity or document number, and no numbering SQL.
+    // Registered by exact number; boundary moves to 219.
+    const beyond=migrations.filter(f=>/^(1[89]\d|[2-9]\d\d)_/.test(f)&&!/^(179|180|181|182|183|184|185|186|187|188|189|190|191|192|193|194|195|196|197|198|199|200|201|202|203|204|205|206|207|208|209|210|211|212|213|214|215|216|217|218|219)_/.test(f));
     expect(beyond).toEqual([]);
     for(const f of [
       '211_phoenix_central_needs_batch_and_disposition.sql',
