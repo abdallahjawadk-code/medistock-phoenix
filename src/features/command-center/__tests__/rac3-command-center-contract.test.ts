@@ -469,7 +469,7 @@ describe('RAC-3 · I) no backend or migration change', () => {
    * replaces: it would also catch a dependency edit smuggled in beside a
    * version bump, which a filename check never could.
    */
-  it('changes no dependency — only the release version may differ', () => {
+  it('changes no dependency — only the release version and the reviewed GHSA-3wwx-pv8p-q78v undici patch may differ', () => {
     // CN-2A-SHEETJS: the audited dependency baseline advances from d70b24a9
     // to 6ce98332, the reviewed CN-2A commit that adds exactly one runtime
     // dependency — `xlsx` (SheetJS Community Edition 0.20.3, vendored
@@ -516,14 +516,45 @@ describe('RAC-3 · I) no backend or migration change', () => {
     expect(head.name).toBe(base.name);
 
     // The lockfile's whole graph must be identical too — only the two root
-    // version fields may move.
+    // version fields may move, plus the ONE reviewed security exception below.
+    //
+    // CI-HOTFIX-2 / GHSA-3wwx-pv8p-q78v: undici >=7.28.0 <7.29.1 is vulnerable
+    // to denial of service through an unhandled error in WebSocket
+    // permessage-deflate decompression. undici is a dev-only transitive
+    // dependency (root devDependency jsdom@^29.1.1 -> jsdom@29.1.1 ->
+    // undici@^7.25.0), so package.json does not change. `npm update undici`
+    // (npm 10.9.8) resolves 7.30.0, inside jsdom's own range and above the
+    // patched boundary, and it regenerates the lockfile root entry's `engines`
+    // from package.json's existing `engines` field (not present at BASE).
+    // The expected lockfile is therefore BASE's lockfile with EXACTLY those two
+    // transformations applied, and nothing else: the undici entry takes npm's
+    // generated 7.30.0 version/resolved/integrity and keeps every other field,
+    // and the root entry gains engines { node: '22.x' }. Any other package
+    // version, dependency edge, addition, removal, override, root metadata, or
+    // a different undici version still fails closed.
+    expect(head.engines).toEqual({ node: '22.x' });
+    const UNDICI = 'node_modules/undici';
+    const expectedLock = (() => {
+      const lock = jsonAt(BASE, 'package-lock.json');
+      const packages = { ...(lock.packages as Record<string, Record<string, unknown>>) };
+      expect(packages[UNDICI].version).toBe('7.29.0');
+      expect(packages[''].engines).toBeUndefined();
+      packages[''] = { ...packages[''], engines: { node: '22.x' } };
+      packages[UNDICI] = {
+        ...packages[UNDICI],
+        version: '7.30.0',
+        resolved: 'https://registry.npmjs.org/undici/-/undici-7.30.0.tgz',
+        integrity: 'sha512-dkrQXeHSaoamnItlYbmzG0wFYrM0ZwDxCIg0A7aKjTyyhh9svRzCNFEzV+Vm05/yehjCzjDZ31KXfGEjYSztDQ==',
+      };
+      return { ...lock, packages };
+    })();
     const normalise = (lock: Record<string, unknown>) => {
       const packages = { ...(lock.packages as Record<string, Record<string, unknown>>) };
       packages[''] = { ...packages[''], version: 'RELEASE_VERSION' };
       return JSON.stringify({ ...lock, version: 'RELEASE_VERSION', packages });
     };
     expect(normalise(jsonAt('HEAD', 'package-lock.json')))
-      .toBe(normalise(jsonAt(BASE, 'package-lock.json')));
+      .toBe(normalise(expectedLock));
   });
 });
 

@@ -1251,8 +1251,18 @@ run('C6-F1/M218 FINAL capability-isolated sealed submission — dynamic (Postgre
         const m = nextRole('hc1_read_maintain');
         const out = await rehearseAndInspect([...observer(m), `GRANT pg_maintain TO ${m}`], m);
         expect(out.caps).toBeNull();
+        expect(out.refusal).toMatchObject({ code: 'P0001' });
+        expect(out.refusal!.detail).toBeUndefined();
+        const message = out.refusal!.message;
+        const PREFIX = 'VERIFY FAILED (218): a non-root capability remains: ';
+        expect(message.startsWith(PREFIX)).toBe(true);
+        // Exactly MAINTAIN on the 13 Central Needs tables and the store, as in HC1 B. VERIFY lists the
+        // entries in the database collation's order (C locally, en_US in CI, which sort
+        // `need_line_sources` / `need_lines` differently), so both sides are sorted here: the order is
+        // tolerated, a missing, extra, duplicated or different entry is not.
         const rels = [...CN_TABLES.map((t) => `public.${t}`), STORE_REL];
-        expect(out.refusal).toEqual(breach(rels.map((r) => `${m} holds MAINTAIN on ${r}`).sort().join('; ')));
+        expect(message.slice(PREFIX.length).split('; ').sort())
+          .toEqual(rels.map((r) => `${m} holds MAINTAIN on ${r}`).sort());
         expect(await m218Objects()).toEqual(NOTHING);
       });
 
