@@ -108,12 +108,22 @@ describe('181 registration and shape', () => {
       // Needs tables and it carries no topology SQL, so nothing this suite asserts moves.
       // It is now the reviewed ceiling.
       '217_phoenix_central_needs_c5_safety_convergence.sql',
+      // C6-F1/M218: the Central Needs submission integrity fence (a submission-gate fence trigger on
+      // plan revisions, submit and approve replaced ACL-neutrally) — its trigger sits only on a Central
+      // Needs table and it carries no topology SQL, so nothing this suite asserts moves.
+      // It is now the reviewed ceiling.
+      '218_phoenix_central_needs_submission_integrity_fence.sql',
+      // AUTH-1/M219: the sign-up authority hardening (profiles role CHECK gains the internal
+      // 'pending_provisioning' value plus a shape CHECK; three SECURITY DEFINER functions replaced with
+      // owners, ACLs and search_path unchanged) — no trigger, policy or topology SQL, so nothing this
+      // suite asserts moves. It is now the reviewed ceiling.
+      '219_phoenix_auth_signup_authority_hardening.sql',
     ];
     const i = REVIEWED_MIGRATION_FILES.indexOf(NAME);
     expect(REVIEWED_MIGRATION_FILES.slice(i + 1)).toEqual(SUCCESSORS);
-    // The ceiling is now 217; `[2-9]\d\d` would match it, so this asserts
+    // The ceiling is now 219; `[2-9]\d\d` would match it, so this asserts
     // numerically that nothing sits ABOVE the ceiling.
-    expect(REVIEWED_MIGRATION_FILES.filter(f => Number(f.slice(0, 3)) > 217)).toHaveLength(0);
+    expect(REVIEWED_MIGRATION_FILES.filter(f => Number(f.slice(0, 3)) > 219)).toHaveLength(0);
   });
 
   it('is a single transaction, manual-apply only, through Supabase.apply_migration', () => {

@@ -183,10 +183,16 @@ describe('C5/M217 static — the file exists under its canonical name', () => {
 });
 
 guard('C5/M217 static — registration, hygiene and frozen predecessors', () => {
-  it('217 is the next migration after 216 and the only file above 216', () => {
+  it('217 is the next migration after 216; only C6-F1/M218 and AUTH-1/M219 sit above it', () => {
     const files = readdirSync(MIGRATIONS).filter((f) => /^\d{3}_.*\.sql$/.test(f)).sort();
     expect(files).toContain(FILENAME);
-    expect(files.filter((f) => Number(f.slice(0, 3)) > 216)).toEqual([FILENAME]);
+    // C6-F1/M218 (Central Needs submission integrity fence) is the reviewed
+    // successor and AUTH-1/M219 (sign-up authority hardening) now the ceiling;
+    // its own static suite owns the ceiling assertions. The
+    // 216 -> 217 -> 218 -> 219 order is exact.
+    expect(files.filter((f) => Number(f.slice(0, 3)) > 216))
+      .toEqual([FILENAME, '218_phoenix_central_needs_submission_integrity_fence.sql',
+        '219_phoenix_auth_signup_authority_hardening.sql']);
     expect(files[files.indexOf(FILENAME) - 1]).toBe('216_phoenix_central_needs_region_persistence.sql');
   });
 

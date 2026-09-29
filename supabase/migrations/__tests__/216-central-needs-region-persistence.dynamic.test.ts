@@ -674,8 +674,12 @@ run('C4/M216 beneficiary-region persistence — dynamic (PostgreSQL)', { timeout
     });
 
     it('non-draft revision is refused (plan_revision_not_editable); a non-newest draft is ambiguous', async () => {
-      const s = await standard();
-      await admin(`UPDATE central_needs_plan_revisions SET status='submitted' WHERE id=$1`, [s.revId]);
+      // C6-F1 (218): SUBMITTED is reached only canonically — a direct DRAFT ->
+      // SUBMITTED write is refused by the submission fence. One region-governed
+      // column of three numeric cells keeps the revision READY.
+      const s = await standard([1, 2, 3], [2]);
+      await setRegions(U_EDIT, { rev: s.revId, session: s.sessionId, expected: [], changes: [add(0, WHOLE, 2, 2, ORG_BENE_A)] });
+      await submitCanonically(s.revId, s.sessionId, [1, 2, 3].map((r) => s.rec(0, r, 2)), ORG_BENE_A);
       await refused(s.revId, () => setRegions(U_EDIT, { rev: s.revId, session: s.sessionId, expected: [], changes: [add(1, 2, 2, 2)] }),
         'plan_revision_not_editable');
       const t = await standard();

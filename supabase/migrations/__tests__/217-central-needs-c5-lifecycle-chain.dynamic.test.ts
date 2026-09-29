@@ -119,6 +119,10 @@ run('C5/M217 lifecycle chain — 216 history, then M217 — dynamic', { timeout:
   const lifecycleAcl = () => admin(`SELECT p.oid::regprocedure::text AS fn, p.proacl::text AS acl FROM pg_proc p
                                      WHERE p.proname IN ('phoenix_central_needs_submit_revision', 'phoenix_central_needs_approve_revision',
                                                          'phoenix_central_needs_reject_revision') ORDER BY 1`);
+  /** The lifecycle ACL without service_role's EXECUTE: M217 is ACL-neutral; M218 FINAL (applied too) revokes exactly that. */
+  const withoutServiceRoleExecute = (rows: any[]) => rows.map((r: any) => ({
+    ...r, acl: typeof r.acl === 'string' ? r.acl.replace(/,service_role=X\/[\w"]+|service_role=X\/[\w"]+,?/, '') : r.acl,
+  }));
 
   /** Applies M217 through the rig's own apply path; returns the refusal (rolled back) or null. */
   const tryApplyM217 = () => rig.asAdmin((c: any) => applyMigrationSql(c, M217, shimSql(M217, readFileSync(join(MIGRATIONS_DIR, M217), 'utf8')))
@@ -350,11 +354,12 @@ run('C5/M217 lifecycle chain — 216 history, then M217 — dynamic', { timeout:
       expect(await m217Present()).toBe(true);
     }, 600000);
 
-    it('M217 left the history exactly as it was, and submit/approve/reject privileges identical', async () => {
+    it('M217 left the history exactly as it was, and submit/approve/reject privileges identical (M218 FINAL then revokes only service_role EXECUTE)', async () => {
       expect(await statuses(fx.D.planId)).toEqual(['1:approved', '2:approved', '3:draft']);
       expect(await statuses(fx.S.planId)).toEqual(['1:superseded', '2:approved']);
       expect(await statuses(fx.C.planId)).toEqual(['1:draft', '2:rejected']);
-      expect(await lifecycleAcl()).toEqual(aclBefore);
+      expect(aclBefore.some((a: any) => /service_role=X/.test(a.acl ?? ''))).toBe(true);
+      expect(await lifecycleAcl()).toEqual(withoutServiceRoleExecute(aclBefore));
       const r = await tryApplyM217();
       expect(r).toMatchObject({ message: '217_already_applied' });
     });
@@ -429,7 +434,7 @@ run('C5/M217 lifecycle chain — 216 history, then M217 — dynamic', { timeout:
       expect(r).toEqual({ code: '23514', message: 'central_needs_approval_gate_missing', detail: `revision=${fx.D.rev3}` });
     });
 
-    it('the fence binds pre-C5 SUPERSEDED and REJECTED history: superuser and service_role direct approvals are refused 23514 with zero footprint', async () => {
+    it('the fence binds pre-C5 SUPERSEDED and REJECTED history: direct approvals are refused with zero footprint — 23514 by the fence (superuser), 42501 by privilege (service_role, M218 FINAL)', async () => {
       // Resurrecting a superseded revision (or a rejected one) to 'approved' is
       // the most realistic privileged post-activation attack; both rows predate
       // the fence (canonical 216 approve/correction/approve and 216 reject).
@@ -446,8 +451,10 @@ run('C5/M217 lifecycle chain — 216 history, then M217 — dynamic', { timeout:
           ['service_role', () => service(update, [rev, U_APPROVE_A])],
         ] as const) {
           const before = await writeFootprint();
-          expect(await refusal(write()), `${who} from ${from}`).toEqual({
-            code: '23514', message: 'central_needs_approval_gate_missing', detail: `revision=${rev}` });
+          // M218 FINAL: service_role holds no Central Needs write privilege at all.
+          expect(await refusal(write()), `${who} from ${from}`).toEqual(who === 'service_role'
+            ? { code: '42501', message: 'permission denied for table central_needs_plan_revisions', detail: undefined }
+            : { code: '23514', message: 'central_needs_approval_gate_missing', detail: `revision=${rev}` });
           expect(await writeFootprint(), `${who} from ${from}`).toEqual(before);
         }
         expect(await statuses(planId), from).toEqual(family);
