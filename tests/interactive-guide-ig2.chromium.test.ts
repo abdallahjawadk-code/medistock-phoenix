@@ -187,13 +187,25 @@ const MISSING_TARGET_EN = 'This part is not visible on the current screen';
  * room, which is routine on a phone and is not a failure. What IS a failure is
  * a step that found no target at all and quietly showed the missing-target
  * card instead.
+ *
+ * Each step is recorded only once the overlay has FINISHED resolving it. The
+ * marker starts as 'none' and is replaced only when a candidate target becomes
+ * usable, and a target below the fold is brought into view by a smooth scroll,
+ * so the anchor resolves as that scroll lands. A reading taken a fixed 120ms
+ * after the step changed could therefore record a TRANSIENT 'none' for a step
+ * whose target was on its way (CI #1027 attempt 2: `suspension.history`,
+ * en · phone). See settledStep: a 'none' that is still 'none' once everything
+ * has come to rest is a real verdict and is recorded as such, so a required
+ * target that never appears still fails, and a step that legitimately has no
+ * target is still recorded as 'none'.
  */
 async function walkTour(page: Page, lastStepId: string) {
   const seen: Array<{ step: string; anchor: string; centred: boolean; cardInside: boolean; note: boolean }> = [];
   for (let guard = 0; guard < 25; guard += 1) {
-    // The overlay measures one frame after the step id changes.
-    await expect.poll(async () => (await currentStep(page)).anchor !== undefined).toBe(true);
-    await page.waitForTimeout(120);
+    const settled = await settledStep(page);
+    if (!settled.settled) {
+      throw new Error(`step "${settled.step}" never came to rest: ${JSON.stringify(settled)}`);
+    }
     const state = await currentStep(page);
     const card = await page.locator('.guide-card').innerText();
     seen.push({
@@ -209,23 +221,123 @@ async function walkTour(page: Page, lastStepId: string) {
   throw new Error(`the tour never reached "${lastStepId}"; saw ${seen.map(s => s.step).join(', ')}`);
 }
 
-/** The ring comes to REST on its target. Same settled-measurement rule as IG-1.1. */
-async function expectRingOverTarget(page: Page, targetSelector: string) {
-  const offset = async () => page.evaluate(selector => {
-    const ring = document.querySelector('.guide-ring');
-    const target = document.querySelector(selector);
-    if (!ring || !target) return null;
-    const r = ring.getBoundingClientRect();
-    const t = target.getBoundingClientRect();
-    return Math.max(
-      Math.abs((r.x + r.width / 2) - (t.x + t.width / 2)),
-      Math.abs((r.y + r.height / 2) - (t.y + t.height / 2)),
-    );
-  }, targetSelector);
+/**
+ * Wait, INSIDE the page, until the overlay's resolved state for the current
+ * step has held still: its step, anchor and placement markers, the card's
+ * rendered text (which is where the missing-target note appears) and the ring
+ * and card boxes must be identical for STEP_QUIET_FRAMES consecutive rendered
+ * frames spanning at least STEP_QUIET_MS, with no scroll and no
+ * guide-addressable element mounted or removed in between. Bounded: a step that
+ * never comes to rest reports `settled: false` and walkTour fails loudly.
+ */
+const STEP_QUIET_MS = 300;
+const STEP_QUIET_FRAMES = 10;
+const STEP_SETTLE_TIMEOUT_MS = 10_000;
 
-  await expect.poll(offset, { timeout: 10_000 }).toBeLessThanOrEqual(2);
-  await page.waitForTimeout(250);
-  expect(await offset()).toBeLessThanOrEqual(2);
+async function settledStep(page: Page) {
+  return page.evaluate(({ quietMs, quietFrames, timeoutMs }) => new Promise<{
+    settled: boolean; step: string | undefined; anchor: string | undefined; stillFrames: number; stillMs: number;
+  }>(resolve => {
+    const started = performance.now();
+    let quietSince = started;
+    let stillFrames = 0;
+    let previous = '';
+    const restart = () => { quietSince = performance.now(); stillFrames = 0; };
+    const guideNode = (node: Node) => node instanceof Element
+      && (node.matches('[data-guide-id]') || node.querySelector('[data-guide-id]') !== null);
+    const mounts = new MutationObserver(records => {
+      if (records.some(record => [...record.addedNodes, ...record.removedNodes].some(guideNode))) restart();
+    });
+    mounts.observe(document.body, { childList: true, subtree: true });
+    document.addEventListener('scroll', restart, true);
+    const tick = () => {
+      const now = performance.now();
+      const layer = document.querySelector('[data-guide-tour]') as HTMLElement | null;
+      const card = document.querySelector('.guide-card') as HTMLElement | null;
+      const r = document.querySelector('.guide-ring')?.getBoundingClientRect();
+      const c = card?.getBoundingClientRect();
+      const step = layer?.dataset.guideStep;
+      const anchor = layer?.dataset.guideAnchor;
+      const signature = JSON.stringify([
+        step, anchor, layer?.dataset.guidePlacement, card?.innerText,
+        r ? [r.x, r.y, r.width, r.height] : null,
+        c ? [c.x, c.y, c.width, c.height] : null,
+      ]);
+      if (signature !== previous) {
+        previous = signature;
+        restart();
+      } else {
+        stillFrames += 1;
+      }
+      const settled = step !== undefined && anchor !== undefined
+        && stillFrames >= quietFrames && now - quietSince >= quietMs;
+      if (settled || now - started >= timeoutMs) {
+        mounts.disconnect();
+        document.removeEventListener('scroll', restart, true);
+        resolve({ settled, step, anchor, stillFrames, stillMs: Math.round(now - quietSince) });
+        return;
+      }
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }), { quietMs: STEP_QUIET_MS, quietFrames: STEP_QUIET_FRAMES, timeoutMs: STEP_SETTLE_TIMEOUT_MS });
+}
+
+/**
+ * The ring comes to REST on its target. Same settled-measurement rule as IG-1.1:
+ * the offset is judged only once the ring and its target have both stopped
+ * moving — identical for RING_QUIET_FRAMES consecutive rendered frames spanning
+ * at least RING_QUIET_MS, with no scroll in between — never on a sample that may
+ * have been taken mid-motion. A ring that never comes to rest within the bound
+ * fails, and so does one that rests anywhere but on its target.
+ */
+const RING_QUIET_MS = 300;
+const RING_QUIET_FRAMES = 10;
+const RING_SETTLE_TIMEOUT_MS = 10_000;
+
+async function settledRingOffset(page: Page, targetSelector: string) {
+  return page.evaluate(({ selector, quietMs, quietFrames, timeoutMs }) => new Promise<{
+    settled: boolean; offset: number | null; stillFrames: number; stillMs: number;
+  }>(resolve => {
+    const started = performance.now();
+    let quietSince = started;
+    let stillFrames = 0;
+    let previous = '';
+    const restart = () => { quietSince = performance.now(); stillFrames = 0; };
+    document.addEventListener('scroll', restart, true);
+    const tick = () => {
+      const now = performance.now();
+      const r = document.querySelector('.guide-ring')?.getBoundingClientRect();
+      const t = document.querySelector(selector)?.getBoundingClientRect();
+      const signature = r && t ? [r.x, r.y, r.width, r.height, t.x, t.y, t.width, t.height].join(',') : 'missing';
+      if (signature !== previous) {
+        previous = signature;
+        restart();
+      } else {
+        stillFrames += 1;
+      }
+      const offset = r && t
+        ? Math.max(
+          Math.abs((r.x + r.width / 2) - (t.x + t.width / 2)),
+          Math.abs((r.y + r.height / 2) - (t.y + t.height / 2)),
+        )
+        : null;
+      const settled = offset !== null && stillFrames >= quietFrames && now - quietSince >= quietMs;
+      if (settled || now - started >= timeoutMs) {
+        document.removeEventListener('scroll', restart, true);
+        resolve({ settled, offset, stillFrames, stillMs: Math.round(now - quietSince) });
+        return;
+      }
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }), { selector: targetSelector, quietMs: RING_QUIET_MS, quietFrames: RING_QUIET_FRAMES, timeoutMs: RING_SETTLE_TIMEOUT_MS });
+}
+
+async function expectRingOverTarget(page: Page, targetSelector: string) {
+  const probe = await settledRingOffset(page, targetSelector);
+  expect(probe.settled, `the ring over ${targetSelector} never came to rest: ${JSON.stringify(probe)}`).toBe(true);
+  expect(probe.offset).toBeLessThanOrEqual(2);
 }
 
 async function cardFitsViewport(page: Page) {

@@ -206,29 +206,68 @@ async function expectAnchored(page: Page, stepId: string) {
  *     for the first few frames after its step becomes current, and
  *   • the ring transitions its own geometry over 150ms.
  *
- * The guarantee worth asserting is where the highlight COMES TO REST, so this
- * polls until the offset stops changing rather than sampling once. The
- * threshold is 2px, not the 12px it started at: with the engine re-measuring
- * until the target settles, the measured offset is exactly 0 in both axes, and
- * a loose bound would have hidden the 6px staleness that investigation found.
+ * The guarantee worth asserting is where the highlight COMES TO REST. Polling
+ * until the offset is small once and re-sampling after a fixed pause is not
+ * that: under CI load the in-tolerance sample can be taken mid-motion and the
+ * pause can end mid-motion too (CI #1027: 7.3px 250ms after a passing sample).
+ * So the ring and its target are followed frame by frame INSIDE the page, and
+ * the offset is judged only once BOTH boxes have stopped moving — identical for
+ * RING_QUIET_FRAMES consecutive rendered frames spanning at least RING_QUIET_MS,
+ * with no scroll in between. A ring that never comes to rest within the bound
+ * fails, and so does one that rests anywhere but on its target.
+ *
+ * The threshold is 2px, not the 12px it started at: with the engine
+ * re-measuring until the target settles, the settled offset is exactly 0 in
+ * both axes, and a loose bound would have hidden the 6px staleness that
+ * investigation found.
  */
-async function expectRingOverTarget(page: Page, targetSelector: string) {
-  const offset = async () => page.evaluate(selector => {
-    const ring = document.querySelector('.guide-ring');
-    const target = document.querySelector(selector);
-    if (!ring || !target) return null;
-    const r = ring.getBoundingClientRect();
-    const t = target.getBoundingClientRect();
-    return Math.max(
-      Math.abs((r.x + r.width / 2) - (t.x + t.width / 2)),
-      Math.abs((r.y + r.height / 2) - (t.y + t.height / 2)),
-    );
-  }, targetSelector);
+const RING_QUIET_MS = 300;
+const RING_QUIET_FRAMES = 10;
+const RING_SETTLE_TIMEOUT_MS = 10_000;
 
-  await expect.poll(offset, { timeout: 10_000 }).toBeLessThanOrEqual(2);
-  // ...and it STAYS there; a value caught mid-animation would drift away again.
-  await page.waitForTimeout(250);
-  expect(await offset()).toBeLessThanOrEqual(2);
+async function settledRingOffset(page: Page, targetSelector: string) {
+  return page.evaluate(({ selector, quietMs, quietFrames, timeoutMs }) => new Promise<{
+    settled: boolean; offset: number | null; stillFrames: number; stillMs: number;
+  }>(resolve => {
+    const started = performance.now();
+    let quietSince = started;
+    let stillFrames = 0;
+    let previous = '';
+    const restart = () => { quietSince = performance.now(); stillFrames = 0; };
+    document.addEventListener('scroll', restart, true);
+    const tick = () => {
+      const now = performance.now();
+      const r = document.querySelector('.guide-ring')?.getBoundingClientRect();
+      const t = document.querySelector(selector)?.getBoundingClientRect();
+      const signature = r && t ? [r.x, r.y, r.width, r.height, t.x, t.y, t.width, t.height].join(',') : 'missing';
+      if (signature !== previous) {
+        previous = signature;
+        restart();
+      } else {
+        stillFrames += 1;
+      }
+      const offset = r && t
+        ? Math.max(
+          Math.abs((r.x + r.width / 2) - (t.x + t.width / 2)),
+          Math.abs((r.y + r.height / 2) - (t.y + t.height / 2)),
+        )
+        : null;
+      const settled = offset !== null && stillFrames >= quietFrames && now - quietSince >= quietMs;
+      if (settled || now - started >= timeoutMs) {
+        document.removeEventListener('scroll', restart, true);
+        resolve({ settled, offset, stillFrames, stillMs: Math.round(now - quietSince) });
+        return;
+      }
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }), { selector: targetSelector, quietMs: RING_QUIET_MS, quietFrames: RING_QUIET_FRAMES, timeoutMs: RING_SETTLE_TIMEOUT_MS });
+}
+
+async function expectRingOverTarget(page: Page, targetSelector: string) {
+  const probe = await settledRingOffset(page, targetSelector);
+  expect(probe.settled, `the ring over ${targetSelector} never came to rest: ${JSON.stringify(probe)}`).toBe(true);
+  expect(probe.offset).toBeLessThanOrEqual(2);
 }
 
 /** Every rectangle the guide paints must sit inside the viewport. */
