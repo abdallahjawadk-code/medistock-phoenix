@@ -33,24 +33,83 @@
 --    lock, UPDATE-only one-shot. Only after all of them does it set the
 --    requested business role, status 'active' and the organization.
 -- 4. get_effective_permissions (current body = M196, sha256 2b3bbd87...) is
---    forward-replaced with ONE predicate changed. Its contract: super_admin, or
---    self, or another profile in the SAME NON-NULL organization. The old test
---    "v_target_org is distinct from v_org" treated two NULL organizations as
---    the same scope, so an organization-less non-super actor (every pending
---    profile) could read another organization-less profile's effective
---    permission map. The new test "not coalesce(v_target_org = v_org, false)"
---    fails closed whenever either organization is NULL. Nothing else in the
---    body and no property of the function changes (VERIFY proves both).
+--    forward-replaced with exactly three edits (section 3b). Its contract:
+--    super_admin, or self, or another profile in the SAME NON-NULL
+--    organization. The old predicate "v_target_org is distinct from v_org"
+--    treated two NULL organizations as the same scope, so an organization-less
+--    non-super actor (every pending profile) could read another
+--    organization-less profile's effective permission map; the new predicate
+--    "not coalesce(v_target_org = v_org, false)" fails closed whenever either
+--    organization is NULL. HC1 (5b) adds the other two edits: the
+--    profile-less actor denial (ACTOR_PROFILE_NOT_FOUND) right after the actor
+--    lookup, and the NULL-safe super_admin test ("v_role is distinct from").
+--    Nothing else in the body and no property of the function changes
+--    (VERIFY proves both).
+-- 5. M219-HC1 supersedes the first M219 artifact before any Production apply
+--    (same file, same canonical number). It replaces four more routines —
+--    assign_profile_role, phoenix_recycle_apply, assign_profile_permissions and
+--    reset_profile_permissions — and, with the get_effective_permissions edits
+--    above, makes the contract above true on every M219-relevant authority
+--    path reachable by a client or service RPC:
+--    a. Among client- and service-callable RPCs, the sentinel leaves its shape
+--       ONLY through phoenix_admin_provision_profile. The generic RPCs that
+--       could otherwise move it, or give it authority, are fenced on the
+--       TARGET whoever the actor is (super_admin included), after their own
+--       authority checks: assign_profile_role (TARGET_PENDING_PROVISIONING),
+--       phoenix_recycle_apply (audited denial target_pending_provisioning) and
+--       assign_profile_permissions, which never writes a permission override
+--       for the sentinel (an override is authority even without a role
+--       change). reset_profile_permissions carries no target fence: it can
+--       only delete overrides, never grant. Every other client- or
+--       service-callable RPC that writes profiles.role / status /
+--       organization_id either cannot reach the sentinel or cannot take it out
+--       of its shape (the shape CHECK above). Trusted direct DML by
+--       service_role or postgres, and the postgres-only legacy
+--       phoenix_provision_profile, are outside this RPC-level guarantee.
+--    b. Authentication alone is not authority on these paths.
+--       get_effective_permissions, assign_profile_permissions and
+--       reset_profile_permissions deny a caller whose auth.uid() has no
+--       profiles row (ACTOR_PROFILE_NOT_FOUND) before any role, organization
+--       or permission state is used, and their super_admin / permission tests
+--       are NULL-safe (IS DISTINCT FROM, coalesce(..., false) IS NOT TRUE).
+--       phoenix_recycle_apply denies such a caller the same way (audited,
+--       actor_profile_not_found) and coalesces its actor booleans.
+--       assign_profile_role already denied it (unchanged).
+--    Each replaced body is its predecessor with exactly these edits: the
+--    prelude pins every predecessor, the static suite re-derives every result
+--    from the migration that last defined it, and VERIFY pins it by sha256.
 --
 -- Out of scope (AUTH-2, separately mandated): phoenix_my_role() and
--- phoenix_my_org() are NOT changed here, nor are the routines and policies the
--- AUTH-1 audit listed for suspended-account and NULL-safety hardening
--- (assign_profile_permissions and reset_profile_permissions keep their
--- NULL-organization comparison: their permission gate denies first).
+-- phoenix_my_org() are NOT changed here. Of the routines and policies the
+-- AUTH-1 audit listed for suspended-account and NULL-safety hardening, HC1
+-- changes ONLY what B3 requires: the actor-profile denial and the NULL-safe
+-- super_admin / permission gates of get_effective_permissions,
+-- assign_profile_permissions and reset_profile_permissions, and the coalesced
+-- actor booleans of phoenix_recycle_apply. Everything else stays AUTH-2,
+-- including the NULL-organization comparison (v_target_org is distinct from
+-- v_org) that assign_profile_permissions and reset_profile_permissions keep: a
+-- NULL-organization actor still needs users.manage_permissions, and the
+-- sentinel is protected by the assign fence (reset only deletes). Open AUTH-2
+-- findings, NOT closed here:
+--   * AUTH2_PROFILELESS_LIFECYCLE_GATE_FINDING: phoenix_lifecycle_enable,
+--     phoenix_lifecycle_authorize_rotation and phoenix_lifecycle_reserve admit
+--     an actor with no profiles row past their gates; none of them can take the
+--     sentinel out of its shape. In the same family,
+--     phoenix_lifecycle_authorize_rotation accepts a sentinel target, so an
+--     administrator can act on a pending account's Auth credential while its
+--     profile keeps the sentinel shape.
+--   * AUTH2_PROFILE_PERMISSION_INTROSPECTION_FINDING:
+--     phoenix_profile_has_permission and the related assignment / scope
+--     inspection helpers let any authenticated caller inspect another
+--     profile's permission state. Closing the get_effective_permissions path
+--     here does not close authorization reads globally.
 --
--- Owner, SECURITY DEFINER, search_path (M198) and EXECUTE grants (M197) of the
--- three replaced functions are preserved (CREATE OR REPLACE keeps ownership and
--- ACL; VERIFY compares them with the values captured before the change).
+-- Owner, SECURITY DEFINER, search_path and EXECUTE grants of the seven
+-- replaced functions are preserved exactly as the prelude captures them
+-- (CREATE OR REPLACE keeps ownership and ACL; VERIFY compares them with those
+-- values). Of the seven, only phoenix_handle_new_user is among the functions
+-- M197 (EXECUTE) and M198 (search_path) converged; the other six carry the
+-- search_path and grants of the migrations that last defined or granted them.
 -- ============================================================================
 
 BEGIN;
@@ -117,6 +176,36 @@ BEGIN
     RAISE EXCEPTION '219_precondition_failed: get_effective_permissions is not the reviewed M196 definition';
   END IF;
 
+  -- HC1: the four generic authority routines 5a/5b harden (below and in VERIFY
+  -- "fenced routine" means these four: three carry the sentinel-target fence,
+  -- reset_profile_permissions only the profile-less actor denial), each exactly
+  -- its reviewed predecessor (assign_profile_role, assign_profile_permissions and
+  -- reset_profile_permissions: M196; phoenix_recycle_apply: M093). The body is
+  -- compared with CRLF normalised to LF, because Production carries two of them
+  -- with CRLF line endings, a historical comment/whitespace-only drift.
+  IF (SELECT pg_catalog.count(*) FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_language l ON l.oid = p.prolang
+       WHERE p.oid IN (pg_catalog.to_regprocedure('public.assign_profile_role(uuid,text)'),
+                       pg_catalog.to_regprocedure('public.phoenix_recycle_apply(uuid,text,text,uuid,text,text,text,text,integer,uuid)'),
+                       pg_catalog.to_regprocedure('public.assign_profile_permissions(uuid,jsonb)'),
+                       pg_catalog.to_regprocedure('public.reset_profile_permissions(uuid)'))
+         AND p.prorettype = 'jsonb'::regtype AND l.lanname = 'plpgsql' AND p.provolatile = 'v'
+         AND p.prosecdef AND p.proconfig = ARRAY['search_path=public, pg_temp']
+         AND pg_catalog.md5(pg_catalog.replace(p.prosrc, E'\r\n', E'\n')) = CASE p.proname
+               WHEN 'assign_profile_role' THEN '2560b42ba8d8afcf7b33c45bb71e68c4'
+               WHEN 'phoenix_recycle_apply' THEN '35120783a910fcd29d463ccb7d9cd86e'
+               WHEN 'assign_profile_permissions' THEN 'cdd271498787559b7be83e6f816c5586'
+               WHEN 'reset_profile_permissions' THEN 'ef98ee9a7b589cf7fc1192e02bdfbe74' END) <> 4 THEN
+    RAISE EXCEPTION '219_precondition_failed: assign_profile_role, phoenix_recycle_apply, assign_profile_permissions or reset_profile_permissions is not its reviewed predecessor';
+  END IF;
+
+  -- One definition per replaced routine: no overload can offer an unfenced path.
+  IF (SELECT pg_catalog.count(*) FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
+       WHERE n.nspname = 'public' AND p.proname IN ('phoenix_handle_new_user', 'phoenix_admin_provision_profile',
+             'get_effective_permissions', 'assign_profile_role', 'phoenix_recycle_apply',
+             'assign_profile_permissions', 'reset_profile_permissions')) <> 7 THEN
+    RAISE EXCEPTION '219_precondition_failed: a replaced routine has an overload';
+  END IF;
+
   IF EXISTS (SELECT 1 FROM public.role_permission_defaults d WHERE d.role = 'pending_provisioning')
      OR EXISTS (SELECT 1 FROM public.profiles p WHERE p.role = 'pending_provisioning') THEN
     RAISE EXCEPTION '219_precondition_failed: pending_provisioning is already in use';
@@ -126,14 +215,20 @@ BEGIN
        (SELECT c.relowner FROM pg_catalog.pg_class c WHERE c.oid = 'public.profiles'::regclass) <> v_me
        OR (SELECT p.proowner FROM pg_catalog.pg_proc p WHERE p.oid = pg_catalog.to_regprocedure('public.phoenix_handle_new_user()')) <> v_me
        OR (SELECT p.proowner FROM pg_catalog.pg_proc p WHERE p.oid = pg_catalog.to_regprocedure('public.phoenix_admin_provision_profile(uuid,uuid,uuid,uuid,text,text,text,text,text,uuid)')) <> v_me
-       OR (SELECT p.proowner FROM pg_catalog.pg_proc p WHERE p.oid = pg_catalog.to_regprocedure('public.get_effective_permissions(uuid)')) <> v_me) THEN
+       OR (SELECT p.proowner FROM pg_catalog.pg_proc p WHERE p.oid = pg_catalog.to_regprocedure('public.get_effective_permissions(uuid)')) <> v_me
+       OR (SELECT p.proowner FROM pg_catalog.pg_proc p WHERE p.oid = pg_catalog.to_regprocedure('public.assign_profile_role(uuid,text)')) <> v_me
+       OR (SELECT p.proowner FROM pg_catalog.pg_proc p WHERE p.oid = pg_catalog.to_regprocedure('public.phoenix_recycle_apply(uuid,text,text,uuid,text,text,text,text,integer,uuid)')) <> v_me
+       OR (SELECT p.proowner FROM pg_catalog.pg_proc p WHERE p.oid = pg_catalog.to_regprocedure('public.assign_profile_permissions(uuid,jsonb)')) <> v_me
+       OR (SELECT p.proowner FROM pg_catalog.pg_proc p WHERE p.oid = pg_catalog.to_regprocedure('public.reset_profile_permissions(uuid)')) <> v_me) THEN
     RAISE EXCEPTION '219_precondition_failed: M219 must be applied by the owner of public.profiles and of every replaced function'
       USING DETAIL = format('role=%s', current_user);
   END IF;
 
   -- Baselines VERIFY compares: the ACL, owner, SECURITY DEFINER flag and
-  -- configuration of both replaced functions, and the bodies of the two
-  -- authority helpers that AUTH-1 must NOT change.
+  -- configuration of phoenix_handle_new_user and phoenix_admin_provision_profile,
+  -- the full identity/properties and body of get_effective_permissions, the
+  -- bodies of the two authority helpers that AUTH-1 must NOT change, and (HC1,
+  -- last) the full identity/properties of the four fenced routines.
   PERFORM set_config('phoenix_m219.handle_meta', (SELECT concat_ws('|', p.proowner::regrole::text, p.prosecdef, p.proconfig::text, p.proacl::text)
      FROM pg_catalog.pg_proc p WHERE p.oid = pg_catalog.to_regprocedure('public.phoenix_handle_new_user()')), true);
   PERFORM set_config('phoenix_m219.provision_meta', (SELECT concat_ws('|', p.proowner::regrole::text, p.prosecdef, p.proconfig::text, p.proacl::text)
@@ -146,6 +241,15 @@ BEGIN
   PERFORM set_config('phoenix_m219.helpers', (SELECT string_agg(p.proname || ':' || pg_catalog.md5(p.prosrc) || ':' || p.proacl::text, ';' ORDER BY p.proname)
      FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
     WHERE n.nspname = 'public' AND p.proname IN ('phoenix_my_role', 'phoenix_my_org')), true);
+  -- HC1: identity, owner, SECURITY DEFINER, configuration, ACL, return type,
+  -- volatility and language of the four fenced routines.
+  PERFORM set_config('phoenix_m219.hc1_meta', (SELECT string_agg(concat_ws('|', p.oid::regprocedure::text, p.proowner::regrole::text,
+         p.prosecdef, p.proconfig::text, p.proacl::text, p.prorettype::regtype::text, p.provolatile, p.prolang), ';' ORDER BY p.proname)
+     FROM pg_catalog.pg_proc p
+    WHERE p.oid IN (pg_catalog.to_regprocedure('public.assign_profile_role(uuid,text)'),
+                    pg_catalog.to_regprocedure('public.phoenix_recycle_apply(uuid,text,text,uuid,text,text,text,text,integer,uuid)'),
+                    pg_catalog.to_regprocedure('public.assign_profile_permissions(uuid,jsonb)'),
+                    pg_catalog.to_regprocedure('public.reset_profile_permissions(uuid)'))), true);
 END
 $prelude$;
 
@@ -169,7 +273,7 @@ ALTER TABLE public.profiles
     role <> 'pending_provisioning' OR (status = 'suspended' AND organization_id IS NULL));
 
 COMMENT ON CONSTRAINT profiles_role_check ON public.profiles IS
-  'AUTH-1 (219): the six business roles plus pending_provisioning — an INTERNAL_ONLY, NON_ASSIGNABLE, NON_AUTHORIZED, NON_UI lifecycle value held only between Auth user creation and trusted provisioning. It has no role_permission_defaults and is on no assignment allowlist.';
+  'AUTH-1 (219): the six business roles plus pending_provisioning — an INTERNAL_ONLY, NON_ASSIGNABLE, NON_AUTHORIZED, NON_UI lifecycle value held only between Auth user creation and trusted provisioning. It has no role_permission_defaults, is on no assignment allowlist, and no generic role-assignment, recycle or permission-grant RPC accepts it as a target (HC1; reset_profile_permissions may only clear overrides).';
 COMMENT ON CONSTRAINT profiles_pending_provisioning_shape_chk ON public.profiles IS
   'AUTH-1 (219): a pending_provisioning profile is always suspended and bound to no organization.';
 
@@ -538,10 +642,13 @@ end;
 $function$;
 
 -- ----------------------------------------------------------------------------
--- 3b. get_effective_permissions — the M196 body with ONE predicate changed:
+-- 3b. get_effective_permissions — the M196 body with exactly three edits:
 --     "v_target_org is distinct from v_org" becomes
 --     "not coalesce(v_target_org = v_org, false)": a NULL organization on
---     either side is never the same scope. Everything else is byte-identical.
+--     either side is never the same scope; HC1 (5b) denies a caller with no
+--     profiles row (ACTOR_PROFILE_NOT_FOUND) right after the actor lookup and
+--     makes the super_admin test NULL-safe ("v_role is distinct from").
+--     Everything else is byte-identical.
 -- ----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.get_effective_permissions(p_profile_id uuid)
  RETURNS jsonb
@@ -552,13 +659,373 @@ AS $function$
 declare v_actor uuid;v_role text;v_org uuid;v_target_org uuid;v_result jsonb;
 begin
  v_actor:=auth.uid(); if v_actor is null then return jsonb_build_object('ok',false,'error','NOT_AUTHENTICATED'); end if;
- select role,organization_id into v_role,v_org from public.profiles where id=v_actor;
+ select role,organization_id into v_role,v_org from public.profiles where id=v_actor; if not found then return jsonb_build_object('ok',false,'error','ACTOR_PROFILE_NOT_FOUND'); end if;
  select organization_id into v_target_org from public.profiles where id=p_profile_id; if not found then return jsonb_build_object('ok',false,'error','TARGET_NOT_FOUND'); end if;
- if v_role<>'super_admin' and p_profile_id<>v_actor and not coalesce(v_target_org = v_org, false) then return jsonb_build_object('ok',false,'error','OUT_OF_SCOPE'); end if;
+ if v_role is distinct from 'super_admin' and p_profile_id<>v_actor and not coalesce(v_target_org = v_org, false) then return jsonb_build_object('ok',false,'error','OUT_OF_SCOPE'); end if;
  if v_role='health_center_manager' and p_profile_id<>v_actor then return jsonb_build_object('ok',false,'error','OUT_OF_SCOPE'); end if;
  select coalesce(jsonb_object_agg(k.key,phoenix_profile_has_permission(p_profile_id,k.key)),'{}'::jsonb) into v_result from public.permission_keys k;
  return jsonb_build_object('ok',true,'permissions',v_result);
 end;$function$;
+
+-- ----------------------------------------------------------------------------
+-- 3c. HC1 — sentinel fences (5a) and profile-less actor denial (5b) in the
+--     generic authority routines. Each body is its pinned predecessor (M196 /
+--     M093) with only the HC1 edits; signatures, defaults, owner, SECURITY
+--     DEFINER, search_path and ACL are unchanged (CREATE OR REPLACE).
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.assign_profile_role(p_target_id uuid, p_new_role text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+declare
+  v_actor_id     uuid;
+  v_actor_role   text;
+  v_target       profiles%rowtype;
+  v_allowed_roles text[] := array[
+    'super_admin', 'central_warehouse_manager', 'institution_admin',
+    'warehouse_officer', 'outlet_officer'
+  ];
+begin
+  v_actor_id := auth.uid();
+  if v_actor_id is null then
+    return jsonb_build_object('ok', false, 'error', 'NOT_AUTHENTICATED');
+  end if;
+
+  select role into v_actor_role
+  from public.profiles where id = v_actor_id;
+  if not found then
+    return jsonb_build_object('ok', false, 'error', 'ACTOR_PROFILE_NOT_FOUND');
+  end if;
+
+  -- FIVE-ROLE-CUTOVER-091: only the platform admin may assign roles through
+  -- this legacy RPC now (hospital_admin can no longer exist as an actor).
+  if v_actor_role <> 'super_admin' then
+    return jsonb_build_object('ok', false, 'error', 'INSUFFICIENT_ROLE');
+  end if;
+
+  if p_new_role != all(v_allowed_roles) then
+    return jsonb_build_object('ok', false, 'error', 'INVALID_ROLE', 'allowed', v_allowed_roles);
+  end if;
+
+  select * into v_target from public.profiles where id = p_target_id;
+  if not found then
+    return jsonb_build_object('ok', false, 'error', 'TARGET_NOT_FOUND');
+  end if;
+
+  -- AUTH-1 (219-HC1): the internal pending_provisioning sentinel is never the
+  -- target of this generic role RPC, whoever the actor is. It leaves its shape
+  -- only through phoenix_admin_provision_profile (nonce, actor binding,
+  -- freshness, Auth identity, one-shot).
+  if v_target.role = 'pending_provisioning' then
+    return jsonb_build_object('ok', false, 'error', 'TARGET_PENDING_PROVISIONING');
+  end if;
+
+  if p_target_id = v_actor_id then
+    return jsonb_build_object('ok', false, 'error', 'CANNOT_CHANGE_OWN_ROLE');
+  end if;
+
+  if p_new_role = 'super_admin' and v_actor_role <> 'super_admin' then
+    return jsonb_build_object('ok', false, 'error', 'CANNOT_ESCALATE_TO_SUPER_ADMIN');
+  end if;
+
+  if v_target.role = p_new_role then
+    return jsonb_build_object('ok', true, 'changed', false, 'reason', 'ALREADY_ASSIGNED');
+  end if;
+
+  update public.profiles set role = p_new_role, updated_at = now() where id = p_target_id;
+
+  insert into public.audit_logs (organization_id, actor_id, actor_role, action, entity_type, entity_id, entity_label, payload)
+    values (v_target.organization_id, v_actor_id, v_actor_role, 'role_assigned', 'profile',
+            p_target_id, v_target.full_name,
+            jsonb_build_object('previous_role', v_target.role, 'new_role', p_new_role));
+
+  return jsonb_build_object('ok', true, 'changed', true, 'previous_role', v_target.role, 'new_role', p_new_role);
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.phoenix_recycle_apply(p_target_id uuid, p_new_full_name text, p_new_role text, p_new_org uuid, p_login_mode text, p_username text, p_contact_email text, p_new_email text, p_expected_version integer, p_correlation_id uuid DEFAULT gen_random_uuid())
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+declare
+  v_actor   uuid := auth.uid();
+  v_arole   text;
+  v_aorg    uuid;
+  v_astatus text;
+  v_is_super boolean;
+  v_is_inst  boolean;
+  v_trole   text;
+  v_tstatus text;
+  v_torg    uuid;
+  v_tver    integer;
+  v_newver  integer;
+  v_efforg  uuid;
+begin
+  if v_actor is null then
+    return jsonb_build_object('ok', false, 'error', 'NOT_AUTHENTICATED', 'correlation_id', p_correlation_id);
+  end if;
+  if p_new_role not in ('super_admin','institution_admin','central_warehouse_manager','warehouse_officer','outlet_officer') then
+    return jsonb_build_object('ok', false, 'error', 'INVALID_ROLE', 'correlation_id', p_correlation_id);
+  end if;
+  perform pg_advisory_xact_lock(9314093001);
+
+  select role, organization_id, status into v_arole, v_aorg, v_astatus
+  from public.profiles where id = v_actor;
+  -- AUTH-1 (219-HC1): authentication alone is not authority. A caller with no
+  -- profiles row is denied here, before any role, organization or permission
+  -- state is used; the denial is audited without an actor id, because that id
+  -- may no longer exist in auth.users.
+  if not found then
+    return public._phoenix_lifecycle_deny(null, null, null, p_target_id, 'actor_profile_not_found', p_correlation_id);
+  end if;
+  v_is_super := coalesce(v_arole = 'super_admin' and v_astatus = 'active', false);
+  v_is_inst  := coalesce(v_arole = 'institution_admin' and v_astatus = 'active', false);
+  if not (v_is_super or v_is_inst) then
+    return public._phoenix_lifecycle_deny(v_actor, v_arole, v_aorg, p_target_id, 'actor_not_authorized', p_correlation_id);
+  end if;
+  if coalesce(public.phoenix_profile_has_permission(v_actor, 'users.recycle'), false) is not true then
+    return public._phoenix_lifecycle_deny(v_actor, v_arole, v_aorg, p_target_id, 'actor_missing_permission', p_correlation_id);
+  end if;
+  if p_target_id = v_actor then
+    return public._phoenix_lifecycle_deny(v_actor, v_arole, v_aorg, p_target_id, 'self_action', p_correlation_id);
+  end if;
+
+  select role, status, organization_id, identity_version
+    into v_trole, v_tstatus, v_torg, v_tver
+  from public.profiles where id = p_target_id;
+  if v_trole is null then
+    return public._phoenix_lifecycle_deny(v_actor, v_arole, v_aorg, p_target_id, 'target_not_found', p_correlation_id);
+  end if;
+  -- AUTH-1 (219-HC1): the internal pending_provisioning sentinel is never
+  -- recycled; it leaves its shape only through phoenix_admin_provision_profile.
+  if v_trole = 'pending_provisioning' then
+    return public._phoenix_lifecycle_deny(v_actor, v_arole, v_aorg, p_target_id, 'target_pending_provisioning', p_correlation_id);
+  end if;
+  if v_tstatus is distinct from 'suspended' then
+    return jsonb_build_object('ok', false, 'error', 'TARGET_NOT_SUSPENDED', 'correlation_id', p_correlation_id);
+  end if;
+  if v_trole = 'super_admin' then
+    return public._phoenix_lifecycle_deny(v_actor, v_arole, v_aorg, p_target_id, 'cannot_recycle_super_admin', p_correlation_id);
+  end if;
+  if v_is_inst then
+    if v_trole in ('institution_admin', 'central_warehouse_manager') then
+      return public._phoenix_lifecycle_deny(v_actor, v_arole, v_aorg, p_target_id, 'target_platform_managed', p_correlation_id);
+    end if;
+    if v_aorg is distinct from v_torg then
+      return public._phoenix_lifecycle_deny(v_actor, v_arole, v_aorg, p_target_id, 'cross_org', p_correlation_id);
+    end if;
+    if p_new_role in ('super_admin','institution_admin','central_warehouse_manager') then
+      return public._phoenix_lifecycle_deny(v_actor, v_arole, v_aorg, p_target_id, 'cannot_assign_elevated_role', p_correlation_id);
+    end if;
+    if p_new_org is not null then
+      return public._phoenix_lifecycle_deny(v_actor, v_arole, v_aorg, p_target_id, 'cross_org', p_correlation_id);
+    end if;
+  end if;
+  -- Optimistic concurrency: the caller acted on a specific identity version.
+  if p_expected_version is not null and v_tver is distinct from p_expected_version then
+    return jsonb_build_object('ok', false, 'error', 'LIFECYCLE_IN_PROGRESS', 'correlation_id', p_correlation_id);
+  end if;
+  if exists (select 1 from public.profile_lifecycle_reservations where profile_id = p_target_id) then
+    return jsonb_build_object('ok', false, 'error', 'LIFECYCLE_IN_PROGRESS', 'correlation_id', p_correlation_id);
+  end if;
+
+  v_newver := v_tver + 1;
+  v_efforg := case when v_is_super and p_new_org is not null then p_new_org else v_torg end;
+
+  -- Close the current open identity-history row (matched by version).
+  update public.user_identity_history
+     set valid_until = now()
+   where profile_id = p_target_id and identity_version = v_tver and valid_until is null;
+
+  update public.profiles
+     set identity_version = v_newver,
+         full_name = p_new_full_name,
+         role = p_new_role,
+         status = 'active',
+         login_mode = coalesce(p_login_mode, 'local'),
+         username = case when p_login_mode = 'local' then p_username else null end,
+         contact_email = case when p_login_mode = 'local' then p_contact_email else null end,
+         must_change_password = (p_login_mode = 'local'),
+         organization_id = v_efforg,
+         disabled_at = null,
+         disabled_by = null,
+         updated_at = now()
+   where id = p_target_id;
+
+  insert into public.user_identity_history
+    (profile_id, identity_version, full_name, email, role, organization_id,
+     valid_from, valid_until, change_reason, recycled_by)
+  values
+    (p_target_id, v_newver, p_new_full_name, p_new_email, p_new_role, v_efforg,
+     now(), null, 'account_recycled', v_actor);
+
+  insert into public.audit_logs
+    (organization_id, actor_id, actor_role, action, entity_type, entity_id, payload)
+  values
+    (v_efforg, v_actor, v_arole, 'user.account_recycled', 'profile', p_target_id,
+     jsonb_build_object('old_role', v_trole, 'new_role', p_new_role,
+                        'new_identity_version', v_newver, 'correlation_id', p_correlation_id));
+
+  return jsonb_build_object('ok', true, 'target_profile_id', p_target_id,
+                            'new_identity_version', v_newver, 'correlation_id', p_correlation_id);
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.assign_profile_permissions(p_profile_id uuid, p_permissions jsonb)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+declare
+  v_actor uuid;
+  v_role  text;
+  v_org   uuid;
+  v_target_org uuid;
+  v_key   text;
+  v_val   jsonb;
+  v_bool  boolean;
+  v_dangerous boolean;
+  v_applied  int := 0;
+  v_rejected jsonb := '[]'::jsonb;
+  v_audit_logged boolean := true;
+begin
+  v_actor := auth.uid();
+  if v_actor is null then return jsonb_build_object('ok', false, 'error', 'NOT_AUTHENTICATED'); end if;
+
+  select role, organization_id into v_role, v_org from public.profiles where id = v_actor;
+  -- AUTH-1 (219-HC1): authentication alone is not authority. A caller with no
+  -- profiles row is denied before any authority decision reads role or org.
+  if not found then return jsonb_build_object('ok', false, 'error', 'ACTOR_PROFILE_NOT_FOUND'); end if;
+  select organization_id into v_target_org from public.profiles where id = p_profile_id;
+  if not found then return jsonb_build_object('ok', false, 'error', 'TARGET_NOT_FOUND'); end if;
+
+  -- authority: super_admin, or holds users.manage_permissions within same org
+  if v_role is distinct from 'super_admin' then
+    if coalesce(phoenix_profile_has_permission(v_actor, 'users.manage_permissions'), false) is not true then
+      return jsonb_build_object('ok', false, 'error', 'INSUFFICIENT_PERMISSION');
+    end if;
+    if v_target_org is distinct from v_org then
+      return jsonb_build_object('ok', false, 'error', 'OUT_OF_SCOPE');
+    end if;
+  end if;
+
+  -- block self-permission edits (no self-escalation)
+  if p_profile_id = v_actor then
+    return jsonb_build_object('ok', false, 'error', 'CANNOT_EDIT_OWN_PERMISSIONS');
+  end if;
+
+  -- AUTH-1 (219-HC1): the pending_provisioning sentinel holds no authority, so
+  -- no permission override is ever written for it, whoever the actor is.
+  if exists (select 1 from public.profiles where id = p_profile_id and role = 'pending_provisioning') then
+    return jsonb_build_object('ok', false, 'error', 'TARGET_PENDING_PROVISIONING');
+  end if;
+
+  for v_key, v_val in select * from jsonb_each(p_permissions) loop
+    -- unknown key
+    if not exists (select 1 from public.permission_keys where key = v_key) then
+      v_rejected := v_rejected || jsonb_build_object('key', v_key, 'error', 'UNKNOWN_PERMISSION');
+      continue;
+    end if;
+
+    if jsonb_typeof(v_val) = 'null' then
+      v_bool := null;
+    else
+      v_bool := v_val::text::boolean;
+    end if;
+
+    -- granting requires the actor to hold the permission (dangerous included)
+    if v_bool is true and v_role is distinct from 'super_admin' then
+      if coalesce(phoenix_profile_has_permission(v_actor, v_key), false) is not true then
+        select is_dangerous into v_dangerous from public.permission_keys where key = v_key;
+        v_rejected := v_rejected || jsonb_build_object(
+          'key', v_key,
+          'error', case when v_dangerous then 'NEEDS_AUTHORITY_FOR_DANGEROUS' else 'CANNOT_GRANT_UNHELD' end
+        );
+        continue;
+      end if;
+    end if;
+
+    insert into public.profile_permission_overrides (profile_id, permission_key, allowed, created_by)
+      values (p_profile_id, v_key, v_bool, v_actor)
+    on conflict (profile_id, permission_key)
+      do update set allowed = excluded.allowed, created_by = v_actor, updated_at = now();
+    v_applied := v_applied + 1;
+  end loop;
+
+  -- Audit logging is best-effort: a schema mismatch or any other failure
+  -- writing to audit_logs must NEVER roll back the permission overrides
+  -- already written above. The nested BEGIN/EXCEPTION block scopes the
+  -- failure to just this insert (PL/pgSQL sub-blocks act as an implicit
+  -- savepoint) — it does not swallow or weaken any security/authority
+  -- check above, all of which already returned before this point on failure.
+  begin
+    insert into public.audit_logs (organization_id, actor_id, actor_role, action, entity_type, entity_id, payload)
+      values (v_target_org, v_actor, v_role, 'permissions_assigned', 'profile', p_profile_id,
+              jsonb_build_object('applied', v_applied, 'rejected', v_rejected));
+  exception when others then
+    v_audit_logged := false;
+    raise warning 'assign_profile_permissions: audit_logs insert failed (permissions were still saved): %', sqlerrm;
+  end;
+
+  return jsonb_build_object('ok', true, 'applied', v_applied, 'rejected', v_rejected, 'audit_logged', v_audit_logged);
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.reset_profile_permissions(p_profile_id uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+declare
+  v_actor uuid;
+  v_role  text;
+  v_org   uuid;
+  v_target_org uuid;
+  v_count int;
+  v_audit_logged boolean := true;
+begin
+  v_actor := auth.uid();
+  if v_actor is null then return jsonb_build_object('ok', false, 'error', 'NOT_AUTHENTICATED'); end if;
+
+  select role, organization_id into v_role, v_org from public.profiles where id = v_actor;
+  -- AUTH-1 (219-HC1): authentication alone is not authority. A caller with no
+  -- profiles row is denied before any authority decision reads role or org.
+  if not found then return jsonb_build_object('ok', false, 'error', 'ACTOR_PROFILE_NOT_FOUND'); end if;
+  select organization_id into v_target_org from public.profiles where id = p_profile_id;
+  if not found then return jsonb_build_object('ok', false, 'error', 'TARGET_NOT_FOUND'); end if;
+
+  if v_role is distinct from 'super_admin' then
+    if coalesce(phoenix_profile_has_permission(v_actor, 'users.manage_permissions'), false) is not true then
+      return jsonb_build_object('ok', false, 'error', 'INSUFFICIENT_PERMISSION');
+    end if;
+    if v_target_org is distinct from v_org then
+      return jsonb_build_object('ok', false, 'error', 'OUT_OF_SCOPE');
+    end if;
+  end if;
+
+  delete from public.profile_permission_overrides where profile_id = p_profile_id;
+  get diagnostics v_count = row_count;
+
+  -- Same audit-logging safety as assign_profile_permissions above — never
+  -- roll back a successful reset because of an audit_logs write failure.
+  begin
+    insert into public.audit_logs (organization_id, actor_id, actor_role, action, entity_type, entity_id, payload)
+      values (v_target_org, v_actor, v_role, 'permissions_reset', 'profile', p_profile_id,
+              jsonb_build_object('cleared', v_count));
+  exception when others then
+    v_audit_logged := false;
+    raise warning 'reset_profile_permissions: audit_logs insert failed (reset was still applied): %', sqlerrm;
+  end;
+
+  return jsonb_build_object('ok', true, 'cleared', v_count, 'audit_logged', v_audit_logged);
+end;
+$function$;
 
 -- ----------------------------------------------------------------------------
 -- 4. VERIFY — catalog reads only.
@@ -604,10 +1071,33 @@ BEGIN
      OR (SELECT count(*) FROM regexp_matches(v_prov, 'pending_provisioning', 'g')) <> 1 THEN
     RAISE EXCEPTION 'VERIFY FAILED (219): phoenix_admin_provision_profile must accept only the pending_provisioning/suspended placeholder';
   END IF;
-  IF EXISTS (SELECT 1 FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
-              WHERE n.nspname = 'public' AND p.proname IN ('assign_profile_role', 'phoenix_recycle_apply')
-                AND p.prosrc ~ 'pending_provisioning') THEN
-    RAISE EXCEPTION 'VERIFY FAILED (219): a role-assignment routine mentions pending_provisioning';
+  -- HC1 (5a/5b): each fenced routine (the four HC1 routines) is exactly its
+  -- reviewed HC1 body — the pinned predecessor plus only its HC1 edits: the
+  -- sentinel-target fence (assign_profile_role, phoenix_recycle_apply,
+  -- assign_profile_permissions), the profile-less actor denial and the NULL-safe
+  -- gates — and keeps every property it had. Their requested-role allowlists
+  -- are unchanged, so the sentinel is named in them only as a refused TARGET.
+  IF (SELECT string_agg(p.proname || ':' || pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(p.prosrc, 'UTF8')), 'hex'), ';' ORDER BY p.proname)
+        FROM pg_catalog.pg_proc p
+       WHERE p.oid IN (pg_catalog.to_regprocedure('public.assign_profile_role(uuid,text)'),
+                       pg_catalog.to_regprocedure('public.phoenix_recycle_apply(uuid,text,text,uuid,text,text,text,text,integer,uuid)'),
+                       pg_catalog.to_regprocedure('public.assign_profile_permissions(uuid,jsonb)'),
+                       pg_catalog.to_regprocedure('public.reset_profile_permissions(uuid)')))
+     IS DISTINCT FROM 'assign_profile_permissions:96f4d9713c47d5291883fea8133c1028d45ceceb70adf6120157cf14559126a4;'
+                   || 'assign_profile_role:27f0dfa0bcc85a2e160578b4e82a7fd64bb457c7792999aace30a43f40208e23;'
+                   || 'phoenix_recycle_apply:c99d2e59d1209097ddbb3baa45746df36ccd2469089e835920e5f7f972adb277;'
+                   || 'reset_profile_permissions:eefab1082f222a81e05c68517eaebc9157c9f2da3f21d1e9515b0799247b323c' THEN
+    RAISE EXCEPTION 'VERIFY FAILED (219): a fenced routine is not its reviewed HC1 body';
+  END IF;
+  IF (SELECT string_agg(concat_ws('|', p.oid::regprocedure::text, p.proowner::regrole::text,
+             p.prosecdef, p.proconfig::text, p.proacl::text, p.prorettype::regtype::text, p.provolatile, p.prolang), ';' ORDER BY p.proname)
+        FROM pg_catalog.pg_proc p
+       WHERE p.oid IN (pg_catalog.to_regprocedure('public.assign_profile_role(uuid,text)'),
+                       pg_catalog.to_regprocedure('public.phoenix_recycle_apply(uuid,text,text,uuid,text,text,text,text,integer,uuid)'),
+                       pg_catalog.to_regprocedure('public.assign_profile_permissions(uuid,jsonb)'),
+                       pg_catalog.to_regprocedure('public.reset_profile_permissions(uuid)')))
+     IS DISTINCT FROM current_setting('phoenix_m219.hc1_meta', true) THEN
+    RAISE EXCEPTION 'VERIFY FAILED (219): identity, owner, security, configuration, grants, language, volatility or return type of a fenced routine changed';
   END IF;
 
   -- Owner, SECURITY DEFINER, configuration and EXECUTE grants unchanged.
@@ -625,6 +1115,13 @@ BEGIN
      OR has_function_privilege('authenticated', 'public.phoenix_admin_provision_profile(uuid,uuid,uuid,uuid,text,text,text,text,text,uuid)', 'EXECUTE') THEN
     RAISE EXCEPTION 'VERIFY FAILED (219): a client role can execute a replaced function';
   END IF;
+  IF has_function_privilege('anon', 'public.get_effective_permissions(uuid)', 'EXECUTE')
+     OR has_function_privilege('anon', 'public.assign_profile_role(uuid,text)', 'EXECUTE')
+     OR has_function_privilege('anon', 'public.phoenix_recycle_apply(uuid,text,text,uuid,text,text,text,text,integer,uuid)', 'EXECUTE')
+     OR has_function_privilege('anon', 'public.assign_profile_permissions(uuid,jsonb)', 'EXECUTE')
+     OR has_function_privilege('anon', 'public.reset_profile_permissions(uuid)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'VERIFY FAILED (219): anon can execute a replaced authority routine';
+  END IF;
 
   -- The trigger binding is unchanged.
   IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_trigger t
@@ -634,7 +1131,7 @@ BEGIN
     RAISE EXCEPTION 'VERIFY FAILED (219): on_auth_user_created binding changed';
   END IF;
 
-  -- get_effective_permissions: exactly one predicate changed; every property kept.
+  -- get_effective_permissions: exactly the three 3b edits; every property kept.
   IF (SELECT concat_ws('|', p.proowner::regrole::text, p.prosecdef, p.proconfig::text, p.proacl::text,
              p.prorettype::regtype::text, p.provolatile, p.prolang, pg_catalog.pg_get_function_identity_arguments(p.oid))
         FROM pg_catalog.pg_proc p WHERE p.oid = pg_catalog.to_regprocedure('public.get_effective_permissions(uuid)'))
@@ -642,13 +1139,16 @@ BEGIN
     RAISE EXCEPTION 'VERIFY FAILED (219): get_effective_permissions identity, owner, security, configuration, grants, language, volatility or return type changed';
   END IF;
   IF (SELECT p.prosrc FROM pg_catalog.pg_proc p WHERE p.oid = pg_catalog.to_regprocedure('public.get_effective_permissions(uuid)'))
-       IS DISTINCT FROM replace(current_setting('phoenix_m219.gep_src', true),
+       IS DISTINCT FROM replace(replace(replace(current_setting('phoenix_m219.gep_src', true),
+                                'into v_role,v_org from public.profiles where id=v_actor;',
+                                'into v_role,v_org from public.profiles where id=v_actor; if not found then return jsonb_build_object(''ok'',false,''error'',''ACTOR_PROFILE_NOT_FOUND''); end if;'),
+                                'v_role<>''super_admin'' and p_profile_id<>v_actor', 'v_role is distinct from ''super_admin'' and p_profile_id<>v_actor'),
                                 'v_target_org is distinct from v_org', 'not coalesce(v_target_org = v_org, false)')
      OR (SELECT pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(p.prosrc, 'UTF8')), 'hex')
            FROM pg_catalog.pg_proc p WHERE p.oid = pg_catalog.to_regprocedure('public.get_effective_permissions(uuid)'))
-       IS DISTINCT FROM '8b891cb4b76947517c8d9c0ade96f8f0b0cb893d0c1730f7764c275d14ac09ec'
+       IS DISTINCT FROM '518141abbc8b9022a7cf0f76a721fdfab1192c07f5d496f2b667c9fb7d6254b0'
      OR (SELECT p.prosrc FROM pg_catalog.pg_proc p WHERE p.oid = pg_catalog.to_regprocedure('public.get_effective_permissions(uuid)')) ~ 'is distinct from v_org' THEN
-    RAISE EXCEPTION 'VERIFY FAILED (219): get_effective_permissions is not the M196 body with only the NULL-organization scope predicate corrected';
+    RAISE EXCEPTION 'VERIFY FAILED (219): get_effective_permissions is not the M196 body with only the NULL-organization scope predicate and the profile-less actor denial';
   END IF;
 
   -- AUTH-1 scope: the authority helpers are untouched (AUTH-2).
