@@ -13,6 +13,13 @@
  *   * The sentinel is on no role-assignment interface.
  *   * Trusted admin provisioning still works end to end, exactly once, and
  *     every negative case is denied with its audited reason.
+ *   * M219-HC1: no generic role / recycle / permission-override RPC takes a
+ *     sentinel out of its shape or gives it authority; a caller whose auth.uid()
+ *     has no profiles row is denied by get_effective_permissions,
+ *     assign_profile_permissions, reset_profile_permissions,
+ *     phoenix_recycle_apply and assign_profile_role before any authority state
+ *     is read; ordinary authorization is preserved. Each HC1 test builds its own
+ *     fixtures.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { buildRig, rigAvailable } from '../../../tools/pg-rig/rig.mjs';
@@ -265,13 +272,13 @@ run('migration 219 — sign-up authority hardening (dynamic)', () => {
       }
     });
 
-    it('keeps the M196 body apart from the one predicate, and every function property', async () => {
+    it('keeps the M196 body apart from the NULL-organization predicate and the HC1 actor denial, and every function property', async () => {
       const row = await admin(async (c) => (await c.query(
         `select pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(p.prosrc, 'UTF8')), 'hex') as sha,
                 p.prosecdef, p.proconfig, p.proacl::text as acl, p.provolatile, pg_get_userbyid(p.proowner) as owner
            from pg_proc p where p.oid = 'public.get_effective_permissions(uuid)'::regprocedure`)).rows[0]);
       expect(row).toEqual({
-        sha: '8b891cb4b76947517c8d9c0ade96f8f0b0cb893d0c1730f7764c275d14ac09ec', prosecdef: true,
+        sha: '518141abbc8b9022a7cf0f76a721fdfab1192c07f5d496f2b667c9fb7d6254b0', prosecdef: true,
         proconfig: ['search_path=public, pg_temp'], acl: '{postgres=X/postgres,service_role=X/postgres,authenticated=X/postgres}',
         provolatile: 'v', owner: 'postgres',
       });
@@ -416,6 +423,417 @@ run('migration 219 — sign-up authority hardening (dynamic)', () => {
       expect(result).toMatchObject({ ok: false, error: 'REQUEST_DENIED' });
       expect(await denialReason(correlation)).toEqual([reason]);
       expect(await profile(args.target)).toEqual(before);
+    });
+  });
+
+  // ------------------------------------------------------------- M219-HC1
+  // B1: the sentinel leaves its shape only through trusted provisioning.
+  // B3: authentication alone is not authority on every M219 authority path.
+  // Every security-critical test below builds its OWN fixtures (a fresh sentinel,
+  // fresh targets, fresh actors); only immutable fixtures (the seed super_admin,
+  // organizations) are shared, so no test depends on another test's state.
+  describe('M219-HC1: sentinel transition fences and profile-less actor denial', () => {
+    const SECTOR_H = '21900000-0000-4000-8000-0000000000f5';
+    const BUSINESS_ROLES = ['super_admin', 'institution_admin', 'central_warehouse_manager', 'warehouse_officer', 'outlet_officer'];
+    const ACTOR_DENIED = { ok: false, error: 'ACTOR_PROFILE_NOT_FOUND' };
+    const FENCED = { ok: false, error: 'TARGET_PENDING_PROVISIONING' };
+
+    /** As `actor` (authenticated JWT), COMMITTED, so any write a bug let through would persist. */
+    const asUserCommit = <T>(id: string, fn: (c: any) => Promise<T>) => rig.asUser(id, fn, { commit: true });
+    const row = async (id: string) => (await admin((c) => c.query(
+      'select to_jsonb(p.*) as j from public.profiles p where id = $1', [id]))).rows[0]?.j as Json | undefined;
+    const overrides = async (id: string) => (await admin((c) => c.query(
+      'select coalesce(jsonb_object_agg(permission_key, allowed order by permission_key), \'{}\'::jsonb) as o from public.profile_permission_overrides where profile_id = $1',
+      [id]))).rows[0].o as Json;
+    const overrideRows = async (id: string) => (await admin((c) => c.query(
+      'select count(*)::int as n from public.profile_permission_overrides where profile_id = $1', [id]))).rows[0].n as number;
+    const auditCount = async (action: string, entity: string) => (await admin((c) => c.query(
+      'select count(*)::int as n from public.audit_logs where action = $1 and entity_id = $2', [action, entity]))).rows[0].n as number;
+    const grant = async (profileId: string, key: string, allowed: boolean | null) => admin((c) => c.query(
+      `insert into public.profile_permission_overrides (profile_id, permission_key, allowed, created_by)
+       values ($1, $2, $3, $4) on conflict (profile_id, permission_key) do update set allowed = excluded.allowed`,
+      [profileId, key, allowed, ROOT]));
+
+    /** A brand-new self-signup whose metadata claims full authority; it must be the pure sentinel. */
+    async function newSentinel(): Promise<string> {
+      const id = nextId();
+      await signUp(id, `${id}@hc1.local`, {
+        full_name: 'HC1 Sentinel', role: 'super_admin', status: 'active', organization_id: ORG_A, is_super_admin: true,
+      });
+      expect(await profile(id)).toEqual({ role: SENTINEL, status: 'suspended', organization_id: null, full_name: 'HC1 Sentinel' });
+      expect(await overrideRows(id)).toBe(0);
+      return id;
+    }
+    /** An active business profile (optionally suspended afterwards). */
+    async function newProfile(role: string, org: string | null, opts: { suspended?: boolean } = {}): Promise<string> {
+      const id = nextId();
+      await activeProfile(id, role, org);
+      if (opts.suspended) await admin((c) => c.query(`update public.profiles set status = 'suspended' where id = $1`, [id]));
+      return id;
+    }
+    /** An Auth user whose profiles row is gone (the gate itself is isolated: its audit/FK targets still exist). */
+    async function newGhostWithAuthUser(): Promise<string> {
+      const id = nextId();
+      await signUp(id, `${id}@ghost.local`, { full_name: 'Ghost' });
+      await admin((c) => c.query('delete from public.profiles where id = $1', [id]));
+      expect(await row(id)).toBeUndefined();
+      return id;
+    }
+    const GHOST_KINDS: Array<[string, () => Promise<string>]> = [
+      ['auth user without profile', newGhostWithAuthUser],
+      ['deleted user token (no Auth row, no profile)', async () => crypto.randomUUID()],
+    ];
+
+    beforeAll(async () => {
+      await admin((c) => c.query(
+        `insert into public.organizations (id, name, name_ar, code, organization_kind, institution_class, status)
+         values ($1, 'HC1 Sector', 'قطاع', 'hc1-s', 'care_institution', 'health_sector', 'active') on conflict (id) do nothing`, [SECTOR_H]));
+    }, 300_000);
+
+    // 1-3. Profile-less callers — each test mints its own ghost and its own target.
+    describe.each(GHOST_KINDS)('profile-less caller (%s)', (_label, mintGhost) => {
+      it('PROFILELESS_GEP_DENY: get_effective_permissions(any target) fails closed with no permission map', async () => {
+        const ghost = await mintGhost();
+        const sentinel = await newSentinel();
+        const officer = await newProfile('warehouse_officer', ORG_A);
+        const orgless = await newProfile('outlet_officer', null);
+        for (const target of [ROOT, officer, orgless, sentinel, ghost]) {
+          const r = await asUser(ghost, async (c) => (await c.query('select public.get_effective_permissions($1) as r', [target])).rows[0].r);
+          expect(r, target).toEqual(ACTOR_DENIED);
+        }
+      });
+
+      it('PROFILELESS_RESET_DENY: reset_profile_permissions(other) fails closed; no override is deleted', async () => {
+        const ghost = await mintGhost();
+        const target = await newProfile('warehouse_officer', ORG_B);
+        await grant(target, 'users.create', false); // a deny override a successful reset would silently remove
+        const before = await overrides(target);
+        expect(before).toEqual({ 'users.create': false });
+        const r = await asUserCommit(ghost, async (c) => (await c.query('select public.reset_profile_permissions($1) as r', [target])).rows[0].r);
+        expect(r).toEqual(ACTOR_DENIED);
+        expect(await overrides(target)).toEqual(before);
+        expect(await auditCount('permissions_reset', target)).toBe(0);
+      });
+
+      it('PROFILELESS_ASSIGN_DENY: assign_profile_permissions(...) fails closed at authorization, not by a later FK error', async () => {
+        const ghost = await mintGhost();
+        const target = await newProfile('warehouse_officer', ORG_A);
+        // Resolves to the authorization verdict — a thrown FK violation would reject this promise and fail the test.
+        const r = await asUserCommit(ghost, async (c) => (await c.query(
+          `select public.assign_profile_permissions($1, '{"users.manage_permissions": true, "users.create": false, "users.recycle": null}'::jsonb) as r`,
+          [target])).rows[0].r);
+        expect(r).toEqual(ACTOR_DENIED);
+        expect(await overrideRows(target)).toBe(0);
+        expect(await auditCount('permissions_assigned', target)).toBe(0);
+      });
+
+      it('phoenix_recycle_apply denies it as actor_profile_not_found, audited without an actor id, target untouched', async () => {
+        const ghost = await mintGhost();
+        const target = await newProfile('warehouse_officer', ORG_A, { suspended: true });
+        const before = await row(target);
+        const correlation = crypto.randomUUID();
+        const r = await asUserCommit(ghost, async (c) => (await c.query(
+          `select public.phoenix_recycle_apply($1, 'X', 'outlet_officer', null, 'email', null, null, 'x@rig.local', 1, $2) as r`,
+          [target, correlation])).rows[0].r);
+        expect(r).toMatchObject({ ok: false, error: 'REQUEST_DENIED' });
+        expect(await denialReason(correlation)).toEqual(['actor_profile_not_found']);
+        const audit = await admin((c) => c.query(
+          `select actor_id from public.audit_logs where action = 'security.access_denied' and payload->>'correlation_id' = $1`, [correlation]));
+        expect(audit.rows).toEqual([{ actor_id: null }]);
+        expect(await row(target)).toEqual(before);
+      });
+
+      it('assign_profile_role denies it (ACTOR_PROFILE_NOT_FOUND) before any target is read', async () => {
+        const ghost = await mintGhost();
+        const target = await newProfile('warehouse_officer', ORG_A);
+        const before = await row(target);
+        const r = await asUserCommit(ghost, async (c) => (await c.query(`select public.assign_profile_role($1, 'outlet_officer') as r`, [target])).rows[0].r);
+        expect(r).toEqual(ACTOR_DENIED);
+        expect(await row(target)).toEqual(before);
+      });
+    });
+
+    it('an unauthenticated call (no sub) is still NOT_AUTHENTICATED on every fenced routine', async () => {
+      const target = await newProfile('warehouse_officer', ORG_A);
+      const r = await rig.asUser(null as unknown as string, async (c) => (await c.query(
+        `select public.get_effective_permissions($1) as gep, public.reset_profile_permissions($1) as rpp,
+                public.assign_profile_permissions($1, '{}'::jsonb) as app, public.assign_profile_role($1, 'outlet_officer') as apr`,
+        [target])).rows[0]);
+      for (const k of ['gep', 'rpp', 'app', 'apr']) expect(r[k], k).toMatchObject({ ok: false, error: 'NOT_AUTHENTICATED' });
+    });
+
+    // 4. SENTINEL_ASSIGN_ROLE_DENY — a fresh sentinel per requested role.
+    it.each(BUSINESS_ROLES)('SENTINEL_ASSIGN_ROLE_DENY: assign_profile_role(sentinel, %s) by an active super_admin is denied; the row is unchanged', async (role) => {
+      const sentinel = await newSentinel();
+      const before = await row(sentinel);
+      const r = await asUserCommit(ROOT, async (c) => (await c.query('select public.assign_profile_role($1, $2) as r', [sentinel, role])).rows[0].r);
+      expect(r).toEqual(FENCED);
+      expect(await row(sentinel)).toEqual(before);
+      expect(await auditCount('role_assigned', sentinel)).toBe(0);
+    });
+
+    // 5. SENTINEL_RECYCLE_DENY — a fresh sentinel and a fresh actor per case.
+    it.each([['active super_admin', 'super_admin'], ['active org-less institution_admin holding users.recycle', 'noorg_inst']] as const)(
+      'SENTINEL_RECYCLE_DENY: phoenix_recycle_apply(sentinel) by %s is denied (target_pending_provisioning); nothing changes', async (_n, kind) => {
+        const sentinel = await newSentinel();
+        let actor = ROOT;
+        let org: string | null = ORG_A;
+        if (kind === 'noorg_inst') {
+          actor = await newProfile('institution_admin', null);
+          await grant(actor, 'users.recycle', true);
+          org = null;
+        }
+        const before = await row(sentinel);
+        const correlation = crypto.randomUUID();
+        const r = await asUserCommit(actor, async (c) => (await c.query(
+          `select public.phoenix_recycle_apply($1, 'Recycled', 'outlet_officer', $2, 'email', null, null, 'recycled@rig.local', 1, $3) as r`,
+          [sentinel, org, correlation])).rows[0].r);
+        expect(r).toMatchObject({ ok: false, error: 'REQUEST_DENIED' });
+        expect(await denialReason(correlation)).toEqual(['target_pending_provisioning']);
+        expect(await row(sentinel)).toEqual(before);
+        const history = await admin((c) => c.query('select count(*)::int as n from public.user_identity_history where profile_id = $1', [sentinel]));
+        expect(history.rows[0].n).toBe(0);
+        const res = await admin((c) => c.query('select count(*)::int as n from public.profile_lifecycle_reservations where profile_id = $1', [sentinel]));
+        expect(res.rows[0].n).toBe(0);
+      });
+
+    // SENTINEL_PERMISSION_OVERRIDE (TA-5): the target fence is invariant across payload shapes and across
+    // both actors that can pass the authority and scope checks against an org-less target.
+    describe('SENTINEL_PERMISSION_OVERRIDE: assign_profile_permissions never writes an override for the sentinel', () => {
+      const PAYLOADS: Array<[string, string]> = [
+        ['grant', '{"users.create": true}'],
+        ['revoke', '{"users.create": false}'],
+        ['clear (null)', '{"users.create": null}'],
+        ['mixed grant / revoke / null', '{"users.create": true, "users.recycle": false, "users.disable": null}'],
+        ['unknown key only', '{"no.such.permission.key": true}'],
+        ['empty payload', '{}'],
+      ];
+      /** An active institution_admin with NO organization that holds users.manage_permissions (and users.create). */
+      async function newOrglessPermissionManager(): Promise<string> {
+        const id = await newProfile('institution_admin', null);
+        await grant(id, 'users.manage_permissions', true);
+        await grant(id, 'users.create', true);
+        return id;
+      }
+
+      it.each(PAYLOADS)('%s payload: fenced for super_admin and for an org-less permission manager; sentinel unchanged', async (_n, payload) => {
+        for (const kind of ['super_admin', 'orgless_manager'] as const) {
+          const actor = kind === 'super_admin' ? ROOT : await newOrglessPermissionManager();
+          const sentinel = await newSentinel();
+          const before = await row(sentinel);
+          const r = await asUserCommit(actor, async (c) => (await c.query(
+            'select public.assign_profile_permissions($1, $2::jsonb) as r', [sentinel, payload])).rows[0].r);
+          expect(r, `${kind} ${payload}`).toEqual(FENCED);
+          expect(await overrideRows(sentinel)).toBe(0);
+          expect(await row(sentinel)).toEqual(before);
+          expect(await auditCount('permissions_assigned', sentinel)).toBe(0);
+        }
+      });
+
+      it('negative control: the org-less permission manager DOES pass authority and scope for an ordinary org-less profile, so only the fence stops the sentinel', async () => {
+        const manager = await newOrglessPermissionManager();
+        const ordinary = await newProfile('outlet_officer', null);
+        const r = await asUser(manager, async (c) => (await c.query(
+          `select public.assign_profile_permissions($1, '{"users.create": true}'::jsonb) as r`, [ordinary])).rows[0].r);
+        expect(r).toMatchObject({ ok: true, applied: 1 });
+      });
+    });
+
+    // B1 writer census: every client/service-reachable generic writer, each against its own fresh sentinel.
+    describe('B1 census: no generic writer can take the sentinel out of its shape', () => {
+      const SHAPE = { role: SENTINEL, status: 'suspended', organization_id: null, full_name: 'HC1 Sentinel' };
+      it('phoenix_lifecycle_enable cannot activate it (the shape CHECK refuses the write)', async () => {
+        const sentinel = await newSentinel();
+        await expect(asUserCommit(ROOT, (c) => c.query('select public.phoenix_lifecycle_enable($1)', [sentinel])))
+          .rejects.toThrow(/profiles_pending_provisioning_shape_chk/);
+        expect(await profile(sentinel)).toEqual(SHAPE);
+      });
+      it('phoenix_lifecycle_reserve / _compensate / _authorize_rotation keep it pending, suspended and organization-less', async () => {
+        const sentinel = await newSentinel();
+        const shapes = await asUserCommit(ROOT, async (c) => {
+          const out: Json[] = [];
+          const snap = async () => (await c.query(
+            'select role, status, organization_id from public.profiles where id = $1', [sentinel])).rows[0];
+          await c.query('select public.phoenix_lifecycle_reserve($1, $2)', [sentinel, 'disable']);
+          out.push(await snap());
+          await c.query('select public.phoenix_lifecycle_compensate($1)', [sentinel]);
+          out.push(await snap());
+          await c.query('select public.phoenix_lifecycle_authorize_rotation($1)', [sentinel]);
+          out.push(await snap());
+          return out;
+        });
+        for (const s of shapes) expect(s).toEqual({ role: SENTINEL, status: 'suspended', organization_id: null });
+        expect(await profile(sentinel)).toEqual(SHAPE);
+      });
+      it('scope and delegation writers refuse it (no organization, not an eligible recipient)', async () => {
+        const sentinel = await newSentinel();
+        await expect(asUser(ROOT, (c) => c.query(`select public.phoenix_assign_profile_scope($1, 'distribution_point', gen_random_uuid())`, [sentinel])))
+          .rejects.toThrow(/SCOPE_ASSIGN_PROFILE_INELIGIBLE/);
+        await expect(asUser(ROOT, (c) => c.query(`select public.phoenix_admin_grant_delegated_scope($1, $2, 'organization')`, [sentinel, ORG_B])))
+          .rejects.toThrow(/delegated_scope_recipient_ineligible/);
+        await expect(admin(async (c) => {
+          await c.query('begin');
+          try {
+            await c.query('set local role service_role');
+            await c.query('select public.phoenix_admin_assign_facility_scopes($1, $2, $3)', [ROOT, sentinel, [crypto.randomUUID()]]);
+          } finally { await c.query('rollback'); }
+        })).rejects.toThrow(/FACILITY_SCOPE_PROFILE_INELIGIBLE/);
+        await expect(asUser(ROOT, (c) => c.query(`select public.phoenix_demo_mark_row('PHOENIX_DEMO_V1', 'profiles', $1)`, [sentinel])))
+          .rejects.toThrow(/not_demo_owned/);
+        expect(await profile(sentinel)).toEqual(SHAPE);
+      });
+      it('the legacy phoenix_provision_profile is executable by no client or service role', async () => {
+        const g = await admin((c) => c.query(
+          `select has_function_privilege('authenticated', 'public.phoenix_provision_profile(uuid,uuid,text,text,text,text,text,uuid)', 'EXECUTE') as a,
+                  has_function_privilege('service_role', 'public.phoenix_provision_profile(uuid,uuid,text,text,text,text,text,uuid)', 'EXECUTE') as s,
+                  has_function_privilege('anon', 'public.phoenix_provision_profile(uuid,uuid,text,text,text,text,text,uuid)', 'EXECUTE') as n`));
+        expect(g.rows[0]).toEqual({ a: false, s: false, n: false });
+      });
+    });
+
+    // 6 + 7. TRUSTED_PROVISIONING_ALLOW / TRUSTED_PROVISIONING_REPLAY_DENY
+    it('TRUSTED_PROVISIONING_ALLOW then _REPLAY_DENY: the reviewed path activates the sentinel exactly once', async () => {
+      const t = await freshTarget(ROOT, 'HC1 Officer');
+      expect(await profile(t.id)).toEqual({ role: SENTINEL, status: 'suspended', organization_id: null, full_name: 'HC1 Officer' });
+      const args = { actor: ROOT, target: t.id, nonce: t.nonce, org: ORG_A, name: 'HC1 Officer', role: 'outlet_officer' };
+      const first = await provision(args);
+      expect(first.result).toMatchObject({ ok: true, user_id: t.id, role: 'outlet_officer' });
+      const activated = await profile(t.id);
+      expect(activated).toEqual({ role: 'outlet_officer', status: 'active', organization_id: ORG_A, full_name: 'HC1 Officer' });
+      const replay = await provision(args);
+      expect(replay.result).toMatchObject({ ok: false, error: 'REQUEST_DENIED' });
+      expect(await denialReason(replay.correlation)).toEqual(['target_not_fresh_placeholder']);
+      expect(await profile(t.id)).toEqual(activated);
+      expect(await auditCount('user.created', t.id)).toBe(1);
+    });
+
+    // 8. SENTINEL_ZERO_AUTHORITY (TA-6): the whole permission-key universe is evaluated and none resolves true.
+    it('SENTINEL_ZERO_AUTHORITY: every permission key is evaluated and false; no default, no override; no foreign or NULL-org read', async () => {
+      const sentinel = await newSentinel();
+      const universe = (await admin((c) => c.query('select count(*)::int as n from public.permission_keys'))).rows[0].n as number;
+      expect(universe).toBeGreaterThan(0);
+      const d = await admin((c) => c.query('select count(*)::int as n from public.role_permission_defaults where role = $1', [SENTINEL]));
+      expect(d.rows[0].n).toBe(0);
+      expect(await overrideRows(sentinel)).toBe(0);
+      const verdicts = await admin((c) => c.query(
+        `select count(*)::int as evaluated,
+                count(*) filter (where v is true)::int as t,
+                count(*) filter (where v is false)::int as f,
+                count(*) filter (where v is null)::int as n
+           from (select public.phoenix_profile_has_permission($1, k.key) as v from public.permission_keys k) x`, [sentinel]));
+      expect(verdicts.rows[0]).toEqual({ evaluated: universe, t: 0, f: universe, n: 0 });
+      const self = await asUser(sentinel, async (c) => (await c.query('select public.get_effective_permissions($1) as r', [sentinel])).rows[0].r as Json);
+      expect(self.ok).toBe(true);
+      const map = self.permissions as Record<string, unknown>;
+      expect(Object.keys(map)).toHaveLength(universe);
+      expect(Object.values(map).filter((v) => v !== false)).toEqual([]);
+      const otherSentinel = await newSentinel();
+      const orgless = await newProfile('outlet_officer', null);
+      const officer = await newProfile('warehouse_officer', ORG_A);
+      for (const target of [ROOT, orgless, otherSentinel, officer]) {
+        const r = await asUser(sentinel, async (c) => (await c.query('select public.get_effective_permissions($1) as r', [target])).rows[0].r);
+        expect(r, target).toEqual({ ok: false, error: 'OUT_OF_SCOPE' });
+      }
+      const visible = await asUser(sentinel, async (c) => (await c.query('select count(*)::int as n from public.profiles')).rows[0].n);
+      expect(visible).toBe(1);
+      expect(await overrideRows(sentinel)).toBe(0);
+    });
+
+    // 9. LEGITIMATE_AUTH_PRESERVATION — fresh fixtures; every write rolled back.
+    describe('LEGITIMATE_AUTH_PRESERVATION: ordinary authorization is unchanged', () => {
+      /** The admin-computed effective map, which get_effective_permissions must reproduce exactly. */
+      const expectedMap = async (id: string) => (await admin((c) => c.query(
+        'select jsonb_object_agg(k.key, public.phoenix_profile_has_permission($1, k.key)) as m from public.permission_keys k', [id]))).rows[0].m as Json;
+
+      it('get_effective_permissions: super_admin, self and same non-NULL organization return the exact full map; cross-org and NULL<->NULL refuse', async () => {
+        const officerA = await newProfile('warehouse_officer', ORG_A);
+        const officerA2 = await newProfile('warehouse_officer', ORG_A);
+        const officerB = await newProfile('warehouse_officer', ORG_B);
+        const orglessActor = await newProfile('outlet_officer', null);
+        const orglessTarget = await newProfile('outlet_officer', null);
+        const universe = (await admin((c) => c.query('select count(*)::int as n from public.permission_keys'))).rows[0].n as number;
+        const gep = (actor: string, target: string) => asUser(actor, async (c) => (await c.query(
+          'select public.get_effective_permissions($1) as r', [target])).rows[0].r as Json);
+        for (const [actor, target] of [[ROOT, officerB], [officerA, officerA], [officerA, officerA2]] as const) {
+          const r = await gep(actor, target);
+          expect(r.ok, `${actor}->${target}`).toBe(true);
+          expect(Object.keys(r.permissions as Json)).toHaveLength(universe);
+          expect(r.permissions).toEqual(await expectedMap(target));
+        }
+        expect(Object.values(await expectedMap(officerA)).some((v) => v === true)).toBe(true);
+        expect(await gep(officerA, officerB)).toEqual({ ok: false, error: 'OUT_OF_SCOPE' });
+        expect(await gep(orglessActor, orglessTarget)).toEqual({ ok: false, error: 'OUT_OF_SCOPE' });
+      });
+
+      it('get_effective_permissions: the health_center_manager self-only rule is kept', async () => {
+        const hcm = await newProfile('health_center_manager', SECTOR_H);
+        const peer = await newProfile('outlet_officer', SECTOR_H);
+        const self = await asUser(hcm, async (c) => (await c.query('select public.get_effective_permissions($1) as r', [hcm])).rows[0].r as Json);
+        expect(self.ok).toBe(true);
+        const other = await asUser(hcm, async (c) => (await c.query('select public.get_effective_permissions($1) as r', [peer])).rows[0].r);
+        expect(other).toEqual({ ok: false, error: 'OUT_OF_SCOPE' });
+      });
+
+      it('assign_profile_role still assigns a business role to an ordinary profile', async () => {
+        const target = await newProfile('warehouse_officer', ORG_A);
+        const r = await asUser(ROOT, async (c) => (await c.query(`select public.assign_profile_role($1, 'outlet_officer') as r`, [target])).rows[0].r);
+        expect(r).toEqual({ ok: true, changed: true, previous_role: 'warehouse_officer', new_role: 'outlet_officer' });
+      });
+
+      it('phoenix_recycle_apply still recycles an ordinary suspended profile', async () => {
+        const target = await newProfile('warehouse_officer', ORG_A, { suspended: true });
+        const r = await asUser(ROOT, async (c) => {
+          const x = (await c.query(
+            `select public.phoenix_recycle_apply($1, 'Recycled Officer', 'outlet_officer', $2, 'email', null, null, 'rec@rig.local', 1, gen_random_uuid()) as r`,
+            [target, ORG_A])).rows[0].r as Json;
+          const p = (await c.query('select role, status, organization_id from public.profiles where id = $1', [target])).rows[0];
+          return { x, p };
+        });
+        expect(r.x).toMatchObject({ ok: true, new_identity_version: 2 });
+        expect(r.p).toEqual({ role: 'outlet_officer', status: 'active', organization_id: ORG_A });
+      });
+
+      it('assign/reset_profile_permissions keep super_admin, same-org permission holder and cross-org refusal', async () => {
+        const manager = await newProfile('institution_admin', ORG_A);
+        await grant(manager, 'users.manage_permissions', true);
+        await grant(manager, 'users.create', true);
+        const plain = await newProfile('warehouse_officer', ORG_A);
+        const sameOrg = await newProfile('warehouse_officer', ORG_A);
+        const otherOrg = await newProfile('warehouse_officer', ORG_B);
+        await grant(otherOrg, 'users.create', false);
+        const call = (actor: string, sql: string, args: unknown[]) => asUser(actor, async (c) => (await c.query(sql, args)).rows[0].r as Json);
+        const ASSIGN = `select public.assign_profile_permissions($1, '{"users.create": true}'::jsonb) as r`;
+        const RESET = 'select public.reset_profile_permissions($1) as r';
+        expect(await call(ROOT, ASSIGN, [otherOrg])).toMatchObject({ ok: true, applied: 1 });
+        expect(await call(manager, ASSIGN, [sameOrg])).toMatchObject({ ok: true, applied: 1 });
+        expect(await call(manager, ASSIGN, [otherOrg])).toEqual({ ok: false, error: 'OUT_OF_SCOPE' });
+        expect(await call(plain, ASSIGN, [sameOrg])).toEqual({ ok: false, error: 'INSUFFICIENT_PERMISSION' });
+        expect(await call(ROOT, RESET, [otherOrg])).toMatchObject({ ok: true, cleared: 1 });
+        expect(await call(manager, RESET, [otherOrg])).toEqual({ ok: false, error: 'OUT_OF_SCOPE' });
+        expect(await call(plain, RESET, [sameOrg])).toEqual({ ok: false, error: 'INSUFFICIENT_PERMISSION' });
+        expect(await overrides(otherOrg)).toEqual({ 'users.create': false });
+        expect(await overrideRows(sameOrg)).toBe(0);
+      });
+    });
+
+    it('owners, SECURITY DEFINER, search_path and grants of all seven replaced routines are the intended ones; no anon EXECUTE', async () => {
+      const r = await admin((c) => c.query(
+        `select p.proname, pg_get_userbyid(p.proowner) as owner, p.prosecdef, p.proconfig, p.proacl::text as acl,
+                has_function_privilege('anon', p.oid, 'EXECUTE') as anon
+           from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+          where n.nspname = 'public' and p.proname in ('phoenix_handle_new_user', 'phoenix_admin_provision_profile', 'get_effective_permissions',
+                'assign_profile_role', 'phoenix_recycle_apply', 'assign_profile_permissions', 'reset_profile_permissions')
+          order by p.proname`));
+      const CLIENT = '{postgres=X/postgres,service_role=X/postgres,authenticated=X/postgres}';
+      const SERVICE = '{postgres=X/postgres,service_role=X/postgres}';
+      expect(r.rows.map((x: Json) => [x.proname, x.acl])).toEqual([
+        ['assign_profile_permissions', CLIENT], ['assign_profile_role', CLIENT], ['get_effective_permissions', CLIENT],
+        ['phoenix_admin_provision_profile', SERVICE], ['phoenix_handle_new_user', SERVICE], ['phoenix_recycle_apply', CLIENT],
+        ['reset_profile_permissions', CLIENT],
+      ]);
+      for (const x of r.rows) {
+        expect(x, String(x.proname)).toMatchObject({ owner: 'postgres', prosecdef: true, proconfig: ['search_path=public, pg_temp'], anon: false });
+      }
     });
   });
 });
