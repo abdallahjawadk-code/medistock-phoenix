@@ -469,7 +469,7 @@ describe('RAC-3 · I) no backend or migration change', () => {
    * replaces: it would also catch a dependency edit smuggled in beside a
    * version bump, which a filename check never could.
    */
-  it('changes no dependency — only the release version and the reviewed GHSA-3wwx-pv8p-q78v undici patch may differ', () => {
+  it('changes no dependency — only the release version, the reviewed GHSA-3wwx-pv8p-q78v undici patch and the reviewed brace-expansion 5.0.12 patch may differ', () => {
     // CN-2A-SHEETJS: the audited dependency baseline advances from d70b24a9
     // to 6ce98332, the reviewed CN-2A commit that adds exactly one runtime
     // dependency — `xlsx` (SheetJS Community Edition 0.20.3, vendored
@@ -505,7 +505,20 @@ describe('RAC-3 · I) no backend or migration change', () => {
     const head = jsonAt('HEAD', 'package.json');
     expect(head.dependencies).toEqual(base.dependencies);
     expect(head.devDependencies).toEqual(base.devDependencies);
-    expect(head.overrides).toEqual(base.overrides);
+    // CI-HOTFIX-3: the one reviewed overrides delta (see the lockfile exception
+    // below). The nested `@typescript-eslint/typescript-estree > minimatch >
+    // brace-expansion` pin moves from exactly 5.0.9 to exactly 5.0.12; the
+    // baseline value is asserted first, and every other override — and every
+    // other key of this one — stays identical to the baseline.
+    const ESTREE = '@typescript-eslint/typescript-estree';
+    expect(base.overrides[ESTREE].minimatch['brace-expansion']).toBe('5.0.9');
+    expect(head.overrides).toEqual({
+      ...base.overrides,
+      [ESTREE]: {
+        ...base.overrides[ESTREE],
+        minimatch: { ...base.overrides[ESTREE].minimatch, 'brace-expansion': '5.0.12' },
+      },
+    });
     // CN-2B: the lint script gains the `api` root alongside `src`, reviewed as
     // the one approved scripts delta. Every other script stays byte-identical
     // to the baseline — this is not a broad exemption, only this exact line.
@@ -516,7 +529,7 @@ describe('RAC-3 · I) no backend or migration change', () => {
     expect(head.name).toBe(base.name);
 
     // The lockfile's whole graph must be identical too — only the two root
-    // version fields may move, plus the ONE reviewed security exception below.
+    // version fields may move, plus the TWO reviewed security exceptions below.
     //
     // CI-HOTFIX-2 / GHSA-3wwx-pv8p-q78v: undici >=7.28.0 <7.29.1 is vulnerable
     // to denial of service through an unhandled error in WebSocket
@@ -526,18 +539,36 @@ describe('RAC-3 · I) no backend or migration change', () => {
     // (npm 10.9.8) resolves 7.30.0, inside jsdom's own range and above the
     // patched boundary, and it regenerates the lockfile root entry's `engines`
     // from package.json's existing `engines` field (not present at BASE).
-    // The expected lockfile is therefore BASE's lockfile with EXACTLY those two
-    // transformations applied, and nothing else: the undici entry takes npm's
-    // generated 7.30.0 version/resolved/integrity and keeps every other field,
-    // and the root entry gains engines { node: '22.x' }. Any other package
-    // version, dependency edge, addition, removal, override, root metadata, or
-    // a different undici version still fails closed.
+    // CI-HOTFIX-2 therefore contributes EXACTLY two lockfile transformations:
+    // the undici entry takes npm's generated 7.30.0 version/resolved/integrity
+    // and keeps every other field, and the root entry gains
+    // engines { node: '22.x' }.
+    //
+    // CI-HOTFIX-3 / GHSA-q2hr-2g5m-vwhr, GHSA-qhr7-859c-m2p7,
+    // GHSA-6j4f-fj2g-mc7p: npm audit reports brace-expansion 4.0.0 - 5.0.11 as
+    // vulnerable to denial of service (quadratic-time expansion, and
+    // uncontrolled recursion on nested brace groups and in parseCommaParts),
+    // with severity high. These newly published advisories made the reviewed
+    // 5.0.9 override fail `npm audit`. The one shared
+    // node_modules/brace-expansion entry is reached only through
+    // minimatch@10.2.5 (brace-expansion@^5.0.5), which the lint toolchain and
+    // exceljs's overridden archiver@8.0.0 -> readdir-glob@3.0.0 both resolve
+    // to. CI-HOTFIX-3 therefore contributes EXACTLY the override pin above
+    // (5.0.9 -> 5.0.12) and ONE lockfile transformation: that entry takes npm's
+    // generated 5.0.12 version/resolved/integrity and keeps every other field.
+    //
+    // The expected lockfile is BASE's lockfile with EXACTLY those three
+    // transformations applied, and nothing else. Any other package version,
+    // dependency edge, addition, removal, override, root metadata, or a
+    // different undici or brace-expansion version still fails closed.
     expect(head.engines).toEqual({ node: '22.x' });
     const UNDICI = 'node_modules/undici';
+    const BRACE_EXPANSION = 'node_modules/brace-expansion';
     const expectedLock = (() => {
       const lock = jsonAt(BASE, 'package-lock.json');
       const packages = { ...(lock.packages as Record<string, Record<string, unknown>>) };
       expect(packages[UNDICI].version).toBe('7.29.0');
+      expect(packages[BRACE_EXPANSION].version).toBe('5.0.9');
       expect(packages[''].engines).toBeUndefined();
       packages[''] = { ...packages[''], engines: { node: '22.x' } };
       packages[UNDICI] = {
@@ -545,6 +576,12 @@ describe('RAC-3 · I) no backend or migration change', () => {
         version: '7.30.0',
         resolved: 'https://registry.npmjs.org/undici/-/undici-7.30.0.tgz',
         integrity: 'sha512-dkrQXeHSaoamnItlYbmzG0wFYrM0ZwDxCIg0A7aKjTyyhh9svRzCNFEzV+Vm05/yehjCzjDZ31KXfGEjYSztDQ==',
+      };
+      packages[BRACE_EXPANSION] = {
+        ...packages[BRACE_EXPANSION],
+        version: '5.0.12',
+        resolved: 'https://registry.npmjs.org/brace-expansion/-/brace-expansion-5.0.12.tgz',
+        integrity: 'sha512-YovQ3rzhaLMIrDjNDMkNS01tea93qhEhG5xy8f6+R0l+dw3Ki+5sCoIoI942iuLZTHWogWktgwVDhU09iNEimQ==',
       };
       return { ...lock, packages };
     })();
