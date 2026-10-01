@@ -1659,6 +1659,7 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
             overrides={overrides}
             overrideReadFailure={overrideReadFailure}
             beneficiaryColumns={beneficiaryColumns}
+            beneficiaryRegions={beneficiaryRegions}
             needLines={needLines}
             claimedSources={claimedSources}
             onChanged={() => refreshRevision(revision.id)}

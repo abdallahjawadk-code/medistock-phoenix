@@ -153,6 +153,8 @@ function renderPanel(lang: 'ar' | 'en', over: Partial<PanelProps> = {}) {
     needLines: [],
     claimedSources: [],
     beneficiaryColumns: [beneficiaryColumn(2, BENE), beneficiaryColumn(3, BENE), nonBeneficiaryColumn(10)],
+    // CN-UI-R1: the region layer was read and no ACTIVE region governs these columns.
+    beneficiaryRegions: { phase: 'ready', versions: [] },
     onChanged: () => {},
     ...over,
   };
