@@ -126,6 +126,9 @@ import {
   SERVER_DECIMAL, isCanonicalQuantity, isNumericOverride, numericOverrideLexeme, overrideHeads,
   overrideValueText, prefillQuantity,
 } from './central-needs.lineage';
+import {
+  indexColumnDecisions, needLineRegionEvidence, resolveNeedLineBeneficiary, type RegionReadState,
+} from './regions/beneficiaryRegions';
 
 interface Props {
   lang: 'ar' | 'en';
@@ -159,6 +162,14 @@ interface Props {
    * this panel's own state, never header text.
    */
   beneficiaryColumns: BeneficiaryColumnSummary[];
+  /**
+   * CN-UI-R1 — the revision's ACTIVE beneficiary regions exactly as the screen
+   * already loaded them, or why they could not be read. Never read here. A
+   * region-governed column resolves its cells through these versions only;
+   * while they are unavailable or torn, nothing resolves and every need-line
+   * write is withheld (there is no M213 fallback).
+   */
+  beneficiaryRegions: RegionReadState;
   /** Reload the revision after anything changed, or after a stale refusal. */
   onChanged: () => void;
   /**
@@ -274,15 +285,6 @@ const EVIDENCE_FILTERS: ReadonlyArray<{ value: EvidenceFilter; labelKey: string 
   { value: 'non_beneficiary', labelKey: 'cn2b_nl_filter_non_beneficiary' },
 ];
 
-/** (213) A record's own physical-column identity, read from its persisted provenance. */
-function columnIdentity(record: SourceRecord): { sheetIndex: number; columnIndex: number } | null {
-  const p = record.sourceProvenance as { sheetIndex?: unknown; coordinate?: { col?: unknown } } | null;
-  const sheetIndex = p?.sheetIndex;
-  const columnIndex = p?.coordinate?.col;
-  if (typeof sheetIndex !== 'number' || typeof columnIndex !== 'number') return null;
-  return { sheetIndex, columnIndex };
-}
-
 /**
  * UX-2C — where a cell came from, as its persisted provenance records it.
  * Display and local search only; nothing is resolved from it.
@@ -308,7 +310,7 @@ function sourceValueText(record: SourceRecord): string | null {
 
 export function CentralNeedsNeedLinePanel({
   lang, planRevisionId, workSessionId, editable, dispositions, records, overrides, overrideReadFailure, needLines,
-  claimedSources, beneficiaryColumns, onChanged, onReloadOverrides, onRefused, onActivityChange,
+  claimedSources, beneficiaryColumns, beneficiaryRegions, onChanged, onReloadOverrides, onRefused, onActivityChange,
 }: Props) {
   const domId = useId();
   const [institutions, setInstitutions] = useState<OrgRow[]>([]);
@@ -409,27 +411,38 @@ export function CentralNeedsNeedLinePanel({
    * `CentralNeedsBeneficiaryColumnPanel` first) or was explicitly reviewed as
    * NOT a beneficiary column (independent review finding 1), in which case it
    * is labelled so and is never a need-line source.
+   *
+   * CN-UI-R1 (216) — the SAME grain the server proves at write time: a column
+   * an ACTIVE beneficiary region spans resolves each cell through exactly one
+   * covering ACTIVE region and never through M213; every other column keeps
+   * the rule above unchanged. A cell that cannot be resolved is `blocked` with
+   * the refusal the server would give it. While the region layer is not
+   * usable, nothing resolves (`regionEvidence`).
    */
-  const { beneficiaryByRecordId, nonBeneficiaryRecordIds } = useMemo(() => {
-    const byColumn = new Map<string, string>();
-    const nonBeneficiaryColumns = new Set<string>();
-    for (const c of beneficiaryColumns) {
-      const key = `${c.importSessionId}:${c.sheetIndex}:${c.columnIndex}`;
-      if (c.decision === 'beneficiary' && c.beneficiaryOrganizationId) byColumn.set(key, c.beneficiaryOrganizationId);
-      else if (c.decision === 'non_beneficiary') nonBeneficiaryColumns.add(key);
-    }
+  const regionEvidence = useMemo(
+    () => needLineRegionEvidence(beneficiaryRegions, beneficiaryColumns),
+    [beneficiaryRegions, beneficiaryColumns],
+  );
+  const { beneficiaryByRecordId, nonBeneficiaryRecordIds, refusalByRecordId } = useMemo(() => {
     const byRecord = new Map<string, string>();
     const nonBeneficiary = new Set<string>();
-    for (const r of records) {
-      const col = columnIdentity(r);
-      if (!col) continue;
-      const key = `${r.importSessionId}:${col.sheetIndex}:${col.columnIndex}`;
-      const beneficiaryId = byColumn.get(key);
-      if (beneficiaryId) byRecord.set(r.id, beneficiaryId);
-      else if (nonBeneficiaryColumns.has(key)) nonBeneficiary.add(r.id);
+    /** Why a cell is not designatable, as the server's refusal code — explanation only. */
+    const refusal = new Map<string, string>();
+    if (!regionEvidence.usable) {
+      for (const r of records) refusal.set(r.id, regionEvidence.code);
+      return { beneficiaryByRecordId: byRecord, nonBeneficiaryRecordIds: nonBeneficiary, refusalByRecordId: refusal };
     }
-    return { beneficiaryByRecordId: byRecord, nonBeneficiaryRecordIds: nonBeneficiary };
-  }, [records, beneficiaryColumns]);
+    const columns = indexColumnDecisions(beneficiaryColumns);
+    for (const r of records) {
+      const resolved = resolveNeedLineBeneficiary(r, regionEvidence.active, columns);
+      if (resolved.state === 'beneficiary') byRecord.set(r.id, resolved.beneficiaryOrganizationId);
+      else if (resolved.state === 'non_beneficiary') {
+        nonBeneficiary.add(r.id);
+        if (resolved.grain === 'region') refusal.set(r.id, 'beneficiary_region_not_beneficiary');
+      } else if (resolved.state === 'blocked') refusal.set(r.id, resolved.code);
+    }
+    return { beneficiaryByRecordId: byRecord, nonBeneficiaryRecordIds: nonBeneficiary, refusalByRecordId: refusal };
+  }, [records, beneficiaryColumns, regionEvidence]);
 
   /** Distinct beneficiaries among the currently designated cells. */
   const selectedBeneficiaryIds = useMemo(
@@ -601,7 +614,7 @@ export function CentralNeedsNeedLinePanel({
   const newGroupsNeedingUnit = [...groups.values()].filter((g) => !g.existing);
   const unitDecisionMade = conversionRequired || unit !== '';
   const everyNewGroupHasUnitDecision = newGroupsNeedingUnit.length === 0 || unitDecisionMade;
-  const canSave = editable && overridesReadable && everyPinCurrent
+  const canSave = editable && overridesReadable && regionEvidence.usable && everyPinCurrent
     && selectedIds.length > 0 && everySelectionResolved
     && unavailableSelectedIds.length === 0
     && everyQuantityValid && reason.trim().length > 0 && groups.size > 0
@@ -705,6 +718,21 @@ export function CentralNeedsNeedLinePanel({
     }
     return { available, resolved, unresolved, nonBeneficiary };
   }, [candidates, beneficiaryByRecordId, nonBeneficiaryRecordIds, selectedIdSet]);
+
+  /**
+   * CN-UI-R1 — an unresolved candidate held back by the region grain or by an
+   * unusable region layer, not by a missing M213 column decision. The "confirm
+   * the column's beneficiary" guidance would point the wrong way for it; the
+   * per-row reason and the layer banner say what is actually missing.
+   */
+  const unresolvedHeldByRegions = useMemo(
+    () => candidates.some((r) => {
+      if (beneficiaryByRecordId.has(r.id) || nonBeneficiaryRecordIds.has(r.id)) return false;
+      const code = refusalByRecordId.get(r.id);
+      return code !== undefined && code !== 'beneficiary_column_mapping_required';
+    }),
+    [candidates, beneficiaryByRecordId, nonBeneficiaryRecordIds, refusalByRecordId],
+  );
 
   const mappedRecordCount = useMemo(
     () => records.filter((r) => mappedItemByEntity.has(r.targetEntity)).length,
@@ -877,6 +905,8 @@ export function CentralNeedsNeedLinePanel({
   }
 
   async function confirmDelete(line: NeedLine) {
+    // CN-UI-R1 — no need-line write while the region layer is not usable.
+    if (!regionEvidence.usable) return;
     setBusy(true); setError(null); setErrorUnconfirmed(false); setPartialSave(null); setNotice(null);
     try {
       await deleteNeedLine({
@@ -902,6 +932,8 @@ export function CentralNeedsNeedLinePanel({
   const saveBlockers = [
     // C5 §13 — without the complete override chain no need line is saved.
     !overridesReadable && 'cn2b_nl_block_overrides_unavailable',
+    // CN-UI-R1 — without a usable region layer no need line is saved.
+    !regionEvidence.usable && 'cn4_region_unavailable',
     selectedIds.length === 0 && 'cn2b_nl_block_no_selection',
     selectedIds.length > 0 && !everyQuantityValid && 'cn2b_nl_block_quantity',
     unavailableSelectedIds.length > 0 && 'cn2b_nl_block_unavailable',
@@ -989,6 +1021,22 @@ export function CentralNeedsNeedLinePanel({
               )}
             </>
           )}
+          {/* CN-UI-R1 — the region layer is not usable (not read, or torn): no
+              cell resolves and no need line is written until it is re-read. */}
+          {!regionEvidence.usable && (
+            <>
+              <p className="cn2b-nl-banner" role="status" data-testid="cn2b-nl-regions-unavailable" data-code={regionEvidence.code}>
+                {t('cn4_region_unavailable', lang)} ({centralNeedsErrorText(regionEvidence.code, lang)})
+              </p>
+              {/* A transient failure must not dead-end this stage: re-read the
+                  revision through the screen's own reload (the same `onChanged`
+                  every write uses). Nothing is written and nothing is read here. */}
+              <PhoenixButton type="button" size="sm" variant="secondary" disabled={busy}
+                data-testid="cn2b-nl-regions-reload" onClick={() => onChanged()}>
+                {t('retry', lang)}
+              </PhoenixButton>
+            </>
+          )}
           {/* C5 §14 — pins cleared because they stopped being their cell's head. */}
           {clearedPins.length > 0 && (
             <p className="cn2b-nl-stale" role="status" data-testid="cn2b-nl-stale-pins-cleared">
@@ -1011,7 +1059,7 @@ export function CentralNeedsNeedLinePanel({
                 : <p className="cn2b-nl-empty" data-testid="cn2b-nl-all-claimed" data-empty="all-claimed">{t('cn2b_nl_empty_all_claimed', lang)}</p>
             ) : (
               <>
-                {summary.resolved === 0 && (
+                {summary.resolved === 0 && !(summary.unresolved > 0 && unresolvedHeldByRegions) && (
                   <p className="cn2b-nl-banner" data-testid="cn2b-nl-none-designatable"
                     data-empty={summary.unresolved > 0 ? 'all-unresolved' : 'all-non-beneficiary'}>
                     {summary.unresolved > 0
@@ -1078,6 +1126,7 @@ export function CentralNeedsNeedLinePanel({
                         const beneficiaryId = beneficiaryByRecordId.get(r.id);
                         const beneficiaryLabel = beneficiaryId ? institutionName(beneficiaryId) : null;
                         const decision = beneficiaryId ? 'beneficiary' : nonBeneficiaryRecordIds.has(r.id) ? 'non_beneficiary' : 'unresolved';
+                        const refusalCode = beneficiaryId ? undefined : refusalByRecordId.get(r.id);
                         const contributionId = `${domId}-contribution-${r.id}`;
                         const quantityOk = picked ? isCanonicalQuantity(picked.quantity) : true;
                         const overrideValue = o ? overrideValueText(o) : null;
@@ -1120,11 +1169,19 @@ export function CentralNeedsNeedLinePanel({
                               {beneficiaryLabel
                                 ? <strong className="cn2b-nl-badge" data-state="beneficiary" data-testid="cn2b-nl-candidate-beneficiary">{beneficiaryLabel}</strong>
                                 : decision === 'non_beneficiary'
-                                  ? <span className="cn2b-nl-badge" data-state="non_beneficiary" data-testid="cn2b-nl-candidate-non-beneficiary">{t('cn2b_beneficiary_column_state_non_beneficiary', lang)}</span>
+                                  // CN-UI-R1-HC1 — a REGION reviewed as not a beneficiary takes the existing
+                                  // region wording; an M213 column keeps its unchanged column wording.
+                                  ? (refusalCode === 'beneficiary_region_not_beneficiary'
+                                    ? <span className="cn2b-nl-badge" data-state="non_beneficiary" data-grain="region" data-testid="cn2b-nl-candidate-non-beneficiary">{centralNeedsErrorText('beneficiary_region_not_beneficiary', lang)}</span>
+                                    : <span className="cn2b-nl-badge" data-state="non_beneficiary" data-grain="column" data-testid="cn2b-nl-candidate-non-beneficiary">{t('cn2b_beneficiary_column_state_non_beneficiary', lang)}</span>)
                                   : <span className="cn2b-nl-badge" data-state="unresolved" data-testid="cn2b-nl-candidate-unmapped">{t('cn2b_beneficiary_column_state_unresolved', lang)}</span>}
                               {!beneficiaryId && (
-                                <p className="cn2b-nl-why" data-testid="cn2b-nl-candidate-why">
-                                  {decision === 'non_beneficiary' ? t('cn2b_nl_why_non_beneficiary', lang) : t('cn2b_nl_why_unresolved', lang)}
+                                <p className="cn2b-nl-why" data-testid="cn2b-nl-candidate-why" data-refusal={refusalCode}>
+                                  {/* CN-UI-R1 — a region-grain or unusable-layer reason names the
+                                      server refusal; the M213 wording is unchanged otherwise. */}
+                                  {refusalCode && refusalCode !== 'beneficiary_column_mapping_required'
+                                    ? centralNeedsErrorText(refusalCode, lang)
+                                    : decision === 'non_beneficiary' ? t('cn2b_nl_why_non_beneficiary', lang) : t('cn2b_nl_why_unresolved', lang)}
                                 </p>
                               )}
                               <span className="cn2b-nl-row__meta">
@@ -1540,7 +1597,7 @@ export function CentralNeedsNeedLinePanel({
                       type="button"
                       size="sm"
                       variant="ghost"
-                      disabled={busy}
+                      disabled={busy || !regionEvidence.usable}
                       onClick={() => { setDeletingLineId(n.id); setDeleteReason(''); setError(null); }}
                     >
                       {t('cn2b_nl_delete', lang)}
@@ -1570,7 +1627,7 @@ export function CentralNeedsNeedLinePanel({
                       <PhoenixButton
                         type="button"
                         variant="danger"
-                        disabled={busy || deleteReason.trim() === ''}
+                        disabled={busy || deleteReason.trim() === '' || !regionEvidence.usable}
                         loading={busy}
                         onClick={() => confirmDelete(n)}
                       >

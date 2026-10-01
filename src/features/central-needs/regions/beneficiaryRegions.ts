@@ -16,7 +16,9 @@
  * Pure: no React, no service call, no network, no storage.
  */
 import {
+  REGION_MAX_COLUMN_INDEX,
   REGION_WHOLE_COLUMN_ROW_END,
+  type BeneficiaryColumnDecision,
   type BeneficiaryRegionChange,
   type BeneficiaryRegionVersion,
   type RenderedParserIdentity,
@@ -80,13 +82,181 @@ export function regionGovernsColumn(
  */
 export function loadedLayerConflict(
   active: readonly BeneficiaryRegionVersion[],
-  m213: readonly ScopeColumnMapping[],
+  m213: readonly Pick<ScopeColumnMapping, 'importSessionId' | 'sheetIndex' | 'columnIndex'>[],
 ): { columnIndex: number; versionId: string } | null {
   for (const m of m213) {
     const hit = active.find((v) => v.importSessionId === m.importSessionId && v.sheetIndex === m.sheetIndex && spansColumn(v, m.columnIndex));
     if (hit) return { columnIndex: m.columnIndex, versionId: hit.versionId };
   }
   return null;
+}
+
+/**
+ * CN-UI-R1 — M216's safe coordinate extractor, mirrored for the parsed value.
+ *
+ * THE SERVER RULE (authoritative, unchanged): M216
+ * `_phoenix_central_needs_safe_coordinate_v1` counts a persisted coordinate
+ * only when it is a jsonb number whose TEXT matches `^[0-9]{1,9}$` (plain
+ * decimal digits: no sign, fraction or exponent) and is within the caller's
+ * ceiling — sheet 2,147,483,647 (nine digits in effect), row 1,048,575,
+ * column 16,383. Anything else locates nothing, and M217 `set_need_line`
+ * re-proves every designated source record from its stored jsonb.
+ *
+ * THIS CHECK is the strictest possible from the JavaScript number that
+ * JSON/PostgREST parsing yields: a number, a safe integer, non-negative,
+ * never -0, at most 999,999,999 and within the ceiling.
+ *
+ * E1 — OWNER-APPROVED LEXICAL EXCEPTION (CN-UI-R1-HC1). The original numeric
+ * SPELLING cannot be reconstructed client-side: parsing yields one IEEE-754
+ * double, so a persisted `5.0` (refused by M216's lexical rule) and a
+ * canonical `5` both arrive as the number 5 — as does decimal text beyond
+ * double precision (e.g. `5.0000000000000001`). Such a cell can therefore look
+ * locatable here; wherever the server reads that coordinate it judges the
+ * stored jsonb text by M216 and remains the final authority. E1 covers ONLY
+ * what parsing loses — it relaxes no type, integer, sign, -0, digit-count or
+ * ceiling rule applied to the parsed value, and no server check. The client
+ * stays advisory.
+ */
+const SAFE_COORDINATE_MAX_DIGITS_VALUE = 999_999_999;
+export const SAFE_SHEET_INDEX_CEILING = 2_147_483_647;
+
+export function safeCoordinate(value: unknown, ceiling: number): number | null {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0 || Object.is(value, -0)) return null;
+  if (value > SAFE_COORDINATE_MAX_DIGITS_VALUE || value > ceiling) return null;
+  return value;
+}
+
+/**
+ * A source record's persisted cell, each part safely extracted or `null` (M216
+ * `_resolve_region_v1`): sheetIndex, coordinate.row and coordinate.col, each
+ * through `safeCoordinate` — so the E1 lexical exception, and nothing more,
+ * applies to every part.
+ */
+export interface SafeCell {
+  sheetIndex: number | null;
+  row: number | null;
+  column: number | null;
+}
+
+export function safeCellOf(sourceProvenance: unknown): SafeCell {
+  const p = sourceProvenance !== null && typeof sourceProvenance === 'object'
+    ? sourceProvenance as Record<string, unknown> : null;
+  const coordinate = p !== null && p.coordinate !== null && typeof p.coordinate === 'object'
+    ? p.coordinate as Record<string, unknown> : null;
+  return {
+    sheetIndex: safeCoordinate(p?.sheetIndex, SAFE_SHEET_INDEX_CEILING),
+    row: safeCoordinate(coordinate?.row, REGION_WHOLE_COLUMN_ROW_END),
+    column: safeCoordinate(coordinate?.col, REGION_MAX_COLUMN_INDEX),
+  };
+}
+
+/** The M213 facts of one loaded column the need-line beneficiary rule reads — nothing else. */
+export interface ColumnDecisionRow {
+  importSessionId: string;
+  sheetIndex: number;
+  columnIndex: number;
+  /** `null` = no M213 row for this column. */
+  decision: BeneficiaryColumnDecision | null;
+  beneficiaryOrganizationId: string | null;
+}
+
+/**
+ * CN-UI-R1 — whether the loaded region layer may be used to resolve need-line
+ * beneficiaries at all. Not read, or read but torn (an ACTIVE version spans a
+ * column that also carries an M213 row — the existing conflict rule): nothing
+ * is resolved and every need-line write is withheld. There is no M213 fallback:
+ * without the layer the client cannot know which columns regions govern.
+ */
+export type NeedLineRegionEvidence =
+  | { usable: true; active: readonly BeneficiaryRegionVersion[] }
+  | { usable: false; code: string };
+
+export function needLineRegionEvidence(
+  regions: RegionReadState,
+  columns: readonly ColumnDecisionRow[],
+): NeedLineRegionEvidence {
+  if (regions.phase !== 'ready') return { usable: false, code: regions.code };
+  if (loadedLayerConflict(regions.versions, columns.filter((c) => c.decision !== null))) {
+    return { usable: false, code: 'beneficiary_decision_grain_conflict' };
+  }
+  return { usable: true, active: regions.versions };
+}
+
+/**
+ * One cell's beneficiary as the client reads it — advisory; the server
+ * re-proves every designated cell at write time.
+ *   * `beneficiary` / `non_beneficiary` — decided, at the region or the column grain;
+ *   * `unresolved` — an ungoverned column with no M213 decision (unchanged M213 behaviour);
+ *   * `blocked` — never designatable, with the server refusal code it would meet.
+ */
+export type NeedLineBeneficiary =
+  | { state: 'beneficiary'; beneficiaryOrganizationId: string; grain: 'region' | 'column' }
+  | { state: 'non_beneficiary'; grain: 'region' | 'column' }
+  | { state: 'unresolved' }
+  | { state: 'blocked'; code: string };
+
+/** The loaded M213 columns, indexed exactly as the M213 resolution has always keyed them. */
+export interface ColumnDecisionIndex {
+  beneficiaryByColumn: ReadonlyMap<string, string>;
+  nonBeneficiaryColumns: ReadonlySet<string>;
+  decidedColumns: ReadonlySet<string>;
+}
+
+const columnKey = (importSessionId: string, sheetIndex: number, columnIndex: number) =>
+  `${importSessionId}:${sheetIndex}:${columnIndex}`;
+
+export function indexColumnDecisions(columns: readonly ColumnDecisionRow[]): ColumnDecisionIndex {
+  const beneficiaryByColumn = new Map<string, string>();
+  const nonBeneficiaryColumns = new Set<string>();
+  const decidedColumns = new Set<string>();
+  for (const c of columns) {
+    const key = columnKey(c.importSessionId, c.sheetIndex, c.columnIndex);
+    if (c.decision === 'beneficiary' && c.beneficiaryOrganizationId) beneficiaryByColumn.set(key, c.beneficiaryOrganizationId);
+    else if (c.decision === 'non_beneficiary') nonBeneficiaryColumns.add(key);
+    if (c.decision !== null) decidedColumns.add(key);
+  }
+  return { beneficiaryByColumn, nonBeneficiaryColumns, decidedColumns };
+}
+
+/**
+ * CN-UI-R1 — the need-line beneficiary of ONE source record, in the server's
+ * order (M217 `set_need_line`, M216 `_resolve_region_v1` and the linked-cell
+ * rule). Pure; reads only the record's own persisted provenance:
+ *   1. sheet and column must be safely extractable, or nothing resolves;
+ *   2. a column no ACTIVE version of the same session and sheet spans keeps
+ *      the M213 rule exactly as before;
+ *   3. a region-governed column never consults M213 for its beneficiary: an
+ *      M213 row there is a grain conflict, and the cell resolves only through
+ *      exactly one covering ACTIVE version — `beneficiary` with a non-null
+ *      beneficiary. Uncovered, unlocatable row, overlapping, `non_beneficiary`
+ *      or a null beneficiary never designate.
+ */
+export function resolveNeedLineBeneficiary(
+  record: { importSessionId: string; sourceProvenance: unknown },
+  active: readonly BeneficiaryRegionVersion[],
+  columns: ColumnDecisionIndex,
+): NeedLineBeneficiary {
+  const { sheetIndex, row, column } = safeCellOf(record.sourceProvenance);
+  if (sheetIndex === null || column === null) return { state: 'blocked', code: 'beneficiary_column_mapping_required' };
+  const key = columnKey(record.importSessionId, sheetIndex, column);
+
+  if (!regionGovernsColumn(active, record.importSessionId, sheetIndex, column)) {
+    const beneficiaryOrganizationId = columns.beneficiaryByColumn.get(key);
+    if (beneficiaryOrganizationId) return { state: 'beneficiary', beneficiaryOrganizationId, grain: 'column' };
+    if (columns.nonBeneficiaryColumns.has(key)) return { state: 'non_beneficiary', grain: 'column' };
+    return { state: 'unresolved' };
+  }
+
+  if (columns.decidedColumns.has(key)) return { state: 'blocked', code: 'beneficiary_decision_grain_conflict' };
+  if (row === null) return { state: 'blocked', code: 'beneficiary_region_required' };
+  const covering = active.filter((v) => v.importSessionId === record.importSessionId && v.sheetIndex === sheetIndex
+    && v.rowStart <= row && row <= v.rowEnd && spansColumn(v, column));
+  if (covering.length === 0) return { state: 'blocked', code: 'beneficiary_region_required' };
+  if (covering.length > 1) return { state: 'blocked', code: 'beneficiary_region_overlap' };
+  const version = covering[0];
+  if (version.decision !== 'beneficiary') return { state: 'non_beneficiary', grain: 'region' };
+  if (!version.beneficiaryOrganizationId) return { state: 'blocked', code: 'beneficiary_regions_read_inconsistent' };
+  return { state: 'beneficiary', beneficiaryOrganizationId: version.beneficiaryOrganizationId, grain: 'region' };
 }
 
 export type DraftObstacleReason = 'REGION_OVERLAP' | 'M213_COLUMN';

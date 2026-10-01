@@ -195,6 +195,8 @@ function renderPanel(lang: 'ar' | 'en', over: Partial<PanelProps> = {}) {
       beneficiaryColumn(2, BENE),
       beneficiaryColumn(3, BENE),
     ],
+    // CN-UI-R1: the region layer was read and no ACTIVE region governs these columns.
+    beneficiaryRegions: { phase: 'ready', versions: [] },
     onChanged: () => {},
     ...over,
   };
@@ -949,7 +951,14 @@ describe('M212 — the client never becomes the authority', () => {
 
   it('(213) resolves a beneficiary only from the confirmed column map — never a per-panel selection, never workbook text', () => {
     expect(PANEL).toContain('beneficiaryByRecordId');
-    expect(PANEL).toContain('columnIdentity');
+    // CN-UI-R1: the record's column identity is read by the shared, pure
+    // resolver — from its persisted provenance only, never from workbook text.
+    expect(PANEL).toContain('resolveNeedLineBeneficiary(r, regionEvidence.active, columns)');
+    const REGIONS = readFileSync(join(__dirname, '..', 'regions', 'beneficiaryRegions.ts'), 'utf8');
+    const start = REGIONS.indexOf('export function resolveNeedLineBeneficiary');
+    const resolver = REGIONS.slice(start, REGIONS.indexOf('\nexport ', start + 1));
+    expect(resolver).toContain('safeCellOf(record.sourceProvenance)');
+    for (const text of ['fieldName', 'targetEntity', 'sourceFieldName', 'sheetName', 'header']) expect(resolver, text).not.toContain(text);
     // The removed global control must not have come back.
     expect(PANEL).not.toContain('cn2b_nl_beneficiary\'');
     expect(PANEL).not.toContain('cn2b_nl_beneficiary"');

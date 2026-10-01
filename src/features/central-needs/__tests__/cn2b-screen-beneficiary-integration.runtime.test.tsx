@@ -40,6 +40,9 @@ const listSourceRecords = vi.fn();
 const listDispositions = vi.fn();
 const listPlanRevisions = vi.fn();
 const getOrganizations = vi.fn();
+// CN-UI-R1 — the screen's own revision-wide ACTIVE region read, now also
+// handed to the need-line panel (which never reads regions itself).
+const listBeneficiaryRegions = vi.fn();
 
 vi.mock('@/app/AppContext', () => ({
   useApp: () => ({
@@ -70,6 +73,7 @@ vi.mock('../central-needs.service', async () => {
     listSourceRecords: (...a: unknown[]) => listSourceRecords(...(a as [string])),
     listDispositions: (...a: unknown[]) => listDispositions(...(a as [string])),
     setBeneficiaryColumns: (...a: unknown[]) => setBeneficiaryColumns(...a),
+    listBeneficiaryRegions: (...a: unknown[]) => listBeneficiaryRegions(...a),
     // Not exercised by this test — present only so nothing destructures undefined.
     recordFieldOverride: vi.fn(),
     searchCentralItems: vi.fn(async () => []),
@@ -135,6 +139,8 @@ beforeEach(() => {
   listDispositions.mockResolvedValue([DISPOSITION]);
   listSourceRecords.mockResolvedValue([RECORD]);
   setBeneficiaryColumns.mockResolvedValue({ confirmed: [] });
+  // CN-UI-R1 — read successfully, no ACTIVE region: every column keeps its M213 grain.
+  listBeneficiaryRegions.mockResolvedValue([]);
 });
 afterEach(() => cleanup());
 
@@ -146,6 +152,9 @@ describe('CentralNeedsScreen — beneficiary-column mapping reaches the need-lin
     // 1. Initial load reads beneficiary columns for the revision.
     await waitFor(() => expect(listBeneficiaryColumns).toHaveBeenCalledWith(REV));
     expect(listBeneficiaryColumns).toHaveBeenCalledTimes(1);
+    // CN-UI-R1 — the ACTIVE regions are read once, by the screen, per revision reload.
+    await waitFor(() => expect(listBeneficiaryRegions).toHaveBeenCalledTimes(1));
+    expect(listBeneficiaryRegions).toHaveBeenCalledWith({ planRevisionId: REV });
 
     // 2. The Need-Line panel's candidate is UNRESOLVED (column not yet confirmed).
     showStage('need-lines');
@@ -179,6 +188,8 @@ describe('CentralNeedsScreen — beneficiary-column mapping reaches the need-lin
 
     // 5. onChanged → reloadRevision → a SECOND listBeneficiaryColumns() read.
     await waitFor(() => expect(listBeneficiaryColumns).toHaveBeenCalledTimes(2));
+    // CN-UI-R1 — and a second region read with it; showing the panel adds none.
+    await waitFor(() => expect(listBeneficiaryRegions).toHaveBeenCalledTimes(2));
 
     // 6. The Need-Line panel's candidate — never told anything directly by
     // this test — now resolves the SAME beneficiary the column panel confirmed.
@@ -188,6 +199,20 @@ describe('CentralNeedsScreen — beneficiary-column mapping reaches the need-lin
       expect(c).toHaveAttribute('data-beneficiary-resolved', 'true');
       expect(within(c).getByTestId('cn2b-nl-candidate-beneficiary')).toHaveTextContent('Beneficiary Hospital');
     });
+    expect(listBeneficiaryRegions).toHaveBeenCalledTimes(2);
+  });
+
+  it('CN-UI-R1 — when the screen cannot read the regions, the need-line panel resolves nothing and withholds writes (no M213 fallback)', async () => {
+    listBeneficiaryRegions.mockRejectedValue(new Error('network down'));
+    setupReload([CONFIRMED_COLUMN]); // M213 alone would resolve the cell — it must not be used.
+    render(<CentralNeedsScreen initialMode="advanced" />);
+    await waitFor(() => expect(listBeneficiaryRegions).toHaveBeenCalledTimes(1));
+
+    showStage('need-lines');
+    const candidate = await screen.findByTestId('cn2b-nl-candidate');
+    expect(candidate).toHaveAttribute('data-beneficiary-resolved', 'false');
+    expect(screen.getByTestId('cn2b-nl-regions-unavailable')).toHaveAttribute('data-code', 'beneficiary_regions_read_inconsistent');
+    expect(within(candidate).getByRole('checkbox')).toBeDisabled();
   });
 
   it('reloads dispositions/need-lines/readiness together with beneficiary columns on every change — one shared revision reload, not a beneficiary-only patch', async () => {
