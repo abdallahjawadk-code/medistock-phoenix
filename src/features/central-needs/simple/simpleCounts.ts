@@ -1,5 +1,5 @@
 /**
- * Annual Needs — Simple Mode summary counts.
+ * Annual Needs — Simple Mode context counts.
  *
  * Pure, presentation-only aggregation over props the parent screen has
  * ALREADY loaded via the existing service reads (`listBeneficiaryColumns`,
@@ -7,12 +7,13 @@
  * business rule: `reviewRequired`, `decision` and the beneficiary/material
  * mapping are the server's own answers, only counted here.
  *
- * "Quantities" mirrors the SAME two-rule selection
- * `CentralNeedsNeedLinePanel`'s own `candidates` memo already applies —
- * mapped disposition AND a resolved beneficiary column — kept here as a
- * small, separately-documented duplicate rather than a refactor of that
- * large, invariant-critical file, which is out of this task's file scope.
- * See CORPUS-CONTRACT.md / the final report's open findings.
+ * CN-UI-S1 — there is deliberately NO quantity figure. The old one re-derived
+ * "which cells count" from the M213 column grain alone, a second copy of a
+ * resolver the need-line panel now owns (CN-UI-R1: regions first, then M213).
+ * That copy could disagree with the panel the person is working in, so it was
+ * removed rather than extended; the panel shows its own counts. What remains
+ * keeps its scope: institutions come from the revision-wide column list,
+ * materials only from the ACTIVE import session's rows.
  */
 import type { BeneficiaryColumnSummary, RecordDisposition, SourceRecord } from '../central-needs.service';
 
@@ -21,17 +22,8 @@ export interface SimpleCounts {
   institutionsUnresolved: number;
   materialsMapped: number;
   materialsUndispositioned: number;
-  quantityCandidateCount: number;
   /** institutionsUnresolved + materialsUndispositioned — "N items need review". */
   reviewItemCount: number;
-}
-
-function columnIdentity(record: SourceRecord): { sheetIndex: number; columnIndex: number } | null {
-  const p = record.sourceProvenance as { sheetIndex?: unknown; coordinate?: { col?: unknown } } | null;
-  const sheetIndex = p?.sheetIndex;
-  const columnIndex = p?.coordinate?.col;
-  if (typeof sheetIndex !== 'number' || typeof columnIndex !== 'number') return null;
-  return { sheetIndex, columnIndex };
 }
 
 export function computeSimpleCounts(
@@ -55,27 +47,11 @@ export function computeSimpleCounts(
   let materialsUndispositioned = 0;
   for (const entity of allEntities) if (!dispositionedEntities.has(entity)) materialsUndispositioned += 1;
 
-  const beneficiaryByColumnKey = new Map<string, string>();
-  for (const c of beneficiaryColumns) {
-    if (c.decision === 'beneficiary' && c.beneficiaryOrganizationId) {
-      beneficiaryByColumnKey.set(`${c.importSessionId}:${c.sheetIndex}:${c.columnIndex}`, c.beneficiaryOrganizationId);
-    }
-  }
-  let quantityCandidateCount = 0;
-  for (const r of records) {
-    if (!mappedItemByEntity.has(r.targetEntity)) continue;
-    const col = columnIdentity(r);
-    if (!col) continue;
-    const key = `${r.importSessionId}:${col.sheetIndex}:${col.columnIndex}`;
-    if (beneficiaryByColumnKey.has(key)) quantityCandidateCount += 1;
-  }
-
   return {
     institutionsConfirmed,
     institutionsUnresolved,
     materialsMapped,
     materialsUndispositioned,
-    quantityCandidateCount,
     reviewItemCount: institutionsUnresolved + materialsUndispositioned,
   };
 }

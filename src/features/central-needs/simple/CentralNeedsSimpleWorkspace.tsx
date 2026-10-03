@@ -1,7 +1,8 @@
 /**
  * Annual Needs — Simple Mode (owner task: "Simple Annual Needs — Corpus
  * Contract + Local Implementation"; then "Simple UX Visual Activation &
- * Convergence", which made this the DEFAULT landing view of الاحتياج السنوي).
+ * Convergence", which made this the DEFAULT landing view of الاحتياج السنوي;
+ * then CN-UI-S1, which made it the COMPLETE normal workflow).
  *
  * Presentation-only. Every write goes through the SAME canonical RPCs
  * Advanced Mode already uses (`setBeneficiaryColumns`, `setRecordDisposition`,
@@ -11,19 +12,32 @@
  * introduces no second source of truth and no client-side readiness.
  *
  * THE SHELL. This component owns the whole Simple page: the title block, the
- * six-step progress indicator, ONE main task card for the current step, and
- * the quiet "Advanced options" entry at the end. The Advanced command header,
- * workflow rail, diagnostics and six stage sections are rendered by the
- * parent screen ONLY in Advanced Mode — none of them wraps this view.
+ * six-step progress indicator and ONE main task card for the current step.
+ * The Advanced command header, workflow rail, diagnostics and six stage
+ * sections are rendered by the parent screen ONLY in Advanced Mode — none of
+ * them wraps this view, and this view offers no GENERIC way into it: no
+ * footer, no "advanced options", no mode toggle. The only way out is the
+ * CONTEXTUAL expert escape (CN-UI-S1 HC1, `ExpertEscapeBlock`), which exists
+ * only while the server's own blockers name a condition this view has no
+ * control for, and opens exactly the one Advanced stage that resolves it.
  *
- * HARD BOUNDARY (owner task section 16): this component NEVER calls
- * `setNeedLine`. The final "quantities as imported" action is always
- * disabled here — automatic bulk NeedLine persistence is out of scope for
- * this task, pending independent proof of the corpus's unit-lineage
- * contract (see CORPUS-CONTRACT.md). Step 6 therefore hands the human to
- * the Advanced options honestly instead of claiming completion.
+ * CN-UI-S1 — THE WHOLE NORMAL WORKFLOW HAPPENS HERE: annual draft → upload and
+ * verify → institutions → materials → need lines → submit → approve/reject →
+ * terminal state. The three surfaces that carry canonical behaviour are not
+ * re-implemented: the screen builds each ONCE and hands the element in —
+ * `workSessionPicker` (its one Work Session switch algorithm and guard),
+ * `needLineWorkspace` (the CN-UI-R1 need-line panel, with its own region-aware
+ * resolver and canonical writes) and `lifecycleActions` (its submit / approve /
+ * reject handlers). This component only decides WHERE they appear, so it still
+ * names no need-line write, panel or lifecycle RPC itself.
+ *
+ * HARD BOUNDARY (owner task section 16): the bulk "quantities as imported"
+ * action stays disabled — automatic bulk NeedLine persistence is out of scope,
+ * pending independent proof of the corpus's unit-lineage contract (see
+ * CORPUS-CONTRACT.md). Need lines are built one decision at a time in the
+ * canonical panel instead.
  */
-import { useMemo, useState } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import { t } from '@/shared/i18n/strings';
 import { PhoenixButton } from '@/shared/ui/PhoenixButton';
 import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
@@ -35,16 +49,20 @@ import { SimpleInstitutionCard } from './SimpleInstitutionCard';
 import { SimpleMaterialCard } from './SimpleMaterialCard';
 import { SimpleStepper } from './SimpleStepper';
 import { SimpleUploadZone } from './SimpleUploadZone';
-import { summarizeSimpleReadiness } from './simpleReadiness';
+import {
+  deriveSimpleExpertEscapes, summarizeSimpleReadiness,
+  type SimpleExpertEscape, type SimpleExpertReason, type SimpleExpertStage, type SimpleOverrideContext,
+} from './simpleReadiness';
 import { computeSimpleCounts } from './simpleCounts';
 import { deriveRevisionContext } from '../central-needs.revision-context';
+import { CENTRAL_NEEDS_STAGES } from '../CentralNeedsWorkflowNav';
 import type {
-  BeneficiaryColumnSummary, CentralNeedsError, ImportBatch, ImportSession, PlanRevision, RecordDisposition, ReviewReadiness, SourceRecord,
+  BeneficiaryColumnSummary, CentralNeedsError, FieldOverride, ImportBatch, ImportSession, PlanRevision, RecordDisposition, ReviewReadiness, SourceRecord,
 } from '../central-needs.service';
 import type { RegionReadState } from '../regions/beneficiaryRegions';
 import { RegionWorkspaceProvider } from '../regions/RegionWorkspace';
 
-type SimpleStep = 'upload' | 'analyzing' | 'summary' | 'review-institution' | 'review-material' | 'pending';
+type SimpleStep = 'upload' | 'analyzing' | 'review-institution' | 'review-material' | 'need-lines' | 'pending';
 
 /**
  * WHAT the parent screen is busy with, verbatim from its own `Busy` state.
@@ -52,6 +70,90 @@ type SimpleStep = 'upload' | 'analyzing' | 'summary' | 'review-institution' | 'r
  * is not "analyzing a file", and the step must not say it is.
  */
 type SimpleActivity = null | 'verifying' | 'submitting' | 'approving' | 'rejecting' | 'abandoning' | 'opening';
+
+/**
+ * CN-UI-S1 — a lifecycle action runs ON the outcome step, beside the control
+ * that started it. It never sends the page to "analyzing": that would unmount
+ * the need-line workspace (and any draft in it) for the length of a click.
+ */
+const LIFECYCLE_ACTIVITIES: ReadonlySet<SimpleActivity> = new Set<SimpleActivity>(['submitting', 'approving', 'rejecting']);
+
+/** CN-UI-S1 HC1 / HC1.1 / HC1.2 — the sentence that says WHY each contextual expert escape exists. */
+const EXPERT_BODY_KEY: Readonly<Record<SimpleExpertReason, string>> = {
+  open_import: 'cn2b_simple_expert_body_open_import',
+  numeric_override: 'cn2b_simple_expert_body_numeric_override',
+  source_evidence_invalid: 'cn2b_simple_expert_body_source_evidence_invalid',
+  override_head_unproven: 'cn2b_simple_expert_body_override_head_unproven',
+  unknown_blocker: 'cn2b_simple_expert_body_unknown',
+  unknown_lineage_reason: 'cn2b_simple_expert_body_unknown_lineage',
+};
+
+/**
+ * The title of each escape. The four DIAGNOSTIC ones (invalid immutable
+ * evidence, an unproven override head, an unknown blocker, an unknown lineage
+ * reason) are reading and escalation, not a remedy, and their title says so; the
+ * map is total, so a new reason cannot silently inherit the remedy-implying title.
+ */
+const EXPERT_TITLE_KEY: Readonly<Record<SimpleExpertReason, string>> = {
+  open_import: 'cn2b_simple_expert_title',
+  numeric_override: 'cn2b_simple_expert_title',
+  source_evidence_invalid: 'cn2b_simple_expert_title_unknown',
+  override_head_unproven: 'cn2b_simple_expert_title_unknown',
+  unknown_blocker: 'cn2b_simple_expert_title_unknown',
+  unknown_lineage_reason: 'cn2b_simple_expert_title_unknown',
+};
+
+/**
+ * CN-UI-S1 HC1 — ONE contextual expert escape: why Simple cannot resolve what
+ * the server reported, and a real button that opens exactly the Advanced stage
+ * that can resolve it — or, for the DIAGNOSTIC escapes, that shows exactly what the
+ * server returned (named in the sentence AND on the button; no remedy is claimed). Not a general mode
+ * switch, not a footer, not a step: it exists only while `escape` does. The
+ * button is offered only to someone holding the permission that stage needs;
+ * anyone else reads who to ask instead. Presentation only — it holds no state
+ * and calls only the callback the screen gave it.
+ */
+function ExpertEscapeBlock({ lang, escape, allowed, busy, onOpen }: {
+  lang: 'ar' | 'en';
+  escape: SimpleExpertEscape;
+  allowed: boolean;
+  busy: boolean;
+  onOpen: (stage: SimpleExpertStage) => void;
+}) {
+  const stageTitle = t(CENTRAL_NEEDS_STAGES.find((stage) => stage.id === escape.stage)?.titleKey ?? 'cn2b_stage_readiness', lang);
+  return (
+    <div
+      className="cn2b-simple-expert"
+      role="group"
+      aria-labelledby="cn2b-simple-expert-title"
+      data-testid="cn2b-simple-expert-escape"
+      data-reason={escape.reason}
+      data-stage={escape.stage}
+    >
+      <p className="cn2b-simple-expert__title" id="cn2b-simple-expert-title">
+        <PhoenixIcon name="settings" size={15} inline aria-hidden="true" />{' '}
+        {t(EXPERT_TITLE_KEY[escape.reason], lang)}
+      </p>
+      <p className="cn2b-simple-expert__body" id="cn2b-simple-expert-body">
+        {t(EXPERT_BODY_KEY[escape.reason], lang).replace('__STAGE__', stageTitle)}
+      </p>
+      {allowed ? (
+        <PhoenixButton
+          type="button" variant="secondary" disabled={busy}
+          aria-describedby="cn2b-simple-expert-body"
+          data-testid="cn2b-simple-expert-open"
+          onClick={() => onOpen(escape.stage)}
+        >
+          {t('cn2b_simple_expert_open', lang).replace('__STAGE__', stageTitle)}
+        </PhoenixButton>
+      ) : (
+        <p className="cn2b-simple-card__hint" data-testid="cn2b-simple-expert-no-permission">
+          {t('cn2b_simple_expert_no_permission', lang)}
+        </p>
+      )}
+    </div>
+  );
+}
 
 interface Props {
   lang: 'ar' | 'en';
@@ -61,13 +163,20 @@ interface Props {
   revision: PlanRevision | null;
   isDraft: boolean;
   revisionDataReady: boolean;
+  /**
+   * The SAME raw `central_needs.import` boolean `CentralNeedsScreen` derives
+   * from `myPermissions`. It gates the file upload only — the one thing the
+   * server's import guard protects.
+   */
   canImport: boolean;
   /**
    * The SAME raw `central_needs.edit` boolean `CentralNeedsScreen` derives
    * from `myPermissions`. This component ANDs it with `isDraft` itself, so a
    * mutation control is offered under exactly the condition Advanced Mode
-   * uses at its own call sites (`editable={canEdit && isDraft}`). The server
-   * RPC remains the final authority either way.
+   * uses at its own call sites (`editable={canEdit && isDraft}`). CN-UI-S1:
+   * it also gates opening an annual draft or a correction, exactly as the
+   * server guards those (edit) and as Advanced's plan stage already offers
+   * them. The server RPC remains the final authority either way.
    */
   canEdit: boolean;
   busy: boolean;
@@ -100,6 +209,14 @@ interface Props {
   records: SourceRecord[];
   dispositions: RecordDisposition[];
   activeSessionId: string | null;
+  /**
+   * CN-UI-S1 — the screen's own "the active session's rows are still being
+   * read, or are not yet provably that session's" flag. While it is set,
+   * `records`/`dispositions` may still be the PREVIOUS session's, so no review
+   * card or need-line surface may be offered against the new
+   * `activeSessionId`. Optional for older harnesses (never loading).
+   */
+  sessionLoading?: boolean;
   onChanged: () => void;
   /**
    * C6-B1 — a CONFIRMED material decision. A disposition lives in the active
@@ -111,11 +228,34 @@ interface Props {
    */
   onMaterialResolved?: () => void;
   /**
+   * CN-UI-S1 — where the material card reports its busy/dirty/failed. The
+   * screen passes the setter its Work Session guard already reads, so a
+   * session switch waits for an in-flight decision and asks before a typed
+   * reason is dropped.
+   */
+  onMaterialActivityChange?: (activity: { busy: boolean; dirty: boolean; failed: boolean }) => void;
+  /**
+   * CN-UI-S1 HC1.1 — where the stored-workbook mapping surface reports its
+   * busy/dirty/failed: in-memory mapping work that unmounting this workspace
+   * would discard, and a beneficiary-region write in flight. The screen reads it
+   * only for the contextual expert escape's guard; the surface releases it when
+   * it leaves the tree. Absent (older harnesses), nothing is reported.
+   */
+  onStoredWorkbookActivityChange?: (activity: { busy: boolean; dirty: boolean; failed: boolean }) => void;
+  /**
+   * CN-UI-S1 HC1.2 — the override chain the screen ALREADY holds (the very props
+   * it gives the need-line panel), so the contextual escape can tell whether a
+   * `binding_invalid` cell has a CURRENT NUMERIC head Simple can re-pin. Both are
+   * needed: without either (older harnesses) the head is unproven and the escape
+   * fails closed to the readiness stage. Read-only; nothing is requested here.
+   */
+  overrides?: readonly FieldOverride[];
+  overrideReadFailure?: string | null;
+  /**
    * C5 §17 (UI-F3) — a server refusal of a card's write, so the screen can re-read
    * the registry and the revision when the revision's lifecycle moved.
    */
   onRefused?: (refusal: CentralNeedsError) => void;
-  onSwitchToAdvanced: () => void;
   /**
    * C4: the revision's ACTIVE beneficiary regions, read fresh from the server
    * by the screen, or why they could not be read. The screen always passes it;
@@ -124,26 +264,39 @@ interface Props {
   beneficiaryRegions?: RegionReadState;
   /** C4: the revision's import sessions (parser identities back the G3 check). */
   sessions?: readonly ImportSession[];
+  /**
+   * CN-UI-S1 — the screen's ONE Work Session selector, already bound to its
+   * one switch handler and busy/dirty guard. Placed here, never re-implemented.
+   */
+  workSessionPicker?: ReactNode;
+  /**
+   * CN-UI-S1 — the screen's ONE need-line panel element (the canonical,
+   * region-aware CentralNeedsNeedLinePanel with its canonical props). Placed
+   * here, never re-implemented; its edit gate is its own `editable` prop.
+   */
+  needLineWorkspace?: ReactNode;
+  /**
+   * CN-UI-S1 — the screen's ONE lifecycle action block (submit for an editor
+   * of a ready draft; approve/reject for an approver of a submitted revision),
+   * gated by the screen exactly as Advanced's readiness stage is.
+   */
+  lifecycleActions?: ReactNode;
+  /**
+   * CN-UI-S1 HC1 — opens the Advanced `stage` for a condition the SERVER
+   * reported and Simple has no control for (see `deriveSimpleExpertEscape`).
+   * The screen owns the busy/dirty guard and the presentation switch; absent
+   * (older harnesses) no escape is rendered, because it could not act.
+   */
+  onExpertEscape?: (stage: SimpleExpertStage) => void;
 }
 
 export function CentralNeedsSimpleWorkspace({
   lang, planYear, onPlanYearChange, revisionsLoading, revision, isDraft, revisionDataReady,
   canImport, canEdit, busy, activity, onOpenRevision, newerRevisionNumber = null, preview, pendingFile, onPickFile, onVerify, error, notice,
-  readiness, batches = [], beneficiaryColumns, careInstitutions, records, dispositions, activeSessionId,
-  onChanged, onMaterialResolved, onRefused, onSwitchToAdvanced, beneficiaryRegions, sessions,
+  readiness, batches = [], beneficiaryColumns, careInstitutions, records, dispositions, activeSessionId, sessionLoading = false,
+  onChanged, onMaterialResolved, onMaterialActivityChange, onStoredWorkbookActivityChange, overrides, overrideReadFailure, onRefused, beneficiaryRegions, sessions,
+  workSessionPicker, needLineWorkspace, lifecycleActions, onExpertEscape,
 }: Props) {
-  /**
-   * THE ONLY navigation state in Simple Mode (defects 4 and 5), and it is
-   * keyed by dataset identity rather than being a bare boolean or a free step
-   * override. It records which analyzed dataset's summary the human has moved
-   * past, so the summary is presented once before item-by-item review and
-   * cannot be skipped — while never surviving into a different revision or
-   * import session, and never outranking a closed revision or an unready one.
-   * It is not persisted, never sent to a server, and decides nothing about
-   * readiness or completion.
-   */
-  const [summaryAckKey, setSummaryAckKey] = useState<string | null>(null);
-
   const counts = useMemo(
     () => computeSimpleCounts(beneficiaryColumns, records, dispositions),
     [beneficiaryColumns, records, dispositions],
@@ -187,56 +340,92 @@ export function CentralNeedsSimpleWorkspace({
   const canWrite = canEdit && isDraft;
 
   /**
-   * The identity of the dataset on screen: this revision plus the import
-   * session whose records/dispositions are loaded. Opening another revision or
-   * switching session changes it, which is what makes the acknowledgement
-   * above impossible to carry over stale.
-   */
-  const datasetKey = revision === null ? null : `${revision.id}:${activeSessionId ?? 'no-session'}`;
-  const summaryAcknowledged = datasetKey !== null && summaryAckKey === datasetKey;
-
-  /**
-   * The single source of the visible step: current props plus the dataset-keyed
-   * acknowledgement. Presentation-only routing, never business readiness. The
-   * order of these guards is the contract — a missing revision, a closed one,
-   * and an unready or parsing one each outrank the summary, which in turn
-   * precedes review.
+   * The single source of the visible step: current props only. There is no
+   * navigation state at all — no acknowledgement, no override — so nothing can
+   * go stale across a revision, session or readiness change. Presentation-only
+   * routing, never business readiness: the order of these guards is the
+   * contract.
+   *   * a closed revision lands on the outcome step BEFORE any blocker
+   *     projection (C5 §17) — its terminal sentence, and the decision when it
+   *     is submitted;
+   *   * a parse, a verify, an open, or data that is not yet this revision's
+   *     (or this session's) is "analyzing" — never a card acting on stale rows;
+   *   * then the queues the server's own state leaves: institutions
+   *     (revision-wide), materials (the ACTIVE session), the need lines, and
+   *     the outcome once the SERVER says the draft is ready.
    */
   const derivedStep: SimpleStep = useMemo(() => {
     if (!revision) return 'upload';
-    if (revisionClosed) return 'upload';
-    if (preview.phase === 'parsing' || busy) return 'analyzing';
+    if (revisionClosed) return 'pending';
+    if (preview.phase === 'parsing' || (busy && !LIFECYCLE_ACTIVITIES.has(activity))) return 'analyzing';
     if (!revisionDataReady) return 'analyzing';
     // An open draft with NO completed import session has nothing analysed yet:
     // the task is still to upload the file. `activeSessionId` is the screen's
     // own answer to "is there a completed session" (reloadRevision publishes the
     // first completed one, or null) — read here, never recomputed.
     if (activeSessionId === null) return 'upload';
-    // Defect 4: the analysis summary is presented once per analyzed dataset,
-    // BEFORE item-by-item review. This gates navigation only — readiness,
-    // blockers and every unresolved item remain exactly what the server says,
-    // and nothing below is skipped, only ordered.
-    if (!summaryAcknowledged) return 'summary';
+    if (sessionLoading) return 'analyzing';
     if (unresolvedColumns.length > 0) return 'review-institution';
     if (undispositionedEntities.length > 0) return 'review-material';
-    return 'pending';
-  }, [revision, revisionClosed, preview.phase, busy, revisionDataReady, activeSessionId, summaryAcknowledged,
-      unresolvedColumns.length, undispositionedEntities.length]);
+    // READINESS IS THE SERVER'S: only its own `ready` reaches the outcome.
+    if (readinessSummary?.ready === true) return 'pending';
+    return 'need-lines';
+  }, [revision, revisionClosed, preview.phase, busy, activity, revisionDataReady, activeSessionId, sessionLoading,
+      unresolvedColumns.length, undispositionedEntities.length, readinessSummary]);
 
-  /**
-   * There is no separate step override to go stale: the step is always derived
-   * from current props plus the dataset-keyed acknowledgement, so a dataset
-   * change, a closed revision or an unready one always wins over whatever the
-   * human last navigated to.
-   */
   const step = derivedStep;
 
-  /** Leaves the summary for the review queue, for THIS dataset only. */
-  function goToReview() {
-    if (datasetKey !== null) setSummaryAckKey(datasetKey);
-  }
-  /** Returns to the summary by withdrawing the acknowledgement. */
-  function goToSummary() { setSummaryAckKey(null); }
+  /**
+   * The active session's context — the canonical Work Session selector and
+   * the two scope-labelled figures — wherever the work on screen is
+   * session-scoped: material review, the need lines and the draft's outcome,
+   * and while a newly chosen session's rows are still being read.
+   */
+  const showSessionContext = revision !== null && !revisionClosed && revisionDataReady && activeSessionId !== null
+    && (step === 'review-material' || step === 'need-lines' || step === 'pending' || (step === 'analyzing' && sessionLoading));
+
+  /**
+   * The canonical need-line workspace: on the need-lines step and the outcome
+   * step (one tree position for both, so a draft in it survives the server
+   * turning ready), read-only on a closed revision by the panel's own gate.
+   * Never while the active session's rows are still the previous session's.
+   */
+  const showNeedLineWorkspace = needLineWorkspace != null && revisionDataReady && !sessionLoading
+    && (step === 'need-lines' || step === 'pending');
+
+  /**
+   * CN-UI-S1 HC1 — the contextual expert escape, from the SAME readiness the
+   * screen owns. It is read only while that readiness provably belongs to the
+   * selected revision, and shown only on the two steps where the person would
+   * otherwise be stuck on a blocker they can read but not act on: the
+   * need-lines card, and the upload step (an open import attempt with no
+   * completed session yet). Never for a closed revision, never while data or
+   * the active session's rows are still loading, and never without a callback
+   * to act with. Whether the person MAY use the stage it opens follows the
+   * permission that stage's own controls require in Advanced (abandoning an
+   * import attempt: import; recording a numeric correction: edit; reading the
+   * server's answer: none). When several escapes apply, the first one the person
+   * CAN act on is offered; only when none is, the first is shown with who to ask.
+   */
+  const overrideContext = useMemo<SimpleOverrideContext | undefined>(
+    () => (overrides !== undefined && overrideReadFailure !== undefined ? { overrides, overrideReadFailure } : undefined),
+    [overrides, overrideReadFailure],
+  );
+  const expertEscapes = useMemo(
+    () => (revision !== null && readiness !== null && readiness.planRevisionId === revision.id
+      ? deriveSimpleExpertEscapes(readiness, overrideContext)
+      : []),
+    [revision, readiness, overrideContext],
+  );
+  const expertStageAllowed = (stage: SimpleExpertStage): boolean => (
+    stage === 'source' ? canImport && isDraft
+      : stage === 'review' ? canWrite
+        : true
+  );
+  const expertEscape = expertEscapes.find((escape) => expertStageAllowed(escape.stage)) ?? expertEscapes[0] ?? null;
+  const expertEscapeShown = expertEscape !== null && onExpertEscape !== undefined
+    && !revisionClosed && isDraft && revisionDataReady && !sessionLoading;
+  const expertEscapeAllowed = expertEscape !== null && expertStageAllowed(expertEscape.stage);
 
   const dir = lang === 'ar' ? 'rtl' : 'ltr';
 
@@ -247,8 +436,8 @@ export function CentralNeedsSimpleWorkspace({
    *     file was read (verify needs a ready preview) and the server analysis
    *     is the live phase; "preparing the review" is still waiting because the
    *     screen only publishes the reloaded data once verify has fully returned;
-   *   * a plain revision data reload (nothing else in flight) → only the
-   *     preparation phase is live; nothing claims a file was read just now;
+   *   * a plain revision or session data read (nothing else in flight) → only
+   *     the preparation phase is live; nothing claims a file was read just now;
    *   * any other parent operation → a generic "working" status, no phases.
    */
   const analyzing = useMemo(() => {
@@ -305,7 +494,7 @@ export function CentralNeedsSimpleWorkspace({
         E1.1 — once a source is authoritatively registered, the original
         workbook remains available from every later Simple step. This is
         deliberately OUTSIDE all `step === ...` branches, so moving from
-        upload to summary/institution/material review cannot unmount it.
+        upload to institution/material review cannot unmount it.
         It is an AUXILIARY source viewer with its own block class — never a
         second `.cn2b-simple-card`: the page keeps exactly ONE task card.
         `key` makes a revision switch destroy all transient signed-URL/bytes/
@@ -316,7 +505,41 @@ export function CentralNeedsSimpleWorkspace({
         never reads or changes the revision's status.
       */}
       {revisionDataReady && revision && batches.length > 0 && (
-        <StoredWorkbookMapping key={revision.id} lang={lang} batches={batches} careInstitutions={careInstitutions} planRevisionId={revision.id} />
+        <StoredWorkbookMapping key={revision.id} lang={lang} batches={batches} careInstitutions={careInstitutions} planRevisionId={revision.id}
+          onActivityChange={onStoredWorkbookActivityChange} />
+      )}
+
+      {/*
+        CN-UI-S1 — compact context, not a summary step: WHICH work session the
+        session-scoped work below belongs to (the screen's own selector, so a
+        switch runs through its one guard), and two figures that each state
+        their own scope. One fixed position, so moving between these steps
+        never remounts the selector.
+      */}
+      {showSessionContext && (
+        <section className="cn2b-simple-context" data-testid="cn2b-simple-context" aria-label={t('cn2b_work_session', lang)}>
+          {workSessionPicker}
+          <dl className="cn2b-simple-context__figures">
+            <div className="cn2b-simple-context__figure">
+              <dt>
+                {t('cn2b_simple_institutions', lang)}
+                <span className="cn2b-simple-context__scope" data-testid="cn2b-simple-scope-institutions">
+                  {t('cn2b_simple_scope_whole_revision', lang)}
+                </span>
+              </dt>
+              <dd data-testid="cn2b-simple-count-institutions">{counts.institutionsConfirmed}</dd>
+            </div>
+            <div className="cn2b-simple-context__figure">
+              <dt>
+                {t('cn2b_simple_materials', lang)}
+                <span className="cn2b-simple-context__scope" data-testid="cn2b-simple-scope-materials">
+                  {t('cn2b_simple_scope_this_session', lang)}
+                </span>
+              </dt>
+              <dd data-testid="cn2b-simple-count-materials">{counts.materialsMapped}</dd>
+            </div>
+          </dl>
+        </section>
       )}
 
       {notice && (
@@ -332,72 +555,14 @@ export function CentralNeedsSimpleWorkspace({
 
       {step === 'upload' && (
         <section className="cn2b-simple-card" data-testid="cn2b-simple-upload" aria-labelledby="cn2b-simple-upload-title">
-          {revisionClosed ? (
-            <>
-              <p className="cn2b-simple-card__eyebrow">{t('cn2b_simple_closed_status', lang)}</p>
-              <h2 className="cn2b-simple-card__title" id="cn2b-simple-upload-title">
-                <span className="cn2b-simple-status" data-status={revision!.status}>
-                  {t(`cn2b_revstatus_${revision!.status}`, lang)}
-                </span>
-                <span>{revisionContext.planYear ?? '—'}</span>
-              </h2>
-              {/* C5 §17 — each closed status has its own terminal sentence;
-                  none of them reads as an edit task. */}
-              <p className="cn2b-simple-card__lead" data-testid="cn2b-simple-closed-notice" data-status={revision!.status}>
-                {t(CLOSED_NOTICE_KEY_BY_STATUS[revision!.status] ?? 'cn2b_simple_closed_notice', lang)}
-              </p>
-              {/*
-                A correction is opened ONLY by this explicit click — never by
-                rendering. It calls the same parent correction handler Advanced
-                Mode uses (`onOpenRevision(true)`), which asks for the reason and
-                sends the selected revision's own year and id exactly once. C2:
-                the approved revision stays in effect until the correction is
-                itself approved; a correction can only follow a DECIDED newest
-                revision, so it is withheld otherwise and says why.
-              */}
-              {canImport ? (
-                <>
-                  <div className="cn2b-simple-card__actions">
-                    <PhoenixButton
-                      type="button" variant="primary" size="lg"
-                      disabled={revisionsLoading || busy || !revisionContext.correction.ok
-                        || !revisionContext.acceptsNextRevisionRequest || newerRevisionNumber !== null}
-                      data-testid="cn2b-simple-create-correction"
-                      onClick={() => onOpenRevision(true)}
-                    >
-                      {t('cn2b_simple_create_correction', lang)}
-                    </PhoenixButton>
-                  </div>
-                  {revisionContext.correction.ok && revisionContext.revisionNumber !== null && (
-                    <p className="cn2b-simple-card__hint" data-testid="cn2b-simple-correction-target">
-                      {t('cn2b_correction_target', lang)
-                        .replace('__YEAR__', String(revisionContext.correction.planYear))
-                        .replace('__N__', String(revisionContext.revisionNumber))}
-                      {' '}{t('cn2b_correction_keeps_effective', lang)}
-                    </p>
-                  )}
-                  {/* C1 — no trustworthy plan year, no correction: fail closed and say why. */}
-                  {!revisionContext.correction.ok && (
-                    <p className="cn2b-simple-card__hint" data-testid="cn2b-simple-correction-year-unavailable">
-                      {t('cn2b_err_revision_plan_year_unavailable', lang)}
-                    </p>
-                  )}
-                  {revisionContext.correction.ok && newerRevisionNumber !== null && (
-                    <p className="cn2b-simple-card__hint" data-testid="cn2b-simple-correction-newer-revision">
-                      {t('cn2b_correction_newer_revision_exists', lang).replace('__N__', String(newerRevisionNumber))}
-                    </p>
-                  )}
-                </>
-              ) : (
-                <p className="cn2b-simple-card__hint">{t('cn2b_simple_no_import_permission', lang)}</p>
-              )}
-            </>
-          ) : !revision ? (
+          {!revision ? (
             <>
               <p className="cn2b-simple-card__eyebrow">{t('cn2b_simple_step_upload', lang)}</p>
               <h2 className="cn2b-simple-card__title" id="cn2b-simple-upload-title">{t('cn2b_simple_year_choose', lang)}</h2>
               <p className="cn2b-simple-card__lead">{t('cn2b_simple_year_hint', lang)}</p>
-              {canImport ? (
+              {/* CN-UI-S1 — opening an annual draft is an EDIT (the server's
+                  guard, and Advanced's plan stage), never an import. */}
+              {canEdit ? (
                 <div className="cn2b-simple-year">
                   <label className="cn2b-simple-field">
                     <span className="cn2b-simple-field__label">{t('cn2b_plan_year', lang)}</span>
@@ -420,11 +585,11 @@ export function CentralNeedsSimpleWorkspace({
                   </PhoenixButton>
                 </div>
               ) : (
-                <div className="cn2b-simple-permission" role="status">
+                <div className="cn2b-simple-permission" role="status" data-testid="cn2b-simple-no-edit-permission">
                   <PhoenixIcon name="lock" size={18} inline aria-hidden="true" />
                   <span>
-                    <strong>{t('cn2b_simple_no_import_permission', lang)}</strong>
-                    <br />{t('cn2b_simple_no_import_permission_hint', lang)}
+                    <strong>{t('cn2b_simple_no_edit_permission', lang)}</strong>
+                    <br />{t('cn2b_simple_no_edit_permission_hint', lang)}
                   </span>
                 </div>
               )}
@@ -492,7 +657,12 @@ export function CentralNeedsSimpleWorkspace({
               )}
             </>
           )}
-          {error && !(canImport && isDraft && !revisionClosed) && (
+          {/* CN-UI-S1 HC1 — an open import attempt with no completed session yet:
+              this page can only upload, so the way to abandon it is contextual. */}
+          {revision !== null && expertEscapeShown && expertEscape !== null && onExpertEscape && (
+            <ExpertEscapeBlock lang={lang} escape={expertEscape} allowed={expertEscapeAllowed} busy={busy} onOpen={onExpertEscape} />
+          )}
+          {error && !(canImport && isDraft) && (
             <div className="cn2b-simple-error" role="alert" data-testid="cn2b-simple-error">
               <PhoenixIcon name="warning" size={16} inline aria-hidden="true" /> {error}
             </div>
@@ -527,89 +697,6 @@ export function CentralNeedsSimpleWorkspace({
         </section>
       )}
 
-      {step === 'summary' && (
-        <section className="cn2b-simple-card" data-testid="cn2b-simple-summary" aria-labelledby="cn2b-simple-summary-title">
-          <p className="cn2b-simple-card__eyebrow cn2b-simple-card__eyebrow--ok" data-testid="cn2b-simple-summary-read">
-            <PhoenixIcon name="check" size={15} inline aria-hidden="true" /> {t('cn2b_simple_file_read', lang)}
-          </p>
-          {/*
-            SCOPE HONESTY (Director finding 3). These counts do NOT share one
-            scope, so neither may be presented as a whole-revision total:
-              * institutions comes from `listBeneficiaryColumns(planRevisionId)`
-                — revision-wide;
-              * materials and quantities come from `listSourceRecords` /
-                `listDispositions`, both keyed by `importSessionId` — the
-                ACTIVE work session only, and one archive can finalize into
-                dozens of sessions.
-            A revision-wide material/quantity total would need a read this
-            build does not have, so each metric states its own scope instead.
-          */}
-          <h2 className="cn2b-simple-card__title" id="cn2b-simple-summary-title" data-testid="cn2b-simple-summary-scope-title">
-            {t('cn2b_simple_scope_session_title', lang)}
-          </h2>
-          <dl className="cn2b-simple-stats">
-            <div className="cn2b-simple-stat">
-              <dt className="cn2b-simple-stat__label">
-                {t('cn2b_simple_institutions', lang)}
-                <span className="cn2b-simple-stat__scope" data-testid="cn2b-simple-scope-institutions">
-                  {t('cn2b_simple_scope_whole_revision', lang)}
-                </span>
-              </dt>
-              <dd className="cn2b-simple-stat__value" data-testid="cn2b-simple-count-institutions">{counts.institutionsConfirmed}</dd>
-            </div>
-            <div className="cn2b-simple-stat">
-              <dt className="cn2b-simple-stat__label">
-                {t('cn2b_simple_materials', lang)}
-                <span className="cn2b-simple-stat__scope" data-testid="cn2b-simple-scope-materials">
-                  {t('cn2b_simple_scope_this_session', lang)}
-                </span>
-              </dt>
-              <dd className="cn2b-simple-stat__value" data-testid="cn2b-simple-count-materials">{counts.materialsMapped}</dd>
-            </div>
-            <div className="cn2b-simple-stat">
-              <dt className="cn2b-simple-stat__label">
-                {t('cn2b_simple_quantities', lang)}
-                <span className="cn2b-simple-stat__scope" data-testid="cn2b-simple-scope-quantities">
-                  {t('cn2b_simple_scope_this_session', lang)}
-                </span>
-              </dt>
-              <dd className="cn2b-simple-stat__value" data-testid="cn2b-simple-count-quantities">{counts.quantityCandidateCount}</dd>
-            </div>
-          </dl>
-          <p className="cn2b-simple-card__hint" data-testid="cn2b-simple-summary-scope-note">
-            {t('cn2b_simple_scope_session_note', lang)}
-          </p>
-          <div
-            className="cn2b-simple-review-count"
-            data-empty={counts.reviewItemCount === 0}
-            data-testid="cn2b-simple-review-remaining"
-          >
-            <PhoenixIcon name={counts.reviewItemCount > 0 ? 'clipboard' : 'check'} size={20} aria-hidden="true" />
-            <span>
-              {counts.reviewItemCount > 0
-                ? t('cn2b_simple_items_need_review', lang).replace('__N__', String(counts.reviewItemCount))
-                : t('cn2b_simple_nothing_to_review', lang)}
-            </span>
-          </div>
-          <div className="cn2b-simple-card__actions">
-            {/*
-              The single control that leaves the summary. It is always offered,
-              so a dataset with nothing left to review can still advance — the
-              summary must be passable, never a dead end.
-            */}
-            <PhoenixButton
-              type="button" variant="primary" size="lg"
-              data-testid="cn2b-simple-review-start"
-              onClick={goToReview}
-            >
-              {counts.reviewItemCount > 0
-                ? t('cn2b_simple_review_button', lang).replace('__N__', String(counts.reviewItemCount))
-                : t('cn2b_simple_continue', lang)}
-            </PhoenixButton>
-          </div>
-        </section>
-      )}
-
       {step === 'review-institution' && unresolvedColumns[0] && (
         <>
           <div className="cn2b-simple-review-head">
@@ -629,11 +716,6 @@ export function CentralNeedsSimpleWorkspace({
             onResolved={onChanged}
             onRefused={onRefused}
           />
-          <div className="cn2b-simple-review-foot">
-            <PhoenixButton type="button" variant="ghost" size="sm" onClick={goToSummary}>
-              {t('cn2b_simple_back_to_summary', lang)}
-            </PhoenixButton>
-          </div>
         </>
       )}
 
@@ -660,23 +742,27 @@ export function CentralNeedsSimpleWorkspace({
             fields={fieldsByEntity.get(undispositionedEntities[0]) ?? []}
             onResolved={onMaterialResolved ?? onChanged}
             onRefused={onRefused}
+            onActivityChange={onMaterialActivityChange}
           />
-          <div className="cn2b-simple-review-foot">
-            <PhoenixButton type="button" variant="ghost" size="sm" onClick={goToSummary}>
-              {t('cn2b_simple_back_to_summary', lang)}
-            </PhoenixButton>
-          </div>
         </>
       )}
 
-      {step === 'pending' && (
-        <section className="cn2b-simple-card cn2b-simple-card--outcome" data-testid="cn2b-simple-pending" aria-labelledby="cn2b-simple-pending-title">
+      {(step === 'need-lines' || step === 'pending') && !revisionClosed && (
+        <section
+          className="cn2b-simple-card cn2b-simple-card--outcome"
+          data-testid="cn2b-simple-pending"
+          data-ready={readinessSummary?.ready === true}
+          aria-labelledby="cn2b-simple-pending-title"
+        >
           <div className="cn2b-simple-outcome__mark" data-ready={readinessSummary?.ready === true} aria-hidden="true">
             <PhoenixIcon name={readinessSummary?.ready ? 'check' : 'clipboard'} size={28} />
           </div>
           <h2 className="cn2b-simple-card__title" id="cn2b-simple-pending-title" data-testid="cn2b-simple-pending-title">
-            {t('cn2b_simple_reviewed_all', lang)}
+            {step === 'pending' ? t('cn2b_simple_submit_title', lang) : t('cn2b_simple_need_lines_title', lang)}
           </h2>
+          {step === 'need-lines' && (
+            <p className="cn2b-simple-card__lead" data-testid="cn2b-simple-need-lines-lead">{t('cn2b_simple_need_lines_lead', lang)}</p>
+          )}
           {/*
             READINESS IS THE SERVER'S. Three honest cases, none synthesized:
             the server said ready, the server listed blockers, or the server
@@ -707,18 +793,29 @@ export function CentralNeedsSimpleWorkspace({
             </p>
           )}
 
-          <div className="cn2b-simple-handoff" data-testid="cn2b-simple-handoff">
-            <p className="cn2b-simple-handoff__text">{t('cn2b_simple_final_handoff', lang)}</p>
-            <div className="cn2b-simple-card__actions">
-              <PhoenixButton
-                type="button" variant="primary" size="lg"
-                data-testid="cn2b-simple-continue-advanced"
-                onClick={onSwitchToAdvanced}
-              >
-                {t('cn2b_simple_final_continue_advanced', lang)}
-              </PhoenixButton>
-            </div>
-          </div>
+          {/*
+            CN-UI-S1 HC1 — only when the server's own blockers name something
+            this view has no control for. Merely "not ready", and every blocker
+            Simple does resolve, shows nothing here.
+          */}
+          {step === 'need-lines' && expertEscapeShown && expertEscape !== null && onExpertEscape && (
+            <ExpertEscapeBlock lang={lang} escape={expertEscape} allowed={expertEscapeAllowed} busy={busy} onOpen={onExpertEscape} />
+          )}
+
+          {/*
+            Submit, only on the outcome step — which only the server's own
+            `ready` reaches — and only through the screen's lifecycle block,
+            whose Submit is gated exactly as Advanced's (edit permission, a
+            draft, ready, nothing in flight). Without edit permission the page
+            says who can submit instead of offering a control.
+          */}
+          {step === 'pending' && (canWrite ? (
+            <div className="cn2b-simple-lifecycle" data-testid="cn2b-simple-submit">{lifecycleActions}</div>
+          ) : (
+            <p className="cn2b-simple-card__hint" data-testid="cn2b-simple-submit-unavailable">
+              {t('cn2b_simple_submit_needs_edit', lang)}
+            </p>
+          ))}
 
           {/*
             HARD BOUNDARY (owner task section 16): this action is always
@@ -738,22 +835,94 @@ export function CentralNeedsSimpleWorkspace({
         </section>
       )}
 
+      {step === 'pending' && revisionClosed && revision && (
+        <section className="cn2b-simple-card cn2b-simple-card--outcome" data-testid="cn2b-simple-closed" aria-labelledby="cn2b-simple-closed-title">
+          <p className="cn2b-simple-card__eyebrow">{t('cn2b_simple_closed_status', lang)}</p>
+          <h2 className="cn2b-simple-card__title" id="cn2b-simple-closed-title">
+            <span className="cn2b-simple-status" data-status={revision.status}>
+              {t(`cn2b_revstatus_${revision.status}`, lang)}
+            </span>
+            <span>{revisionContext.planYear ?? '—'}</span>
+          </h2>
+          {/* C5 §17 — each closed status has its own terminal sentence;
+              none of them reads as an edit task. */}
+          <p className="cn2b-simple-card__lead" data-testid="cn2b-simple-closed-notice" data-status={revision.status}>
+            {t(CLOSED_NOTICE_KEY_BY_STATUS[revision.status] ?? 'cn2b_simple_closed_notice', lang)}
+          </p>
+          {/*
+            CN-UI-S1 — the decision on a SUBMITTED revision, through the
+            screen's lifecycle block: approve / reject appear only for an
+            approver (its own `canApprove` gate); anyone else reads the
+            truthful waiting sentence above and is offered nothing.
+          */}
+          {revision.status === 'submitted' && (
+            <div className="cn2b-simple-lifecycle" data-testid="cn2b-simple-decision">{lifecycleActions}</div>
+          )}
+          {/*
+            A correction is opened ONLY by this explicit click — never by
+            rendering. It calls the same parent correction handler Advanced
+            Mode uses (`onOpenRevision(true)`), which asks for the reason and
+            sends the selected revision's own year and id exactly once. C2:
+            the approved revision stays in effect until the correction is
+            itself approved; a correction can only follow a DECIDED newest
+            revision, so it is withheld otherwise and says why. CN-UI-S1: a
+            correction is an EDIT (the server's guard, and Advanced's plan
+            stage), never an import.
+          */}
+          {canEdit ? (
+            <>
+              <div className="cn2b-simple-card__actions">
+                <PhoenixButton
+                  type="button" variant="primary" size="lg"
+                  disabled={revisionsLoading || busy || !revisionContext.correction.ok
+                    || !revisionContext.acceptsNextRevisionRequest || newerRevisionNumber !== null}
+                  data-testid="cn2b-simple-create-correction"
+                  onClick={() => onOpenRevision(true)}
+                >
+                  {t('cn2b_simple_create_correction', lang)}
+                </PhoenixButton>
+              </div>
+              {revisionContext.correction.ok && revisionContext.revisionNumber !== null && (
+                <p className="cn2b-simple-card__hint" data-testid="cn2b-simple-correction-target">
+                  {t('cn2b_correction_target', lang)
+                    .replace('__YEAR__', String(revisionContext.correction.planYear))
+                    .replace('__N__', String(revisionContext.revisionNumber))}
+                  {' '}{t('cn2b_correction_keeps_effective', lang)}
+                </p>
+              )}
+              {/* C1 — no trustworthy plan year, no correction: fail closed and say why. */}
+              {!revisionContext.correction.ok && (
+                <p className="cn2b-simple-card__hint" data-testid="cn2b-simple-correction-year-unavailable">
+                  {t('cn2b_err_revision_plan_year_unavailable', lang)}
+                </p>
+              )}
+              {revisionContext.correction.ok && newerRevisionNumber !== null && (
+                <p className="cn2b-simple-card__hint" data-testid="cn2b-simple-correction-newer-revision">
+                  {t('cn2b_correction_newer_revision_exists', lang).replace('__N__', String(newerRevisionNumber))}
+                </p>
+              )}
+            </>
+          ) : (
+            <p className="cn2b-simple-card__hint" data-testid="cn2b-simple-correction-no-edit-permission">
+              {t('cn2b_simple_no_edit_permission', lang)}
+            </p>
+          )}
+        </section>
+      )}
+
       {/*
-        The Advanced entry: present on every step, visually secondary, at the
-        end. Switching is presentation only — the parent keeps every piece of
-        state; nothing is reloaded or reset by entering Advanced Mode.
+        CN-UI-S1 — the canonical need-line panel, mounted by the screen and
+        placed here. One fixed position for the need-lines and outcome steps,
+        so the server turning the draft ready (or not) never remounts it. It is
+        an auxiliary workspace beside the task card, never a second
+        `.cn2b-simple-card`.
       */}
-      <footer className="cn2b-simple-footer">
-        <PhoenixButton
-          type="button" variant="ghost" size="sm"
-          data-testid="cn2b-simple-advanced-link"
-          onClick={onSwitchToAdvanced}
-        >
-          <PhoenixIcon name="settings" size={15} aria-hidden="true" />
-          {t('cn2b_simple_advanced_options', lang)}
-        </PhoenixButton>
-        <span className="cn2b-simple-footer__hint">{t('cn2b_simple_advanced_hint', lang)}</span>
-      </footer>
+      {showNeedLineWorkspace && (
+        <section className="cn2b-simple-needlines" data-testid="cn2b-simple-need-lines" aria-labelledby="cn2b-simple-need-lines-title">
+          <h3 className="cn2b-simple-needlines__title" id="cn2b-simple-need-lines-title">{t('cn2b_simple_need_lines_workspace', lang)}</h3>
+          {needLineWorkspace}
+        </section>
+      )}
     </div>
     </RegionWorkspaceProvider>
   );

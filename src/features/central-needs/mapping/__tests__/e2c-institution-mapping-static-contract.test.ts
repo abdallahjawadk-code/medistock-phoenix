@@ -95,7 +95,8 @@ describe('E2-C.18 — memory only', () => {
     expect(wrapper).toMatch(/onSelectionChange=\{mapping\.observeSelection\}/);
     expect([...wrapper.matchAll(/onSelectionChange=/g)]).toHaveLength(1);
     // E2-D adds the revision id (identity only) for the local mapping approval; see e2d-mapping-approval-static-contract.
-    expect(code(WORKSPACE)).toMatch(/<StoredWorkbookMapping key=\{revision\.id\} lang=\{lang\} batches=\{batches\} careInstitutions=\{careInstitutions\} planRevisionId=\{revision\.id\} \/>/);
+    // CN-UI-S1 HC1.1 adds ONE presentation-only prop after it (the activity callback); nothing before it changed.
+    expect(code(WORKSPACE)).toMatch(/<StoredWorkbookMapping key=\{revision\.id\} lang=\{lang\} batches=\{batches\} careInstitutions=\{careInstitutions\} planRevisionId=\{revision\.id\}\s+onActivityChange=\{onStoredWorkbookActivityChange\} \/>/);
   });
 
   it('no hidden mutable module state in E2-C', () => {
@@ -278,7 +279,9 @@ describe('E2-C.22 — scope', () => {
     expect(panel).toMatch(/className="cn2b-instmap"/);
     expect(panel).not.toMatch(/cn2b-simple-card/);
     const css = read('src/shared/lib/central-needs.css');
-    const block = css.slice(css.indexOf('.cn2b-instmap {'), css.indexOf('/* ── The quiet Advanced entry'));
+    // CN-UI-S1 removed the "quiet Advanced entry" section this slice used to end
+    // at; the rule that directly followed it closes the SAME block.
+    const block = css.slice(css.indexOf('.cn2b-instmap {'), css.indexOf('.cn2b-simple .phoenix-button:focus-visible'));
     expect(block.length).toBeGreaterThan(100);
     expect(block).not.toMatch(/(^|[\s;{])(margin-left|margin-right|padding-left|padding-right|left|right|text-align)\s*:/m);
   });

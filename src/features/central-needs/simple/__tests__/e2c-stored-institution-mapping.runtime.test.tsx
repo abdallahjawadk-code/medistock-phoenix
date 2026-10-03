@@ -428,7 +428,7 @@ describe('E2-C.15 — the workspace: trusted institutions in, plan owner out, re
       revision={revision(id)} isDraft revisionDataReady canImport canEdit busy={false} activity={null}
       onOpenRevision={() => {}} preview={{ phase: 'idle' }} pendingFile={null} onPickFile={() => {}} onVerify={() => {}}
       error={null} notice={null} readiness={null} batches={batches} beneficiaryColumns={[]} careInstitutions={CARE_INSTITUTIONS}
-      records={[]} dispositions={[]} activeSessionId={null} onChanged={() => {}} onSwitchToAdvanced={() => {}}
+      records={[]} dispositions={[]} activeSessionId={null} onChanged={() => {}}
     />
   );
 

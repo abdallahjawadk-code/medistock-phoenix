@@ -22,7 +22,7 @@
  * sent in the same call. Importing a modified workbook is not a remedy and is
  * never suggested.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { t } from '@/shared/i18n/strings';
 import { PhoenixButton } from '@/shared/ui/PhoenixButton';
 import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
@@ -84,6 +84,31 @@ interface Props {
   onChanged?: () => void;
   /** Shares this sheet's unsaved Need sources with the workspace (Simple one-click suppression). */
   onUnsavedDraftsChange?: (drafts: UnsavedDraftSources | null) => void;
+  /**
+   * CN-UI-S1 HC1.1 — presentation-only: this layer's own busy / dirty / failed,
+   * so the screen can refuse to unmount it while a region write is in flight and
+   * ask before it drops a half-made decision. Read off the state below; nothing
+   * is kept, sent or decided from it. Released (all false) when the layer leaves
+   * the tree.
+   */
+  onActivityChange?: (activity: RegionLayerActivity) => void;
+}
+
+export interface RegionLayerActivity {
+  busy: boolean;
+  dirty: boolean;
+  failed: boolean;
+}
+
+/**
+ * CN-UI-S1 HC1.1 — the LOCAL, unsaved region decisions that unmounting this
+ * layer would lose: a column marked for conversion, a pending confirmation
+ * (replace / non-beneficiary / inverse / save / remove, which owns its decision
+ * and beneficiary choices), or a reason typed for it. Server-loaded ACTIVE
+ * regions are saved truth, never work in progress, and are not an input here.
+ */
+export function regionLayerHasLocalWork(state: { convertingCount: number; hasPending: boolean; reason: string }): boolean {
+  return state.convertingCount > 0 || state.hasPending || state.reason.trim() !== '';
 }
 
 const boundsOfSelection = (selection: WorkbookSelection | null): RegionBounds | null => {
@@ -97,7 +122,7 @@ const boundsOfSelection = (selection: WorkbookSelection | null): RegionBounds | 
 
 export function BeneficiaryRegionLayer({
   lang, planRevisionId, canWrite, careInstitutions, sessions, institutions,
-  onChanged, onUnsavedDraftsChange,
+  onChanged, onUnsavedDraftsChange, onActivityChange,
 }: Props) {
   // The stored viewer renders with this build's own parser.
   const renderedParserIdentity = RUNNING_PARSER_IDENTITY;
@@ -166,6 +191,18 @@ export function BeneficiaryRegionLayer({
   const g3 = renderedParserMatchesSession(renderedParserIdentity, session?.parserIdentity ?? null);
   const ready = layer.phase === 'ready' ? layer : null;
   const writable = canWrite && g3 && ready !== null && !busy;
+
+  // CN-UI-S1 HC1.1 — a typed reason belongs to the pending confirmation that shows
+  // its input; once none is pending (cancelled, saved, a new sheet) it is not work.
+  useEffect(() => { if (pending === null) setReason(''); }, [pending]);
+  const dirty = regionLayerHasLocalWork({ convertingCount: converting.size, hasPending: pending !== null, reason });
+  const failed = message?.tone === 'error';
+  const activityListener = useRef(onActivityChange);
+  // Layout effects: the report reaches the screen's guard in the SAME commit cycle as the state it describes, before the
+  // browser can deliver another input event — a write that has just started is never reported late.
+  useLayoutEffect(() => { activityListener.current = onActivityChange; });
+  useLayoutEffect(() => { activityListener.current?.({ busy, dirty, failed }); }, [busy, dirty, failed]);
+  useLayoutEffect(() => () => activityListener.current?.({ busy: false, dirty: false, failed: false }), []);
 
   const obstacles = useMemo(
     () => (ready ? draftObstacles(drafts, ready.active, ready.m213, converting) : []),

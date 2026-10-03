@@ -1973,11 +1973,18 @@ export const T: Dict = {
   cn2b_blocker_beneficiary_column_cell_without_need_line: { ar: 'خلية من عمود مستفيد مؤكَّد بلا سطر احتياج', en: 'A cell of a confirmed beneficiary column has no need line' },
   cn2b_blocker_beneficiary_column_review_required: { ar: 'عمود رقمي على سطر مرتبط بلا قرار مراجعة — حدّد مستفيده، أو «ليس عمود مستفيد» مع السبب', en: 'A numeric column on a mapped row has no review decision — choose its beneficiary, or “not a beneficiary column” with a reason' },
   /* C5 §7 (M217) — invalid source evidence and unsafe quantity lineage, with one label per pinned reason. */
-  cn2b_blocker_source_cell_value_contract_invalid: { ar: 'خلية مصدرية مستوردة غير صالحة بنيويًا كدليل — لا تُصلَح في مكانها؛ يلزم استبدال المصدر بشكل مضبوط أو إعادة استيراده', en: 'An imported source cell is structurally invalid evidence — it is not repaired in place; the source needs a controlled replacement or re-import' },
+  /* HC1.3 — invalid IMMUTABLE evidence (this label, its lineage twin below, the Simple sentences, the refusal
+     message and the diagnostic body) says it cannot be repaired in this workflow and that it needs diagnosis
+     and controlled escalation. No in-app control replaces or re-imports the evidence of a completed import, so no
+     surface promises one. */
+  cn2b_blocker_source_cell_value_contract_invalid: { ar: 'خلية مصدرية مستوردة تمثل دليلاً غير صالح وفق عقد السلامة. لا يمكن إصلاحها داخل دورة العمل الحالية — وتحتاج إلى التشخيص والتصعيد المضبوط.', en: 'An imported source cell is invalid evidence under the safety contract. It cannot be repaired in this workflow — it needs diagnosis and controlled escalation.' },
   cn2b_blocker_need_line_quantity_lineage_unsafe: { ar: 'مصدر كمية في سطر احتياج نسبه غير آمن', en: 'A need-line source quantity has unsafe lineage' },
-  cn2b_blocker_need_line_quantity_lineage_unsafe__source_cell_value_contract_invalid: { ar: 'سطر احتياج يأخذ كميته من دليل مصدري غير صالح بنيويًا — احذف ذلك المصدر من السطر', en: 'A need line takes its quantity from structurally invalid source evidence — delete that source from the line' },
-  cn2b_blocker_need_line_quantity_lineage_unsafe__source_quantity_requires_explicit_numeric_override: { ar: 'سطر احتياج يأخذ كميته من خلية ليست رقمًا صريحًا — ثبّت تعديلًا رقميًا صريحًا، أو احذف ذلك المصدر', en: 'A need line takes its quantity from a cell that is not a plain number — pin an explicit numeric override, or delete that source' },
-  cn2b_blocker_need_line_quantity_lineage_unsafe__source_quantity_override_binding_invalid: { ar: 'مصدر في سطر احتياج مثبَّت على تعديل لم يعد التعديل الحالي لخليته — أعد التثبيت على التعديل الرقمي الحالي، أو احذف المصدر وأعد تعيينه', en: 'A need-line source is pinned to an override that is no longer its cell’s current one — re-pin the current numeric override, or delete and re-designate the source' },
+  cn2b_blocker_need_line_quantity_lineage_unsafe__source_cell_value_contract_invalid: { ar: 'تعتمد كمية في سطر الاحتياج على دليل مصدري غير صالح وغير قابل للتعديل. حذف الربط وحده لا يجعل الدليل صالحًا — ويحتاج إلى التشخيص والتصعيد المضبوط.', en: 'A need-line quantity depends on invalid immutable source evidence. Removing the link does not make that evidence valid — it needs diagnosis and controlled escalation.' },
+  /* HC1.3 / HC1.4 — HEAD-DEPENDENT reason: the screen routes it from the cell's current override, so this label
+     names BOTH legitimate next steps (record a USABLE numeric override first if there is none; then rebuild the link
+     and pin the current one) and never decides which applies. */
+  cn2b_blocker_need_line_quantity_lineage_unsafe__source_quantity_requires_explicit_numeric_override: { ar: 'سطر احتياج يأخذ كميته من خلية ليست رقمًا صريحًا، وهذه الكمية غير مثبَّتة على تعديل رقمي — وإن لم يكن لها تعديل رقمي حالي صالح للاستخدام بعد فسجّل واحدًا أولًا، وبعد أن يوجد احذف سطر الاحتياج ثم عيّن الخلية من جديد وثبّت التعديل الحالي', en: 'A need line takes its quantity from a cell that is not a plain number, and that quantity is not pinned to a numeric override — if the cell has no current usable numeric override yet, record one first; once it has one, delete the need line, designate the cell again and pin the current override' },
+  cn2b_blocker_need_line_quantity_lineage_unsafe__source_quantity_override_binding_invalid: { ar: 'مصدر في سطر احتياج مثبَّت على تعديل لم يعد التعديل الحالي لخليته — أعد التثبيت على التعديل الرقمي الحالي (وإن لم يكن للخلية تعديل رقمي حالي صالح للاستخدام بعد فسجّل واحدًا أولًا)، أو احذف المصدر وأعد تعيينه', en: 'A need-line source is pinned to an override that is no longer its cell’s current one — re-pin the current numeric override (if the cell has no current usable numeric override yet, record one first), or delete and re-designate the source' },
   cn2b_blocker_need_line_quantity_lineage_unsafe__source_quantity_override_value_invalid: { ar: 'مصدر في سطر احتياج مثبَّت على تعديل ليس رقمًا غير سالب', en: 'A need-line source is pinned to an override that is not a non-negative number' },
   cn2b_blocker_need_line_quantity_lineage_unsafe__source_quantity_override_mismatch: { ar: 'كمية معيّنة تختلف عن التعديل الرقمي المثبَّت عليه', en: 'A designated quantity differs from the numeric override it is pinned to' },
 
@@ -2154,6 +2161,8 @@ export const T: Dict = {
   cn2b_nl_stale_pin_row: { ar: 'استُبدل التعديل المثبَّت بتعديل أحدث — أُزيل التثبيت. اختر من جديد.', en: 'Its pinned override was replaced by a newer one — the pin was cleared. Choose again.' },
   cn2b_nl_pin_unverified: { ar: 'مثبَّتة على تعديل لا يمكن التحقق منه قبل تحميل التعديلات — لا يُحفظ شيء في الأثناء.', en: 'Pinned to an override that cannot be checked until the overrides load — nothing is saved meanwhile.' },
   cn2b_nl_override_not_numeric: { ar: 'هذا التعديل ليس رقمًا، فلا يمكن أن يمثّل كمية.', en: 'This override is not a number, so it cannot stand for a quantity.' },
+  /* CN-UI-S1 HC1.5 — a NUMBER the canonical contract cannot take as a quantity (it is not the "not a number" case above). */
+  cn2b_nl_override_not_pinnable: { ar: 'هذا التعديل رقمي، لكنه غير صالح للاستخدام ككمية معيارية.', en: 'This override is a number, but it cannot be used as a canonical quantity.' },
   cn2b_nl_preview_pins: { ar: 'التعديلات المسجّلة التي تعتمد عليها هذه الكتابة — كل تثبيت تحمله:', en: 'Recorded overrides this write relies on — every pin it carries:' },
   cn2b_nl_register_title: { ar: 'سجل سطور الاحتياج', en: 'Need-line register' },
   cn2b_nl_register_hint: { ar: 'السطور المحفوظة لهذه المراجعة، كلٌّ مع مصادره في جميع جلسات الاستيراد.', en: 'Saved lines of this revision, each with its sources across every import session.' },
@@ -2195,11 +2204,13 @@ export const T: Dict = {
   cn2b_err_need_line_quantity_provenance_mismatch: { ar: 'الكمية المعتمدة لا تساوي مجموع المساهمات المصدرية.', en: 'The approved quantity does not equal the sum of its source contributions.' },
   cn2b_err_need_line_quantity_not_exact: { ar: 'وصلت كمية بصيغة غير دقيقة فلم تُعرض.', en: 'A quantity arrived in a non-exact form and was not shown.' },
   /* C5 (M217) — quantity lexeme, lineage, approval eligibility and gate refusals; transport and contention outcomes. */
-  cn2b_err_source_cell_value_contract_invalid: { ar: 'هذه الخلية المصدرية دليل غير صالح بنيويًا. لا تُصلَح في مكانها — يلزم استبدال المصدر بشكل مضبوط أو إعادة استيراده.', en: 'This source cell is structurally invalid evidence. It is not repaired in place — the source needs a controlled replacement or re-import.' },
+  cn2b_err_source_cell_value_contract_invalid: { ar: 'هذه الخلية المصدرية دليل غير صالح وفق عقد السلامة. لا يمكن إصلاحها داخل دورة العمل الحالية — وتحتاج إلى التشخيص والتصعيد المضبوط.', en: 'This source cell is invalid evidence under the safety contract. It cannot be repaired in this workflow — it needs diagnosis and controlled escalation.' },
   cn2b_err_need_line_quantity_lineage_unsafe: { ar: 'رفض الخادم هذه الكمية: نسبها إلى المصدر غير آمن. لم يُحفظ سطر الاحتياج المرفوض.', en: 'The server refused this quantity: its source lineage is not safe. The refused need line was not saved.' },
-  cn2b_err_need_line_quantity_lineage_unsafe__source_cell_value_contract_invalid: { ar: 'لم يُحفظ سطر الاحتياج المرفوض: إحدى خلاياه المعيّنة دليل مصدري غير صالح بنيويًا ولا يمكن أن تغذّي سطر احتياج.', en: 'The refused need line was not saved: one of its designated cells is structurally invalid source evidence and cannot feed a need line.' },
-  cn2b_err_need_line_quantity_lineage_unsafe__source_quantity_requires_explicit_numeric_override: { ar: 'لم يُحفظ سطر الاحتياج المرفوض: إحدى خلاياه المعيّنة ليست رقمًا صريحًا. سجّل لها تعديلًا رقميًا وثبّته، أو أزل الخلية.', en: 'The refused need line was not saved: one of its designated cells is not a plain number. Record a numeric override for it and pin that override, or remove the cell.' },
-  cn2b_err_need_line_quantity_lineage_unsafe__source_quantity_override_binding_invalid: { ar: 'لم يُحفظ سطر الاحتياج المرفوض: التعديل المثبَّت لم يعد التعديل الحالي لخليته. أُزيل التثبيت وتُعاد قراءة التعديلات — ثبّت التعديل الرقمي الحالي من جديد بعد اكتمالها.', en: 'The refused need line was not saved: a pinned override is no longer the current one for its cell. The pin was cleared and the overrides are being re-read — pin the current numeric override again once they are loaded.' },
+  cn2b_err_need_line_quantity_lineage_unsafe__source_cell_value_contract_invalid: { ar: 'لم يُحفظ سطر الاحتياج المرفوض: إحدى خلاياه المعيّنة دليل مصدري غير صالح وفق عقد السلامة ولا يمكن أن تغذّي سطر احتياج.', en: 'The refused need line was not saved: one of its designated cells is invalid source evidence under the safety contract and cannot feed a need line.' },
+  /* HC1.3 — HEAD-DEPENDENT reason: a person who already has a current numeric override only forgot to PIN it, so the refusal names both
+     legitimate next steps instead of always asking for a new override. */
+  cn2b_err_need_line_quantity_lineage_unsafe__source_quantity_requires_explicit_numeric_override: { ar: 'لم يُحفظ سطر الاحتياج المرفوض: إحدى خلاياه المعيّنة ليست رقمًا صريحًا، وكميتها المعيّنة غير مثبَّتة على تعديل رقمي. إن لم يكن لها تعديل رقمي حالي صالح للاستخدام بعد فسجّل واحدًا أولًا، وبعد أن يوجد ثبّت التعديل الحالي على الخلية المعيّنة، أو أزل الخلية.', en: 'The refused need line was not saved: one of its designated cells is not a plain number, and its designated quantity is not pinned to a numeric override. If the cell has no current usable numeric override yet, record one first; once it has one, pin the current override to the designated cell, or remove the cell.' },
+  cn2b_err_need_line_quantity_lineage_unsafe__source_quantity_override_binding_invalid: { ar: 'لم يُحفظ سطر الاحتياج المرفوض: التعديل المثبَّت لم يعد التعديل الحالي لخليته. أُزيل التثبيت وتُعاد قراءة التعديلات — ثبّت التعديل الرقمي الحالي من جديد بعد اكتمالها. وإن لم يكن للخلية تعديل رقمي حالي صالح للاستخدام بعد فسجّل واحدًا أولًا.', en: 'The refused need line was not saved: a pinned override is no longer the current one for its cell. The pin was cleared and the overrides are being re-read — pin the current numeric override again once they are loaded. If the cell has no current usable numeric override yet, record one first.' },
   cn2b_err_need_line_quantity_lineage_unsafe__source_quantity_override_value_invalid: { ar: 'لم يُحفظ سطر الاحتياج المرفوض: التعديل المثبَّت ليس رقمًا غير سالب. التعديل الرقمي وحده يمكن أن يمثّل كمية.', en: 'The refused need line was not saved: a pinned override is not a non-negative number. Only a numeric override can stand for a quantity.' },
   cn2b_err_need_line_quantity_lineage_unsafe__source_quantity_override_mismatch: { ar: 'لم يُحفظ سطر الاحتياج المرفوض: كمية معيّنة تختلف عن التعديل الرقمي المثبَّت عليها. اجعلهما متساويتين أو أزل التثبيت.', en: 'The refused need line was not saved: a designated quantity differs from the numeric override it is pinned to. Make them equal, or remove the pin.' },
   cn2b_err_designated_quantity_not_canonical: { ar: 'مساهمة ليست بالصيغة الدقيقة التي يقبلها الخادم: أرقام، ثم نقطة وأرقام اختياريًا — بلا مسافات أو إشارات أو أسس أو فواصل آلاف أو أصفار بادئة، وبحد أقصى 256 حرفًا.', en: 'A contribution is not in the exact form the server accepts: digits, optionally one point followed by digits — no spaces, signs, exponents, grouping or leading zeros, at most 256 characters.' },
@@ -3930,6 +3941,7 @@ export const T: Dict = {
   cn2b_simple_step_summary:      { ar: 'ملخص واضح',                en: 'Clear summary' },
   cn2b_simple_step_institutions: { ar: 'راجع المؤسسات',            en: 'Review institutions' },
   cn2b_simple_step_materials:    { ar: 'راجع المواد',              en: 'Review materials' },
+  cn2b_simple_step_need_lines:   { ar: 'جهّز سطور الاحتياج',       en: 'Prepare the need lines' },
   cn2b_simple_step_outcome:      { ar: 'النتيجة والخطوة التالية',  en: 'Outcome and next step' },
 
   /* Step 1 — upload. */
@@ -3954,6 +3966,13 @@ export const T: Dict = {
   },
   cn2b_simple_start:             { ar: 'بدء العمل على هذه السنة', en: 'Start working on this year' },
   cn2b_simple_draft_open:        { ar: 'مسودة سنة __YEAR__ مفتوحة', en: 'The __YEAR__ draft is open' },
+  /* CN-UI-S1 — opening an annual draft or a correction is an EDIT, exactly as
+     the server guards it; only the file upload needs the import permission. */
+  cn2b_simple_no_edit_permission: { ar: 'ليست لديك صلاحية تعديل الاحتياج المركزي', en: 'You do not have Central Needs edit permission' },
+  cn2b_simple_no_edit_permission_hint: {
+    ar: 'فتح مسودة سنوية أو نسخة تصحيح يتطلب صلاحية التعديل. اطلبها من مدير النظام.',
+    en: 'Opening an annual draft or a correction revision needs the edit permission. Ask your administrator for it.',
+  },
   cn2b_simple_no_import_permission: { ar: 'ليست لديك صلاحية الاستيراد', en: 'You do not have import permission' },
   cn2b_simple_no_import_permission_hint: {
     ar: 'يمكنك متابعة حالة الاحتياج الحالي فقط. اطلب صلاحية الاستيراد من مدير النظام.',
@@ -3984,6 +4003,10 @@ export const T: Dict = {
   cn2b_simple_phase_active:    { ar: 'جارٍ',           en: 'In progress' },
   cn2b_simple_phase_waiting:   { ar: 'بانتظار',        en: 'Waiting' },
 
+  /* CN-UI-S1 — the summary step is gone. Its keys stay (unused: the A7.2.2
+     guard forbids removing a dictionary key); the two scope labels and the
+     institutions / materials labels below are reused by the compact session
+     context that replaced it. */
   /* Step 3 — summary. */
   cn2b_simple_file_read:   { ar: 'تمت قراءة الملف بنجاح', en: 'File read successfully' },
 
@@ -4072,8 +4095,22 @@ export const T: Dict = {
   cn2b_simple_source_unit_label: { ar: 'الوحدة في الملف', en: 'Unit in the file' },
   cn2b_simple_unit_needs_review: { ar: 'تحتاج مراجعة الوحدة', en: 'Unit needs review' },
 
+  /* Step 5 — need lines (CN-UI-S1), built in the canonical need-line panel. */
+  cn2b_simple_need_lines_title: { ar: 'جهّز سطور الاحتياج', en: 'Prepare the need lines' },
+  cn2b_simple_need_lines_lead: {
+    ar: 'اختر من سطور الاحتياج أدناه الكميات التي تُكوّن كل سطر، ثم احفظها. الخادم وحده يقرر متى يصبح الاحتياج جاهزاً للإرسال.',
+    en: 'In the need lines below, choose the quantities that make up each line, then save them. Only the server decides when the annual need is ready to submit.',
+  },
+  cn2b_simple_need_lines_workspace: { ar: 'سطور الاحتياج', en: 'Need lines' },
+
   /* Step 6 — outcome. Readiness is the SERVER's verdict, reproduced; nothing
      here claims completion the server has not confirmed. */
+  cn2b_simple_submit_title: { ar: 'إرسال الاحتياج للاعتماد', en: 'Submit the annual need for approval' },
+  cn2b_simple_submit_needs_edit: {
+    ar: 'يتطلب الإرسال صلاحية تعديل الاحتياج المركزي — يستطيع من يملكها إرسال هذا الاحتياج.',
+    en: 'Submitting needs the Central Needs edit permission — someone who has it can submit this annual need.',
+  },
+  /* Unused since CN-UI-S1 (no handoff to Advanced); kept — see the A7.2.2 note above. */
   cn2b_simple_reviewed_all: { ar: 'تمت مراجعة المؤسسات والمواد', en: 'Institutions and materials reviewed' },
   cn2b_simple_final_handoff: {
     ar: 'يتطلب إكمال سطور الاحتياج الانتقال إلى الخيارات المتقدمة.',
@@ -4081,8 +4118,8 @@ export const T: Dict = {
   },
   cn2b_simple_final_continue_advanced: { ar: 'إكمال في الخيارات المتقدمة', en: 'Continue in advanced options' },
   cn2b_simple_final_server_ready: {
-    ar: 'أكّد الخادم أن هذا الاحتياج جاهز للمراجعة. يتم الإرسال من الخيارات المتقدمة.',
-    en: 'The server confirms this need is ready for review. Submission is done from the advanced options.',
+    ar: 'أكّد الخادم أن هذا الاحتياج جاهز للإرسال.',
+    en: 'The server confirms this annual need is ready to submit.',
   },
   cn2b_simple_final_server_pending: {
     ar: 'حسب الخادم، ما زالت هذه الخطوات مطلوبة قبل الإرسال:',
@@ -4104,19 +4141,81 @@ export const T: Dict = {
     ar: 'لا توجد عناصر إضافية تحتاج مراجعة حالياً.',
     en: 'No further items currently need review.',
   },
+  /* CN-UI-S1 HC1 — the CONTEXTUAL expert escape: shown only when the server's
+     own blockers name a condition Simple has no control for (a numeric
+     correction, an open import attempt) or one this build cannot describe. It
+     is never a generic "Advanced" entry. __STAGE__ is the existing stage title
+     (cn2b_stage_*), so the copy always names the stage the button opens. */
+  cn2b_simple_expert_title: {
+    ar: 'تحتاج هذه المشكلة إلى أدوات المراجعة المتقدمة',
+    en: 'This issue requires expert review tools',
+  },
+  cn2b_simple_expert_title_unknown: {
+    ar: 'مراجعة تشخيصية للخبراء',
+    en: 'Expert diagnostic review',
+  },
+  cn2b_simple_expert_body_numeric_override: {
+    ar: 'تحتاج الكمية إلى تصحيح رقمي حالي صالح للاستخدام، مسجَّل كرقم غير سالب: إما لأن الخلية المصدرية ليست رقمًا صريحًا، أو لأن التصحيح المثبَّت عليها مفقود أو لم يعد التصحيح الحالي أو ليس رقمًا صالحًا للاستخدام. تُسجَّل هذه التصحيحات في مرحلة «__STAGE__» ضمن أدوات المراجعة المتقدمة، ولا تتيحها هذه الواجهة. وبعد تسجيله عُد إلى هنا وثبّته: احذف سطر الاحتياج ثم عيّن خليته من جديد.',
+    en: 'A quantity needs a current, usable numeric correction recorded as a non-negative number — its source cell is not a plain number, or the correction it is pinned to is missing, out of date or not a usable number. Those corrections are recorded in the “__STAGE__” stage of the expert tools; this view does not offer them. Once it is recorded, come back and pin it: delete the need line and designate its cell again.',
+  },
+  /* HC1.2 / HC1.3 — invalid IMMUTABLE evidence. No in-app control replaces the
+     evidence of a completed import, so this is DIAGNOSTIC / controlled escalation
+     only: it says the evidence cannot be repaired in this workflow, that the
+     readiness stage gives diagnostic detail, and that opening it does not itself
+     resolve anything. It never says a stage replaces, re-imports or repairs. */
+  cn2b_simple_expert_body_source_evidence_invalid: {
+    ar: 'بيانات المصدر الأصلية غير صالحة وفق عقد السلامة. لا يمكن إصلاح هذا الدليل داخل دورة العمل الحالية. تعرض مرحلة «__STAGE__» تفاصيل تشخيصية للتصعيد المضبوط، لكن فتحها لا يحل مشكلة الدليل بحد ذاته.',
+    en: 'The immutable source evidence is invalid under the safety contract. It cannot be repaired in this workflow. The “__STAGE__” stage provides diagnostic details for controlled escalation; opening it does not itself resolve the evidence problem.',
+  },
+  /* HC1.2 / HC1.3 — a HEAD-DEPENDENT row (a quantity pinned to a correction that is not its
+     cell's current one, or pinned to none) whose cell's CURRENT override this view cannot
+     prove. It says so, and does not guess. */
+  cn2b_simple_expert_body_override_head_unproven: {
+    ar: 'يذكر الخادم أن كمية مثبَّتة على تصحيح ليس التصحيح الحالي لخليتها، أو غير مثبَّتة على أي تصحيح، لكن هذه الواجهة لم تستطع إثبات أي تصحيح هو الحالي لتلك الخلية — إما لأن تفاصيل الخادم لا تسمّي الخلية أو لأن قائمة التصحيحات غير متاحة — ولذلك لا تخمّن. تعرض مرحلة «__STAGE__» ما أعاده الخادم تمامًا ليراجعه خبير، لكن فتحها لا يضمن إمكان حلّ المشكلة هناك.',
+    en: 'The server reports that a quantity is pinned to a correction that is not its cell’s current one, or to none, but this view could not prove which correction is current for that cell — the server’s detail does not name the cell, or the correction list is not available — so it does not guess. The “__STAGE__” stage shows exactly what the server returned, for an expert to examine; opening it does not guarantee the problem can be resolved there.',
+  },
+  cn2b_simple_expert_body_unknown_lineage: {
+    ar: 'يذكر الخادم مشكلة في كمية لا تستطيع هذه النسخة وصف سببها. تعرض مرحلة «__STAGE__» ما أعاده الخادم تمامًا ليراجعه خبير، لكن فتحها لا يضمن إمكان حلّ المشكلة هناك.',
+    en: 'The server reports a quantity problem whose reason this version cannot describe. The “__STAGE__” stage shows exactly what the server returned, for an expert to examine — opening it does not guarantee the problem can be resolved there.',
+  },
+  cn2b_simple_expert_body_open_import: {
+    ar: 'ما زالت محاولة استيراد مفتوحة. يمكن إنهاؤها مع ذكر السبب في مرحلة «__STAGE__» ضمن أدوات المراجعة المتقدمة، ولا تتيح هذه الواجهة ذلك.',
+    en: 'An import attempt is still open. It can be abandoned, with a reason, in the “__STAGE__” stage of the expert tools; this view has no control for it.',
+  },
+  cn2b_simple_expert_body_unknown: {
+    ar: 'يذكر الخادم عنصرًا لا تستطيع هذه النسخة وصفه. تعرض مرحلة «__STAGE__» ما أعاده الخادم تمامًا ليراجعه خبير، لكن فتحها لا يضمن إمكان حلّه هناك.',
+    en: 'The server reports an item this version cannot describe. The “__STAGE__” stage shows exactly what the server returned, for an expert to examine — opening it does not guarantee the item can be resolved there.',
+  },
+  cn2b_simple_expert_open: { ar: 'فتح مرحلة «__STAGE__»', en: 'Open the “__STAGE__” stage' },
+  cn2b_simple_expert_no_permission: {
+    ar: 'لا تملك الصلاحية اللازمة لهذه المرحلة. اطلب المساعدة ممن يملكها.',
+    en: 'You do not have the permission this stage needs. Ask someone who does.',
+  },
+  /* The two guards of that switch, in their own words: it changes the view and
+     nothing on the server, so "change revision" copy would be inaccurate. */
+  cn2b_expert_switch_confirm: {
+    ar: 'سيؤدي فتح أدوات المراجعة المتقدمة إلى التخلي عن العمل غير المحفوظ في هذه الواجهة. لا يُحفظ شيء ولا يتغير شيء على الخادم. هل تريد المتابعة؟',
+    en: 'Opening the expert tools will discard unsaved work in this view. Nothing is saved or changed on the server. Continue?',
+  },
+  cn2b_expert_switch_blocked: {
+    ar: 'عملية ما زالت جارية. انتظر حتى تنتهي ثم افتح أدوات المراجعة المتقدمة.',
+    en: 'An action is still in progress. Wait for it to finish, then open the expert tools.',
+  },
   cn2b_simple_blocker_source:      { ar: 'هناك ملفات مستوردة لم تكتمل معالجتها بعد', en: 'Some imported files have not finished processing yet' },
   cn2b_simple_blocker_beneficiary: { ar: 'تبقت مؤسسات تحتاج تحديد',                  en: 'Institutions still need to be identified' },
   cn2b_simple_blocker_material:    { ar: 'تبقت مواد تحتاج مطابقة',                    en: 'Materials still need to be matched' },
   cn2b_simple_blocker_need_line:   { ar: 'تبقت كميات تحتاج اعتماد',                    en: 'Quantities still need approval' },
-  cn2b_simple_blocker_unknown:     { ar: 'توجد عناصر تحتاج مراجعة متقدمة',            en: 'Some items need advanced review' },
+  cn2b_simple_blocker_unknown:     { ar: 'يذكر الخادم عناصر أخرى لا تستطيع هذه النسخة وصفها بعد', en: 'The server lists further items this build cannot describe yet' },
   /* C5 §7 — explicit Simple Mode sentences for invalid source evidence and for each unsafe-lineage reason. */
-  cn2b_simple_blocker_source_evidence_invalid: { ar: 'بعض الخلايا المستوردة دليل غير صالح بنيويًا. لا تُصلَح في مكانها — يحتاج الملف إلى استبدال مضبوط أو إعادة استيراد.', en: 'Some imported cells are structurally invalid evidence. They are not fixed in place — the file needs a controlled replacement or re-import.' },
-  cn2b_simple_blocker_lineage_source_cell_value_contract_invalid: { ar: 'كمية مأخوذة من خلية هي دليل غير صالح — أزل تلك الخلية من سطر احتياجها؛ والملف نفسه يحتاج إلى استبدال مضبوط أو إعادة استيراد.', en: 'A quantity comes from a cell that is invalid evidence — remove that cell from its need line; the file itself needs a controlled replacement or re-import.' },
-  cn2b_simple_blocker_lineage_source_quantity_requires_explicit_numeric_override: { ar: 'كمية مأخوذة من خلية ليست رقمًا صريحًا — سجّل لتلك الخلية تصحيحًا رقميًا وثبّته، أو أزل الخلية من سطر احتياجها.', en: 'A quantity comes from a cell that is not a plain number — record a numeric correction for that cell and pin it, or remove the cell from its need line.' },
-  cn2b_simple_blocker_lineage_source_quantity_override_binding_invalid: { ar: 'كمية مثبَّتة على تصحيح لم يعد التصحيح الحالي لخليتها — أعد التثبيت على التصحيح الرقمي الحالي، أو احذف ذلك المصدر من سطر الاحتياج وأعد تعيينه.', en: 'A quantity is pinned to a correction that is no longer the current one for its cell — re-pin the current numeric correction, or delete and re-designate that source of the need line.' },
+  cn2b_simple_blocker_source_evidence_invalid: { ar: 'بعض الخلايا المستوردة تمثل دليلاً مصدرياً غير صالح وفق عقد السلامة. لا يمكن إصلاح هذا الدليل داخل دورة العمل الحالية. راجع تفاصيل الجاهزية للتشخيص والتصعيد المضبوط.', en: 'Some imported cells are invalid source evidence under the safety contract. This evidence cannot be repaired in this workflow. Review the readiness details for diagnosis and controlled escalation.' },
+  cn2b_simple_blocker_lineage_source_cell_value_contract_invalid: { ar: 'تعتمد كمية في سطر الاحتياج على دليل مصدري غير صالح وغير قابل للتعديل. حذف الربط وحده لا يجعل الدليل صالحاً. راجع تفاصيل الجاهزية للتشخيص والتصعيد المضبوط.', en: 'A need-line quantity depends on invalid immutable source evidence. Removing the link does not make that evidence valid. Review the readiness details for diagnosis and controlled escalation.' },
+  /* HC1.3 — a HEAD-DEPENDENT reason: the screen routes it from the cell's current override, so the sentence
+     names BOTH legitimate next steps and never decides which one applies. */
+  cn2b_simple_blocker_lineage_source_quantity_requires_explicit_numeric_override: { ar: 'كمية مأخوذة من خلية ليست رقمًا صريحًا، وهذه الكمية غير مثبَّتة على تصحيح رقمي. إن لم يكن لهذه الخلية تصحيح رقمي حالي صالح للاستخدام بعد، فسجّل واحدًا أولًا؛ وبعد أن يوجد، احذف سطر الاحتياج ثم عيّن الخلية من جديد وثبّت التصحيح الحالي.', en: 'A quantity comes from a cell that is not a plain number, and that quantity is not pinned to a numeric correction. If the cell has no current usable numeric correction yet, record one first; once it has one, delete the need line, designate the cell again and pin the current correction.' },
+  cn2b_simple_blocker_lineage_source_quantity_override_binding_invalid: { ar: 'كمية مثبَّتة على تصحيح لم يعد التصحيح الحالي لخليتها — أعد التثبيت على التصحيح الرقمي الحالي، أو احذف ذلك المصدر من سطر الاحتياج وأعد تعيينه. وإن لم يكن لهذه الخلية تصحيح رقمي حالي صالح للاستخدام بعد، فسجّل واحدًا أولًا.', en: 'A quantity is pinned to a correction that is no longer the current one for its cell — re-pin the current numeric correction, or delete and re-designate that source of the need line. If the cell has no current usable numeric correction yet, record one first.' },
   cn2b_simple_blocker_lineage_source_quantity_override_value_invalid: { ar: 'كمية مثبَّتة على تصحيح ليس رقمًا غير سالب — سجّل تصحيحًا رقميًا وثبّته بدلًا منه.', en: 'A quantity is pinned to a correction that is not a non-negative number — record a numeric correction and pin it instead.' },
   cn2b_simple_blocker_lineage_source_quantity_override_mismatch: { ar: 'كمية تختلف عن التصحيح الرقمي المثبَّتة عليه — اجعلهما متساويين، أو احذف ذلك المصدر من سطر الاحتياج وأعد تعيينه.', en: 'A quantity differs from the numeric correction it is pinned to — make them equal, or delete and re-designate that source of the need line.' },
-  cn2b_simple_blocker_lineage_reason_unrecognized: { ar: 'لكمية مشكلة في مصدرها لا تستطيع هذه النسخة من التطبيق وصفها — افتح الخيارات المتقدمة لمعرفة التفاصيل.', en: 'A quantity has a source problem this build cannot describe — open Advanced options for the details.' },
+  cn2b_simple_blocker_lineage_reason_unrecognized: { ar: 'لكمية مشكلة في مصدرها لا تستطيع هذه النسخة من التطبيق وصفها — راجع مصادر تلك الكمية في سطور الاحتياج، أو اسأل مدير النظام.', en: 'A quantity has a source problem this build cannot describe — check that quantity’s sources in the need lines, or ask your administrator.' },
 
   cn2b_simple_cancel:     { ar: 'إلغاء',    en: 'Cancel' },
   cn2b_simple_no_results: { ar: 'لا نتائج', en: 'No results' },

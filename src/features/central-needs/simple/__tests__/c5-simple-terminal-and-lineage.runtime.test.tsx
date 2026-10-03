@@ -8,10 +8,15 @@
  *   §7   the outcome step explains invalid source evidence (§7.1) and each
  *        unsafe-lineage reason (§7.2) with explicit copy, read from the
  *        server's `reason=` token; an unrecognized reason fails closed.
+ *
+ * CN-UI-S1 (superseded, updated): the closed card now sits on the OUTCOME step
+ * ('pending' — "Outcome and next step") instead of step 1, and there is no
+ * summary to pass: a draft the server still blocks lands straight on the
+ * need-lines step, whose card carries the same server-derived sentences.
  */
 import '@testing-library/jest-dom/vitest';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import { T } from '@/shared/i18n/strings';
 import type { PreviewState } from '../../useCentralNeedsPreview';
 import type { PlanRevision, ReviewBlocker, ReviewReadiness, RevisionStatus } from '../../central-needs.service';
@@ -40,7 +45,7 @@ function renderWorkspace(over: Partial<WorkspaceProps>) {
     revisionDataReady: true, canImport: true, canEdit: true, busy: false, activity: null, onOpenRevision: () => {},
     preview: IDLE, pendingFile: null, onPickFile: () => {}, onVerify: () => {}, error: null, notice: null,
     readiness: null, beneficiaryColumns: [], careInstitutions: [], records: [], dispositions: [],
-    activeSessionId: 's1', onChanged: () => {}, onSwitchToAdvanced: () => {}, ...over,
+    activeSessionId: 's1', onChanged: () => {}, ...over,
   };
   return render(<CentralNeedsSimpleWorkspace {...props} />);
 }
@@ -63,13 +68,16 @@ describe('C5 §17 — Simple Mode: each closed status has its own terminal sente
       revision: revisionOf(status as RevisionStatus), isDraft: false,
       readiness: readinessOf(status as RevisionStatus, EDIT_BLOCKERS),
     });
-    expect(screen.getByTestId('cn2b-simple-workspace')).toHaveAttribute('data-step', 'upload');
+    expect(screen.getByTestId('cn2b-simple-workspace')).toHaveAttribute('data-step', 'pending');
     const notice = screen.getByTestId('cn2b-simple-closed-notice');
+    expect(within(screen.getByTestId('cn2b-simple-closed')).getByTestId('cn2b-simple-closed-notice')).toBe(notice);
     expect(notice).toHaveAttribute('data-status', status);
     expect(notice).toHaveTextContent(T[key].en);
-    // No blocker copy and no review step is offered for a closed revision.
+    // No blocker copy, no draft outcome card and no review step for a closed revision.
     expect(screen.queryByTestId('cn2b-simple-readiness-messages')).toBeNull();
-    expect(screen.queryByTestId('cn2b-simple-review-start')).toBeNull();
+    expect(screen.queryByTestId('cn2b-simple-pending')).toBeNull();
+    expect(screen.queryByTestId('cn2b-simple-material-card')).toBeNull();
+    expect(screen.queryByTestId('cn2b-simple-institution-card')).toBeNull();
   });
 
   it('the four sentences are distinct from each other and from the old shared notice', () => {
@@ -81,13 +89,13 @@ describe('C5 §17 — Simple Mode: each closed status has its own terminal sente
 describe('C5 §7 — Simple Mode outcome copy for invalid evidence and each lineage reason', () => {
   function renderPending(blockers: ReviewBlocker[]) {
     renderWorkspace({ revision: revisionOf('draft'), isDraft: true, readiness: readinessOf('draft', blockers) });
-    // Past the analysis summary, to the outcome step (nothing is left to review in this dataset).
-    fireEvent.click(screen.getByTestId('cn2b-simple-review-start'));
-    expect(screen.getByTestId('cn2b-simple-workspace')).toHaveAttribute('data-step', 'pending');
-    return screen.getByTestId('cn2b-simple-readiness-messages');
+    // Nothing is left to review in this dataset and the server still blocks it:
+    // the need-lines step, whose card carries the server's own sentences.
+    expect(screen.getByTestId('cn2b-simple-workspace')).toHaveAttribute('data-step', 'need-lines');
+    return within(screen.getByTestId('cn2b-simple-pending')).getByTestId('cn2b-simple-readiness-messages');
   }
 
-  it('says invalid immutable evidence needs a controlled replacement, and a stale pin needs a re-pin or re-designation', () => {
+  it('says invalid immutable evidence cannot be repaired in this workflow (diagnosis and escalation, no promised replacement), and a stale pin needs a re-pin or re-designation', () => {
     const messages = renderPending(EDIT_BLOCKERS);
     const items = within(messages).getAllByRole('listitem').map((li) => li.textContent?.trim());
     expect(items).toEqual([

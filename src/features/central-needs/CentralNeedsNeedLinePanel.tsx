@@ -94,8 +94,12 @@
  *   * a contribution is typed in the server's exact decimal grammar, untrimmed,
  *     and suggested only from the two safe evidence shapes (§15);
  *   * a cell's override is its HEAD — the first row of its exact
- *     `sourceRecordId` in server order — and only a JSON-number head can be
- *     pinned (§14/§15);
+ *     `sourceRecordId` in server order — and only a head the canonical
+ *     `numericOverrideLexeme` can turn into an exact quantity can be pinned
+ *     (§14/§15). CN-UI-S1 HC1.5: a NUMERIC head is not necessarily a PINNABLE one
+ *     (its exact PostgreSQL text can be an exponent form or longer than the
+ *     server's ceiling), so the pin control, the pin guard and the stale-pin
+ *     check all ask the one gate `pinnableLexemeOf` — never the bare numeric test;
  *   * a pin that is no longer its cell's head is cleared VISIBLY, with its
  *     value, and must be chosen again; every pin a write would carry is listed
  *     in the preview, so no pin is ever sent unseen (§14);
@@ -205,6 +209,30 @@ const outcomeUnknown = (refusal: CentralNeedsError) =>
 
 /** C5 §7.2/§14 — the lineage reason that means a pin is no longer its cell's head. */
 const STALE_BINDING_REASON = 'source_quantity_override_binding_invalid';
+
+/**
+ * CN-UI-S1 HC1.5 — the ONE gate on pinning an override, for everything in this panel (the pin
+ * control, the pin itself, and the check that a held pin is still honoured).
+ *
+ * An override may be pinned as a contribution only when BOTH hold:
+ *   1. it is its record's CURRENT head — the first row of the exact `sourceRecordId` in server
+ *      order (`overrideHeads`); an older override, or another record's, is never a candidate;
+ *   2. the canonical `numericOverrideLexeme` can turn that head into an exact quantity.
+ * Returns that lexeme — the contribution a pin sends, verbatim — or null when it may not be pinned.
+ *
+ * "Numeric" is NOT "pinnable": a finite non-negative number can still have an exact PostgreSQL text
+ * that is not a legal designated quantity (an exponent form, or longer than the server's ceiling).
+ * Nothing about that grammar is written here — the canonical helper is its only authority — and the
+ * quantity comes from the CURRENT HEAD held in `heads`, never from a stand-in the caller passes.
+ */
+export function pinnableLexemeOf(
+  heads: ReadonlyMap<string, FieldOverride>,
+  recordId: string,
+  overrideId: string,
+): string | null {
+  const head = heads.get(recordId);
+  return head !== undefined && head.id === overrideId ? numericOverrideLexeme(head) : null;
+}
 
 /**
  * Exact decimal addition.
@@ -520,11 +548,16 @@ export function CentralNeedsNeedLinePanel({
    * complete chain says otherwise, the pin is cleared visibly (never re-pointed
    * at the new head) and the reviewer must choose again. While the chain is
    * unavailable nothing is reconciled — saving is withheld instead.
+   *
+   * CN-UI-S1 HC1.5 — a pin is honoured only while it is also PINNABLE (the same
+   * gate that offered it). A pin whose head cannot be pinned is therefore stale
+   * too: it is cleared by this same path, `canSave` is false meanwhile, and it
+   * can never reach the write plan or be silently replaced by a typed fallback.
    */
   const stalePinIds = useMemo(
     () => (overridesReadable
       ? Object.entries(designated)
-        .filter(([id, d]) => d.overrideId !== null && headByRecord.get(id)?.id !== d.overrideId)
+        .filter(([id, d]) => d.overrideId !== null && pinnableLexemeOf(headByRecord, id, d.overrideId) === null)
         .map(([id]) => id)
       : []),
     [designated, headByRecord, overridesReadable],
@@ -602,7 +635,7 @@ export function CentralNeedsNeedLinePanel({
   const everyQuantityValid = selectedIds.length > 0
     && selectedIds.every((id) => isCanonicalQuantity(designated[id]?.quantity ?? ''));
   const everySelectionResolved = selectedIds.length > 0 && selectedIds.every((id) => beneficiaryByRecordId.has(id));
-  /** C5 §14 — every pin a write would carry is still its cell's current head. */
+  /** C5 §14 / HC1.5 — every pin a write would carry is still its cell's current head AND can still be pinned. */
   const everyPinCurrent = stalePinIds.length === 0;
   /**
    * C3 — a NEW line needs an explicit unit decision: either a chosen unit or an
@@ -798,19 +831,28 @@ export function CentralNeedsNeedLinePanel({
   }
 
   /**
-   * An explicit human pin of the cell's CURRENT head. C5 §15: only a JSON-number
-   * head can stand in for a numeric quantity, and its exact decimal (never a
-   * rounded JavaScript rendering) becomes the suggested contribution.
+   * An explicit human pin of the cell's CURRENT head. C5 §15: only a head the
+   * canonical helper can turn into an exact quantity can stand in for a numeric
+   * quantity, and that exact decimal (never a rounded JavaScript rendering)
+   * becomes the contribution.
+   *
+   * CN-UI-S1 HC1.5 — this fails closed ON ITS OWN, whatever the markup offered: a
+   * pin is made only when the override is its record's current head AND has an
+   * exact lexeme (`pinnableLexemeOf`). The contribution of a successful pin IS
+   * that lexeme — there is no fallback to what was already typed, so an
+   * unpinnable override can neither be pinned nor leave a pin with a stand-in
+   * quantity. Unticking is always allowed.
    */
   function useOverride(record: SourceRecord, o: FieldOverride, on: boolean) {
-    if (on && (!isNumericOverride(o) || headByRecord.get(record.id)?.id !== o.id)) return;
+    const lexeme = on ? pinnableLexemeOf(headByRecord, record.id, o.id) : null;
+    if (on && lexeme === null) return;
     setDesignated((prev) => {
       const current = prev[record.id];
       if (!current) return prev;
       return {
         ...prev,
-        [record.id]: on
-          ? { quantity: numericOverrideLexeme(o) ?? current.quantity, overrideId: o.id }
+        [record.id]: lexeme !== null
+          ? { quantity: lexeme, overrideId: o.id }
           : { quantity: current.quantity, overrideId: null },
       };
     });
@@ -1130,7 +1172,10 @@ export function CentralNeedsNeedLinePanel({
                         const contributionId = `${domId}-contribution-${r.id}`;
                         const quantityOk = picked ? isCanonicalQuantity(picked.quantity) : true;
                         const overrideValue = o ? overrideValueText(o) : null;
+                        // HC1.5 — NUMERIC (a finite, non-negative number) is presentation metadata; only
+                        // PINNABLE (the one gate) decides whether the pin control exists. Never the same thing.
                         const numericHead = o ? isNumericOverride(o) : false;
+                        const pinnableHead = o ? pinnableLexemeOf(headByRecord, r.id, o.id) !== null : false;
                         const pinCleared = Boolean(picked) && clearedPins.includes(r.id);
                         const unavailable = Boolean(picked) && !beneficiaryId;
                         return (
@@ -1229,10 +1274,11 @@ export function CentralNeedsNeedLinePanel({
                                   {o && (
                                     <>
                                       <span className="cn2b-nl-row__meta" data-testid="cn2b-nl-override-evidence"
-                                        data-override-id={o.id} data-numeric={numericHead ? 'true' : 'false'}>
+                                        data-override-id={o.id} data-numeric={numericHead ? 'true' : 'false'}
+                                        data-pinnable={pinnableHead ? 'true' : 'false'}>
                                         {t('cn2b_nl_override_recorded', lang)}: <strong>{overrideValue ?? '—'}</strong> — {o.overrideReason}
                                       </span>
-                                      {numericHead ? (
+                                      {pinnableHead ? (
                                         <label className="cn2b-nl-contrib__override">
                                           <input
                                             type="checkbox"
@@ -1241,11 +1287,15 @@ export function CentralNeedsNeedLinePanel({
                                           />
                                           {t('cn2b_nl_use_override', lang)}
                                         </label>
+                                      ) : numericHead ? (
+                                        /* HC1.5 — a NUMBER the canonical contract cannot take as a quantity: the evidence stays
+                                           visible, but there is no pin control and the note does not call it "not a number". */
+                                        <span className="cn2b-nl-row__meta" data-testid="cn2b-nl-override-not-pinnable">{t('cn2b_nl_override_not_pinnable', lang)}</span>
                                       ) : (
                                         /* §15 — a text (or blank/boolean) override never counts as numeric. */
                                         <span className="cn2b-nl-row__meta" data-testid="cn2b-nl-override-not-numeric">{t('cn2b_nl_override_not_numeric', lang)}</span>
                                       )}
-                                      {picked.overrideId === o.id && (
+                                      {picked.overrideId === o.id && pinnableHead && (
                                         <span className="cn2b-nl-row__meta" data-testid="cn2b-nl-override-applied">{t('cn2b_nl_override_applied', lang)}</span>
                                       )}
                                     </>

@@ -432,7 +432,7 @@ describe('E2-A.6 — the provisional upload preview is never an authoritative se
         isDraft revisionDataReady canImport canEdit busy={false} activity={null} onOpenRevision={() => {}}
         preview={preview} pendingFile={new File([exactBuffer(bytes)], 'pending.xlsx')} onPickFile={() => {}} onVerify={() => {}}
         error={null} notice={null} readiness={null} batches={[FILE_BATCH]} beneficiaryColumns={[]} careInstitutions={[]}
-        records={[]} dispositions={[]} activeSessionId={null} onChanged={() => {}} onSwitchToAdvanced={() => {}}
+        records={[]} dispositions={[]} activeSessionId={null} onChanged={() => {}}
       />,
     );
     const upload = screen.getByTestId('cn2b-simple-upload');

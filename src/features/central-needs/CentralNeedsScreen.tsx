@@ -321,13 +321,27 @@ function WorkSessionSelector({
   );
 }
 
+/**
+ * CN-UI-S1 — a child that reports busy/dirty/failed from an effect keeps its
+ * LAST report after it unmounts: it has no unmount cleanup of its own. The
+ * need-line panel now mounts in both presentations, so whichever copy leaves
+ * the tree releases its activity here — a stale `busy` would otherwise hold
+ * the Work Session switch closed, and a stale `dirty` would ask to discard a
+ * draft that no longer exists. Presentation only: it reads and writes no data.
+ */
+function ReleaseActivityOnUnmount({ onRelease, children }: { onRelease: () => void; children: React.ReactNode }) {
+  useEffect(() => onRelease, [onRelease]);
+  return <>{children}</>;
+}
+
 interface CentralNeedsScreenProps {
   /**
    * Which presentation the screen paints FIRST. The product default is
    * Simple Mode (Owner decision: "DEFAULT = SIMPLE, ADVANCED = SECONDARY");
-   * the Advanced six-stage workspace remains fully reachable from it. The
-   * prop exists so an expert entry point can open the Advanced workspace
-   * directly — it changes which JSX renders first and nothing else.
+   * CN-UI-S1 made Simple the COMPLETE normal workflow, so it offers no generic
+   * way into Advanced. The prop exists so an expert or diagnostic entry point
+   * can open the Advanced workspace directly — it changes which JSX renders
+   * first and nothing else.
    */
   initialMode?: 'simple' | 'advanced';
 }
@@ -358,9 +372,12 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
    *
    * SIMPLE IS THE DEFAULT (Owner task "Simple UX Visual Activation &
    * Convergence"): the first stable paint of الاحتياج السنوي is the Simple
-   * workspace, with no Advanced render before it. The Advanced six-stage
-   * workspace is the secondary, expert entry — reachable from every Simple
-   * step through "Advanced options", and returnable from its own header.
+   * workspace, with no Advanced render before it. CN-UI-S1: Simple is the
+   * complete normal workflow and advertises no handoff; the Advanced six-stage
+   * workspace is the secondary expert/diagnostic presentation, opened through
+   * `initialMode="advanced"` — or, for the conditions Simple has no control
+   * for, through the single contextual `onExpertEscape` below (CN-UI-S1 HC1) —
+   * and returnable to Simple from its own header.
    * `initialMode` only seeds this state; it is never re-applied later.
    */
   const [mode, setMode] = useState<'simple' | 'advanced'>(initialMode);
@@ -407,6 +424,12 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
   const [reviewActivity, setReviewActivity] = useState<ChildActivity>({ busy: false, dirty: false, failed: false });
   const [beneficiaryActivity, setBeneficiaryActivity] = useState<ChildActivity>({ busy: false, dirty: false, failed: false });
   const [needLineActivity, setNeedLineActivity] = useState<ChildActivity>({ busy: false, dirty: false, failed: false });
+  /**
+   * CN-UI-S1 HC1.1 — the stored-workbook mapping surface (Simple only): in-memory
+   * mapping work and an in-flight region write. Read by the contextual expert
+   * escape's guard and by nothing else; the surface releases it when it unmounts.
+   */
+  const [storedWorkbookActivity, setStoredWorkbookActivity] = useState<ChildActivity>({ busy: false, dirty: false, failed: false });
   const [backgroundResult, setBackgroundResult] = useState<{ stage: CentralNeedsStageId; failed: boolean } | null>(null);
   const previousChildBusy = useRef<Record<'review' | 'beneficiaries' | 'need-lines', boolean>>({ review: false, beneficiaries: false, 'need-lines': false });
   const previousParentBusyStage = useRef<CentralNeedsStageId | null>(null);
@@ -445,6 +468,16 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
    * generation, and is dropped to null the moment anything invalidates it.
    */
   const [dataRevisionId, setDataRevisionId] = useState<string | null>(null);
+  /**
+   * CN-UI-S1 — WHICH SESSION the loaded records and dispositions belong to,
+   * for the same reason as `dataRevisionId`: `sessionLoading` is raised by an
+   * effect, so the render that first carries a new `activeSessionId` still
+   * holds the previous session's rows. Simple routes a review card or the
+   * need-line surface from those rows, so it is told the rows are pending
+   * until they provably belong to the active session. Set only by a session
+   * read that succeeded and is still current.
+   */
+  const [dataSessionId, setDataSessionId] = useState<string | null>(null);
 
   const preview = useCentralNeedsPreview();
   const [pendingFile, setPendingFile] = useState<File | null>(null);
@@ -544,12 +577,14 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
     setBeneficiaryColumns([]);
     setBeneficiaryRegions(REGIONS_NOT_LOADED);
     setActiveSessionId(null);
+    setDataSessionId(null);
     setSessionEntries([]);
     setPendingFile(null);
     preview.reset();
     setReviewActivity({ busy: false, dirty: false, failed: false });
     setBeneficiaryActivity({ busy: false, dirty: false, failed: false });
     setNeedLineActivity({ busy: false, dirty: false, failed: false });
+    setStoredWorkbookActivity({ busy: false, dirty: false, failed: false });
     setBackgroundResult(null);
     previousChildBusy.current = { review: false, beneficiaries: false, 'need-lines': false };
     previousParentBusyStage.current = null;
@@ -724,15 +759,25 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
   }, [revisionId, reloadRevision, resetRevisionScopedState]);
 
   useEffect(() => {
-    if (!activeSessionId) { setRecords([]); setDispositions([]); setSessionLoading(false); return; }
+    if (!activeSessionId) { setRecords([]); setDispositions([]); setSessionLoading(false); setDataSessionId(null); return; }
     let cancelled = false;
     setSessionLoading(true);
     Promise.all([listSourceRecords(activeSessionId), listDispositions(activeSessionId)])
-      .then(([r, d]) => { if (!cancelled) { setRecords(r); setDispositions(d); } })
+      .then(([r, d]) => { if (!cancelled) { setRecords(r); setDispositions(d); setDataSessionId(activeSessionId); } })
       .catch((e: unknown) => !cancelled && setError(refusalOf(e, 'load_failed')))
       .finally(() => { if (!cancelled) setSessionLoading(false); });
     return () => { cancelled = true; };
   }, [activeSessionId]);
+
+  /**
+   * CN-UI-S1 — the session the screen's records and dispositions belong to
+   * NOW. A disposition re-read that answers after the person switched session
+   * must not land on the new session's rows: Simple's material card releases
+   * the switch guard as soon as its write is confirmed, before that re-read
+   * returns.
+   */
+  const activeSessionRef = useRef(activeSessionId);
+  useEffect(() => { activeSessionRef.current = activeSessionId; }, [activeSessionId]);
 
   // --- actions -------------------------------------------------------------
 
@@ -1079,7 +1124,11 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
     // previous completion may stand until the re-read answers. The reads are unchanged.
     if (revisionId) setReadinessRefreshing(true);
     try {
-      if (activeSessionId) setDispositions(await listDispositions(activeSessionId));
+      if (activeSessionId) {
+        const next = await listDispositions(activeSessionId);
+        // CN-UI-S1 — only while that session is still the active one.
+        if (activeSessionRef.current === activeSessionId) setDispositions(next);
+      }
       if (revisionId) setReadiness(await fetchReviewReadiness(revisionId));
     } finally {
       if (revisionId) setReadinessRefreshing(false);
@@ -1125,6 +1174,8 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
     || reviewActivity.busy
     || needLineActivity.busy;
   const sessionDraftDirty = reviewActivity.dirty || needLineActivity.dirty;
+  /** CN-UI-S1 — the active session's rows are still being read, or are not yet provably its own. */
+  const sessionRowsPending = sessionLoading || (activeSessionId !== null && dataSessionId !== activeSessionId);
   const busyStage: CentralNeedsStageId | null = reviewActivity.busy ? 'review'
     : beneficiaryActivity.busy ? 'beneficiaries'
       : needLineActivity.busy ? 'need-lines'
@@ -1147,6 +1198,69 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
     setNeedLineActivity({ busy: false, dirty: false, failed: false });
     setActiveSessionId(id);
   }, [activeSessionId, lang, sessionDraftDirty, sessionSwitchBlocked]);
+
+  /** CN-UI-S1 — the need-line panel left the tree: nothing it last reported is still true. */
+  const releaseNeedLineActivity = useCallback(() => {
+    setNeedLineActivity({ busy: false, dirty: false, failed: false });
+  }, []);
+  /**
+   * CN-UI-S1 HC1 — the same, for the two Advanced panels that report into slots
+   * Simple's guards also read. The expert escape makes Simple → Advanced → Simple
+   * a normal round trip, and the Advanced data review table feeds the SAME
+   * `reviewActivity` slot the material card does: a draft or an in-flight write it
+   * last reported would otherwise outlive it and ask a phantom "discard?" or
+   * block the Work Session switch and the escape for good.
+   */
+  const releaseReviewActivity = useCallback(() => {
+    setReviewActivity({ busy: false, dirty: false, failed: false });
+  }, []);
+  const releaseBeneficiaryActivity = useCallback(() => {
+    setBeneficiaryActivity({ busy: false, dirty: false, failed: false });
+  }, []);
+
+  /**
+   * CN-UI-S1 HC1 — the CONTEXTUAL expert escape. Simple asks to open the
+   * Advanced `stage` that resolves a condition the SERVER reported and Simple
+   * has no control for (see `deriveSimpleExpertEscape`). It changes which JSX
+   * renders and nothing else: no read, no reset, no revision opened, no
+   * `activeSessionId` change, no RPC, no retry — `dataRevisionId` and the
+   * readiness it was derived from stay exactly as they are.
+   *
+   *   * BUSY — a write in flight (the screen's own, the material card's, the
+   *     need-line panel's or a beneficiary-region write of the stored-workbook
+   *     surface) blocks the switch with its own sentence. The work is never
+   *     abandoned mid-request, and no confirmation overrides it.
+   *   * DIRTY — unsaved local Simple work (a material draft, a need-line
+   *     draft, in-memory stored-workbook mapping work) needs an explicit yes.
+   *     A "no" changes nothing at all. The Work Session switch keeps asking
+   *     only about the first two: the stored-workbook drafts belong to the
+   *     revision, not to a session, and survive a session switch.
+   *   * The stage and the mode are set in ONE batched update, so the first
+   *     Advanced paint is already the target stage — no other stage flashes.
+   *     A "background result" left by the person's own FOREGROUND work in
+   *     Simple (the activity effect runs in either mode, and Simple never moves
+   *     `activeStage`) is not news in Advanced, so it is cleared with it.
+   *   * The button that was activated unmounts with Simple, so focus is handed
+   *     to the target stage the way the workflow nav's own choose() does —
+   *     otherwise keyboard and screen-reader users land on <body>.
+   *
+   * Dedicated copy: this is not a "change revision" and must not say so.
+   */
+  const expertSwitchBusy = busy !== null || reviewActivity.busy || needLineActivity.busy || storedWorkbookActivity.busy;
+  const expertSwitchDirty = reviewActivity.dirty || needLineActivity.dirty || storedWorkbookActivity.dirty;
+  const onExpertEscape = useCallback((stage: CentralNeedsStageId) => {
+    if (expertSwitchBusy) {
+      window.alert(t('cn2b_expert_switch_blocked', lang));
+      return;
+    }
+    if (expertSwitchDirty && !window.confirm(t('cn2b_expert_switch_confirm', lang))) return;
+    onStageChange(stage);
+    setBackgroundResult(null);
+    setMode('advanced');
+    const focusStage = () => document.getElementById(stageDomId(stage))?.focus?.({ preventScroll: true });
+    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(focusStage);
+    else queueMicrotask(focusStage);
+  }, [expertSwitchBusy, expertSwitchDirty, lang, onStageChange]);
 
   useEffect(() => {
     if (stageWasChosen.current) return;
@@ -1222,6 +1336,77 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
   // screen. A column counts as decided once a review decision exists for it,
   // whichever decision that was.
   const completedSessionCount = sessions.filter((session) => session.status === 'completed').length;
+
+  /**
+   * CN-UI-S1 — the three canonical surfaces BOTH presentations show, each
+   * built exactly ONCE here, so neither mode carries a second copy of their
+   * behaviour: the Work Session selector (one switch handler, one busy/dirty
+   * guard), the need-line panel (the CN-UI-R1 region-aware resolver and its
+   * canonical writes, with its canonical props) and the lifecycle actions
+   * (`onSubmit` / `onApprove` / `onReject`, gated as they always were). The
+   * Advanced stage sections and the Simple workspace place these same
+   * elements; only one presentation renders at a time.
+   */
+  const workSessionSelector = (
+    <WorkSessionSelector
+      lang={lang}
+      sessions={sessions}
+      activeSessionId={activeSessionId}
+      blockerSummary={sessionBlockers}
+      sessionEntryById={sessionEntryById}
+      disabled={sessionSwitchBlocked}
+      onChange={onWorkSessionChange}
+    />
+  );
+
+  const needLinePanel = revision ? (
+    <ReleaseActivityOnUnmount onRelease={releaseNeedLineActivity}>
+      <CentralNeedsNeedLinePanel
+        lang={lang}
+        planRevisionId={revision.id}
+        workSessionId={activeSessionId}
+        editable={canEdit && isDraft}
+        dispositions={dispositions}
+        records={records}
+        overrides={overrides}
+        overrideReadFailure={overrideReadFailure}
+        beneficiaryColumns={beneficiaryColumns}
+        beneficiaryRegions={beneficiaryRegions}
+        needLines={needLines}
+        claimedSources={claimedSources}
+        onChanged={() => refreshRevision(revision.id)}
+        /* C5 §14 (UI-F1/UI-F5) — the chain alone, marked not loaded at once. */
+        onReloadOverrides={() => void reloadOverrides(revision.id)}
+        onRefused={(refusal) => void rereadAfterRefusal(refusal)}
+        onActivityChange={setNeedLineActivity}
+      />
+    </ReleaseActivityOnUnmount>
+  ) : null;
+
+  const lifecycleActions = (
+    <div className="cn2b-actions">
+      {canEdit && isDraft && (
+        <button
+          type="button"
+          className="cn2b-btn cn2b-btn--primary"
+          disabled={busy !== null || !readiness?.ready}
+          onClick={() => void onSubmit()}
+        >
+          {t('cn2b_submit', lang)}
+        </button>
+      )}
+      {canApprove && revision?.status === 'submitted' && (
+        <>
+          <button type="button" className="cn2b-btn cn2b-btn--primary" disabled={busy !== null} onClick={() => void onApprove()}>
+            {t('cn2b_approve', lang)}
+          </button>
+          <button type="button" className="cn2b-btn" disabled={busy !== null} onClick={() => void onReject()}>
+            {t('cn2b_reject', lang)}
+          </button>
+        </>
+      )}
+    </div>
+  );
 
   /**
    * UX-1 — the content of each workflow stage, keyed by its canonical id.
@@ -1582,32 +1767,26 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
       <p className="cn2b-hint" role="status">{t('cn2b_revision_loading', lang)}</p>
     ) : (
       <>
-        <WorkSessionSelector
-          lang={lang}
-          sessions={sessions}
-          activeSessionId={activeSessionId}
-          blockerSummary={sessionBlockers}
-          sessionEntryById={sessionEntryById}
-          disabled={sessionSwitchBlocked}
-          onChange={onWorkSessionChange}
-        />
+        {workSessionSelector}
         {sessionLoading ? (
           <p className="cn2b-hint" role="status">{t('cn2b_session_loading', lang)}</p>
         ) : activeSessionId ? (
           <Panel titleKey="cn2b_panel_review" icon="editor">
-            <CentralNeedsDispositionTable
-              importSessionId={activeSessionId}
-              records={records}
-              dispositions={dispositions}
-              overrides={overrides}
-              overrideReadFailure={overrideReadFailure}
-              organizationId={organizationId}
-              canEdit={canEdit && isDraft}
-              onChanged={() => void onDispositionsChanged()}
-              onOverridesChanged={() => { if (revisionId) void reloadOverrides(revisionId); }}
-              onRefused={(refusal) => void rereadAfterRefusal(refusal)}
-              onActivityChange={setReviewActivity}
-            />
+            <ReleaseActivityOnUnmount onRelease={releaseReviewActivity}>
+              <CentralNeedsDispositionTable
+                importSessionId={activeSessionId}
+                records={records}
+                dispositions={dispositions}
+                overrides={overrides}
+                overrideReadFailure={overrideReadFailure}
+                organizationId={organizationId}
+                canEdit={canEdit && isDraft}
+                onChanged={() => void onDispositionsChanged()}
+                onOverridesChanged={() => { if (revisionId) void reloadOverrides(revisionId); }}
+                onRefused={(refusal) => void rereadAfterRefusal(refusal)}
+                onActivityChange={setReviewActivity}
+              />
+            </ReleaseActivityOnUnmount>
           </Panel>
         ) : (
           <p className="cn2b-hint">{t('cn2b_stage_review_waiting', lang)}</p>
@@ -1619,17 +1798,19 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
       <p className="cn2b-hint" role="status">{t('cn2b_revision_loading', lang)}</p>
     ) : revision ? (
       <Panel titleKey="cn2b_panel_beneficiary_columns" icon="editor">
-        <CentralNeedsBeneficiaryColumnPanel
-          lang={lang}
-          planRevisionId={revision.id}
-          editable={canEdit && isDraft}
-          columns={beneficiaryColumns}
-          activeCareInstitutions={careInstitutions}
-          onChanged={() => refreshRevision(revision.id)}
-          onRefused={(refusal) => void rereadAfterRefusal(refusal)}
-          onActivityChange={setBeneficiaryActivity}
-          beneficiaryRegions={beneficiaryRegions}
-        />
+        <ReleaseActivityOnUnmount onRelease={releaseBeneficiaryActivity}>
+          <CentralNeedsBeneficiaryColumnPanel
+            lang={lang}
+            planRevisionId={revision.id}
+            editable={canEdit && isDraft}
+            columns={beneficiaryColumns}
+            activeCareInstitutions={careInstitutions}
+            onChanged={() => refreshRevision(revision.id)}
+            onRefused={(refusal) => void rereadAfterRefusal(refusal)}
+            onActivityChange={setBeneficiaryActivity}
+            beneficiaryRegions={beneficiaryRegions}
+          />
+        </ReleaseActivityOnUnmount>
       </Panel>
     ) : (
       <p className="cn2b-hint">{t('cn2b_stage_revision_waiting', lang)}</p>
@@ -1639,35 +1820,9 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
       <p className="cn2b-hint" role="status">{t('cn2b_revision_loading', lang)}</p>
     ) : revision ? (
       <>
-        <WorkSessionSelector
-          lang={lang}
-          sessions={sessions}
-          activeSessionId={activeSessionId}
-          blockerSummary={sessionBlockers}
-          sessionEntryById={sessionEntryById}
-          disabled={sessionSwitchBlocked}
-          onChange={onWorkSessionChange}
-        />
+        {workSessionSelector}
         <Panel titleKey="cn2b_panel_need_lines" icon="editor">
-          <CentralNeedsNeedLinePanel
-            lang={lang}
-            planRevisionId={revision.id}
-            workSessionId={activeSessionId}
-            editable={canEdit && isDraft}
-            dispositions={dispositions}
-            records={records}
-            overrides={overrides}
-            overrideReadFailure={overrideReadFailure}
-            beneficiaryColumns={beneficiaryColumns}
-            beneficiaryRegions={beneficiaryRegions}
-            needLines={needLines}
-            claimedSources={claimedSources}
-            onChanged={() => refreshRevision(revision.id)}
-            /* C5 §14 (UI-F1/UI-F5) — the chain alone, marked not loaded at once. */
-            onReloadOverrides={() => void reloadOverrides(revision.id)}
-            onRefused={(refusal) => void rereadAfterRefusal(refusal)}
-            onActivityChange={setNeedLineActivity}
-          />
+          {needLinePanel}
         </Panel>
       </>
     ) : (
@@ -1721,28 +1876,7 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
           </>
         )}
 
-        <div className="cn2b-actions">
-          {canEdit && isDraft && (
-            <button
-              type="button"
-              className="cn2b-btn cn2b-btn--primary"
-              disabled={busy !== null || !readiness?.ready}
-              onClick={() => void onSubmit()}
-            >
-              {t('cn2b_submit', lang)}
-            </button>
-          )}
-          {canApprove && revision?.status === 'submitted' && (
-            <>
-              <button type="button" className="cn2b-btn cn2b-btn--primary" disabled={busy !== null} onClick={() => void onApprove()}>
-                {t('cn2b_approve', lang)}
-              </button>
-              <button type="button" className="cn2b-btn" disabled={busy !== null} onClick={() => void onReject()}>
-                {t('cn2b_reject', lang)}
-              </button>
-            </>
-          )}
-        </div>
+        {lifecycleActions}
       </Panel>
     ),
   };
@@ -1751,12 +1885,14 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
     <div className="cn2b" dir={dir} data-mode={mode}>
       {mode === 'simple' ? (
         /*
-          SIMPLE MODE — the default product experience. The workspace owns the
-          whole page (title, six-step progress, one task card, the quiet
-          Advanced entry). Nothing from the Advanced shell below wraps it: no
-          command header, no workflow rail, no diagnostics, no stage sections.
-          It receives the SAME state and the SAME handlers; the human-facing
-          error and notice text is translated here exactly as Advanced does.
+          SIMPLE MODE — the default product experience and, since CN-UI-S1,
+          the complete normal workflow. The workspace owns the whole page
+          (title, six-step progress, one task card). Nothing from the Advanced
+          shell below wraps it: no command header, no workflow rail, no
+          diagnostics, no stage sections, and no generic way into them. It
+          receives the SAME state and the SAME handlers, plus the three shared
+          canonical elements built above; the human-facing error and notice
+          text is translated here exactly as Advanced does.
         */
         <CentralNeedsSimpleWorkspace
           lang={lang}
@@ -1785,12 +1921,20 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
           records={records}
           dispositions={dispositions}
           activeSessionId={activeSessionId}
+          sessionLoading={sessionRowsPending}
           onChanged={() => refreshRevision(revisionId as string)}
           onMaterialResolved={onSimpleMaterialResolved}
+          onMaterialActivityChange={setReviewActivity}
+          onStoredWorkbookActivityChange={setStoredWorkbookActivity}
+          overrides={overrides}
+          overrideReadFailure={overrideReadFailure}
           onRefused={(refusal) => void rereadAfterRefusal(refusal)}
-          onSwitchToAdvanced={() => setMode('advanced')}
           beneficiaryRegions={beneficiaryRegions}
           sessions={sessions}
+          workSessionPicker={workSessionSelector}
+          needLineWorkspace={needLinePanel}
+          lifecycleActions={lifecycleActions}
+          onExpertEscape={onExpertEscape}
         />
       ) : (
       <>

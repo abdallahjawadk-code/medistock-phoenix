@@ -130,11 +130,12 @@ async function assertFits(page: Page) {
   expect(await smallTargets(page)).toEqual([]);
 }
 
-/** Moves from the summary into the item-by-item review, the way a human does. */
-async function passSummary(page: Page) {
-  await expect.poll(() => stepOf(page), { timeout: 20000 }).toBe('summary');
-  await page.locator('[data-testid="cn2b-simple-review-start"]').click();
-}
+/*
+ * CN-UI-S1 (superseded, updated): there is no summary step any more — an
+ * analyzed dataset lands straight on its first queue — and Simple offers no
+ * generic way into Advanced. The need lines are a step of their own (5), built
+ * in the SAME canonical panel, and the outcome (6) carries submit itself.
+ */
 
 beforeAll(async () => {
   mkdirSync(EVIDENCE, { recursive: true });
@@ -186,39 +187,39 @@ describe('Simple Annual Needs — the default entry', () => {
     }
   }, 90000);
 
-  it('offers Advanced as a secondary option, enters it, and returns to Simple — same state, no reload', async () => {
-    const { context, page } = await open();
+  it('offers NO generic Advanced entry; the expert entry opens Advanced and returns to Simple — same state, no reload', async () => {
+    let ctx = await open();
     try {
-      await expect.poll(() => stepOf(page), { timeout: 20000 }).toBe('summary');
-      const readsBefore = await rpcCount(page);
+      await expect.poll(() => stepOf(ctx.page), { timeout: 20000 }).toBe('review-material');
+      expect(await ctx.page.locator('[data-testid="cn2b-simple-advanced-link"]').count()).toBe(0);
+      expect(await ctx.page.locator('[data-testid="cn2b-simple-continue-advanced"]').count()).toBe(0);
+      expect(await simple(ctx.page).innerText()).not.toContain('خيارات متقدمة');
+    } finally {
+      await ctx.context.close();
+    }
 
-      const link = page.locator('[data-testid="cn2b-simple-advanced-link"]');
-      expect(await link.isVisible()).toBe(true);
-      // A quiet control at the END of the page, below the task card — not a toggle above it.
-      const linkBox = await link.boundingBox();
-      const cardBox = await page.locator('[data-testid="cn2b-simple-summary"]').boundingBox();
-      expect(linkBox && cardBox && linkBox.y > cardBox.y + cardBox.height).toBe(true);
-
-      await link.click();
+    ctx = await open({ mode: 'advanced' });
+    const { page } = ctx;
+    try {
       await page.locator('div.cn2b[data-mode="advanced"]').waitFor({ state: 'visible', timeout: 10000 });
+      await expect.poll(() => page.locator('section.cn2b-stage:not([hidden])').count(), { timeout: 20000 }).toBe(1);
       expect(await page.locator('section.cn2b-stage').count()).toBe(6);
-      expect(await page.locator('section.cn2b-stage:not([hidden])').count()).toBe(1);
       expect(await simple(page).count()).toBe(0);
       expect(await overflow(page)).toBe(0);
-      await shot(page, '07-advanced-ar-desktop-entered-from-simple.png');
+      await shot(page, '07-advanced-ar-desktop-expert-entry.png');
+      const readsBefore = await rpcCount(page);
 
       await page.locator('[data-testid="cn2b-mode-toggle"]').click();
       await page.locator('div.cn2b[data-mode="simple"]').waitFor({ state: 'visible', timeout: 10000 });
       expect(await page.locator('section.cn2b-stage').count()).toBe(0);
-      // The SAME analysed dataset is still on screen — its summary is presented
-      // again (dataset-keyed acknowledgement), with the same figures.
-      await expect.poll(() => stepOf(page), { timeout: 10000 }).toBe('summary');
+      // The SAME analysed dataset is still on screen, with the same figures.
+      await expect.poll(() => stepOf(page), { timeout: 10000 }).toBe('review-material');
       expect(await page.locator('[data-testid="cn2b-simple-count-materials"]').innerText()).toBe('1');
       // Switching modes issued no read at all.
       expect(await rpcCount(page)).toBe(readsBefore);
       await assertFits(page);
     } finally {
-      await context.close();
+      await ctx.context.close();
     }
   }, 90000);
 
@@ -287,10 +288,12 @@ describe('Simple Annual Needs — the six states, Arabic desktop 1440×900', () 
     }
   }, 120000);
 
-  it('1 · upload — closed revision: the explicit correction path, never automatic', async () => {
+  it('6 · outcome — closed revision: its terminal sentence and the explicit correction path, never automatic', async () => {
     const { context, page } = await open({ variant: 'closed' });
     try {
-      await expect.poll(() => stepOf(page), { timeout: 20000 }).toBe('upload');
+      // CN-UI-S1: a closed revision is an OUTCOME (step 6), no longer step 1.
+      await expect.poll(() => stepOf(page), { timeout: 20000 }).toBe('pending');
+      expect(await page.locator('[data-testid="cn2b-simple-step-count"]').innerText()).toBe('الخطوة 6 من 6');
       const readsBefore = await rpcCount(page);
       expect(await page.locator('[data-testid="cn2b-simple-closed-notice"]').isVisible()).toBe(true);
       expect(await page.locator('[data-testid="cn2b-simple-create-correction"]').isVisible()).toBe(true);
@@ -298,7 +301,7 @@ describe('Simple Annual Needs — the six states, Arabic desktop 1440×900', () 
       // Rendering opened nothing.
       expect(await rpcCount(page)).toBe(readsBefore);
       await assertFits(page);
-      await shot(page, '01d-simple-ar-desktop-upload-closed-correction.png');
+      await shot(page, '06c-simple-ar-desktop-outcome-closed-correction.png');
     } finally {
       await context.close();
     }
@@ -319,27 +322,29 @@ describe('Simple Annual Needs — the six states, Arabic desktop 1440×900', () 
     }
   }, 90000);
 
-  it('3 · summary — clear counts with their honest scope, and one primary action', async () => {
+  it('no summary step — analyzed data lands on its first queue, beside the compact session context', async () => {
     const { context, page } = await open({ variant: 'default' });
     try {
-      await expect.poll(() => stepOf(page), { timeout: 20000 }).toBe('summary');
-      expect(await page.locator('[data-testid="cn2b-simple-step-count"]').innerText()).toBe('الخطوة 3 من 6');
+      await expect.poll(() => stepOf(page), { timeout: 20000 }).toBe('review-material');
+      expect(await page.locator('[data-testid="cn2b-simple-step-count"]').innerText()).toBe('الخطوة 4 من 6');
+      expect(await page.locator('[data-testid="cn2b-simple-summary"]').count()).toBe(0);
+      expect(await page.locator('[data-testid="cn2b-simple-review-start"]').count()).toBe(0);
+      // The canonical Work Session selector and the two scope-labelled figures.
+      expect(await page.locator('[data-testid="cn2b-simple-context"] .cn2b-work-session select').count()).toBe(1);
       expect(await page.locator('[data-testid="cn2b-simple-count-materials"]').innerText()).toBe('1');
-      expect(await page.locator('[data-testid="cn2b-simple-review-remaining"]').innerText()).toContain('2');
-      expect(await page.locator('[data-testid="cn2b-simple-review-start"]').isVisible()).toBe(true);
+      expect(await page.locator('[data-testid="cn2b-simple-scope-materials"]').innerText()).toContain('في هذا الملف فقط');
       await assertFits(page);
-      await shot(page, '03-simple-ar-desktop-summary.png');
+      await shot(page, '03-simple-ar-desktop-session-context.png');
     } finally {
       await context.close();
     }
   }, 90000);
 
-  it('4 · institution review — one decision dominates: evidence vs. system match, confirm/choose/not', async () => {
+  it('3 · institution review — one decision dominates: evidence vs. system match, confirm/choose/not', async () => {
     const { context, page } = await open({ variant: 'institution' });
     try {
-      await passSummary(page);
       await expect.poll(() => stepOf(page), { timeout: 20000 }).toBe('review-institution');
-      expect(await page.locator('[data-testid="cn2b-simple-step-count"]').innerText()).toBe('الخطوة 4 من 6');
+      expect(await page.locator('[data-testid="cn2b-simple-step-count"]').innerText()).toBe('الخطوة 3 من 6');
       expect(await page.locator('[data-testid="cn2b-simple-institution-evidence"]').innerText()).toBe('QA · مستشفى الحلة التعليمي');
       expect(await page.locator('[data-testid="cn2b-simple-institution-suggestion"]').innerText()).toBe('QA · مستشفى الحلة التعليمي');
       for (const label of ['صحيح', 'اختيار مؤسسة أخرى', 'ليست مؤسسة']) {
@@ -359,12 +364,11 @@ describe('Simple Annual Needs — the six states, Arabic desktop 1440×900', () 
     }
   }, 90000);
 
-  it('5 · material review — workbook evidence, the workbook unit, the suggested item with its system unit as context', async () => {
+  it('4 · material review — workbook evidence, the workbook unit, the suggested item with its system unit as context', async () => {
     const { context, page } = await open({ variant: 'material' });
     try {
-      await passSummary(page);
       await expect.poll(() => stepOf(page), { timeout: 20000 }).toBe('review-material');
-      expect(await page.locator('[data-testid="cn2b-simple-step-count"]').innerText()).toBe('الخطوة 5 من 6');
+      expect(await page.locator('[data-testid="cn2b-simple-step-count"]').innerText()).toBe('الخطوة 4 من 6');
       expect(await page.locator('[data-testid="cn2b-simple-material-evidence"]').innerText()).toContain('Amoxicillin');
       // The workbook's own unit field is shown as evidence …
       expect(await page.locator('[data-testid="cn2b-simple-material-unit-row"]').innerText()).toContain('علبة');
@@ -381,10 +385,9 @@ describe('Simple Annual Needs — the six states, Arabic desktop 1440×900', () 
     }
   }, 90000);
 
-  it('5b · material review — no exact match: the row fails closed to "unit needs review" and an explicit choice', async () => {
+  it('4b · material review — no exact match: the row fails closed to "unit needs review" and an explicit choice', async () => {
     const { context, page } = await open({ variant: 'default' });
     try {
-      await passSummary(page);
       await expect.poll(() => stepOf(page), { timeout: 20000 }).toBe('review-material');
       expect(await page.locator('[data-testid="cn2b-simple-unit-needs-review"]').count()).toBe(1);
       expect(await page.locator('[data-testid="cn2b-simple-material-suggestion"]').count()).toBe(0);
@@ -396,38 +399,38 @@ describe('Simple Annual Needs — the six states, Arabic desktop 1440×900', () 
     }
   }, 90000);
 
-  it('6 · outcome — everything reviewed, the SERVER still lists what remains, and the handoff is explicit', async () => {
+  it('5 · need lines — everything reviewed, the SERVER still lists what remains, and the canonical panel is HERE', async () => {
     const { context, page } = await open({ variant: 'reviewed' });
     try {
-      await passSummary(page);
-      await expect.poll(() => stepOf(page), { timeout: 20000 }).toBe('pending');
-      expect(await page.locator('[data-testid="cn2b-simple-step-count"]').innerText()).toBe('الخطوة 6 من 6');
+      await expect.poll(() => stepOf(page), { timeout: 20000 }).toBe('need-lines');
+      expect(await page.locator('[data-testid="cn2b-simple-step-count"]').innerText()).toBe('الخطوة 5 من 6');
       expect(await page.locator('[data-testid="cn2b-simple-readiness-messages"] li').count()).toBe(1);
-      expect(await page.locator('[data-testid="cn2b-simple-continue-advanced"]').isVisible()).toBe(true);
+      // No handoff: the need lines are built on this page, in the SAME panel Advanced mounts.
+      expect(await page.locator('[data-testid="cn2b-simple-continue-advanced"]').count()).toBe(0);
+      expect(await page.locator('[data-testid="cn2b-simple-need-lines"] [data-testid="cn2b-nl-summary"]').count()).toBe(1);
+      expect(await page.locator('[data-testid="cn2b-simple-submit"]').count()).toBe(0);
       expect((await page.locator('[data-testid="cn2b-simple-confirm-quantities"]').count())).toBe(1);
       expect(await page.locator('[data-testid="cn2b-simple-confirm-quantities"]').isDisabled()).toBe(true);
       expect(await page.locator('[data-testid="cn2b-simple-pending"]').innerText()).not.toMatch(/كل شيء جاهز/);
       await assertFits(page);
-      await shot(page, '06-simple-ar-desktop-final.png');
-
-      // The handoff enters Advanced with the same state.
-      const readsBefore = await rpcCount(page);
-      await page.locator('[data-testid="cn2b-simple-continue-advanced"]').click();
-      await page.locator('div.cn2b[data-mode="advanced"]').waitFor({ state: 'visible', timeout: 10000 });
-      expect(await page.locator('section.cn2b-stage').count()).toBe(6);
-      expect(await rpcCount(page)).toBe(readsBefore);
+      await shot(page, '05c-simple-ar-desktop-need-lines.png');
     } finally {
       await context.close();
     }
   }, 90000);
 
-  it('6 · outcome — the server says READY: that verdict is reproduced, nothing more', async () => {
+  it('6 · outcome — the server says READY: that verdict is reproduced, and submit is offered here', async () => {
     const { context, page } = await open({ variant: 'ready' });
     try {
-      await passSummary(page);
       await expect.poll(() => stepOf(page), { timeout: 20000 }).toBe('pending');
+      expect(await page.locator('[data-testid="cn2b-simple-step-count"]').innerText()).toBe('الخطوة 6 من 6');
       expect(await page.locator('[data-testid="cn2b-simple-readiness-clear"]').innerText()).toContain('أكّد الخادم');
       expect(await page.locator('.cn2b-simple-outcome__mark[data-ready="true"]').count()).toBe(1);
+      const submit = page.locator('[data-testid="cn2b-simple-submit"] button');
+      expect(await submit.count()).toBe(1);
+      expect(await submit.isEnabled()).toBe(true);
+      // The need lines stay on screen for a last look, read from the same panel.
+      expect(await page.locator('[data-testid="cn2b-simple-need-lines"]').count()).toBe(1);
       await assertFits(page);
       await shot(page, '06b-simple-ar-desktop-final-server-ready.png');
     } finally {
@@ -445,7 +448,7 @@ describe('Simple Annual Needs — Arabic mobile', () => {
   ];
 
   for (const viewport of VIEWPORTS) {
-    it(`${viewport.width}×${viewport.height} — upload, institution review and outcome fit without overflow`, async () => {
+    it(`${viewport.width}×${viewport.height} — upload, institution review and need lines fit without overflow`, async () => {
       // Step 1 (open draft, file surface)
       let ctx = await open({ variant: 'draft', viewport });
       try {
@@ -455,13 +458,9 @@ describe('Simple Annual Needs — Arabic mobile', () => {
       } finally {
         await ctx.context.close();
       }
-      // Step 3 → 4 (institution review with the picker open)
+      // Step 3 (institution review with the picker open)
       ctx = await open({ variant: 'institution', viewport });
       try {
-        await expect.poll(() => stepOf(ctx.page), { timeout: 20000 }).toBe('summary');
-        await assertFits(ctx.page);
-        await shot(ctx.page, `mobile-${viewport.width}-ar-summary.png`);
-        await passSummary(ctx.page);
         await expect.poll(() => stepOf(ctx.page), { timeout: 20000 }).toBe('review-institution');
         await assertFits(ctx.page);
         await shot(ctx.page, `mobile-${viewport.width}-ar-institution.png`);
@@ -471,13 +470,12 @@ describe('Simple Annual Needs — Arabic mobile', () => {
       } finally {
         await ctx.context.close();
       }
-      // Step 6 (outcome)
+      // Step 5 (need lines, the canonical panel included)
       ctx = await open({ variant: 'reviewed', viewport });
       try {
-        await passSummary(ctx.page);
-        await expect.poll(() => stepOf(ctx.page), { timeout: 20000 }).toBe('pending');
+        await expect.poll(() => stepOf(ctx.page), { timeout: 20000 }).toBe('need-lines');
         await assertFits(ctx.page);
-        await shot(ctx.page, `mobile-${viewport.width}-ar-final.png`);
+        await shot(ctx.page, `mobile-${viewport.width}-ar-need-lines.png`);
       } finally {
         await ctx.context.close();
       }
@@ -496,7 +494,6 @@ describe('Simple Annual Needs — Arabic mobile', () => {
     }
     ctx = await open({ variant: 'material', viewport });
     try {
-      await passSummary(ctx.page);
       await expect.poll(() => stepOf(ctx.page), { timeout: 20000 }).toBe('review-material');
       await expect.poll(() => ctx.page.locator('[data-testid="cn2b-simple-material-suggestion"]').count(), { timeout: 15000 }).toBe(1);
       await assertFits(ctx.page);
@@ -513,12 +510,8 @@ describe('Simple Annual Needs — English LTR and dark theme', () => {
     try {
       expect(await page.locator('div.cn2b').first().evaluate(el => getComputedStyle(el).direction)).toBe('ltr');
       expect(await page.locator('h1.cn2b-simple-title').innerText()).toBe('Annual Needs');
-      await expect.poll(() => stepOf(page), { timeout: 20000 }).toBe('summary');
-      expect(await page.locator('[data-testid="cn2b-simple-step-count"]').innerText()).toBe('Step 3 of 6');
-      await assertFits(page);
-      await shot(page, 'simple-en-desktop.png');
-      await passSummary(page);
       await expect.poll(() => stepOf(page), { timeout: 20000 }).toBe('review-institution');
+      expect(await page.locator('[data-testid="cn2b-simple-step-count"]').innerText()).toBe('Step 3 of 6');
       expect(await page.getByRole('button', { name: 'Correct', exact: true }).count()).toBe(1);
       await assertFits(page);
       await shot(page, 'simple-en-desktop-institution.png');
@@ -530,10 +523,6 @@ describe('Simple Annual Needs — English LTR and dark theme', () => {
   it('dark theme renders every token-driven surface without breaking', async () => {
     const { context, page } = await open({ theme: 'dark', variant: 'material' });
     try {
-      await expect.poll(() => stepOf(page), { timeout: 20000 }).toBe('summary');
-      await assertFits(page);
-      await shot(page, 'simple-ar-desktop-dark-summary.png');
-      await passSummary(page);
       await expect.poll(() => stepOf(page), { timeout: 20000 }).toBe('review-material');
       await expect.poll(() => page.locator('[data-testid="cn2b-simple-material-suggestion"]').count(), { timeout: 15000 }).toBe(1);
       await assertFits(page);
