@@ -198,3 +198,69 @@ describe('PHASE B2 — copy and preserved navigation contracts', () => {
     expect(institutionsScreenAccess('warehouse_officer')).toBe(false);
   });
 });
+
+// MOBILE_DRAWER_ANNUAL_NEEDS_NAVIGATION: Screen 23 (Annual Needs) must be reachable from the phone drawer through the SAME
+// candidate list + projectNavigation policy as the desktop sidebar — no drawer-local permission or role check.
+describe('MOBILE DRAWER — Screen 23 (Annual Needs) navigation parity', () => {
+  const annualNeeds = () => t('cn2b_nav', 'en');
+
+  function drawerHasAnnualNeeds(): boolean {
+    const view = render(
+      <PhoenixMobileDrawer currentScreen={21} onNavigate={noop} onClose={noop} onLogout={noop} />,
+    );
+    const present = screen.queryByRole('button', { name: annualNeeds() }) !== null;
+    view.unmount();
+    return present;
+  }
+
+  function sidebarHasAnnualNeeds(): boolean {
+    const view = render(<PhoenixSidebar currentScreen={21} onNavigate={noop} onLogout={noop} />);
+    const present = screen.queryByRole('button', { name: annualNeeds() }) !== null;
+    view.unmount();
+    return present;
+  }
+
+  it('shows Annual Needs in the drawer for super_admin (same decision as the desktop sidebar)', () => {
+    setActor('super_admin');
+    expect(drawerHasAnnualNeeds()).toBe(true);
+    expect(sidebarHasAnnualNeeds()).toBe(true);
+  });
+
+  it('shows Annual Needs in the drawer for central_warehouse_manager holding central_needs.view', () => {
+    setActor('central_warehouse_manager', ['central_needs.view']);
+    expect(drawerHasAnnualNeeds()).toBe(true);
+    expect(sidebarHasAnnualNeeds()).toBe(true);
+  });
+
+  it('hides Annual Needs in the drawer for central_warehouse_manager without central_needs.view', () => {
+    setActor('central_warehouse_manager');
+    expect(drawerHasAnnualNeeds()).toBe(false);
+    expect(sidebarHasAnnualNeeds()).toBe(false);
+  });
+
+  it('hides Annual Needs in the drawer for an unrelated role even when it holds central_needs.view', () => {
+    setActor('institution_admin', ['central_needs.view']);
+    expect(drawerHasAnnualNeeds()).toBe(false);
+    expect(sidebarHasAnnualNeeds()).toBe(false);
+  });
+
+  it('navigates to exactly Screen 23 when the drawer entry is clicked', () => {
+    setActor('super_admin');
+    const onNavigate = vi.fn();
+    const onClose = vi.fn();
+    render(<PhoenixMobileDrawer currentScreen={21} onNavigate={onNavigate} onClose={onClose} onLogout={noop} />);
+    fireEvent.click(screen.getByRole('button', { name: annualNeeds() }));
+    expect(onNavigate).toHaveBeenCalledTimes(1);
+    expect(onNavigate).toHaveBeenCalledWith(23);
+  });
+
+  it('closes the drawer with the same click', () => {
+    setActor('central_warehouse_manager', ['central_needs.view']);
+    const onNavigate = vi.fn();
+    const onClose = vi.fn();
+    render(<PhoenixMobileDrawer currentScreen={21} onNavigate={onNavigate} onClose={onClose} onLogout={noop} />);
+    fireEvent.click(screen.getByRole('button', { name: annualNeeds() }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onNavigate).toHaveBeenCalledWith(23);
+  });
+});
