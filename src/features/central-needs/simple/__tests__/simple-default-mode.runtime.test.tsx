@@ -8,13 +8,21 @@
  * Three things this exists to catch:
  *   1. the FIRST paint being Advanced (a flash before Simple), or Advanced
  *      chrome wrapping the Simple view;
- *   2. Advanced Mode becoming unreachable, or unreturnable;
+ *   2. Advanced Mode becoming unreachable for its expert entry
+ *      (`initialMode="advanced"`), or unreturnable;
  *   3. a mode switch re-reading or resetting canonical state — both modes
  *      must read the SAME loaded state, so switching may issue no read at all.
+ *
+ * CN-UI-S1 (superseded, updated): Simple is the complete normal workflow, so
+ * it offers NO generic "Advanced options" entry any more — the old footer-link
+ * cases are replaced by the proof that no such entry exists and that the
+ * canonical need-line panel works inside Simple; the switch-and-back case now
+ * starts from the expert entry. There is no summary step: this fixture (every
+ * row decided, the server still blocking) lands on the need-lines step.
  */
 import '@testing-library/jest-dom/vitest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type {
   BeneficiaryColumnSummary, FieldOverride, ImportBatch, ImportSession,
   NeedLine, NeedLineSourceLink, PlanRevision, RecordDisposition, ReviewReadiness, SourceRecord,
@@ -148,7 +156,7 @@ describe('CentralNeedsScreen — Simple Mode is the first and default paint', ()
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('الاحتياج السنوي');
     expect(container.querySelectorAll('.cn2b-simple-stepper__item')).toHaveLength(6);
     expect(container.querySelectorAll('.cn2b-simple-stepper__item[data-state="current"]')).toHaveLength(1);
-    await waitFor(() => expect(screen.getByTestId('cn2b-simple-workspace').getAttribute('data-step')).toBe('summary'));
+    await waitFor(() => expect(screen.getByTestId('cn2b-simple-workspace').getAttribute('data-step')).toBe('need-lines'));
     expect(container.querySelectorAll('.cn2b-simple-card')).toHaveLength(1);
   });
 
@@ -163,40 +171,34 @@ describe('CentralNeedsScreen — Simple Mode is the first and default paint', ()
   });
 });
 
-describe('CentralNeedsScreen — Advanced Mode survives as the secondary entry', () => {
-  it('"Advanced options" is a single control at the end of the Simple page, and it opens the six-stage workspace', async () => {
+describe('CentralNeedsScreen — Simple completes the workflow; Advanced survives as the secondary expert entry', () => {
+  it('Simple offers NO generic "Advanced options" entry, and the canonical need-line panel is mounted inside it', async () => {
     const { container } = render(<CentralNeedsScreen />);
-    await waitFor(() => expect(screen.getByTestId('cn2b-simple-workspace').getAttribute('data-step')).toBe('summary'));
-    const links = screen.getAllByTestId('cn2b-simple-advanced-link');
-    expect(links).toHaveLength(1);
-    expect(links[0].closest('footer')).not.toBeNull();
-
-    fireEvent.click(links[0]);
-    expect(container.querySelector('div.cn2b')?.getAttribute('data-mode')).toBe('advanced');
-    expect(screen.queryByTestId('cn2b-simple-workspace')).toBeNull();
-    expect(container.querySelectorAll('section.cn2b-stage')).toHaveLength(6);
-    expect(container.querySelector('header.cn2b-header')).not.toBeNull();
-    expect(container.querySelector('.cn2b-workflow')).not.toBeNull();
+    await waitFor(() => expect(screen.getByTestId('cn2b-simple-workspace').getAttribute('data-step')).toBe('need-lines'));
+    expect(screen.queryByTestId('cn2b-simple-advanced-link')).toBeNull();
+    expect(screen.queryByTestId('cn2b-simple-continue-advanced')).toBeNull();
+    expect(screen.queryByTestId('cn2b-simple-handoff')).toBeNull();
+    expect(container.querySelector('.cn2b-simple footer')).toBeNull();
+    expect(screen.getByTestId('cn2b-simple-workspace')).not.toHaveTextContent('خيارات متقدمة');
+    // The need lines are built HERE, in the SAME panel Advanced mounts.
+    const needLines = screen.getByTestId('cn2b-simple-need-lines');
+    expect(within(needLines).getByTestId('cn2b-nl-summary')).toBeInTheDocument();
+    expect(container.querySelector('div.cn2b')?.getAttribute('data-mode')).toBe('simple');
   });
 
-  it('switching to Advanced and back issues NO read and replaces NO canonical state', async () => {
-    const { container } = render(<CentralNeedsScreen />);
-    await waitFor(() => expect(screen.getByTestId('cn2b-simple-workspace').getAttribute('data-step')).toBe('summary'));
+  it('opening the expert Advanced entry and returning to Simple issues NO read and replaces NO canonical state', async () => {
+    const { container } = render(<CentralNeedsScreen initialMode="advanced" />);
     await waitFor(() => expect(listSourceRecords).toHaveBeenCalledWith(SESSION_ID));
-    const before = totalReads();
-    const materialsBefore = screen.getByTestId('cn2b-simple-count-materials').textContent;
-
-    fireEvent.click(screen.getByTestId('cn2b-simple-advanced-link'));
+    await waitFor(() => expect(container.querySelector('.cn2b-revchip__plan')).toHaveTextContent('2026'));
     expect(container.querySelectorAll('section.cn2b-stage')).toHaveLength(6);
-    // The Advanced header restates the SAME loaded revision.
-    expect(container.querySelector('.cn2b-revchip__plan')).toHaveTextContent('2026');
+    const before = totalReads();
 
     fireEvent.click(screen.getByTestId('cn2b-mode-toggle'));
     expect(container.querySelector('div.cn2b')?.getAttribute('data-mode')).toBe('simple');
     expect(container.querySelectorAll('section.cn2b-stage')).toHaveLength(0);
-    // Same dataset, same figures, and its summary is presented again.
-    expect(screen.getByTestId('cn2b-simple-workspace').getAttribute('data-step')).toBe('summary');
-    expect(screen.getByTestId('cn2b-simple-count-materials').textContent).toBe(materialsBefore);
+    // The same dataset, already loaded: its need-lines step, its session-scoped figure.
+    expect(screen.getByTestId('cn2b-simple-workspace').getAttribute('data-step')).toBe('need-lines');
+    expect(screen.getByTestId('cn2b-simple-count-materials').textContent).toBe('1');
     expect(totalReads()).toBe(before);
   });
 

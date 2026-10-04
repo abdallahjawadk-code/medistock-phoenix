@@ -241,7 +241,7 @@ describe('E1.1 — the real screen: the stored source survives import, reset and
     svc.listImportBatches.mockResolvedValue([BATCH]);
     fireEvent.click(screen.getByTestId('cn2b-simple-upload-submit'));
 
-    await waitFor(() => expect(stepOf()).toBe('summary'));
+    await waitFor(() => expect(stepOf()).toBe('review-material'));
     expect(svc.finalizeImport).toHaveBeenCalledTimes(1);
     expect(svc.finalizeImport).toHaveBeenCalledWith({ planRevisionId: REV, uploadId: 'u1', containerKind: 'file' });
 
@@ -270,7 +270,7 @@ describe('E1.1 — the real screen: the stored source survives import, reset and
     vi.stubGlobal('fetch', fetchStub);
 
     render(<CentralNeedsScreen />);
-    await waitFor(() => expect(stepOf()).toBe('summary'));
+    await waitFor(() => expect(stepOf()).toBe('review-material'));
     expect(screen.queryByTestId('cn2b-simple-picked-file')).toBeNull();
     expectAuxiliaryPanelBesideOneTaskCard();
 
@@ -284,7 +284,7 @@ describe('E1.1 — the real screen: the stored source survives import, reset and
     expect(within(panel()).getByTestId('cn2b-stored-workbook-integrity-ok')).toBeInTheDocument();
     // Opening the viewer adds no task card and changes no step.
     expect(taskCards()).toHaveLength(1);
-    expect(stepOf()).toBe('summary');
+    expect(stepOf()).toBe('review-material');
     expect(svc.finalizeImport).not.toHaveBeenCalled();
     expectNoBusinessWrite();
   });
@@ -308,7 +308,7 @@ function propsOf(over: Partial<WorkspaceProps> = {}): WorkspaceProps {
     busy: false, activity: null, onOpenRevision: () => {}, preview: IDLE, pendingFile: null,
     onPickFile: () => {}, onVerify: () => {}, error: null, notice: null, readiness: READINESS,
     batches: [BATCH], beneficiaryColumns: [], careInstitutions: [], records: [], dispositions: [],
-    activeSessionId: SESSION_ID, onChanged: () => {}, onSwitchToAdvanced: () => {},
+    activeSessionId: SESSION_ID, onChanged: () => {},
     ...over,
   };
 }
@@ -337,20 +337,20 @@ describe('E1.1 — Simple workspace: persistent, auxiliary, revision-scoped', ()
     expect(screen.queryByTestId('cn2b-stored-workbook-panel')).toBeNull();
   });
 
-  it('summary → analyzing → institution → material → pending: the control stays, beside exactly ONE task card', async () => {
+  // CN-UI-S1 (superseded, updated): no summary step — the analyzed dataset
+  // lands on its first queue, and a draft the server still blocks ends on the
+  // need-lines step (whose card is still the one `cn2b-simple-pending` card).
+  it('institution → analyzing → institution → material → need lines: the control stays, beside exactly ONE task card', async () => {
     const view = renderWorkspace({ beneficiaryColumns: [bcol()], records: [RECORD], dispositions: [] });
-    expect(stepOf()).toBe('summary');
+    expect(stepOf()).toBe('review-institution');
+    expect(screen.getByTestId('cn2b-simple-institution-card')).toBeInTheDocument();
     expectAuxiliaryPanelBesideOneTaskCard();
 
     view.rerenderWith({ beneficiaryColumns: [bcol()], records: [RECORD], dispositions: [], busy: true });
     expect(stepOf()).toBe('analyzing');
     expectAuxiliaryPanelBesideOneTaskCard();
     view.rerenderWith({ beneficiaryColumns: [bcol()], records: [RECORD], dispositions: [], busy: false });
-    expect(stepOf()).toBe('summary');
-
-    fireEvent.click(screen.getByTestId('cn2b-simple-review-start'));
     expect(stepOf()).toBe('review-institution');
-    expect(screen.getByTestId('cn2b-simple-institution-card')).toBeInTheDocument();
     expectAuxiliaryPanelBesideOneTaskCard();
 
     view.rerenderWith({ beneficiaryColumns: [bcol({ reviewRequired: false })], records: [RECORD], dispositions: [] });
@@ -359,7 +359,7 @@ describe('E1.1 — Simple workspace: persistent, auxiliary, revision-scoped', ()
     expectAuxiliaryPanelBesideOneTaskCard();
 
     view.rerenderWith({ beneficiaryColumns: [bcol({ reviewRequired: false })], records: [RECORD], dispositions: [DISPOSITION] });
-    expect(stepOf()).toBe('pending');
+    expect(stepOf()).toBe('need-lines');
     expect(screen.getByTestId('cn2b-simple-pending')).toBeInTheDocument();
     expectAuxiliaryPanelBesideOneTaskCard();
 

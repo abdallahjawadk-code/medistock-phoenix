@@ -137,6 +137,17 @@ describe('Simple Mode — permissions are read the same way Advanced Mode reads 
       expect(src, file).not.toMatch(/profile\.role/);
     }
   });
+
+  it('CN-UI-S1 — opening an annual draft or a correction is gated on canEdit (the server\'s edit guard); only the upload is gated on canImport', () => {
+    const src = code(`${SIMPLE_DIR}/CentralNeedsSimpleWorkspace.tsx`);
+    const start = src.slice(src.indexOf('{!revision ? ('), src.indexOf('data-testid="cn2b-simple-start"'));
+    expect(start).toMatch(/\{canEdit \? \(/);
+    expect(start).not.toMatch(/canImport/);
+    const closed = src.slice(src.indexOf("step === 'pending' && revisionClosed"), src.indexOf('data-testid="cn2b-simple-create-correction"'));
+    expect(closed).toMatch(/\{canEdit \? \(/);
+    expect(closed).not.toMatch(/canImport/);
+    expect(src).toMatch(/\{canImport && isDraft \? \(\s*<>\s*<SimpleUploadZone/);
+  });
 });
 
 /**
@@ -205,23 +216,27 @@ describe('Simple Mode — permission parity is CONSUMED, not merely declared (Di
 /**
  * Director finding 3: `listSourceRecords`/`listDispositions` are keyed by
  * import session, so their counts are not annual-need totals and must never be
- * displayed as if they were.
+ * displayed as if they were. CN-UI-S1 removed the summary card those labels
+ * lived on (superseded); the compact session context that replaced it keeps
+ * each figure's own scope label, and the M213-only quantity figure is gone.
  */
-describe('Simple Mode — summary scope is stated, never implied (Director finding 3)', () => {
-  it('the summary labels session scope and carries the explicit not-a-total note', () => {
+describe('Simple Mode — context scope is stated, never implied (Director finding 3)', () => {
+  it('the compact context labels each figure with its own scope, and shows no quantity figure', () => {
     const src = code(`${SIMPLE_DIR}/CentralNeedsSimpleWorkspace.tsx`);
-    expect(src).toMatch(/cn2b_simple_scope_session_title/);
-    expect(src).toMatch(/cn2b_simple_scope_session_note/);
     expect(src).toMatch(/cn2b_simple_scope_this_session/);
     expect(src).toMatch(/cn2b_simple_scope_whole_revision/);
+    expect(src).not.toMatch(/cn2b_simple_quantities|quantityCandidateCount|cn2b-simple-count-quantities/);
+    expect(src).not.toMatch(/cn2b_simple_scope_session_title|cn2b_simple_scope_session_note/);
   });
 
-  it('the session-scope copy itself says these are not whole-annual-need totals, in both languages', () => {
+  it('the two scope labels make different claims, in both languages', () => {
     const strings = read('src/shared/i18n/strings.ts');
-    const note = strings.match(/cn2b_simple_scope_session_note:\s*\{[\s\S]*?\},/);
-    expect(note, 'scope note string not found').not.toBeNull();
-    expect((note as RegExpMatchArray)[0]).toMatch(/ليست مجموع الاحتياج السنوي بالكامل/);
-    expect((note as RegExpMatchArray)[0]).toMatch(/not whole-annual-need totals/);
+    const session = strings.match(/cn2b_simple_scope_this_session:\s*\{[^}]*\}/);
+    const revision = strings.match(/cn2b_simple_scope_whole_revision:\s*\{[^}]*\}/);
+    expect(session?.[0]).toMatch(/this file only/);
+    expect(session?.[0]).toMatch(/في هذا الملف فقط/);
+    expect(revision?.[0]).toMatch(/across the whole annual need/);
+    expect(revision?.[0]).toMatch(/في كامل الاحتياج السنوي/);
   });
 
   it('Simple Mode still adds no revision-wide read of its own — no new RPC was invented for this', () => {
@@ -235,79 +250,65 @@ describe('Simple Mode — summary scope is stated, never implied (Director findi
 });
 
 /**
- * Director defect 4: `derivedStep` never returned 'summary', so the approved
- * flow skipped the analysis summary and dropped the user straight into
- * item-by-item review. The gate that fixes it must stay navigation-only.
+ * CN-UI-S1 supersedes Director defect 4 / finding 5 (the summary gate and its
+ * dataset-keyed acknowledgement): the owner removed the summary step. What
+ * those guards protected still holds, and more strictly — the step is derived
+ * from current props ALONE, so there is no navigation state left to go stale.
  */
-describe('Simple Mode — the summary is ordered before review, and is navigation only (Director defect 4)', () => {
+describe('Simple Mode — the step is derived from props alone; no summary gate, no navigation state (CN-UI-S1)', () => {
   const workspacePath = `${SIMPLE_DIR}/CentralNeedsSimpleWorkspace.tsx`;
-
-  it('derivedStep returns summary BEFORE either review step', () => {
-    const src = code(workspacePath);
-    const derived = src.match(/const derivedStep[\s\S]*?\n\s*\}, \[/);
+  const derivedBody = () => {
+    const derived = code(workspacePath).match(/const derivedStep[\s\S]*?\n\s*\}, \[/);
     expect(derived, 'derivedStep not found').not.toBeNull();
-    const body = (derived as RegExpMatchArray)[0];
-    const summaryAt = body.indexOf("return 'summary'");
-    const institutionAt = body.indexOf("return 'review-institution'");
-    const materialAt = body.indexOf("return 'review-material'");
-    expect(summaryAt, "derivedStep must be able to return 'summary'").toBeGreaterThan(-1);
-    expect(institutionAt).toBeGreaterThan(-1);
-    expect(materialAt).toBeGreaterThan(-1);
-    expect(summaryAt).toBeLessThan(institutionAt);
-    expect(summaryAt).toBeLessThan(materialAt);
+    return (derived as RegExpMatchArray)[0];
+  };
+
+  it('derivedStep never returns a summary, and its outcomes follow the workflow order', () => {
+    const body = derivedBody();
+    expect(body).not.toMatch(/'summary'|summaryAck/);
+    const returns = [...body.matchAll(/return '([a-z-]+)'/g)].map((m) => m[1]);
+    expect(returns).toEqual([
+      'upload', 'pending', 'analyzing', 'analyzing', 'upload', 'analyzing',
+      'review-institution', 'review-material', 'pending', 'need-lines',
+    ]);
   });
 
-  it('the acknowledgement is keyed by revision AND import session, not a bare boolean', () => {
+  it('the guard order: closed outranks everything, unready or stale-session data outranks every card, the server verdict alone reaches the outcome', () => {
+    const body = derivedBody();
+    const at = (s: string) => {
+      const i = body.indexOf(s);
+      expect(i, s).toBeGreaterThan(-1);
+      return i;
+    };
+    expect(at("if (!revision) return 'upload'")).toBeLessThan(at("if (revisionClosed) return 'pending'"));
+    expect(at("if (revisionClosed) return 'pending'")).toBeLessThan(at("preview.phase === 'parsing' || (busy && !LIFECYCLE_ACTIVITIES.has(activity))"));
+    expect(at('if (!revisionDataReady)')).toBeLessThan(at("if (activeSessionId === null) return 'upload'"));
+    expect(at("if (activeSessionId === null) return 'upload'")).toBeLessThan(at("if (sessionLoading) return 'analyzing'"));
+    expect(at("if (sessionLoading) return 'analyzing'")).toBeLessThan(at("return 'review-institution'"));
+    expect(at("return 'review-material'")).toBeLessThan(at("if (readinessSummary?.ready === true) return 'pending'"));
+    expect(at("if (readinessSummary?.ready === true) return 'pending'")).toBeLessThan(at("return 'need-lines'"));
+  });
+
+  it('a lifecycle action never sends the page to "analyzing" (that would unmount the need-line workspace mid-click)', () => {
     const src = code(workspacePath);
-    expect(src).toMatch(/datasetKey/);
-    expect(src).toMatch(/revision\.id/);
-    expect(src).toMatch(/activeSessionId/);
-    expect(src).toMatch(/summaryAckKey === datasetKey/);
-    // A plain `useState(false)` flag would survive a dataset change.
-    expect(src).not.toMatch(/useState<boolean>\(false\)/);
+    expect(src).toMatch(/LIFECYCLE_ACTIVITIES[^=]*= new Set<SimpleActivity>\(\['submitting', 'approving', 'rejecting'\]\)/);
   });
 
-  it('the summary gate persists nothing and reaches no server', () => {
+  it('the workspace holds NO component state at all — no acknowledgement, no step override', () => {
+    const src = code(workspacePath);
+    expect(src).toMatch(/const step = derivedStep;/);
+    // (Matches declarations only — not an import of the hook.)
+    expect(src.match(/=\s*useState/g) ?? []).toHaveLength(0);
+    expect(src).not.toMatch(/manualStep|summaryAckKey|datasetKey|goToSummary|goToReview/);
+    expect(src).not.toMatch(/cn2b-simple-summary|cn2b-simple-review-start|cn2b_simple_back_to_summary/);
+  });
+
+  it('the workspace persists nothing and reaches no server', () => {
     const src = code(workspacePath);
     expect(src).not.toMatch(/localStorage/);
     expect(src).not.toMatch(/sessionStorage/);
     expect(src).not.toMatch(/\bfetch\s*\(/);
     expect(src).not.toMatch(/\bsupabase\./);
-  });
-
-  it('the dataset-keyed acknowledgement is the ONLY navigation state — no free step override (finding 5)', () => {
-    const src = code(workspacePath);
-    // `manualStep` was an unkeyed override that could outlive its dataset.
-    expect(src).not.toMatch(/manualStep/);
-    expect(src).toMatch(/const step = derivedStep;/);
-    // Exactly one piece of component state remains, and it is the keyed one.
-    // (Matches declarations only — the `react` import also names useState.)
-    expect(src.match(/=\s*useState/g) ?? []).toHaveLength(1);
-    expect(src).toMatch(/const \[summaryAckKey, setSummaryAckKey\] = useState/);
-    // Returning to the summary withdraws the acknowledgement rather than
-    // pinning a step that current props could no longer justify.
-    expect(src).toMatch(/function goToSummary\(\) \{ setSummaryAckKey\(null\); \}/);
-  });
-
-  it('the guard order keeps a closed or unready revision ahead of the summary', () => {
-    const src = code(workspacePath);
-    const derived = src.match(/const derivedStep[\s\S]*?\n\s*\}, \[/);
-    expect(derived, 'derivedStep not found').not.toBeNull();
-    const body = (derived as RegExpMatchArray)[0];
-    const summaryAt = body.indexOf("return 'summary'");
-    expect(body.indexOf("if (!revision) return 'upload'")).toBeLessThan(summaryAt);
-    expect(body.indexOf("if (revisionClosed) return 'upload'")).toBeLessThan(summaryAt);
-    expect(body.indexOf("preview.phase === 'parsing' || busy")).toBeLessThan(summaryAt);
-    expect(body.indexOf('if (!revisionDataReady)')).toBeLessThan(summaryAt);
-  });
-
-  it('the summary still cannot be a dead end — one always-rendered control leaves it', () => {
-    const src = code(workspacePath);
-    const summaryBlock = src.match(/step === 'summary'[\s\S]*?step === 'review-institution'/);
-    expect(summaryBlock, 'summary block not found').not.toBeNull();
-    expect((summaryBlock as RegExpMatchArray)[0]).toMatch(/cn2b-simple-review-start/);
-    // Not wrapped in a count condition that could hide it.
-    expect((summaryBlock as RegExpMatchArray)[0]).not.toMatch(/reviewItemCount > 0 && \(\s*<PhoenixButton/);
   });
 });
 
@@ -340,9 +341,18 @@ describe('Simple Mode is the default; Advanced Mode survives as the secondary en
 
   it('switching mode is presentation only — the screen never reloads or resets state on a mode change', () => {
     const screenSrc = code(screenPath);
-    // The two switch sites call setMode with a literal and nothing else.
-    expect(screenSrc).toMatch(/onSwitchToAdvanced=\{\(\) => setMode\('advanced'\)\}/);
+    // CN-UI-S1 (supersedes the Simple → Advanced switch site): Simple is the
+    // complete workflow, so there is no generic switch TO Advanced…
+    expect(screenSrc).not.toMatch(/onSwitchToAdvanced/);
+    // …CN-UI-S1 HC1: exactly TWO switch sites remain, each setting a literal
+    // and nothing else — Advanced's way back, and the ONE contextual expert
+    // escape, whose handler is the only place 'advanced' is ever set.
+    expect(screenSrc.match(/setMode\(/g) ?? []).toHaveLength(2);
     expect(screenSrc).toMatch(/onClick=\{\(\) => setMode\('simple'\)\}/);
+    expect(screenSrc.match(/setMode\('advanced'\)/g) ?? []).toHaveLength(1);
+    const handler = screenSrc.match(/const onExpertEscape = useCallback\(([\s\S]*?)\n  \}, \[/);
+    expect(handler, 'onExpertEscape handler').not.toBeNull();
+    expect((handler as RegExpMatchArray)[1]).toContain("setMode('advanced')");
     // No effect keyed on `mode` exists, so a mode change can trigger no read.
     expect(screenSrc).not.toMatch(/\[[^\]]*\bmode\b[^\]]*\]\s*\)/);
   });
@@ -362,21 +372,25 @@ describe('Simple Mode shell — six steps, one task, Advanced demoted (visual co
     expect(src).toMatch(/<h1 className="cn2b-simple-title">/);
     expect(src).toMatch(/<SimpleStepper lang=\{lang\} step=\{step\} \/>/);
     const stepper = code(`${SIMPLE_DIR}/SimpleStepper.tsx`);
-    for (const id of ['upload', 'analyzing', 'summary', 'review-institution', 'review-material', 'pending']) {
-      expect(stepper, id).toContain(`id: '${id}'`);
-    }
+    // CN-UI-S1: the summary step is gone; the need lines are a step of their own.
+    const ids = [...stepper.matchAll(/id: '([a-z-]+)'/g)].map((m) => m[1]);
+    expect(ids).toEqual(['upload', 'analyzing', 'review-institution', 'review-material', 'need-lines', 'pending']);
     // The indicator is informative only: no click handler can jump steps.
     expect(stepper).not.toMatch(/onClick/);
   });
 
-  it('the Advanced entry is a single quiet footer control, not a toggle at the top of the page', () => {
+  it('Simple offers NO generic way into Advanced — no footer link, no handoff, no "Advanced options" copy (CN-UI-S1, supersedes the quiet footer entry)', () => {
     const src = code(workspacePath);
-    const footerAt = src.indexOf('<footer className="cn2b-simple-footer">');
-    const heroAt = src.indexOf('<header className="cn2b-simple-hero">');
-    expect(footerAt).toBeGreaterThan(heroAt);
-    const hero = src.slice(heroAt, src.indexOf('</header>', heroAt));
-    expect(hero).not.toMatch(/onSwitchToAdvanced/);
-    expect(src.slice(footerAt)).toMatch(/data-testid="cn2b-simple-advanced-link"/);
+    expect(src).not.toMatch(/<footer/);
+    expect(src).not.toMatch(/onSwitchToAdvanced|cn2b-simple-advanced-link|cn2b-simple-continue-advanced|cn2b-simple-handoff/);
+    expect(src).not.toMatch(/cn2b_simple_advanced_options|cn2b_simple_advanced_hint|cn2b_simple_final_handoff|cn2b_simple_final_continue_advanced|cn2b_simple_switch_to_advanced/);
+    // …and no Simple sentence the routine flow can show points there either.
+    const strings = read('src/shared/i18n/strings.ts');
+    for (const key of ['cn2b_simple_final_server_ready', 'cn2b_simple_blocker_unknown', 'cn2b_simple_blocker_lineage_reason_unrecognized']) {
+      const entry = strings.match(new RegExp(`${key}:\\s*\\{[^}]*\\}`));
+      expect(entry, key).not.toBeNull();
+      expect((entry as RegExpMatchArray)[0], key).not.toMatch(/advanced|المتقدمة|متقدمة/i);
+    }
   });
 
   it('the analyzing step shows only phases the props justify and never a fabricated percentage', () => {
@@ -387,13 +401,20 @@ describe('Simple Mode shell — six steps, one task, Advanced demoted (visual co
     expect(src).not.toMatch(/aria-valuenow/);
   });
 
-  it('step 6 never claims completion: readiness text is the server verdict and the handoff goes to Advanced', () => {
+  it('steps 5–6 never claim completion: readiness text is the server verdict, and submit is the screen\'s own gated block', () => {
     const src = code(workspacePath);
-    const pending = src.slice(src.indexOf("step === 'pending'"), src.indexOf('<footer className="cn2b-simple-footer">'));
-    expect(pending).toMatch(/readinessSummary\.ready\s*\?\s*t\('cn2b_simple_final_server_ready'/);
-    expect(pending).toMatch(/cn2b_simple_readiness_unknown/);
-    expect(pending).toMatch(/cn2b-simple-continue-advanced/);
-    expect(pending).not.toMatch(/ready:\s*true/);
+    const start = src.indexOf("(step === 'need-lines' || step === 'pending') && !revisionClosed");
+    const end = src.indexOf("step === 'pending' && revisionClosed");
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const outcome = src.slice(start, end);
+    expect(outcome).toMatch(/readinessSummary\.ready\s*\?\s*t\('cn2b_simple_final_server_ready'/);
+    expect(outcome).toMatch(/cn2b_simple_readiness_unknown/);
+    expect(outcome).not.toMatch(/ready:\s*true/);
+    // Submit appears only on the outcome step, only for an editor of the draft,
+    // and only as the screen's lifecycle element — no handler of Simple's own.
+    expect(outcome).toMatch(/step === 'pending' && \(canWrite \? \(\s*<div className="cn2b-simple-lifecycle" data-testid="cn2b-simple-submit">\{lifecycleActions\}<\/div>/);
+    expect(src).not.toMatch(/onSubmit|onApprove|onReject|submitRevision|approveRevision|rejectRevision/);
     const strings = read('src/shared/i18n/strings.ts');
     expect(strings).not.toMatch(/cn2b_simple_[a-z_]+:\s*\{[^}]*كل شيء جاهز/);
   });
@@ -403,5 +424,156 @@ describe('Simple Mode shell — six steps, one task, Advanced demoted (visual co
     expect(zone).toContain("'.xlsx,.xls,.csv,.zip'");
     expect(zone).toMatch(/onPickFile\(e\.target\.files\?\.\[0\] \?\? null\)/);
     expect(zone).not.toMatch(/requestUploadTicket|uploadToStaging|finalizeImport|\.rpc\(/);
+  });
+});
+
+/**
+ * CN-UI-S1 HC1 — the contextual expert escape and the material dirty contract,
+ * pinned in source: what each is allowed to read, hold and call.
+ */
+describe('Simple Mode — HC1: the contextual expert escape is presentation-only and the material card reports the frozen contract', () => {
+  const workspacePath = `${SIMPLE_DIR}/CentralNeedsSimpleWorkspace.tsx`;
+  const readinessPath = `${SIMPLE_DIR}/simpleReadiness.ts`;
+  const cardPath = `${SIMPLE_DIR}/SimpleMaterialCard.tsx`;
+
+  it('the escape is derived from the ONE readiness prop, through the shared vocabulary — no second authority, no second read', () => {
+    const workspace = code(workspacePath);
+    // The memo's only input is the readiness the screen owns, and only while it belongs to the selected revision.
+    // HC1.2: plus the override chain the screen already holds (read-only), nothing else.
+    expect(workspace).toMatch(/deriveSimpleExpertEscapes\(readiness, overrideContext\)/);
+    expect(workspace).toMatch(/readiness\.planRevisionId === revision\.id/);
+    expect(workspace.match(/deriveSimpleExpertEscapes?\(/g) ?? []).toHaveLength(1);
+
+    const derive = code(readinessPath).match(/export function deriveSimpleExpertEscapes\([\s\S]*?\n\}/);
+    expect(derive, 'deriveSimpleExpertEscapes').not.toBeNull();
+    const body = (derive as RegExpMatchArray)[0];
+    // Same vocabulary and reason parser the summary uses…
+    expect(body).toContain('KNOWN_BLOCKERS.has(');
+    expect(body).toContain('reasonOf(');
+    // …`ready` is the server's, verbatim, and a closed revision never escapes.
+    expect(body).toContain('readiness.ready');
+    expect(body).toMatch(/readiness\.status !== 'draft'/);
+    // It reads the readiness and nothing else: no filename, header, entity, material or UI input.
+    expect(body).not.toMatch(/records|dispositions|beneficiaryColumns|fieldName|targetEntity|filename|window|document|fetch|supabase|\.rpc\(/i);
+    expect(body).not.toMatch(/ready:\s*(true|false)/);
+  });
+
+  it('the escapes route to exactly the stages named by ONE table: open import → source, numeric → review, every diagnostic (invalid evidence, unproven head, unknown blocker, unknown reason) → readiness (HC1 + HC1.1 + HC1.2)', () => {
+    const src = code(readinessPath);
+    const body = (src.match(/export function deriveSimpleExpertEscapes\([\s\S]*?\n\}/) as RegExpMatchArray)[0];
+    // ONE place says which stage a reason opens; the derivation only reads it.
+    const table = (src.match(/const ESCAPE_STAGE[\s\S]*?\n\};/) as RegExpMatchArray)[0];
+    expect(Object.fromEntries([...table.matchAll(/^\s{2}([a-z_]+): '([a-z]+)',$/gm)].map((m) => [m[1], m[2]]))).toEqual({
+      open_import: 'source',
+      numeric_override: 'review',
+      source_evidence_invalid: 'readiness',
+      override_head_unproven: 'readiness',
+      unknown_blocker: 'readiness',
+      unknown_lineage_reason: 'readiness',
+    });
+    // …and returns them in Advanced workflow order: never a review escape before a source one, nor a readiness one before either.
+    const order = [...(src.match(/const ESCAPE_ORDER[\s\S]*?\];/) as RegExpMatchArray)[0].matchAll(/'([a-z_]+)'/g)].map((m) => m[1]);
+    expect(order).toEqual(['open_import', 'numeric_override', 'source_evidence_invalid', 'override_head_unproven', 'unknown_blocker', 'unknown_lineage_reason']);
+    expect(body).toContain('ESCAPE_ORDER.filter((reason) => found.has(reason)).map((reason) => ({ stage: ESCAPE_STAGE[reason], reason }))');
+    expect(body).not.toContain("stage: '");
+    // The one-form is exactly the head of that list — never a second derivation.
+    expect(src).toMatch(/export function deriveSimpleExpertEscape\(readiness: ReviewReadiness \| null, context\?: SimpleOverrideContext\): SimpleExpertEscape \| null \{\s*return deriveSimpleExpertEscapes\(readiness, context\)\[0\] \?\? null;\s*\}/);
+    // The two literal tokens are the server's own.
+    expect(src).toContain("'import_session_still_open'");
+    expect(src).toContain("'source_quantity_requires_explicit_numeric_override'");
+    // HC1.2 / HC1.4: the cell's head is judged with the canonical helpers (`numericOverrideLexeme`: can it really be PINNED) — never a second head rule, never a re-sort, never a new read.
+    expect(src).toContain("import { numericOverrideLexeme, overrideHeads } from '../central-needs.lineage';");
+    expect(src).toContain('overrideHeads(context.overrides).get(record)');
+    expect(src).not.toMatch(/\.sort\(|\.toSorted\(|\.reverse\(|createdAt/);
+  });
+
+  it('the workspace holds no state and no browser dialog for it: the screen owns the busy/dirty guards and the mode', () => {
+    const workspace = code(workspacePath);
+    expect(workspace.match(/=\s*useState/g) ?? []).toHaveLength(0);
+    expect(workspace).not.toMatch(/\bwindow\b|\bdocument\b|\bconfirm\(|\balert\(/);
+    expect(workspace).not.toMatch(/\bsetMode\b|setMode\('advanced'\)/);
+    // The block is a real button that only ever reports the stage it names…
+    const block = workspace.match(/function ExpertEscapeBlock[\s\S]*?\n\}\n/);
+    expect(block, 'ExpertEscapeBlock').not.toBeNull();
+    expect((block as RegExpMatchArray)[0]).toMatch(/<PhoenixButton[\s\S]*?type="button"[\s\S]*?onClick=\{\(\) => onOpen\(escape\.stage\)\}/);
+    expect((block as RegExpMatchArray)[0]).not.toMatch(/<div[^>]*onClick|role="button"/);
+    // …and is rendered in exactly the two places it can be needed, each behind the same gate.
+    expect(workspace.match(/<ExpertEscapeBlock /g) ?? []).toHaveLength(2);
+    expect(workspace.match(/expertEscapeShown && expertEscape !== null && onExpertEscape/g) ?? []).toHaveLength(2);
+  });
+
+  it('the permission each escape needs is the one its Advanced stage\'s controls use: source → import, review → edit, readiness → none', () => {
+    const workspace = code(workspacePath);
+    expect(workspace).toMatch(/stage === 'source' \? canImport && isDraft\s*:\s*stage === 'review' \? canWrite\s*:\s*true/);
+    // The first escape the person can ACT on is the one offered; only when none is, the first, with who to ask.
+    expect(workspace).toMatch(/expertEscapes\.find\(\(escape\) => expertStageAllowed\(escape\.stage\)\) \?\? expertEscapes\[0\] \?\? null/);
+  });
+
+  it('the screen\'s handler is the only mode switch to Advanced and is wired to Simple as a plain callback', () => {
+    const screen = code('src/features/central-needs/CentralNeedsScreen.tsx');
+    expect(screen).toMatch(/onExpertEscape=\{onExpertEscape\}/);
+    const handler = (screen.match(/const onExpertEscape = useCallback\(([\s\S]*?)\n  \}, \[([^\]]*)\]/) as RegExpMatchArray);
+    expect(handler, 'onExpertEscape').not.toBeNull();
+    // BUSY first, then DIRTY, then ONE batched stage+mode update — and no read, reset, id change or RPC.
+    const calls = [...handler[1].matchAll(/\b(window\.alert|window\.confirm|onStageChange|setBackgroundResult|setMode)\(/g)].map((m) => m[1]);
+    expect(calls).toEqual(['window.alert', 'window.confirm', 'onStageChange', 'setBackgroundResult', 'setMode']);
+    // Every statement, normalized — a stray reset (setPendingFile, setError, setNeedLines…) cannot slip in unseen.
+    const statements = handler[1].replace(/\s+/g, ' ').trim();
+    expect(statements).toContain("onStageChange(stage); setBackgroundResult(null); setMode('advanced'); const focusStage = () => document.getElementById(stageDomId(stage))?.focus?.({ preventScroll: true }); if (typeof requestAnimationFrame === 'function') requestAnimationFrame(focusStage); else queueMicrotask(focusStage);");
+    expect([...handler[1].matchAll(/\bset[A-Z]\w*\(/g)].map((m) => m[0])).toEqual(['setBackgroundResult(', 'setMode(']);
+    expect(handler[1]).not.toMatch(/reloadRevision|refreshRevision|set(?:Revision|ActiveSession|DataRevision|Readiness|Revisions)\w*\(|resetRevisionScopedState|\.rpc\(/);
+    expect(handler[2].split(',').map((s) => s.trim()).sort()).toEqual(['expertSwitchBusy', 'expertSwitchDirty', 'lang', 'onStageChange']);
+    // The Advanced panels that report into the SAME activity slots release them when they leave the tree.
+    expect(screen).toMatch(/<ReleaseActivityOnUnmount onRelease=\{releaseReviewActivity\}>\s*<CentralNeedsDispositionTable/);
+    expect(screen).toMatch(/<ReleaseActivityOnUnmount onRelease=\{releaseBeneficiaryActivity\}>\s*<CentralNeedsBeneficiaryColumnPanel/);
+    expect(screen).toMatch(/<ReleaseActivityOnUnmount onRelease=\{releaseNeedLineActivity\}>\s*<CentralNeedsNeedLinePanel/);
+    // The two guards read the screen's own activity state, nothing synthesized.
+    // HC1.1 adds the stored-workbook slot to the ESCAPE's guards ONLY; the Work Session switch's own guard is unchanged.
+    expect(screen).toMatch(/const expertSwitchBusy = busy !== null \|\| reviewActivity\.busy \|\| needLineActivity\.busy \|\| storedWorkbookActivity\.busy;/);
+    expect(screen).toMatch(/const expertSwitchDirty = reviewActivity\.dirty \|\| needLineActivity\.dirty \|\| storedWorkbookActivity\.dirty;/);
+    expect(screen).toMatch(/const sessionDraftDirty = reviewActivity\.dirty \|\| needLineActivity\.dirty;/);
+    expect(screen).toMatch(/const sessionSwitchBlocked = sessionLoading\s*\|\| reviewActivity\.busy\s*\|\| needLineActivity\.busy;/);
+  });
+
+  it('the material card reports the pinned rule: its dirty value IS materialCardHasLocalWork over its own four states', () => {
+    const card = code(cardPath);
+    expect(card).toMatch(/const dirty = materialCardHasLocalWork\(\{ picking, query, showNotApplicable, notApplicableReason \}\);/);
+    expect(card).toMatch(/onActivityChange\?\.\(\{ busy, dirty, failed: error !== null \}\)/);
+    const rule = card.match(/export function materialCardHasLocalWork[\s\S]*?\n\}\n/);
+    expect(rule, 'materialCardHasLocalWork').not.toBeNull();
+    // Every term, as the owner froze it — none dropped, none added, no persisted write involved.
+    expect((rule as RegExpMatchArray)[0].replace(/\s+/g, ' ')).toContain(
+      "return state.picking || state.query.trim() !== '' || state.showNotApplicable || state.notApplicableReason.trim() !== '';",
+    );
+    // Cancelling a picker resets its query, so a closed picker never strands invisible "work".
+    expect(card).toMatch(/onClick=\{\(\) => \{ setPicking\(false\); setQuery\(''\); \}\}/);
+    // And it still reaches the same single write, once per decision.
+    expect(card.match(/await setRecordDisposition\(/g) ?? []).toHaveLength(2);
+  });
+
+  it('the escape block is really styled: a flex block, logical properties only, and a button that can WRAP (PhoenixButton writes nowrap inline, so only !important wins)', () => {
+    const css = read('src/shared/lib/central-needs.css');
+    expect(css.match(/\.cn2b-simple-expert \{[^}]*\}/)?.[0]).toMatch(/display:\s*flex/);
+    const button = css.match(/\.cn2b-simple-expert \.phoenix-button \{[^}]*\}/)?.[0] ?? '';
+    expect(button).toMatch(/white-space:\s*normal\s*!important/);
+    expect(button).toMatch(/min-block-size:\s*var\(--touch-target, 44px\)/);
+    // The inline style that makes !important necessary — if PhoenixButton stops writing it, this note can go.
+    expect(read('src/shared/ui/PhoenixButton.tsx')).toMatch(/whiteSpace:\s*'nowrap'/);
+    for (const rule of css.match(/\.cn2b-simple-expert[^{]*\{[^}]*\}/g) ?? []) {
+      expect(rule).not.toMatch(/(^|[\s;{])(margin-left|margin-right|padding-left|padding-right|left|right)\s*:/m);
+      expect(rule).not.toMatch(/text-align:\s*(left|right)/);
+    }
+    // And on a phone the button fills the block.
+    expect(css).toMatch(/@media \(max-width: 720px\) \{[\s\S]*?\.cn2b-simple-expert \.phoenix-button \{ inline-size: 100%; \}/);
+  });
+
+  it('no part of HC1 adds a service call, a permission key or a second blocker taxonomy', () => {
+    for (const file of [workspacePath, readinessPath, cardPath]) {
+      const src = code(file);
+      expect(src, file).not.toMatch(/\.rpc\(|from ['"]@\/shared\/supabase\/client['"]|\bsupabase\./);
+      expect(src, file).not.toMatch(/central_needs\.(view|import|edit|approve)/);
+    }
+    // One vocabulary: the escape does not re-declare the blocker catalogue.
+    expect(code(readinessPath)).not.toMatch(/new Set\(\[\s*'no_finalized_import'/);
   });
 });

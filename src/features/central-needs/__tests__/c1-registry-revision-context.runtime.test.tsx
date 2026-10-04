@@ -277,7 +277,8 @@ describe('C1 / PD-1 — Simple Mode correction targets the SELECTED revision yea
     expect(openPlanRevision).not.toHaveBeenCalled();
     expect(openCorrectionRevision).not.toHaveBeenCalled();
     // And the calendar year is never presented as this revision's year.
-    expect(screen.getByTestId('cn2b-simple-upload')).not.toHaveTextContent(String(THIS_YEAR));
+    // (CN-UI-S1: the closed card moved from step 1 to the outcome step.)
+    expect(screen.getByTestId('cn2b-simple-closed')).not.toHaveTextContent(String(THIS_YEAR));
   });
 });
 

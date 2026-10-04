@@ -187,7 +187,7 @@ const workspace = (lang: 'ar' | 'en', id: string) => (
     revision={revision(id)} isDraft revisionDataReady canImport canEdit busy={false} activity={null}
     onOpenRevision={() => {}} preview={{ phase: 'idle' }} pendingFile={null} onPickFile={() => {}} onVerify={() => {}}
     error={null} notice={null} readiness={null} batches={[batchFor(`batch-${id}`, id)]} beneficiaryColumns={[]} careInstitutions={CARE_INSTITUTIONS}
-    records={[]} dispositions={[]} activeSessionId={null} onChanged={() => {}} onSwitchToAdvanced={() => {}}
+    records={[]} dispositions={[]} activeSessionId={null} onChanged={() => {}}
   />
 );
 

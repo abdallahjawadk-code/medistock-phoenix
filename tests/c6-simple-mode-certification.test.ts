@@ -18,17 +18,16 @@
  *   D0  THE SURFACE. simple/ plus every central-needs directory it reaches by
  *       import (excel-first/, import/, mapping/, regions/). Every Simple claim
  *       below is checked over that whole surface, not over simple/ alone.
- *   D1  SCOPE HONESTY (F1 stated, never hidden). The summary card carries the
- *       session-scope title and note; each metric's <dt> labels its OWN scope
- *       beside its own count — institutions "across the whole annual need",
- *       materials and quantities "this file only" — and each label is true of
- *       the data it sits on. The four scope strings exist in Arabic AND English
- *       and say what they say. F1's reach BEYOND the summary is stated rather
- *       than certified away: the final step is entered once the ACTIVE
- *       session's material queue is empty, and its heading
- *       ("Institutions and materials reviewed") carries no scope qualifier —
- *       reported as a C6 observation; in the same card every readiness outcome
- *       renders the server's own revision-wide verdict (D2).
+ *   D1  SCOPE HONESTY (F1 stated, never hidden). CN-UI-S1 removed the summary
+ *       card; the compact session context that replaced it labels each
+ *       figure's OWN scope beside its own count — institutions "across the
+ *       whole annual need", materials "this file only" — and each label is
+ *       true of the data it sits on. The quantity figure (an M213-only copy of
+ *       the need-line resolver) is gone. The two scope strings exist in Arabic
+ *       AND English and say what they say. F1's reach beyond the context is
+ *       stated rather than certified away: the need-lines step is entered once
+ *       the ACTIVE session's material queue is empty, and only the server's
+ *       own revision-wide `ready` reaches the outcome step (D2).
  *   D2  READINESS STAYS REVISION-WIDE AND SERVER-COMPUTED. The readiness RPC
  *       takes the plan revision id and nothing else (service and every
  *       migration); the screen reads it only under a revision id, never a
@@ -38,14 +37,22 @@
  *       real corpus — completing the active session alone leaves the revision
  *       blocked by every other session — is L4 of the dynamic suite and is
  *       deliberately not duplicated here.
- *   D3  ADVANCED MODE IS THE CANONICAL NEEDLINE PATH. `setNeedLine` /
+ *   D3  ONE CANONICAL NEEDLINE PATH, SHARED BY BOTH MODES (CN-UI-S1; this
+ *       layer previously certified an Advanced-only mount and a Simple → Advanced
+ *       handoff, both superseded by the owner's decision). `setNeedLine` /
  *       `deleteNeedLine` each call exactly one canonical RPC; their only caller
  *       — indeed the only file that references them at all, even as a value —
- *       in src/ is the Advanced need-line panel, mounted only in the Advanced
- *       stage sections; no file of the Simple surface imports, names or calls
- *       them; Simple's whole prop surface is pinned, its callbacks being the
- *       canonical handlers and read-only re-reads; Simple's final step hands
- *       need-line work to Advanced.
+ *       in src/ is the need-line panel; the screen mounts that panel exactly
+ *       ONCE, as the shared `needLinePanel` element with its canonical props,
+ *       which the Advanced need-lines stage and the Simple workspace both
+ *       place; no file of the Simple surface imports, names or calls the panel
+ *       or its writes; Simple's whole prop surface is pinned, its callbacks
+ *       being the canonical handlers and read-only re-reads; nothing hands off
+ *       to Advanced GENERICALLY — the one way out is the contextual expert
+ *       escape (CN-UI-S1 HC1), a presentation request whose guarded screen
+ *       handler is the only place the mode is ever set to Advanced — and
+ *       submit / approve / reject are the screen's own lifecycle block,
+ *       placed by Simple.
  *   D4  F2 IS A BARE DISABLED ATTRIBUTE. The one confirm-quantities control is
  *       `disabled` with no initializer (no state can re-enable it), carries no
  *       handler, ref or spread, and PhoenixButton forwards that `disabled` to
@@ -461,48 +468,39 @@ describe('C6-D0 — the Simple Mode surface under certification', () => {
   });
 });
 
-describe('C6-D1 — scope honesty: each Simple summary metric states its own scope (accepted finding F1)', () => {
-  it('the four scope strings exist in Arabic and English and say what they say', () => {
-    const title = bilingual('cn2b_simple_scope_session_title');
+describe('C6-D1 — scope honesty: each Simple context figure states its own scope (accepted finding F1)', () => {
+  it('the two scope strings exist in Arabic and English and say what they say', () => {
     const thisSession = bilingual('cn2b_simple_scope_this_session');
     const wholeRevision = bilingual('cn2b_simple_scope_whole_revision');
-    const note = bilingual('cn2b_simple_scope_session_note');
 
-    expect(title.en).toMatch(/current work session/);
-    expect(title.en).toMatch(/\bthis file\b/);
     expect(thisSession.en).toMatch(/\bthis file only\b/);
     expect(thisSession.ar).toContain('فقط');
     expect(wholeRevision.en).toMatch(/\bwhole annual need\b/);
     expect(wholeRevision.ar).toContain('كامل');
-    expect(note.en).toMatch(/material and quantity figures/);
-    expect(note.en).toMatch(/current import session only/);
-    expect(note.en).toMatch(/not whole-annual-need totals/);
-    expect(note.en).toMatch(/many sessions/);
-    expect(note.ar).toContain('فقط');
-    expect(note.ar).toContain('ليست');
-    // The two metric scopes are different claims in both languages.
+    // The two figure scopes are different claims in both languages.
     expect(thisSession.en).not.toBe(wholeRevision.en);
     expect(thisSession.ar).not.toBe(wholeRevision.ar);
+    // CN-UI-S1: the summary card and its title/note are gone, not renamed — no
+    // Simple-surface file renders them (the keys themselves stay: A7.2.2 forbids
+    // removing a dictionary key).
+    for (const unused of ['cn2b_simple_scope_session_title', 'cn2b_simple_scope_session_note', 'cn2b_simple_quantities']) {
+      for (const f of SURFACE) expect(code(f), `${f}: ${unused}`).not.toContain(unused);
+    }
   });
 
-  it('the summary card carries the session-scope title and note, and each <dt> labels its own scope beside its own count', () => {
-    const summary = byTestId(WORKSPACE, 'cn2b-simple-summary');
-    const title = byTestId(WORKSPACE, 'cn2b-simple-summary-scope-title');
-    const note = byTestId(WORKSPACE, 'cn2b-simple-summary-scope-note');
-    expect(within(title, summary) && within(note, summary)).toBe(true);
-    expect(tKeys(title)).toEqual(['cn2b_simple_scope_session_title']);
-    expect(tKeys(note)).toEqual(['cn2b_simple_scope_session_note']);
+  it('the compact session context labels each figure with its own scope, beside its own count — and carries no quantity figure', () => {
+    const context = byTestId(WORKSPACE, 'cn2b-simple-context');
+    expect(jsxOpenings(ast(WORKSPACE).sf).filter((o) => /cn2b-simple-(summary|count-quantities|scope-quantities)/.test(testIdOf(o) ?? ''))).toEqual([]);
 
     const METRICS = [
       { id: 'institutions', label: 'cn2b_simple_institutions', scope: 'cn2b_simple_scope_whole_revision', value: 'counts.institutionsConfirmed' },
       { id: 'materials', label: 'cn2b_simple_materials', scope: 'cn2b_simple_scope_this_session', value: 'counts.materialsMapped' },
-      { id: 'quantities', label: 'cn2b_simple_quantities', scope: 'cn2b_simple_scope_this_session', value: 'counts.quantityCandidateCount' },
     ];
     for (const m of METRICS) {
       const span = byTestId(WORKSPACE, `cn2b-simple-scope-${m.id}`);
       expect(tagOf(openingOf(span)), m.id).toBe('span');
       expect(tKeys(span), m.id).toEqual([m.scope]);
-      expect(within(span, summary), m.id).toBe(true);
+      expect(within(span, context), m.id).toBe(true);
 
       const dt = span.parent;
       expect(ts.isJsxElement(dt) && tagOf(dt.openingElement) === 'dt', `${m.id}: the scope span sits in the metric's <dt>`).toBe(true);
@@ -541,7 +539,7 @@ describe('C6-D1 — scope honesty: each Simple summary metric states its own sco
 
     // The figures follow exactly those inputs: two sessions' confirmed columns
     // count as institutions whether or not any session's rows are loaded, while
-    // materials and quantities exist only for the loaded session's rows.
+    // materials exist only for the loaded session's rows.
     const column = (importSessionId: string, org: string): BeneficiaryColumnSummary => ({
       importSessionId, originalFilename: null, archiveEntryPath: null, sheetIndex: 0, sheetName: null, columnIndex: 1,
       sourceFieldName: null, numericValueCount: 1, zeroValueCount: 0, nonzeroNumericCount: 1, mappingId: `m-${importSessionId}`,
@@ -560,28 +558,29 @@ describe('C6-D1 — scope honesty: each Simple summary metric states its own sco
     const loaded = computeSimpleCounts(columns, [record], [disposition]);
     const none = computeSimpleCounts(columns, [], []);
     expect([loaded.institutionsConfirmed, none.institutionsConfirmed]).toEqual([2, 2]);
-    expect([loaded.materialsMapped, loaded.quantityCandidateCount]).toEqual([1, 1]);
-    expect([none.materialsMapped, none.quantityCandidateCount]).toEqual([0, 0]);
+    expect([loaded.materialsMapped, none.materialsMapped]).toEqual([1, 0]);
+    expect(loaded).not.toHaveProperty('quantityCandidateCount');
   });
 
-  it("F1's reach beyond the summary, STATED not hidden: the final step is entered on the active session's rows alone, and its unqualified heading always sits beside the server's revision-wide verdict", () => {
-    // The step order: 'pending' follows once the (revision-wide) column queue AND the (session-scoped) material queue are empty.
+  it("F1's reach beyond the context, STATED not hidden: the need-lines step is entered on the active session's rows alone, and only the server's revision-wide verdict reaches the outcome", () => {
+    // The step order: need lines follow once the (revision-wide) column queue AND the (session-scoped) material
+    // queue are empty; the outcome step only once the server's own `ready` says so.
     const decl = (name: string) => ast(WORKSPACE).all.find((n): n is ts.VariableDeclaration =>
       ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.name.text === name) as ts.VariableDeclaration;
     const derived = decl('derivedStep');
     const returns = descendants(derived).filter(ts.isReturnStatement).map((r) => r.expression?.getText());
-    expect(returns.slice(-3)).toEqual(["'review-institution'", "'review-material'", "'pending'"]);
+    expect(returns.slice(-4)).toEqual(["'review-institution'", "'review-material'", "'pending'", "'need-lines'"]);
     const guards = descendants(derived).filter(ts.isIfStatement).map((s) => s.expression.getText());
-    expect(guards.slice(-2)).toEqual(['unresolvedColumns.length > 0', 'undispositionedEntities.length > 0']);
+    expect(guards.slice(-3)).toEqual(['unresolvedColumns.length > 0', 'undispositionedEntities.length > 0', 'readinessSummary?.ready === true']);
     // The material queue is built from the ACTIVE session's records and dispositions only (F1).
     const queue = decl('undispositionedEntities');
     const deps = (queue.initializer as ts.CallExpression).arguments[1].getText();
     expect(deps).toBe('[records, dispositionedEntities]');
     expect(((decl('dispositionedEntities').initializer as ts.CallExpression).arguments[1]).getText()).toBe('[dispositions]');
 
-    // The final card's heading carries no scope qualifier (reported as an F1 observation, not fixed here)…
+    // The draft's need-lines/outcome card names the task, never a completion…
     const pending = byTestId(WORKSPACE, 'cn2b-simple-pending');
-    expect(tKeys(byTestId(WORKSPACE, 'cn2b-simple-pending-title'))).toEqual(['cn2b_simple_reviewed_all']);
+    expect(tKeys(byTestId(WORKSPACE, 'cn2b-simple-pending-title'))).toEqual(['cn2b_simple_submit_title', 'cn2b_simple_need_lines_title']);
     // …and in the SAME card every readiness outcome renders the server's own, revision-wide verdict (D2).
     for (const id of ['cn2b-simple-readiness-unknown', 'cn2b-simple-readiness-messages', 'cn2b-simple-readiness-clear']) {
       expect(within(byTestId(WORKSPACE, id), pending), id).toBe(true);
@@ -719,16 +718,40 @@ describe('C6-D2 — readiness stays revision-wide and server-computed (DB proof 
   });
 });
 
-describe('C6-D3 — Advanced Mode is the canonical NeedLine path; Simple never writes a need line', () => {
+describe('C6-D3 — one canonical NeedLine path, shared by both modes; no Simple file names a need-line write', () => {
   it('setNeedLine and deleteNeedLine each call exactly one canonical RPC', () => {
     expect(sinks('setNeedLine')).toEqual({ rpcs: ['phoenix_central_needs_set_need_line'], endpoints: [], mutators: [] });
     expect(sinks('deleteNeedLine')).toEqual({ rpcs: ['phoenix_central_needs_delete_need_line'], endpoints: [], mutators: [] });
   });
 
-  it('the Advanced need-line panel is their only caller in src/, and the screen mounts it only in the Advanced need-lines stage', () => {
+  it('the need-line panel is their only caller in src/, and the screen mounts it exactly ONCE — the shared element both presentations place', () => {
     expect(callersOf('setNeedLine')).toEqual([NEED_LINE_PANEL]);
     expect(callersOf('deleteNeedLine')).toEqual([NEED_LINE_PANEL]);
-    expectAdvancedOnlyMount('CentralNeedsNeedLinePanel', 'need-lines');
+
+    // CN-UI-S1 supersedes the Advanced-only mount: ONE textual mount, the screen's `needLinePanel`…
+    const mounts = jsxOpenings(ast(SCREEN).sf).filter((o) => tagOf(o) === 'CentralNeedsNeedLinePanel');
+    expect(mounts).toHaveLength(1);
+    expect(enclosingDeclaration(mounts[0])).toBe('needLinePanel');
+    // …with its canonical props, unchanged from the Advanced-only mount it replaced…
+    const panel = mounts[0];
+    expect(panel.attributes.properties.map((p) => (ts.isJsxAttribute(p) ? p.name.getText() : '{...}')).sort()).toEqual([
+      'beneficiaryColumns', 'beneficiaryRegions', 'claimedSources', 'dispositions', 'editable', 'lang', 'needLines',
+      'onActivityChange', 'onChanged', 'onRefused', 'onReloadOverrides', 'overrideReadFailure', 'overrides', 'planRevisionId',
+      'records', 'workSessionId',
+    ]);
+    expect(attrValue(panel, 'editable')).toBe('{canEdit && isDraft}');
+    expect(attrValue(panel, 'workSessionId')).toBe('{activeSessionId}');
+    expect(attrValue(panel, 'beneficiaryRegions')).toBe('{beneficiaryRegions}');
+    expect(attrValue(panel, 'onActivityChange')).toBe('{setNeedLineActivity}');
+    expect(attrValue(panel, 'onChanged')).toBe('{() => refreshRevision(revision.id)}');
+    expect(attrValue(panel, 'onRefused')).toBe('{(refusal) => void rereadAfterRefusal(refusal)}');
+    // …released from the Work Session guard whenever it leaves the tree…
+    const wrapper = panel.parent as ts.Node;
+    expect(ts.isJsxElement(wrapper) && tagOf(wrapper.openingElement)).toBe('ReleaseActivityOnUnmount');
+    expect(attrValue((wrapper as ts.JsxElement).openingElement, 'onRelease')).toBe('{releaseNeedLineActivity}');
+    // …and placed by BOTH presentations: the Advanced need-lines stage and the Simple workspace.
+    expect(descendants(stageEntry('need-lines')).some((n) => ts.isIdentifier(n) && n.text === 'needLinePanel')).toBe(true);
+    expect(attrValue(simpleElement(), 'needLineWorkspace')).toBe('{needLinePanel}');
   });
 
   it('no file of the Simple surface imports, names or calls setNeedLine / deleteNeedLine (comments stripped; AST)', () => {
@@ -765,10 +788,52 @@ describe('C6-D3 — Advanced Mode is the canonical NeedLine path; Simple never w
     const names = simple.attributes.properties.map((p) => (ts.isJsxAttribute(p) ? p.name.getText() : `{...${p.getText()}}`));
     expect(names.slice().sort()).toEqual([
       'activeSessionId', 'activity', 'batches', 'beneficiaryColumns', 'beneficiaryRegions', 'busy', 'canEdit', 'canImport',
-      'careInstitutions', 'dispositions', 'error', 'isDraft', 'lang', 'newerRevisionNumber', 'notice', 'onChanged',
-      'onMaterialResolved', 'onOpenRevision', 'onPickFile', 'onPlanYearChange', 'onRefused', 'onSwitchToAdvanced', 'onVerify',
-      'pendingFile', 'planYear', 'preview', 'readiness', 'records', 'revision', 'revisionDataReady', 'revisionsLoading', 'sessions',
+      'careInstitutions', 'dispositions', 'error', 'isDraft', 'lang', 'lifecycleActions', 'needLineWorkspace', 'newerRevisionNumber',
+      'notice', 'onChanged', 'onExpertEscape', 'onMaterialActivityChange', 'onMaterialResolved', 'onOpenRevision', 'onPickFile',
+      'onPlanYearChange', 'onRefused', 'onStoredWorkbookActivityChange', 'onVerify', 'overrideReadFailure', 'overrides', 'pendingFile', 'planYear', 'preview', 'readiness', 'records', 'revision',
+      'revisionDataReady', 'revisionsLoading', 'sessionLoading', 'sessions', 'workSessionPicker',
     ]);
+    // CN-UI-S1 HC1 — the contextual expert escape is a PRESENTATION request,
+    // never a write: the screen's own guarded handler, which (in order) refuses
+    // while a write is in flight, asks before unsaved local work is dropped, and
+    // only then sets the target stage and the mode — nothing else, no RPC.
+    expect(attrValue(simple, 'onExpertEscape')).toBe('{onExpertEscape}');
+    const expert = screenCallback('onExpertEscape');
+    const expertCalls = descendants(expert.body).filter(ts.isCallExpression)
+      .filter((c) => ['window.alert', 'window.confirm', 'onStageChange', 'setBackgroundResult', 'setMode'].includes(c.expression.getText()));
+    expect(expertCalls.map((c) => c.expression.getText())).toEqual(['window.alert', 'window.confirm', 'onStageChange', 'setBackgroundResult', 'setMode']);
+    expect(expertCalls[4].arguments.map((a) => a.getText())).toEqual(["'advanced'"]);
+    // The handler is EXACTLY these statements, in this order — nothing else (no reset, no read, no id change) can ride along.
+    expect((expert.body as ts.Block).statements.map((st) => st.getText().replace(/\s+/g, ' '))).toEqual([
+      "if (expertSwitchBusy) { window.alert(t('cn2b_expert_switch_blocked', lang)); return; }",
+      "if (expertSwitchDirty && !window.confirm(t('cn2b_expert_switch_confirm', lang))) return;",
+      'onStageChange(stage);',
+      'setBackgroundResult(null);',
+      "setMode('advanced');",
+      'const focusStage = () => document.getElementById(stageDomId(stage))?.focus?.({ preventScroll: true });',
+      "if (typeof requestAnimationFrame === 'function') requestAnimationFrame(focusStage); else queueMicrotask(focusStage);",
+    ]);
+    const expertGuards = descendants(expert.body).filter(ts.isIfStatement).map((s) => s.expression.getText());
+    expect(expertGuards).toEqual(['expertSwitchBusy', 'expertSwitchDirty && !window.confirm(t(\'cn2b_expert_switch_confirm\', lang))', "typeof requestAnimationFrame === 'function'"]);
+    expect(descendants(expert.body).filter(ts.isCallExpression).filter((c) => isRpcCall(c))).toEqual([]);
+    for (const callee of descendants(expert.body).filter(ts.isCallExpression).map((c) => c.expression.getText())) {
+      expect(isServiceFunction(callee) && isWrite(sinks(callee)), callee).toBe(false);
+    }
+    // CN-UI-S1 — the new props carry the screen's own canonical elements and
+    // presentation state, never a write: the shared selector, panel and
+    // lifecycle block, the review-activity setter its session guard reads, and
+    // the "rows not yet this session's" flag.
+    expect(attrValue(simple, 'workSessionPicker')).toBe('{workSessionSelector}');
+    expect(attrValue(simple, 'needLineWorkspace')).toBe('{needLinePanel}');
+    expect(attrValue(simple, 'lifecycleActions')).toBe('{lifecycleActions}');
+    expect(attrValue(simple, 'onMaterialActivityChange')).toBe('{setReviewActivity}');
+    // CN-UI-S1 HC1.1 — the stored-workbook surface reports into ONE more presentation slot, read only by the expert-escape guard.
+    expect(attrValue(simple, 'onStoredWorkbookActivityChange')).toBe('{setStoredWorkbookActivity}');
+    // CN-UI-S1 HC1.2 — the override chain the screen ALREADY holds (the very values it gives the need-line panel), read-only, so the escape can
+    // tell whether a binding_invalid cell has a current NUMERIC head. No new read, no setter, no callback.
+    expect(attrValue(simple, 'overrides')).toBe('{overrides}');
+    expect(attrValue(simple, 'overrideReadFailure')).toBe('{overrideReadFailure}');
+    expect(attrValue(simple, 'sessionLoading')).toBe('{sessionRowsPending}');
     expect(attrValue(simple, 'onChanged')).toBe('{() => refreshRevision(revisionId as string)}');
     // C6-B1 (5d4e3f0e, in the certified base): a confirmed material decision re-reads
     // through read-only authorities only — the active session's dispositions and the
@@ -785,19 +850,35 @@ describe('C6-D3 — Advanced Mode is the canonical NeedLine path; Simple never w
     expect(attrValue(simple, 'onPlanYearChange')).toBe('{setPlanYear}');
   });
 
-  it("Simple's final step hands need-line work to Advanced Mode", () => {
-    const pending = byTestId(WORKSPACE, 'cn2b-simple-pending');
-    const handoff = byTestId(WORKSPACE, 'cn2b-simple-handoff');
-    expect(within(handoff, pending)).toBe(true);
-    expect(tKeys(handoff)).toEqual(['cn2b_simple_final_handoff', 'cn2b_simple_final_continue_advanced']);
-    const go = openingOf(byTestId(WORKSPACE, 'cn2b-simple-continue-advanced'));
-    expect(within(go, handoff)).toBe(true);
-    expect(attrValue(go, 'onClick')).toBe('{onSwitchToAdvanced}');
-    expect(attrValue(simpleElement(), 'onSwitchToAdvanced')).toBe("{() => setMode('advanced')}");
-
-    const text = bilingual('cn2b_simple_final_handoff');
-    expect(text.en).toMatch(/\bneed lines\b/);
-    expect(text.en).toMatch(/\badvanced options\b/);
+  it("Simple's final steps place the canonical panel and lifecycle block; nothing hands off to Advanced (CN-UI-S1, supersedes the handoff)", () => {
+    // The need-line workspace is the screen's element, placed as-is.
+    const needLines = byTestId(WORKSPACE, 'cn2b-simple-need-lines');
+    expect(descendants(needLines).filter(ts.isJsxExpression).map((e) => e.expression?.getText())).toContain('needLineWorkspace');
+    // Submit sits in the draft's outcome card; approve / reject in the closed card — both the ONE lifecycle block.
+    const submit = byTestId(WORKSPACE, 'cn2b-simple-submit');
+    const decision = byTestId(WORKSPACE, 'cn2b-simple-decision');
+    expect(within(submit, byTestId(WORKSPACE, 'cn2b-simple-pending'))).toBe(true);
+    expect(within(decision, byTestId(WORKSPACE, 'cn2b-simple-closed'))).toBe(true);
+    for (const slot of [submit, decision]) {
+      expect(descendants(slot).filter(ts.isJsxExpression).map((e) => e.expression?.getText())).toEqual(['lifecycleActions']);
+    }
+    // The block is the screen's one copy: its handlers are the canonical lifecycle actions, and Advanced places it too.
+    const block = ast(SCREEN).all.find((n): n is ts.VariableDeclaration =>
+      ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.name.text === 'lifecycleActions') as ts.VariableDeclaration;
+    expect(block, 'const lifecycleActions').toBeDefined();
+    for (const handler of ['onSubmit', 'onApprove', 'onReject']) expect(callsOf(block, handler), handler).toHaveLength(1);
+    expect(descendants(stageEntry('readiness')).some((n) => ts.isIdentifier(n) && n.text === 'lifecycleActions')).toBe(true);
+    // No GENERIC way into Advanced is offered, by name or by switch. CN-UI-S1 HC1: the screen sets
+    // 'advanced' in exactly ONE place, the guarded contextual escape (asserted structurally above)…
+    for (const f of [SCREEN, ...SURFACE]) expect(code(f), f).not.toMatch(/onSwitchToAdvanced|cn2b-simple-(advanced-link|continue-advanced|handoff)/);
+    const advancedSets = callsOf(ast(SCREEN).sf, 'setMode').filter((c) => c.arguments[0]?.getText() === "'advanced'");
+    expect(advancedSets.map((c) => enclosingDeclaration(c))).toEqual(['onExpertEscape']);
+    // …and no file of the Simple surface can switch modes at all.
+    for (const f of SURFACE) expect(code(f), f).not.toMatch(/\bsetMode\b|setMode\('advanced'\)/);
+    // The handoff copy is rendered by no file (the keys stay: A7.2.2 forbids removing a dictionary key).
+    for (const unused of ['cn2b_simple_final_handoff', 'cn2b_simple_final_continue_advanced', 'cn2b_simple_advanced_options', 'cn2b_simple_advanced_hint']) {
+      for (const f of [SCREEN, ...SURFACE]) expect(code(f), `${f}: ${unused}`).not.toContain(unused);
+    }
   });
 });
 

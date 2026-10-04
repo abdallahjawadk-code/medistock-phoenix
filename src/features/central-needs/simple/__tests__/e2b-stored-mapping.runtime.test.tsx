@@ -411,7 +411,7 @@ describe('E2-B.10 — reset rules: no draft survives a change of context', () =>
         revision={revision(id)} isDraft revisionDataReady canImport canEdit busy={false} activity={null}
         onOpenRevision={() => {}} preview={{ phase: 'idle' }} pendingFile={null} onPickFile={() => {}} onVerify={() => {}}
         error={null} notice={null} readiness={null} batches={batches} beneficiaryColumns={[]} careInstitutions={[]}
-        records={[]} dispositions={[]} activeSessionId={null} onChanged={() => {}} onSwitchToAdvanced={() => {}}
+        records={[]} dispositions={[]} activeSessionId={null} onChanged={() => {}}
       />
     );
     const view = render(workspace('rev-1', [FILE_BATCH]));

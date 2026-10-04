@@ -10,6 +10,10 @@
  * Six steps, always in this order, always all six rendered, so the human can
  * see how far along the whole task they are without six workspaces being
  * shown at once (owner task section 10).
+ *
+ * CN-UI-S1 — the six steps are the whole normal workflow, end to end: no
+ * summary stop between analysis and review, and the need lines are a step of
+ * their own before the outcome (submit, decision, terminal state).
  */
 import { t } from '@/shared/i18n/strings';
 import type { SimpleStep } from './CentralNeedsSimpleWorkspace';
@@ -17,9 +21,9 @@ import type { SimpleStep } from './CentralNeedsSimpleWorkspace';
 export const SIMPLE_STEPS: ReadonlyArray<{ id: SimpleStep; titleKey: string }> = [
   { id: 'upload', titleKey: 'cn2b_simple_step_upload' },
   { id: 'analyzing', titleKey: 'cn2b_simple_step_analyzing' },
-  { id: 'summary', titleKey: 'cn2b_simple_step_summary' },
   { id: 'review-institution', titleKey: 'cn2b_simple_step_institutions' },
   { id: 'review-material', titleKey: 'cn2b_simple_step_materials' },
+  { id: 'need-lines', titleKey: 'cn2b_simple_step_need_lines' },
   { id: 'pending', titleKey: 'cn2b_simple_step_outcome' },
 ];
 

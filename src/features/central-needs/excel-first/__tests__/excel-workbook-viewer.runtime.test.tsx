@@ -653,7 +653,7 @@ describe('Simple Mode integration — the viewer is fed the existing preview res
       isDraft: true, revisionDataReady: true, canImport: true, canEdit: true, busy: false, activity: null,
       onOpenRevision: () => {}, preview: { phase: 'idle' }, pendingFile: null, onPickFile: () => {}, onVerify: () => {},
       error: null, notice: null, readiness: null, beneficiaryColumns: [], careInstitutions: [], records: [],
-      dispositions: [], activeSessionId: null, onChanged: () => {}, onSwitchToAdvanced: () => {},
+      dispositions: [], activeSessionId: null, onChanged: () => {},
       ...over,
     };
   }

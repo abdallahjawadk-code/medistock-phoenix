@@ -1415,10 +1415,10 @@
    properties throughout, one layout mirrored for Arabic RTL and English LTR.
 
    The shape of the page: ONE column, centred and spacious — a title block,
-   the six-step progress indicator, ONE task card for the current step, and
-   a quiet Advanced entry at the very end. No command header, no workflow
-   rail, no diagnostics: those belong to Advanced Mode and are not rendered
-   around this view. Every state (done / current / waiting / ready / needs
+   the six-step progress indicator and ONE task card for the current step
+   (CN-UI-S1: the whole normal workflow, with no Advanced handoff). No command
+   header, no workflow rail, no diagnostics: those belong to Advanced Mode
+   and are not rendered around this view. Every state (done / current / waiting / ready / needs
    review) carries a text label or a shape as well as a hue (WCAG 1.4.1).
    ────────────────────────────────────────────────────────────────────────── */
 
@@ -1938,62 +1938,31 @@
 .cn2b-simple-phase__text { font-weight: 600; }
 .cn2b-simple-phase__state { font-size: 0.78rem; font-weight: 700; letter-spacing: 0.03em; }
 
-/* ── Step 3 — summary ────────────────────────────────────────────────────── */
-.cn2b-simple-stats {
-  margin: 0;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-}
-
-/* dt (label) precedes dd (value) in the markup; the value sits on top visually. */
-.cn2b-simple-stat {
+/* ── CN-UI-S1 — compact session context (not a summary step) ─────────────────
+   The canonical Work Session selector plus two scope-labelled figures, in one
+   quiet strip above the task card. Never a .cn2b-simple-card. */
+.cn2b-simple-context {
   display: flex;
-  flex-direction: column-reverse;
-  gap: 4px;
-  padding: 16px;
-  border-radius: 16px;
-  background: var(--s2);
-  border: 1px solid var(--brd);
+  flex-direction: column;
+  gap: 10px;
   min-inline-size: 0;
 }
 
-.cn2b-simple-stat__value {
+.cn2b-simple-context__figures {
   margin: 0;
-  font-size: clamp(1.8rem, 3.5vw, 2.4rem);
-  font-weight: 800;
-  line-height: 1.1;
-  color: var(--t);
-  font-variant-numeric: tabular-nums;
-}
-
-.cn2b-simple-stat__label {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  font-size: 0.9rem;
-  font-weight: 700;
-  color: var(--t);
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  font-size: 0.86rem;
+  color: var(--t2);
 }
 
-.cn2b-simple-stat__scope { font-size: 0.76rem; font-weight: 500; color: var(--t2); }
-
-.cn2b-simple-review-count {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 14px 16px;
-  border-radius: var(--r2);
-  background: var(--chipW);
-  border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--brd));
-  color: var(--t);
-  font-size: 1rem;
-  font-weight: 700;
-}
-
-.cn2b-simple-review-count svg { flex: 0 0 auto; color: var(--warn); }
-.cn2b-simple-review-count[data-empty='true'] { background: var(--chip); border-color: color-mix(in srgb, var(--ok) 45%, var(--brd)); }
-.cn2b-simple-review-count[data-empty='true'] svg { color: var(--ok); }
+.cn2b-simple-context__figure { display: flex; align-items: baseline; gap: 6px; min-inline-size: 0; }
+.cn2b-simple-context__figure dt { display: inline-flex; flex-wrap: wrap; gap: 4px; font-weight: 600; color: var(--t); }
+.cn2b-simple-context__figure dd { margin: 0; font-weight: 800; color: var(--t); font-variant-numeric: tabular-nums; }
+.cn2b-simple-context__scope { font-weight: 500; color: var(--t2); }
+.cn2b-simple-context__scope::before { content: '('; }
+.cn2b-simple-context__scope::after { content: ')'; }
 
 /* ── Steps 4 and 5 — one decision at a time ──────────────────────────────── */
 .cn2b-simple-review-head { display: flex; flex-direction: column; gap: 4px; }
@@ -2020,7 +1989,6 @@
 }
 
 .cn2b-simple-review-head__hint { margin: 0; font-size: 0.9rem; line-height: 1.55; color: var(--t2); }
-.cn2b-simple-review-foot { display: flex; justify-content: flex-start; }
 
 /* "Found in the file" — evidence, visually distinct from the system's match. */
 .cn2b-simple-evidence {
@@ -2197,18 +2165,59 @@
 
 .cn2b-simple-blockers svg { flex: 0 0 auto; color: var(--warn); margin-block-start: 3px; }
 
-.cn2b-simple-handoff {
+/* CN-UI-S1 — the screen's lifecycle block (submit; approve / reject), placed in
+   the outcome card. Its buttons keep a real touch height in Simple. */
+.cn2b-simple-lifecycle { inline-size: 100%; }
+.cn2b-simple-lifecycle .cn2b-btn { min-block-size: var(--touch-target, 44px); padding-inline: 18px; }
+.cn2b-simple-lifecycle .cn2b-actions:empty { display: none; }
+
+/* CN-UI-S1 HC1 — the contextual expert escape, inside the card it belongs to:
+   why this view cannot resolve the server's blocker, then ONE button. A quiet
+   bordered block (never a second card, never a footer); the state is carried by
+   its heading text and icon, not by hue alone. */
+.cn2b-simple-expert {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  inline-size: 100%;
+  min-inline-size: 0;
+  padding: 14px 16px;
+  border: 1px solid color-mix(in srgb, var(--warn) 40%, var(--brd));
+  border-radius: var(--r2);
+  background: var(--s2);
+}
+.cn2b-simple-expert__title { margin: 0; display: flex; align-items: center; gap: 6px; font-size: 0.95rem; font-weight: 700; color: var(--t); }
+.cn2b-simple-expert__title svg { flex: 0 0 auto; color: var(--warn); }
+.cn2b-simple-expert__body { margin: 0; font-size: 0.9rem; line-height: 1.55; color: var(--t2); overflow-wrap: anywhere; }
+/* PhoenixButton writes `white-space: nowrap` inline, so only !important lets a long stage name wrap instead of clipping. */
+.cn2b-simple-expert .phoenix-button {
+  min-block-size: var(--touch-target, 44px);
+  max-inline-size: 100%;
+  white-space: normal !important;
+  overflow-wrap: anywhere;
+  padding-block: 8px !important;
+  text-align: start;
+}
+
+/* CN-UI-S1 — the canonical need-line panel beside the task card (auxiliary,
+   NOT a second task card): quieter chrome, full width, its own scroll areas. */
+.cn2b-simple-needlines {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding: 18px 20px;
-  border-radius: 16px;
-  background: var(--s2);
+  min-inline-size: 0;
+  padding: clamp(14px, 2.4vw, 22px);
+  background: var(--s);
   border: 1px solid var(--brd);
-  inline-size: 100%;
+  border-radius: 18px;
 }
 
-.cn2b-simple-handoff__text { margin: 0; font-size: 1rem; font-weight: 600; line-height: 1.55; color: var(--t); }
+.cn2b-simple-needlines__title { margin: 0; font-size: 1.05rem; font-weight: 700; color: var(--t); }
+
+/* In Simple, the canonical panel's controls keep a real touch height. */
+.cn2b-simple-needlines .phoenix-button,
+.cn2b-simple-needlines .cn2b-btn { min-block-size: var(--touch-target, 44px); }
 
 .cn2b-simple-unavailable {
   inline-size: 100%;
@@ -2627,23 +2636,6 @@
   .cn2b-approve__actions .phoenix-button { inline-size: 100%; min-block-size: var(--touch-target, 44px); }
 }
 
-/* ── The quiet Advanced entry ────────────────────────────────────────────── */
-.cn2b-simple-footer {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-  padding-block: 14px 0;
-  border-block-start: 1px solid var(--brd);
-}
-
-.cn2b-simple-footer__hint {
-  flex: 1 1 240px;
-  min-inline-size: 0;
-  font-size: 0.82rem;
-  color: var(--t2);
-}
-
 .cn2b-simple .phoenix-button:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
 
 @media (prefers-reduced-motion: reduce) {
@@ -2658,16 +2650,13 @@
   .cn2b-simple-card { padding: 18px 16px; border-radius: 18px; gap: 14px; }
   .cn2b-simple-stepper__list { gap: 5px; }
   .cn2b-simple-stepper__label { display: none; }
-  .cn2b-simple-stats { grid-template-columns: 1fr; }
-
-  .cn2b-simple-stat {
-    flex-direction: row;
-    align-items: center;
-    justify-content: space-between;
-    padding: 12px 14px;
-  }
 
   .cn2b-simple-card__actions { flex-direction: column; align-items: stretch; }
+  .cn2b-simple-lifecycle .cn2b-actions { flex-direction: column; align-items: stretch; }
+  .cn2b-simple-lifecycle .cn2b-btn { inline-size: 100%; white-space: normal; }
+  .cn2b-simple-expert { padding: 12px; }
+  .cn2b-simple-expert .phoenix-button { inline-size: 100%; }
+  .cn2b-simple-needlines { padding: 12px 10px; border-radius: 14px; }
 
   .cn2b-simple-card__actions .phoenix-button {
     inline-size: 100%;
@@ -2680,7 +2669,6 @@
   .cn2b-simple-dropzone__target { padding: 24px 14px; min-block-size: 150px; }
   .cn2b-simple-dropzone__picked { flex-direction: column; align-items: flex-start; }
   .cn2b-simple-evidence__row { grid-template-columns: 1fr; gap: 2px; }
-  .cn2b-simple-footer { flex-direction: column; align-items: flex-start; }
 }
 
 /* ── E1 Excel-First — read-only original workbook viewer ─────────────────────

@@ -173,11 +173,10 @@ const remaining = () => screen.getByTestId('cn2b-simple-material-progress').text
 const REMAINING = (n: number) => `${t('cn2b_simple_remaining', 'en')}: ${n}`;
 const lastOrder = (fn: ReturnType<typeof vi.fn>) => Math.max(...fn.mock.invocationCallOrder);
 
+/** CN-UI-S1: no summary to pass — the analyzed dataset lands on its review queue directly. */
 async function openMaterialReview() {
   render(<CentralNeedsScreen />);
-  await waitFor(() => expect(step()).toBe('summary'));
   await waitFor(() => expect(listDispositions).toHaveBeenCalledWith(SESSION_ID));
-  fireEvent.click(screen.getByTestId('cn2b-simple-review-start'));
   await waitFor(() => expect(step()).toBe('review-material'));
 }
 
@@ -322,9 +321,7 @@ describe('C6-B1 — a confirmed Simple material decision re-reads the server, an
   it('B1-6 an institution decision keeps the revision refresh and does not re-read dispositions', async () => {
     columns = [COLUMN_TO_REVIEW];
     render(<CentralNeedsScreen />);
-    await waitFor(() => expect(step()).toBe('summary'));
     await waitFor(() => expect(listDispositions).toHaveBeenCalledWith(SESSION_ID));
-    fireEvent.click(screen.getByTestId('cn2b-simple-review-start'));
     await waitFor(() => expect(step()).toBe('review-institution'));
     const dispositionReads = listDispositions.mock.calls.length;
     const sessionReads = listImportSessions.mock.calls.length;

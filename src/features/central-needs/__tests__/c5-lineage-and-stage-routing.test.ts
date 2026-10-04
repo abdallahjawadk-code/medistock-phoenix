@@ -247,9 +247,11 @@ describe('C5 §7 — Simple Mode explains §7.1 and every §7.2 reason explicitl
       expect(T[key].en.trim(), key).not.toBe('');
       expect(T[key].ar, key).not.toBe(T[key].en);
     }
-    // §7.1: controlled replacement/re-import, never "repaired in place".
-    expect(T.cn2b_simple_blocker_source_evidence_invalid.en).toMatch(/not fixed in place/);
-    expect(T.cn2b_simple_blocker_source_evidence_invalid.en).toMatch(/re-import/);
+    // §7.1 (neutralised by CN-UI-S1 HC1.3): invalid IMMUTABLE evidence is never repaired here — and no replacement or re-import is
+    // promised, because no in-app control offers one; the person is pointed at the readiness details for diagnosis and escalation.
+    expect(T.cn2b_simple_blocker_source_evidence_invalid.en).toMatch(/cannot be repaired in this workflow/);
+    expect(T.cn2b_simple_blocker_source_evidence_invalid.en).toMatch(/diagnosis and controlled escalation/);
+    expect(T.cn2b_simple_blocker_source_evidence_invalid.en).not.toMatch(/re-?import|replacement/i);
     // §7.2 stale binding: re-pin the current numeric head, or delete and re-designate.
     expect(T.cn2b_simple_blocker_lineage_source_quantity_override_binding_invalid.en).toMatch(/re-pin the current numeric/);
     expect(T.cn2b_simple_blocker_lineage_source_quantity_override_binding_invalid.en).toMatch(/delete and re-designate/);

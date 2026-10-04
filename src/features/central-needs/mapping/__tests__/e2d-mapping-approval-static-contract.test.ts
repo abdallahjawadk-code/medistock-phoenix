@@ -169,7 +169,9 @@ describe('E2-D.14 — wording and layout', () => {
     expect(code(PANEL)).toMatch(/className="cn2b-approve"/);
     expect(code(PANEL)).not.toMatch(/cn2b-simple-card/);
     const css = read('src/shared/lib/central-needs.css');
-    const block = css.slice(css.indexOf('.cn2b-approve {'), css.indexOf('/* ── The quiet Advanced entry'));
+    // CN-UI-S1 removed the "quiet Advanced entry" section this slice used to end
+    // at; the rule that directly followed it closes the SAME block.
+    const block = css.slice(css.indexOf('.cn2b-approve {'), css.indexOf('.cn2b-simple .phoenix-button:focus-visible'));
     expect(block.length).toBeGreaterThan(200);
     expect(block).not.toMatch(/(^|[\s;{])(margin-left|margin-right|padding-left|padding-right|left|right|text-align)\s*:/m);
   });

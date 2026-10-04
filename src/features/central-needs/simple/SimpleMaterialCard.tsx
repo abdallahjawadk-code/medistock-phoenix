@@ -103,9 +103,43 @@ interface Props {
    * retried.
    */
   onRefused?: (refusal: CentralNeedsError) => void;
+  /**
+   * CN-UI-S1 — this card's presentation activity, in the SAME shape the
+   * Advanced disposition table reports (`busy` = its write is in flight,
+   * `dirty` = local work not yet sent, `failed` = its last write was refused).
+   * The screen feeds it into the Work Session guard, so a session switch waits
+   * for an in-flight decision and asks before local work is dropped.
+   * CN-UI-S1 HC1 — "local work" is any of: the material picker open, a typed
+   * search, the "not a material" reason surface open, a typed reason. None of
+   * these is persisted, and none needs a business write to count. Reported,
+   * never decided here; it changes no write.
+   */
+  onActivityChange?: (activity: { busy: boolean; dirty: boolean; failed: boolean }) => void;
 }
 
-export function SimpleMaterialCard({ lang, importSessionId, editable, targetEntity, fields, onResolved, onRefused }: Props) {
+const IDLE_ACTIVITY = { busy: false, dirty: false, failed: false } as const;
+
+/**
+ * CN-UI-S1 HC1 — the FROZEN dirty contract of this card: has the person done
+ * local work a Work Session switch must not drop silently? Opening the picker,
+ * typing a search, opening the "not a material" reason surface and typing a
+ * reason are each meaningful — none of them waits for a persisted write to
+ * count. Pure and exported so the exact contract is pinned directly (each term
+ * alone), independently of which UI paths can reach it.
+ */
+export function materialCardHasLocalWork(state: {
+  picking: boolean;
+  query: string;
+  showNotApplicable: boolean;
+  notApplicableReason: string;
+}): boolean {
+  return state.picking
+    || state.query.trim() !== ''
+    || state.showNotApplicable
+    || state.notApplicableReason.trim() !== '';
+}
+
+export function SimpleMaterialCard({ lang, importSessionId, editable, targetEntity, fields, onResolved, onRefused, onActivityChange }: Props) {
   const [query, setQuery] = useState('');
   const [candidates, setCandidates] = useState<CentralItemOption[]>([]);
   const [picking, setPicking] = useState(false);
@@ -113,6 +147,17 @@ export function SimpleMaterialCard({ lang, importSessionId, editable, targetEnti
   const [error, setError] = useState<string | null>(null);
   const [notApplicableReason, setNotApplicableReason] = useState('');
   const [showNotApplicable, setShowNotApplicable] = useState(false);
+
+  // Every one of those has a way back to clean (Cancel resets its own state),
+  // so dirty clears when the work does.
+  const dirty = materialCardHasLocalWork({ picking, query, showNotApplicable, notApplicableReason });
+  useEffect(() => {
+    onActivityChange?.({ busy, dirty, failed: error !== null });
+  }, [busy, dirty, error, onActivityChange]);
+  // The queue replaces this card once its decision is re-read, and a session
+  // switch unmounts it: its last report must not outlive it (a stale `busy`
+  // would hold the Work Session switch closed).
+  useEffect(() => () => onActivityChange?.(IDLE_ACTIVITY), [onActivityChange]);
 
   const evidence = useMemo(() => evidenceFields(fields), [fields]);
   const sourceUnitText = useMemo(() => sourceUnitOf(fields), [fields]);
@@ -291,7 +336,7 @@ export function SimpleMaterialCard({ lang, importSessionId, editable, targetEnti
             ))}
             {candidates.length === 0 && <li className="cn2b-simple-card__empty">{t('cn2b_simple_no_results', lang)}</li>}
           </ul>
-          <PhoenixButton type="button" variant="ghost" disabled={busy} onClick={() => setPicking(false)}>
+          <PhoenixButton type="button" variant="ghost" disabled={busy} onClick={() => { setPicking(false); setQuery(''); }}>
             {t('cn2b_simple_cancel', lang)}
           </PhoenixButton>
         </div>
