@@ -33,7 +33,7 @@
  * to the screen, which re-reads the revision when its lifecycle moved (§17);
  * and a bulk decision refused part-way says how many were already saved.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
@@ -41,6 +41,8 @@ import { centralNeedsErrorText } from './central-needs.i18n';
 import { numericOverridePreview, overrideHeads, overrideValueText } from './central-needs.lineage';
 import {
   CentralNeedsError,
+  centralItemDiscriminators,
+  centralItemQueryIsSearchable,
   recordFieldOverride,
   searchCentralItems,
   setRecordDisposition,
@@ -180,6 +182,16 @@ export function CentralNeedsDispositionTable({
   const [bulkPreview, setBulkPreview] = useState<number | null>(null);
   const [itemQuery, setItemQuery] = useState('');
   const [items, setItems] = useState<CentralItemOption[]>([]);
+  /**
+   * PRE3-A — the registered item the reviewer explicitly SELECTED from the
+   * results. A `mapped` decision sends only this item's id: typed text is a
+   * search term and never a central item id.
+   */
+  const [chosenItem, setChosenItem] = useState<CentralItemOption | null>(null);
+  const [itemSearchPhase, setItemSearchPhase] = useState<'idle' | 'too_short' | 'searching' | 'done' | 'failed'>('idle');
+  const [itemSearchError, setItemSearchError] = useState<CentralNeedsError | string | null>(null);
+  /** Newest-request-wins: a slower earlier search never overwrites a later one. */
+  const itemSearchSeq = useRef(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<CentralNeedsError | string | null>(null);
   /**
@@ -232,6 +244,10 @@ export function CentralNeedsDispositionTable({
     setBulkPreview(null);
     setItemQuery('');
     setItems([]);
+    itemSearchSeq.current += 1;
+    setChosenItem(null);
+    setItemSearchPhase('idle');
+    setItemSearchError(null);
     setError(null);
     setBulkPartial(null);
     setOverrideFor(null);
@@ -314,13 +330,34 @@ export function CentralNeedsDispositionTable({
     setDecisionFilter('all');
   }
 
+  /**
+   * PRE3-A — the shared material resolver, under the same discipline as the
+   * Simple card: a short query is "keep typing", a failure is a failure (never
+   * "no results"), and an empty answer means no active registered material
+   * matches. Searching selects nothing; a new term clears the selection.
+   */
   async function onSearchItems(query: string) {
     setItemQuery(query);
-    if (query.trim().length < 2) { setItems([]); return; }
-    try {
-      setItems(await searchCentralItems(query.trim()));
-    } catch {
+    setChosenItem(null);
+    const seq = (itemSearchSeq.current += 1);
+    const term = query.trim();
+    setItemSearchError(null);
+    if (!centralItemQueryIsSearchable(term)) {
       setItems([]);
+      setItemSearchPhase(term === '' ? 'idle' : 'too_short');
+      return;
+    }
+    setItemSearchPhase('searching');
+    try {
+      const found = await searchCentralItems(term);
+      if (seq !== itemSearchSeq.current) return;
+      setItems(found);
+      setItemSearchPhase('done');
+    } catch (e: unknown) {
+      if (seq !== itemSearchSeq.current) return;
+      setItems([]);
+      setItemSearchError(e instanceof CentralNeedsError ? e : 'load_failed');
+      setItemSearchPhase('failed');
     }
   }
 
@@ -600,13 +637,48 @@ export function CentralNeedsDispositionTable({
               type="search"
               value={itemQuery}
               onChange={(e) => void onSearchItems(e.target.value)}
-              list="cn2b-item-options"
             />
-            <datalist id="cn2b-item-options">
-              {items.map((i) => <option key={i.id} value={i.id} label={i.name} />)}
-            </datalist>
           </label>
           <p className="cn2b-hint">{t('cn2b_item_search_explainer', lang)}</p>
+          {itemSearchPhase !== 'idle' && (
+            <p className="cn2b-searchstate" data-phase={itemSearchPhase} role="status">
+              {itemSearchPhase === 'too_short' && t('cn2b_material_search_min', lang)}
+              {itemSearchPhase === 'searching' && t('cn2b_material_searching', lang)}
+              {itemSearchPhase === 'done' && (items.length === 0
+                ? t('cn2b_material_not_registered', lang)
+                : `${t('cn2b_material_search_results', lang)}: ${items.length}`)}
+              {itemSearchPhase === 'failed' && t('cn2b_material_search_failed', lang)}
+            </p>
+          )}
+          {itemSearchPhase === 'failed' && itemSearchError !== null && (
+            <p className="cn2b-error" role="alert">{centralNeedsErrorText(itemSearchError, lang)}</p>
+          )}
+          {itemSearchPhase === 'done' && items.length === 0 && (
+            <p className="cn2b-hint">{t('cn2b_material_not_registered_note', lang)}</p>
+          )}
+          {items.length > 0 && (
+            <ul className="cn2b-list" aria-label={t('cn2b_material_search_results', lang)}>
+              {items.map((item) => (
+                <li key={item.id} className="cn2b-list__row">
+                  {/* Selecting writes nothing; the row's own map action does. */}
+                  <button
+                    type="button"
+                    className="cn2b-btn cn2b-btn--sm"
+                    aria-pressed={chosenItem?.id === item.id}
+                    onClick={() => setChosenItem(item)}
+                  >
+                    {item.name} ({item.unit})
+                    {centralItemDiscriminators(item).map((fact) => ` · ${t(fact.labelKey, lang)}: ${fact.value}`).join('')}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <p className="cn2b-hint" role="status" data-testid="cn2b-item-selected">
+            {chosenItem
+              ? `${t('cn2b_item_selected', lang)}: ${chosenItem.name} (${chosenItem.unit})`
+              : t('cn2b_item_none_selected', lang)}
+          </p>
         </div>
       )}
 
@@ -812,8 +884,8 @@ export function CentralNeedsDispositionTable({
                             <button
                               type="button"
                               className="cn2b-btn cn2b-btn--sm"
-                              disabled={busy || itemQuery.trim() === ''}
-                              onClick={() => void applyOne(group.targetEntity, 'mapped', itemQuery.trim())}
+                              disabled={busy || chosenItem === null}
+                              onClick={() => chosenItem && void applyOne(group.targetEntity, 'mapped', chosenItem.id)}
                             >
                               {t('cn2b_decide_map', lang)}
                             </button>

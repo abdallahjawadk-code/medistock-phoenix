@@ -1830,7 +1830,7 @@ export const T: Dict = {
   cn2b_recommended_task: { ar: 'الإجراء الموصى به', en: 'Recommended task' },
   cn2b_workspace_loading: { ar: 'جارٍ تحميل بيانات الإصدار…', en: 'Loading revision data…' },
   cn2b_work_session: { ar: 'جلسة العمل', en: 'Work Session' },
-  cn2b_work_session_search: { ar: 'بحث باسم المصدر أو رقم الجلسة', en: 'Search by source name or session number' },
+  cn2b_work_session_search: { ar: 'بحث باسم الملف أو مسار المصدر أو معرف الجلسة', en: 'Search by filename, source path, or session identifier' },
   cn2b_work_session_source_unknown: { ar: 'مصدر غير مسمّى', en: 'Unnamed source' },
   cn2b_work_session_none: { ar: 'لا توجد جلسة مكتملة متاحة', en: 'No completed session available' },
   cn2b_session_unbatched_fallback: { ar: 'عنصر غير موثّق في دفعة', en: 'Entry not represented in a trusted batch' },
@@ -1841,6 +1841,24 @@ export const T: Dict = {
   cn2b_session_blockers: { ar: 'موانع منسوبة', en: 'Attributed blockers' },
   cn2b_session_no_attributed_blockers: { ar: 'لا توجد موانع منسوبة لهذه الجلسة', en: 'No blockers are attributed to this session' },
   cn2b_unattributed_blockers: { ar: 'بعض الموانع غير منسوبة إلى جلسة', en: 'Some blockers are not attributed to a session' },
+  /* PRE3-B — Work Session search: a stable number, server-side matches, and a selection that is never a hit. */
+  cn2b_work_session_ordinal: { ar: 'الجلسة __K__ من __N__', en: 'Session __K__ of __N__' },
+  cn2b_work_session_source_unavailable: { ar: 'اسم المصدر غير متاح', en: 'Source name unavailable' },
+  cn2b_work_session_search_running: { ar: 'جارٍ البحث…', en: 'Searching…' },
+  cn2b_work_session_search_results: { ar: 'جلسات مطابقة', en: 'Matching sessions' },
+  cn2b_work_session_search_empty: { ar: 'لا توجد جلسة مطابقة في هذا الإصدار.', en: 'No session in this revision matches.' },
+  cn2b_work_session_search_failed: { ar: 'تعذّر تنفيذ البحث — لم تُعرض أي جلسة.', en: 'The search could not run — no session is shown.' },
+  cn2b_work_session_search_truncated: { ar: 'تُعرض أول المطابقات فقط — اجعل البحث أدق لرؤيتها كلها.', en: 'Only the first matches are shown — refine the search to see them all.' },
+  cn2b_work_session_matched_on: { ar: 'طابق في', en: 'Matched on' },
+  cn2b_work_session_match_ordinal: { ar: 'رقم الجلسة', en: 'session number' },
+  cn2b_work_session_match_session_id: { ar: 'معرف الجلسة', en: 'session identifier' },
+  cn2b_work_session_match_session_id_prefix: { ar: 'بداية معرف الجلسة', en: 'start of the session identifier' },
+  cn2b_work_session_match_entry_path: { ar: 'مسار المصدر', en: 'source path' },
+  cn2b_work_session_match_container_filename: { ar: 'اسم الملف', en: 'filename' },
+  cn2b_work_session_match_source_filename: { ar: 'اسم الملف المخزّن', en: 'stored filename' },
+  /* PRE3 N1 — a server hit for a session the loaded list does not hold: the list is out of date, never "no match". */
+  cn2b_work_session_search_unlisted: { ar: 'جلسات مطابقة لا تظهر في القائمة المحمّلة: __N__ — القائمة قديمة، وقد تكون أرقام الجلسات والمجموع المعروضان قد تغيّرا. أعد تحميل الإصدار لرؤيتها.', en: 'Matching sessions not in the loaded list: __N__ — the list is out of date, and the session numbers and total shown may have changed. Reload the revision to see them.' },
+  cn2b_work_session_reload: { ar: 'إعادة تحميل الإصدار', en: 'Reload the revision' },
   cn2b_stage_review_waiting: { ar: 'اختر جلسة استيراد مكتملة من مرحلة المصدر والاستيراد لمراجعة سطورها.', en: 'Choose a completed import session in Source and import to review its rows.' },
   cn2b_stage_revision_waiting: { ar: 'افتح مراجعة سنوية أو اخترها من مرحلة الخطة أولًا.', en: 'Open or select an annual revision in Plan first.' },
   /* UX-1 — the operational summary strip. Every figure is counted off state the
@@ -1925,7 +1943,22 @@ export const T: Dict = {
   cn2b_decide_na: { ar: 'تعليم غير منطبق', en: 'Mark not applicable' },
   cn2b_item_search: { ar: 'ابحث عن صنف مركزي', en: 'Search central items' },
   /* UX-2A — finding a material proposes nothing; the reviewer still applies it. */
-  cn2b_item_search_explainer: { ar: 'البحث يعرض الأصناف فقط. لا يُربط أي سطر تلقائيًا — اضغط «ربط بالصنف المحدد» على السطر المقصود.', en: 'Searching only lists materials. No row is ever mapped automatically — press “Map to selected item” on the row you mean.' },
+  cn2b_item_search_explainer: { ar: 'البحث يعرض المواد المسجلة الفعّالة فقط. حدّد نتيجة واحدة، ثم اضغط «ربط بالصنف المحدد» على السطر المقصود. لا يُربط أي سطر تلقائيًا، ولا يُقبل نص حر كمادة.', en: 'Searching lists active registered materials only. Select one result, then press “Map to selected item” on the row you mean. No row is ever mapped automatically, and free text is never accepted as a material.' },
+  /* PRE3-A — one registered-material search for both presentations. */
+  cn2b_item_selected: { ar: 'الصنف المحدد', en: 'Selected item' },
+  cn2b_item_none_selected: { ar: 'لم يُحدَّد أي صنف بعد — لا يمكن الربط قبل التحديد.', en: 'No item selected yet — nothing can be mapped until one is.' },
+  cn2b_material_name_ar: { ar: 'الاسم العربي أو البديل', en: 'Arabic / alternate name' },
+  cn2b_material_search_min: { ar: 'اكتب حرفين على الأقل للبحث في المواد المسجلة.', en: 'Type at least two characters to search the registered materials.' },
+  cn2b_material_searching: { ar: 'جارٍ البحث في المواد المسجلة…', en: 'Searching the registered materials…' },
+  cn2b_material_search_results: { ar: 'مواد مسجلة مطابقة', en: 'Matching registered materials' },
+  /* PRE3 Run 4 — the picker lists a capped window and says when more materials match than it shows. */
+  cn2b_material_search_capped: {
+    ar: 'توجد مواد مسجلة مطابقة أكثر مما يُعرض هنا — أضِف إلى البحث ما يميّز المادة لتضييق النتائج.',
+    en: 'More registered materials match than are listed here — add to the search what sets the material apart to narrow the list.',
+  },
+  cn2b_material_search_failed: { ar: 'تعذّر البحث في المواد المسجلة — هذا لا يعني عدم وجود نتائج.', en: 'The registered-material search could not run — this does not mean there are no results.' },
+  cn2b_material_not_registered: { ar: 'المادة غير مسجلة', en: 'Material not registered' },
+  cn2b_material_not_registered_note: { ar: 'لا توجد مادة مسجلة وفعّالة تطابق هذا البحث. يبقى الصف دون قرار: لا تُنشأ أي مادة ولا يُربط الصف بشيء. ابحث باسم علمي أو تجاري أو رمز آخر، وإن لم يكن الصف مادة فسجّل ذلك قرارًا مستقلًا مع ذكر السبب.', en: 'No active registered material matches this search. The row stays undecided: no material is created and the row is not mapped. Search again by another scientific name, trade name or code; if the row is not a material, record that as a separate decision with a reason.' },
   cn2b_entities_total: { ar: 'إجمالي السطور', en: 'Row entities' },
   cn2b_entities_undecided: { ar: 'بلا قرار', en: 'Undecided' },
   /* UX-2A — review workbench counts and presentation filters. */
@@ -2187,6 +2220,10 @@ export const T: Dict = {
   cn2b_err_archive_contains_rejected_entry: { ar: 'الأرشيف يحوي ملفًا مرفوضًا — لم تُنشأ أي دفعة.', en: 'The archive contains a rejected workbook — no batch was created.' },
   cn2b_err_server_not_configured: { ar: 'الخادم غير مهيأ.', en: 'The server is not configured.' },
   cn2b_err_disposition_failed: { ar: 'تعذّر حفظ القرار.', en: 'Could not save the decision.' },
+  cn2b_err_central_item_not_found: { ar: 'المادة المختارة غير موجودة في الدليل المركزي. لم يُحفظ أي قرار.', en: 'The chosen material does not exist in the central catalog. No decision was saved.' },
+  /* PRE3 M220 — the server refuses a central item that is not active, at mapping and at submit / approve. */
+  cn2b_err_central_item_not_active: { ar: 'المادة المختارة غير فعّالة (موقوفة أو متوقفة نهائياً) ولا يمكن ربطها. لم يُحفظ أي قرار — اختر مادة فعّالة، أو سجّل السطر غير منطبق مع ذكر السبب.', en: 'The chosen material is not active (inactive or discontinued) and cannot be mapped. No decision was saved — choose an active material, or record the row as not applicable with a reason.' },
+  cn2b_err_central_needs_central_item_not_active: { ar: 'تشير هذه الخطة إلى مادة مركزية لم تعد فعّالة، فلم يُنفَّذ الإجراء. قبل الإرسال: أعد ربط السطور المعنية بمادة فعّالة في المسودة. عند الاعتماد: ارفض الإصدار وصحّحه عبر مسودة جديدة.', en: 'This plan references a central material that is no longer active, so nothing was done. Before submitting: re-map those rows to an active material in the draft. At approval: reject the revision and correct it through a new draft.' },
   cn2b_err_submit_failed: { ar: 'تعذّر التقديم.', en: 'Could not submit.' },
   cn2b_err_approve_failed: { ar: 'تعذّر الاعتماد.', en: 'Could not approve.' },
   cn2b_err_reject_failed: { ar: 'تعذّر الرفض.', en: 'Could not reject.' },
@@ -2229,6 +2266,8 @@ export const T: Dict = {
   cn2b_err_central_needs_action_unavailable: { ar: 'هذا الإجراء غير متاح حاليًا — قد يكون موقوفًا مؤقتًا للصيانة. لم يتغيّر شيء.', en: 'This action is not available right now — it may be paused for maintenance. Nothing was changed.' },
   cn2b_err_retryable_contention: { ar: 'كان الخادم منشغلًا بتغيير متعارض فلم يُكمل هذا الطلب، ولم يُطبَّق هذا الطلب — حاول مرة أخرى.', en: 'The server was busy with a conflicting change and did not complete this request, so this request was not applied — try again.' },
   cn2b_err_field_overrides_read_inconsistent: { ar: 'تعذّرت قراءة التعديلات المسجّلة كاملةً ومتسقة. حفظ سطور الاحتياج وتسجيل التعديلات متوقف حتى تنجح إعادة التحميل.', en: 'The recorded overrides could not be read completely and consistently. Saving need lines and recording overrides is paused until a reload succeeds.' },
+  /* PRE3 N1 — the session enumeration (paged past max_rows) could not be proven complete; no partial list is shown. */
+  cn2b_err_import_sessions_read_inconsistent: { ar: 'تعذّرت قراءة جلسات الاستيراد لهذا الإصدار كاملةً ومتسقة، لذلك لا تُعرض قائمة ناقصة ولا أرقام للجلسات. ربما بدأ استيراد أثناء القراءة — أعد تحميل الصفحة.', en: 'The import sessions of this revision could not be read completely and consistently, so no partial list and no session numbers are shown. An import may have started while they were read — reload the page.' },
   cn2b_err_field_overrides_not_loaded: { ar: 'ما تزال قراءة التعديلات المسجّلة جارية.', en: 'The recorded overrides are still being read.' },
   cn2b_err_field_overrides_read_failed: { ar: 'تعذّرت قراءة التعديلات المسجّلة — لم يكتمل طلب القراءة. أعد تحميلها للمحاولة مجددًا؛ حفظ سطور الاحتياج وتسجيل التعديلات متوقف حتى تنجح القراءة.', en: 'The recorded overrides could not be read — the read did not complete. Reload them to try again; saving need lines and recording overrides is paused until a read succeeds.' },
   /* C5 §14 (UI-F2) — an action the server confirmed, whose follow-up re-read failed: never reported as a failed action. */
@@ -4094,6 +4133,19 @@ export const T: Dict = {
   cn2b_simple_no_evidence: { ar: 'لا توجد بيانات لهذا الصف', en: 'No data found for this row' },
   cn2b_simple_source_unit_label: { ar: 'الوحدة في الملف', en: 'Unit in the file' },
   cn2b_simple_unit_needs_review: { ar: 'تحتاج مراجعة الوحدة', en: 'Unit needs review' },
+  /* PRE3-A — choosing a material and confirming it are two separate acts. */
+  cn2b_simple_material_confirm_title: { ar: 'أكّد المادة لهذا الصف', en: 'Confirm the material for this row' },
+  cn2b_simple_material_confirm: { ar: 'تأكيد الربط بهذه المادة', en: 'Confirm mapping to this material' },
+  cn2b_simple_material_choose_different: { ar: 'اختيار مادة مختلفة', en: 'Choose a different material' },
+  cn2b_simple_material_multiple_matches: {
+    ar: 'هناك أكثر من مادة مسجلة تطابق نص هذا الصف تماماً — الرجاء الاختيار.',
+    en: 'More than one registered material matches this row’s text exactly — please choose.',
+  },
+  /* PRE3 Run 4 — no suggestion because a single exact match could not be PROVEN (not "no match"). */
+  cn2b_simple_material_suggestion_unconfirmed: {
+    ar: 'تعذّر التأكد من وجود مادة مسجلة واحدة فقط تطابق نص هذا الصف تماماً — الرجاء اختيار المادة بنفسك.',
+    en: 'It could not be confirmed that exactly one registered material matches this row’s text — please choose the material yourself.',
+  },
 
   /* Step 5 — need lines (CN-UI-S1), built in the canonical need-line panel. */
   cn2b_simple_need_lines_title: { ar: 'جهّز سطور الاحتياج', en: 'Prepare the need lines' },

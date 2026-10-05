@@ -130,14 +130,18 @@ describe('183 registration and shape', () => {
       // three SECURITY DEFINER functions replaced ACL-neutrally) — no emergency-outlet, stock, movement,
       // allocation or transfer SQL, so nothing this suite asserts moves. It is now the reviewed ceiling.
       '219_phoenix_auth_signup_authority_hardening.sql',
+      // PRE3-B/M220: the Central Needs active central item guard (disposition RPC item check, one private
+      // gate trigger on plan revisions, ACL-neutral) — no emergency-outlet, stock, movement, allocation or
+      // transfer SQL, so nothing this suite asserts moves. It is now the reviewed ceiling.
+      '220_phoenix_central_needs_active_item_guard.sql',
     ];
     const i = REVIEWED_MIGRATION_FILES.indexOf(NAME);
     expect(REVIEWED_MIGRATION_FILES.slice(i + 1)).toEqual(SUCCESSORS);
     expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1])
       .toBe(SUCCESSORS[SUCCESSORS.length - 1]);
-    // The ceiling is now 219; `[2-9]\d\d` would match it, so this asserts
+    // The ceiling is now 220; `[2-9]\d\d` would match it, so this asserts
     // numerically that nothing sits ABOVE the ceiling.
-    expect(REVIEWED_MIGRATION_FILES.filter(f => Number(f.slice(0, 3)) > 219)).toHaveLength(0);
+    expect(REVIEWED_MIGRATION_FILES.filter(f => Number(f.slice(0, 3)) > 220)).toHaveLength(0);
   });
 
   it('is a single transaction, manual-apply only', () => {

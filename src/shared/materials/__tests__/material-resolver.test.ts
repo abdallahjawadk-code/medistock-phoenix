@@ -8,7 +8,13 @@
 import { describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { resolveMaterials } from '../material-resolver.service';
+import {
+  ARABIC_VARIANT_CLASSES,
+  VARIANT_PATTERN_MAX_CHARS,
+  arabicVariantPattern,
+  resolveMaterials,
+} from '../material-resolver.service';
+import { normalizeSearchText } from '@/shared/lib/search-normalize';
 import { classifyScanPayload, evaluateDetectedCodes } from '../SmartScanner';
 
 // ── A fake supabase client: records .from() table + .or() filter, returns
@@ -23,6 +29,7 @@ function fakeClient(rowsByTable: Record<string, unknown[]>) {
         eq(col: string) { state.eqCols.push(col); return builder; },
         is() { return builder; },
         or(expr: string) { state.or = expr; return builder; },
+        order() { return builder; },
         abortSignal() { return builder; },
         limit() {
           calls.push(state);
@@ -184,6 +191,130 @@ describe('resolveMaterials — audience scoping (internal vs public outlet)', ()
       (calls) => resolveMaterials('amoxi', { warehouseId: 'wh1' }).then(() => calls));
     const catalog = calls.find(c => c.table === 'central_items');
     expect(catalog?.or).toContain('barcode.eq');
+  });
+});
+
+// ── PRE3-A: Arabic spelling variants match in BOTH directions ────────────────
+// normalizeSearchText folds the query only; the server compares stored text as
+// written. arabicVariantPattern is the server-side half: an `imatch` (~*)
+// pattern that accepts every stored spelling the query's folded form stands for.
+// (The patterns were also validated against real PostgreSQL ~* and PostgREST
+// imatch; here they are evaluated with JavaScript's RegExp, which reads this
+// literal/class/`*`/`\punct` subset identically.)
+describe('arabicVariantPattern — the server-side half of normalizeSearchText', () => {
+  const IGN = '[\u064B-\u0652\u0670\u0640]*';
+  const matches = (pattern: string | null, text: string) => new RegExp(pattern as string, 'i').test(text);
+  const hex = (cp: number) => `U+${cp.toString(16).toUpperCase().padStart(4, '0')}`;
+
+  it('each class holds exactly the spellings normalizeSearchText folds to its letter — none missing in the Arabic block', () => {
+    for (const [letter, members] of Object.entries(ARABIC_VARIANT_CLASSES)) {
+      expect(members).toContain(letter);
+      for (const m of members) expect(normalizeSearchText(m), m).toBe(letter);
+    }
+    for (let cp = 0x0600; cp <= 0x06ff; cp += 1) {
+      const ch = String.fromCodePoint(cp);
+      const folded = normalizeSearchText(ch);
+      if (Object.prototype.hasOwnProperty.call(ARABIC_VARIANT_CLASSES, folded)) {
+        expect(ARABIC_VARIANT_CLASSES[folded], hex(cp)).toContain(ch);
+      }
+    }
+  });
+
+  it('every character normalizeSearchText drops (harakat, shadda, sukun, dagger alif, tatweel) may sit between letters', () => {
+    const pattern = arabicVariantPattern('بب');
+    expect(pattern).toBe(`ب${IGN}ب`);
+    let dropped = 0;
+    for (let cp = 0x0600; cp <= 0x06ff; cp += 1) {
+      const ch = String.fromCodePoint(cp);
+      if (normalizeSearchText(`ب${ch}ب`) !== 'بب') continue;
+      dropped += 1;
+      expect(matches(pattern, `ب${ch}ب`), hex(cp)).toBe(true);
+      expect(matches(pattern, `ب${ch}${ch}${ch}ب`), hex(cp)).toBe(true);
+    }
+    expect(dropped).toBe(10);
+    expect(matches(pattern, 'باب')).toBe(false); // a letter is never skipped
+  });
+
+  it('builds classes for folded letters, an ignorable run after each Arabic character, and nothing after the last', () => {
+    expect(arabicVariantPattern('اموكس')).toBe(`[اأإآٱ]${IGN}م${IGN}[وؤ]${IGN}ك${IGN}س`);
+    expect(arabicVariantPattern('فواره')).toBe(`ف${IGN}[وؤ]${IGN}[اأإآٱ]${IGN}ر${IGN}[هة]`);
+    expect(arabicVariantPattern('حمي 5a')).toBe(`ح${IGN}م${IGN}[يىئ]${IGN}\\ 5a`);
+  });
+
+  it('is literal-safe: every ASCII punctuation character is escaped and matches only itself; letters and digits are never escaped', () => {
+    for (let cp = 0x20; cp <= 0x7e; cp += 1) {
+      const ch = String.fromCharCode(cp);
+      const pattern = arabicVariantPattern(`ب${ch}`);
+      if (/^[0-9A-Za-z]$/.test(ch)) {
+        expect(pattern, ch).toBe(`ب${IGN}${ch}`);
+        continue;
+      }
+      expect(pattern, ch).toBe(`ب${IGN}\\${ch}`);
+      expect(matches(pattern, `xب${ch}x`), ch).toBe(true);
+      expect(matches(pattern, 'xبQx'), ch).toBe(false);
+    }
+  });
+
+  it('returns null for a pure-ASCII, empty or over-long query (the ILIKE terms alone apply, as before)', () => {
+    expect(arabicVariantPattern('amoxicillin')).toBeNull();
+    expect(arabicVariantPattern('')).toBeNull();
+    expect(arabicVariantPattern('ب'.repeat(VARIANT_PATTERN_MAX_CHARS))).not.toBeNull();
+    expect(arabicVariantPattern('ب'.repeat(VARIANT_PATTERN_MAX_CHARS + 1))).toBeNull();
+  });
+
+  it('matches every folded pair in BOTH directions (stored variant / plain query and the reverse)', () => {
+    const pairs: Array<[string, string]> = [
+      ['أموكسيسيلين', 'اموكسيسيلين'], ['إيبوبروفين', 'ايبوبروفين'], ['آزيثرومايسين', 'ازيثرومايسين'],
+      ['ٱسبرين', 'اسبرين'], ['فيتامين سي فوارة', 'فيتامين سي فواره'], ['خافض الحمى', 'خافض الحمي'],
+      ['مؤكسدات', 'موكسدات'], ['محلول مائي', 'محلول مايي'], ['أتينولول', 'إتينولول'],
+      ['ب\u064Eار\u064Eاس\u0650يت\u064Eام\u064Fول', 'باراسيتامول'], ['مترون\u0651يدازول', 'مترونيدازول'],
+      ['اوم\u0652يبرازول', 'اوميبرازول'], ['لوراتاد\u064Bين', 'لوراتادين'], ['سيتر\u0670يزين', 'سيتريزين'],
+      ['انس\u0640ولين', 'انسولين'], ['أ\u064Eملود\u0650يب\u0640ين', 'املوديبين'],
+    ];
+    for (const [a, b] of pairs) {
+      for (const [stored, query] of [[a, b], [b, a]]) {
+        expect(matches(arabicVariantPattern(normalizeSearchText(query)), stored), `${stored} <- ${query}`).toBe(true);
+      }
+    }
+  });
+});
+
+describe('resolveMaterials — PRE3-A variant terms reach the server, on NAME columns only', () => {
+  const IGN = '[\u064B-\u0652\u0670\u0640]*';
+
+  it('INTERNAL with a warehouse scope: catalog names and stock names carry the quoted imatch term; codes never do', async () => {
+    const calls = await withClient({ central_items: [], warehouse_stock: [] },
+      (c) => resolveMaterials('اموكس', { warehouseId: 'wh1' }).then(() => c));
+    const term = `"${arabicVariantPattern('اموكس')}"`;
+    const catalog = calls.find(c => c.table === 'central_items')?.or ?? '';
+    for (const col of ['name', 'name_ar', 'trade_name']) expect(catalog).toContain(`${col}.imatch.${term}`);
+    expect(catalog).not.toContain('barcode.imatch');
+    const stock = calls.find(c => c.table === 'warehouse_stock')?.or ?? '';
+    for (const col of ['scientific_name', 'trade_name']) expect(stock).toContain(`${col}.imatch.${term}`);
+    expect(stock).not.toMatch(/(national_code|batch_number)\.imatch/);
+  });
+
+  it('escapes a backslash and a double quote for the PostgREST logic tree', async () => {
+    const calls = await withClient({ central_items: [] },
+      (c) => resolveMaterials('ا"\\', {}).then(() => c));
+    const catalog = calls.find(c => c.table === 'central_items')?.or ?? '';
+    // pattern  [ا…]IGN \" \\   →   quoted  "[ا…]IGN\\\"\\\\"
+    expect(catalog).toContain(`name_ar.imatch."[اأإآٱ]${IGN}${String.raw`\\\"\\\\`}"`);
+  });
+
+  it('PUBLIC: the variant term is a NAME match — no barcode, never stock', async () => {
+    const calls = await withClient({ central_items: [], warehouse_stock: [] },
+      (c) => resolveMaterials('اموكس', { warehouseId: 'wh1', audience: 'public' }).then(() => c));
+    const catalog = calls.find(c => c.table === 'central_items')?.or ?? '';
+    expect(catalog).toContain('name_ar.imatch.');
+    expect(catalog).not.toContain('barcode.');
+    expect(calls.some(c => c.table === 'warehouse_stock')).toBe(false);
+  });
+
+  it('a pure-ASCII query sends no imatch term — English matching is unchanged', async () => {
+    const calls = await withClient({ central_items: [], warehouse_stock: [] },
+      (c) => resolveMaterials('Amoxicillin', { warehouseId: 'wh1' }).then(() => c));
+    for (const c of calls) expect(c.or ?? '', c.table).not.toContain('.imatch.');
   });
 });
 

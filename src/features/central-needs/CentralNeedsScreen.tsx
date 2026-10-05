@@ -81,10 +81,13 @@ import {
   listSourceRecords,
   openCorrectionRevision,
   openPlanRevision,
+  parseSessionOrdinal,
+  rankImportSessions,
   reasonOf,
   rejectRevision,
   searchBatchEntries,
   searchSourceFiles,
+  searchWorkSessions,
   requestSourceDownload,
   requestUploadTicket,
   submitRevision,
@@ -101,6 +104,9 @@ import {
   type RevisionStatus,
   type SourceFile,
   type SourceRecord,
+  WORK_SESSION_MATCH_ORDER,
+  type WorkSessionMatch,
+  type WorkSessionSearchHit,
 } from './central-needs.service';
 import type { ArchiveParseResult, FileParseResult } from './import/contract.ts';
 import {
@@ -251,41 +257,148 @@ function blockerLabel(blocker: string, detail: string | null, lang: Parameters<t
 }
 
 
+/**
+ * PRE3-B — where one Work Session search stands. `revisionId` and `query` say
+ * which search the hits answer; a reply for any other revision or term is
+ * never shown.
+ */
+interface WorkSessionSearchState {
+  revisionId: string | null;
+  query: string;
+  phase: 'idle' | 'searching' | 'done' | 'failed';
+  hits: WorkSessionSearchHit[];
+  truncated: boolean;
+  error: CentralNeedsError | string | null;
+}
+
+const WORK_SESSION_SEARCH_IDLE: WorkSessionSearchState = {
+  revisionId: null, query: '', phase: 'idle', hits: [], truncated: false, error: null,
+};
+
+/** Keystrokes inside this window are one search: fewer bounded queries, the same answer. */
+const WORK_SESSION_SEARCH_DEBOUNCE_MS = 200;
+
 function WorkSessionSelector({
   lang,
+  revisionId,
   sessions,
   activeSessionId,
   blockerSummary,
   sessionEntryById,
+  sessionEntriesComplete,
   disabled,
   onChange,
+  onReload,
 }: {
   lang: Parameters<typeof t>[1];
+  revisionId: string;
+  /**
+   * EVERY session of the revision — `listImportSessions` pages past PostgREST's
+   * `max_rows` and refuses rather than return a partial list (PRE3 N1).
+   */
   sessions: ImportSession[];
   activeSessionId: string | null;
   blockerSummary: ReturnType<typeof summarizeSessionBlockers>;
   sessionEntryById: ReadonlyMap<string, { archiveEntryPath: string | null; containerFilename: string }>;
+  /** True only when the batch-membership read succeeded and was not cut. */
+  sessionEntriesComplete: boolean;
   disabled: boolean;
   onChange: (id: string) => void;
+  /** Re-reads the revision (and so its session list) when a search proves the list out of date. */
+  onReload?: () => void;
 }) {
   const [query, setQuery] = useState('');
-  const completed = sessions.filter((session) => session.status === 'completed');
-  const normalizedQuery = query.trim().toLowerCase();
-  const rows = completed.map((session, index) => {
+  const [search, setSearch] = useState<WorkSessionSearchState>(WORK_SESSION_SEARCH_IDLE);
+  /** Newest-request-wins: a slower earlier search never overwrites a later one. */
+  const searchSeq = useRef(0);
+  const term = query.trim();
+
+  // PRE3-B — the server decides every text match (filter → order → limit);
+  // nothing here filters a list in the browser.
+  useEffect(() => {
+    const seq = (searchSeq.current += 1);
+    if (term === '' || revisionId === '') {
+      setSearch(WORK_SESSION_SEARCH_IDLE);
+      return undefined;
+    }
+    setSearch({ revisionId, query: term, phase: 'searching', hits: [], truncated: false, error: null });
+    const timer = window.setTimeout(() => {
+      searchWorkSessions(revisionId, term).then(
+        (result) => {
+          if (seq !== searchSeq.current) return;
+          setSearch({ revisionId, query: term, phase: 'done', hits: result.hits, truncated: result.truncated, error: null });
+        },
+        (e: unknown) => {
+          if (seq !== searchSeq.current) return;
+          // A refused search is a refusal, never "no session matched".
+          setSearch({ revisionId, query: term, phase: 'failed', hits: [], truncated: false, error: refusalOf(e, 'load_failed') });
+        },
+      );
+    }, WORK_SESSION_SEARCH_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
+  }, [revisionId, term]);
+
+  // PRE3-B — one stable number per session, from EVERY session of the revision
+  // (started_at, then id). It never depends on the search, so nothing renumbers.
+  const ranks = useMemo(() => rankImportSessions(sessions), [sessions]);
+  const sessionById = useMemo(() => new Map(sessions.map((session) => [session.id, session])), [sessions]);
+  const ordinalOf = (id: string) => ranks.get(id)?.ordinal ?? 0;
+  const ordinalText = (id: string) => t('cn2b_work_session_ordinal', lang)
+    .replace('__K__', String(ordinalOf(id)))
+    .replace('__N__', String(ranks.size));
+  const sourceLabelOf = (session: ImportSession) => {
     const entry = sessionEntryById.get(session.id);
-    const sourceLabel = entry?.archiveEntryPath
-      || entry?.containerFilename
-      || `${t('cn2b_session_unbatched_fallback', lang)} · ${session.startedAt}`;
+    const named = entry?.archiveEntryPath || entry?.containerFilename || session.entryPath;
+    if (named) return named;
+    // "Not in a trusted batch" is claimed only when membership was read in full.
+    const fallback = sessionEntriesComplete ? 'cn2b_session_unbatched_fallback' : 'cn2b_work_session_source_unavailable';
+    return `${t(fallback, lang)} · ${session.startedAt}`;
+  };
+
+  const completed = sessions
+    .filter((session) => session.status === 'completed')
+    .sort((a, b) => ordinalOf(a.id) - ordinalOf(b.id));
+  const rows = completed.map((session) => {
     const blockers = blockerSummary.bySession.get(session.id) ?? 0;
     const blockerText = blockers === 0
       ? t('cn2b_session_no_attributed_blockers', lang)
       : `${t('cn2b_session_blockers', lang)}: ${blockers}`;
-    const label = `${sourceLabel} · ${t('cn2b_sess_completed', lang)} · ${t('cn2b_work_session', lang)} ${index + 1}/${completed.length} · ${blockerText}`;
+    const label = `${sourceLabelOf(session)} · ${t('cn2b_sess_completed', lang)} · ${ordinalText(session.id)} · ${blockerText}`;
     return { session, label };
   });
-  const visibleRows = normalizedQuery === ''
-    ? rows
-    : rows.filter(({ session, label }) => session.id === activeSessionId || label.toLowerCase().includes(normalizedQuery));
+
+  // A hit is something the search matched. The current selection is not a hit.
+  const attributed = search.revisionId === revisionId && search.query === term;
+  const phase = term === '' ? 'idle' : attributed ? search.phase : 'searching';
+  // Hits are shown only for a COMPLETED search of this term: while it runs, or
+  // after it failed, no session is presented as found.
+  const matched = new Map<string, Set<WorkSessionMatch>>();
+  if (phase === 'done') {
+    const ordinal = parseSessionOrdinal(term);
+    if (ordinal !== null) {
+      for (const [id, rank] of ranks) if (rank.ordinal === ordinal) matched.set(id, new Set<WorkSessionMatch>(['ordinal']));
+    }
+    for (const hit of search.hits) {
+      const on = matched.get(hit.importSessionId) ?? new Set<WorkSessionMatch>();
+      for (const field of hit.matchedOn) on.add(field);
+      matched.set(hit.importSessionId, on);
+    }
+  }
+  // PRE3 N1 — a server hit for a session the loaded list does not hold is never
+  // dropped: the list is out of date (that session began after it was read), so
+  // the hit is counted and reported as such, never turned into "no match".
+  const hits: Array<{ session: ImportSession; on: Set<WorkSessionMatch> }> = [];
+  let unlisted = 0;
+  for (const [id, on] of matched) {
+    const session = sessionById.get(id);
+    if (session) hits.push({ session, on });
+    else unlisted += 1;
+  }
+  hits.sort((a, b) => ordinalOf(a.session.id) - ordinalOf(b.session.id));
+  const matchedText = (on: ReadonlySet<WorkSessionMatch>) => WORK_SESSION_MATCH_ORDER
+    .filter((field) => on.has(field))
+    .map((field) => t(`cn2b_work_session_match_${field}`, lang))
+    .join(' · ');
 
   return (
     <section className="cn2b-work-session" aria-label={t('cn2b_work_session', lang)}>
@@ -308,9 +421,64 @@ function WorkSessionSelector({
           onChange={(event) => event.target.value && onChange(event.target.value)}
         >
           {completed.length === 0 && <option value="">{t('cn2b_work_session_none', lang)}</option>}
-          {visibleRows.map(({ session, label }) => <option key={session.id} value={session.id}>{label}</option>)}
+          {rows.map(({ session, label }) => <option key={session.id} value={session.id}>{label}</option>)}
         </select>
       </label>
+      {term !== '' && (
+        <div style={{ gridColumn: '1 / -1' }}>
+          <p className="cn2b-searchstate" data-phase={phase} role="status">
+            {phase === 'searching' && t('cn2b_work_session_search_running', lang)}
+            {phase === 'done' && (hits.length === 0 && unlisted === 0
+              ? t('cn2b_work_session_search_empty', lang)
+              : `${t('cn2b_work_session_search_results', lang)}: ${hits.length + unlisted}`)}
+            {phase === 'failed' && t('cn2b_work_session_search_failed', lang)}
+          </p>
+          {phase === 'failed' && search.error !== null && (
+            <PhoenixErrorState message={centralNeedsErrorText(search.error, lang)} />
+          )}
+          {phase === 'done' && unlisted > 0 && (
+            <div className="cn2b-work-session__meta" role="alert" data-testid="cn2b-work-session-unlisted" data-unlisted={unlisted}>
+              <p>{t('cn2b_work_session_search_unlisted', lang).replace('__N__', String(unlisted))}</p>
+              {onReload && (
+                <button type="button" className="cn2b-btn cn2b-btn--sm" disabled={disabled} onClick={onReload}>
+                  {t('cn2b_work_session_reload', lang)}
+                </button>
+              )}
+            </div>
+          )}
+          {phase === 'done' && search.truncated && (
+            <p className="cn2b-work-session__meta" role="note">{t('cn2b_work_session_search_truncated', lang)}</p>
+          )}
+          {hits.length > 0 && (
+            <ul className="cn2b-list cn2b-list--sessions" aria-label={t('cn2b_work_session_search_results', lang)}>
+              {hits.map(({ session, on }) => (
+                <li key={session.id} className="cn2b-list__row">
+                  <button
+                    type="button"
+                    className="cn2b-session"
+                    data-active={session.id === activeSessionId}
+                    aria-pressed={session.id === activeSessionId}
+                    disabled={disabled || session.status !== 'completed'}
+                    onClick={() => onChange(session.id)}
+                  >
+                    <span>{ordinalText(session.id)}</span>
+                    <span className="cn2b-session__status" data-status={session.status}>
+                      {t(`cn2b_sess_${session.status}`, lang)}
+                    </span>
+                    <code className="cn2b-code">{sourceLabelOf(session)}</code>
+                    <span className="cn2b-work-session__meta">
+                      {t('cn2b_work_session_matched_on', lang)}: {matchedText(on)}
+                    </span>
+                    {session.id === activeSessionId && (
+                      <span className="cn2b-session__current">{t('cn2b_session_current', lang)}</span>
+                    )}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
       {disabled && <p className="cn2b-work-session__meta">{t('cn2b_work_session_switch_blocked', lang)}</p>}
       {blockerSummary.unattributed > 0 && (
         <p className="cn2b-work-session__meta" role="status">
@@ -493,6 +661,8 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
   const [entryHits, setEntryHits] = useState<Array<{ id: string; archiveEntryPath: string | null; entrySha256: string; containerFilename: string; entryOrdinal: number }>>([]);
   /** UX-3R — trusted batch-entry labels for the shared Work Session selector. */
   const [sessionEntries, setSessionEntries] = useState<Array<{ importSessionId: string; archiveEntryPath: string | null; containerFilename: string }>>([]);
+  /** PRE3-B — whether `sessionEntries` is the revision's full batch membership (read succeeded, not cut). */
+  const [sessionEntriesComplete, setSessionEntriesComplete] = useState(false);
   /**
    * UX-2A — the four states a bounded evidence search can actually be in.
    *
@@ -579,6 +749,7 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
     setActiveSessionId(null);
     setDataSessionId(null);
     setSessionEntries([]);
+    setSessionEntriesComplete(false);
     setPendingFile(null);
     preview.reset();
     setReviewActivity({ busy: false, dirty: false, failed: false });
@@ -644,6 +815,9 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
     try {
       const [nextSessions, nextBatches, nextOverrideRead, nextReadiness, nextLineage, nextBeneficiaryColumns, nextSessionEntries, nextRegions] =
         await Promise.all([
+          // PRE3 N1 — EVERY session, paged past PostgREST's max_rows. A list
+          // that cannot be proven complete is refused, which fails this whole
+          // reload: no "Session K of N" is ever drawn from a partial list.
           listImportSessions(id),
           listImportBatches(id),
           // C5 §13 — an incomplete or inconsistent override chain never blocks
@@ -653,7 +827,11 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
           listNeedLineLineage(id),
           listBeneficiaryColumns(id),
           // Existing bounded revision query; label enrichment is presentation-only and fails soft.
-          searchBatchEntries(id, '', 500).catch(() => []),
+          // PRE3-B: a failed or capped read is "membership unknown", never "not in a trusted batch".
+          searchBatchEntries(id, '', 500).then(
+            (rows) => ({ complete: rows.length < 500, rows }),
+            () => ({ complete: false, rows: [] as Awaited<ReturnType<typeof searchBatchEntries>> }),
+          ),
           // C4 — a failed or inconsistent region read never blocks the rest of
           // the screen; it marks the region layer unavailable (fail closed).
           Promise.resolve()
@@ -675,7 +853,8 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
       setClaimedSources(nextLineage.sources);
       setBeneficiaryColumns(nextBeneficiaryColumns);
       setBeneficiaryRegions(nextRegions);
-      setSessionEntries(nextSessionEntries.map((entry) => ({
+      setSessionEntriesComplete(nextSessionEntries.complete);
+      setSessionEntries(nextSessionEntries.rows.map((entry) => ({
         importSessionId: entry.importSessionId,
         archiveEntryPath: entry.archiveEntryPath,
         containerFilename: entry.containerFilename,
@@ -1350,12 +1529,15 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
   const workSessionSelector = (
     <WorkSessionSelector
       lang={lang}
+      revisionId={dataRevisionId ?? ''}
       sessions={sessions}
       activeSessionId={activeSessionId}
       blockerSummary={sessionBlockers}
       sessionEntryById={sessionEntryById}
+      sessionEntriesComplete={sessionEntriesComplete}
       disabled={sessionSwitchBlocked}
       onChange={onWorkSessionChange}
+      onReload={revisionDataReady ? () => refreshRevision(revisionId as string) : undefined}
     />
   );
 

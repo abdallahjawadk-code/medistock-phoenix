@@ -183,16 +183,18 @@ describe('C5/M217 static — the file exists under its canonical name', () => {
 });
 
 guard('C5/M217 static — registration, hygiene and frozen predecessors', () => {
-  it('217 is the next migration after 216; only C6-F1/M218 and AUTH-1/M219 sit above it', () => {
+  it('217 is the next migration after 216; only C6-F1/M218, AUTH-1/M219 and PRE3-B/M220 sit above it', () => {
     const files = readdirSync(MIGRATIONS).filter((f) => /^\d{3}_.*\.sql$/.test(f)).sort();
     expect(files).toContain(FILENAME);
-    // C6-F1/M218 (Central Needs submission integrity fence) is the reviewed
-    // successor and AUTH-1/M219 (sign-up authority hardening) now the ceiling;
-    // its own static suite owns the ceiling assertions. The
-    // 216 -> 217 -> 218 -> 219 order is exact.
+    // C6-F1/M218 (Central Needs submission integrity fence) and AUTH-1/M219
+    // (sign-up authority hardening) are the reviewed successors and PRE3-B/M220
+    // (active central item guard) now the ceiling; its own static suite owns
+    // the ceiling assertions. The 216 -> 217 -> 218 -> 219 -> 220 order is
+    // exact.
     expect(files.filter((f) => Number(f.slice(0, 3)) > 216))
       .toEqual([FILENAME, '218_phoenix_central_needs_submission_integrity_fence.sql',
-        '219_phoenix_auth_signup_authority_hardening.sql']);
+        '219_phoenix_auth_signup_authority_hardening.sql',
+        '220_phoenix_central_needs_active_item_guard.sql']);
     expect(files[files.indexOf(FILENAME) - 1]).toBe('216_phoenix_central_needs_region_persistence.sql');
   });
 

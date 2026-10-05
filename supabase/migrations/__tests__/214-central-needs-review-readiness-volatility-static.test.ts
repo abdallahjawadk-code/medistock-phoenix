@@ -33,10 +33,10 @@ describe('M214 static — registration and exact scope', () => {
     // C2/M215 (the governed correction lifecycle) sits directly after 214; its
     // own static suite owns the ceiling assertions from here on. The 214 -> 215
     // relationship is HISTORICAL and never moves; only the ceiling below
-    // advances, now to AUTH-1/M219 (sign-up authority hardening).
+    // advances, now to PRE3-B/M220 (active central item guard).
     expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.indexOf(FILENAME) + 1]).toBe('215_phoenix_central_needs_governed_correction_lifecycle.sql');
-    expect(getMaximumReviewedMigrationNumber()).toBe(219);
-    expect(getNextUnreviewedMigrationNumber()).toBe(220);
+    expect(getMaximumReviewedMigrationNumber()).toBe(220);
+    expect(getNextUnreviewedMigrationNumber()).toBe(221);
   });
 
   it('changes exactly the readiness RPC volatility to VOLATILE', () => {

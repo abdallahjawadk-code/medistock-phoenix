@@ -69,8 +69,8 @@ describe('193 · registration and file hygiene', () => {
   });
 
   it('is immediately followed by 194 through 210, the new ceiling, and 211 stays absent', () => {
-    expect(getMaximumReviewedMigrationNumber()).toBe(219);
-    expect(getNextUnreviewedMigrationNumber()).toBe(220);
+    expect(getMaximumReviewedMigrationNumber()).toBe(220);
+    expect(getNextUnreviewedMigrationNumber()).toBe(221);
     const NEXT = '194_phoenix_authorization_surface_reproducibility_convergence.sql';
     const NEXT_2 = '195_phoenix_auth_helper_profile_schema_qualification.sql';
     const NEXT_3 = '196_phoenix_secdef_relation_schema_qualification.sql';
@@ -99,16 +99,18 @@ describe('193 · registration and file hygiene', () => {
     expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.indexOf(NAME) + 9]).toBe(NEXT_9);
     expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.indexOf(NAME) + 15]).toBe(NEXT_15);
     expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.indexOf(NAME) + 16]).toBe(NEXT_16);
-    // AUTH-1/M219 (the sign-up authority hardening) is now the reviewed
-    // successor at the end of the array. It is auth/profile-only and adds no
-    // alert-command SQL, so what 193 asserts is unaffected.
+    // PRE3-B/M220 (the Central Needs active central item guard) is now the
+    // reviewed successor at the end of the array. It is Central-Needs-only
+    // (disposition RPC item check, one private gate trigger on plan revisions,
+    // ACL-neutral) and adds no alert-command SQL, so what 193 asserts is
+    // unaffected.
     expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1])
-      .toBe('219_phoenix_auth_signup_authority_hardening.sql');
-    // The ceiling is now 219; `[2-9]\d\d` would match it, so this asserts
+      .toBe('220_phoenix_central_needs_active_item_guard.sql');
+    // The ceiling is now 220; `[2-9]\d\d` would match it, so this asserts
     // numerically that nothing sits ABOVE the ceiling.
-    expect(REVIEWED_MIGRATION_FILES.filter(f => Number(f.slice(0, 3)) > 219)).toHaveLength(0);
+    expect(REVIEWED_MIGRATION_FILES.filter(f => Number(f.slice(0, 3)) > 220)).toHaveLength(0);
     expect(readdirSync(MIGRATIONS_DIR)
-      .filter(f => /^\d{3}_.*\.sql$/.test(f) && Number(f.slice(0, 3)) > 219)).toEqual([]);
+      .filter(f => /^\d{3}_.*\.sql$/.test(f) && Number(f.slice(0, 3)) > 220)).toEqual([]);
     expect(isReviewedMigrationFile('211_unreviewed_test_migration.sql')).toBe(false);
   });
 
@@ -126,11 +128,11 @@ describe('193 · registration and file hygiene', () => {
   });
 
   it('edits no historical migration — it is self-contained', () => {
-    // 203-219 (material-dispensing-suspension through the AUTH-1/M219 sign-up
-    // authority hardening) are the newest chain members; they edit nothing
-    // here, so this count moves by exactly fifteen more.
+    // 203-220 (material-dispensing-suspension through the PRE3-B/M220 active
+    // central item guard) are the newest chain members; they edit nothing
+    // here, so this count moves by exactly sixteen more.
     const others = readdirSync(MIGRATIONS_DIR).filter(f => f.endsWith('.sql') && f !== NAME);
-    expect(others).toHaveLength(218);
+    expect(others).toHaveLength(219);
   });
 });
 

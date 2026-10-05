@@ -17,6 +17,9 @@
  * (still RLS-governed) so its exact decimals arrive as text.
  */
 import { supabase } from '@/shared/supabase/client';
+import { normalizeSearchText } from '@/shared/lib/search-normalize';
+import { resolveMaterials, type MatchGrade } from '@/shared/materials/material-resolver.service';
+import { resolveExactCatalogCandidates, type ResolvedMaterial } from '@/shared/materials/material-resolver.service';
 import { isTrustedPlanYear, sortRegistryRevisions } from './central-needs.revision-context';
 
 export type ImportSessionStatus = 'pending' | 'processing' | 'completed' | 'failed';
@@ -57,6 +60,12 @@ export interface ImportSession {
   startedAt: string;
   completedAt: string | null;
   notes: string | null;
+  /**
+   * PRE3-B — M211's verbatim archive path of the entry this session parsed;
+   * null for a standalone workbook. Optional only so fixtures that predate it
+   * stay valid; `listImportSessions` always sets it.
+   */
+  entryPath?: string | null;
 }
 
 export interface ImportBatch {
@@ -430,59 +439,469 @@ export async function searchSourceFiles(
 }
 
 /**
- * I — archive members for a revision, so a ZIP entry can be found by its path.
- * Entry rows carry the verbatim archiveEntryPath as evidence.
+ * PRE3-B — a free-text term as an ILIKE "contains" pattern. `\`, `%` and `_`
+ * are escaped so the operator's text is matched as text, not as a pattern.
+ * (PostgREST also reads a literal `*` as `%`; that one cannot be escaped and
+ * only ever widens a match.)
+ */
+function likeContains(term: string): string {
+  return `%${term.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+}
+
+const ENTRY_COLUMNS = 'id, batch_id, entry_ordinal, archive_entry_path, entry_sha256, import_session_id, central_needs_import_batches(container_filename)';
+
+type BatchEntryHit = ImportBatchEntry & { containerFilename: string; batchId: string };
+
+function batchEntryHitOf(r: Record<string, unknown>): BatchEntryHit {
+  const batch = r.central_needs_import_batches as { container_filename?: string } | Array<{ container_filename?: string }> | null;
+  const containerFilename = (Array.isArray(batch) ? batch[0]?.container_filename : batch?.container_filename) ?? '';
+  return {
+    id: r.id as string,
+    batchId: r.batch_id as string,
+    entryOrdinal: r.entry_ordinal as number,
+    archiveEntryPath: (r.archive_entry_path as string | null) ?? null,
+    entrySha256: r.entry_sha256 as string,
+    importSessionId: r.import_session_id as string,
+    containerFilename,
+  };
+}
+
+/** The (batch, ordinal) key every entry read orders by — unique per M211, so a cut is deterministic. */
+function compareBatchEntries(a: BatchEntryHit, b: BatchEntryHit): number {
+  if (a.batchId !== b.batchId) return a.batchId < b.batchId ? -1 : 1;
+  return a.entryOrdinal - b.entryOrdinal;
+}
+
+/**
+ * The ids of this revision's batches whose container filename contains the
+ * term — filtered by the server, ordered, then limited. `limit + 1` rows are
+ * asked for so a cut can be reported rather than hidden.
+ */
+async function batchIdsByContainerFilename(
+  planRevisionId: string, term: string, limit: number,
+): Promise<{ ids: string[]; truncated: boolean }> {
+  const { data, error } = await supabase
+    .from('central_needs_import_batches')
+    .select('id')
+    .eq('plan_revision_id', planRevisionId)
+    .ilike('container_filename', likeContains(term))
+    .order('registered_at', { ascending: true })
+    .order('id', { ascending: true })
+    .limit(limit + 1);
+  if (error) fail(error);
+  const ids = (data ?? []).map((r) => r.id as string);
+  return { ids: ids.slice(0, limit), truncated: ids.length > limit };
+}
+
+/**
+ * I — archive members for a revision, so a ZIP entry can be found by its path,
+ * its container's filename or its fingerprint prefix. Entry rows carry the
+ * verbatim archiveEntryPath as evidence.
+ *
+ * PRE3-B: every term is matched BY THE SERVER, then ordered, then limited —
+ * never "first N rows, then filter in the browser", which silently dropped
+ * every match past the cut. Each field is its own bounded query (one plain
+ * ILIKE each, no hand-built logic tree); the answers are merged by id and
+ * re-ordered by (batch, ordinal). An empty term is the bounded, ordered
+ * listing the Work Session labels use.
  */
 export async function searchBatchEntries(
   planRevisionId: string, query: string, limit = 100,
-): Promise<Array<ImportBatchEntry & { containerFilename: string; batchId: string }>> {
-  const { data, error } = await supabase
+): Promise<BatchEntryHit[]> {
+  const term = query.trim();
+  const entries = () => supabase
     .from('central_needs_import_batch_entries')
-    .select('id, batch_id, entry_ordinal, archive_entry_path, entry_sha256, import_session_id, central_needs_import_batches(container_filename)')
-    .eq('plan_revision_id', planRevisionId)
-    .order('entry_ordinal', { ascending: true })
-    .limit(limit);
-  if (error) fail(error);
-  const term = query.trim().toLowerCase();
-  return (data ?? [])
-    .map((r) => {
-      const batch = r.central_needs_import_batches as { container_filename?: string } | Array<{ container_filename?: string }> | null;
-      const containerFilename = (Array.isArray(batch) ? batch[0]?.container_filename : batch?.container_filename) ?? '';
-      return {
-        id: r.id as string,
-        batchId: r.batch_id as string,
-        entryOrdinal: r.entry_ordinal as number,
-        archiveEntryPath: (r.archive_entry_path as string | null) ?? null,
-        entrySha256: r.entry_sha256 as string,
-        importSessionId: r.import_session_id as string,
-        containerFilename,
-      };
-    })
-    .filter((e) => term === ''
-      || (e.archiveEntryPath ?? '').toLowerCase().includes(term)
-      || e.entrySha256.toLowerCase().startsWith(term)
-      || e.containerFilename.toLowerCase().includes(term));
+    .select(ENTRY_COLUMNS)
+    .eq('plan_revision_id', planRevisionId);
+  const bounded = (q: ReturnType<typeof entries>) =>
+    q.order('batch_id', { ascending: true }).order('entry_ordinal', { ascending: true }).limit(limit);
+
+  const reads: Array<PromiseLike<{ data: unknown; error: unknown }>> = [];
+  if (term === '') {
+    reads.push(bounded(entries()));
+  } else {
+    reads.push(bounded(entries().ilike('archive_entry_path', likeContains(term))));
+    if (/^[0-9a-f]{4,64}$/i.test(term)) {
+      reads.push(bounded(entries().ilike('entry_sha256', `${term.toLowerCase()}%`)));
+    }
+    reads.push(batchIdsByContainerFilename(planRevisionId, term, limit).then(
+      ({ ids }): PromiseLike<{ data: unknown; error: unknown }> => (
+        ids.length === 0 ? Promise.resolve({ data: [], error: null }) : bounded(entries().in('batch_id', ids))
+      ),
+    ));
+  }
+
+  const merged = new Map<string, BatchEntryHit>();
+  for (const { data, error } of await Promise.all(reads)) {
+    if (error) fail(error as Parameters<typeof fail>[0]);
+    for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+      const hit = batchEntryHitOf(row);
+      merged.set(hit.id, hit);
+    }
+  }
+  return [...merged.values()].sort(compareBatchEntries).slice(0, limit);
 }
 
+/**
+ * PRE3 N1 — requested keyset page size for the session enumeration. It is below
+ * PostgREST's `max_rows` (supabase/config.toml: 1000), and correctness never
+ * depends on either number: a page shorter than requested is simply followed by
+ * the next keyset request, and completeness is proven by exact counts.
+ */
+const IMPORT_SESSION_PAGE_SIZE = 500;
+
+const IMPORT_SESSION_COLUMNS = 'id, plan_revision_id, source_file_id, status, preview_digest, authoritative_digest, '
+  + 'parser_identity, started_at, completed_at, notes, entry_path';
+
+/** A uuid exactly as PostgreSQL prints it — the form whose text order is uuid order. */
+const CANONICAL_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/** One session's keyset position: the server's own start-time text, its exact instant, and its id. */
+interface SessionKey {
+  text: string;
+  micros: bigint;
+  id: string;
+}
+
+function compareSessionKeys(a: SessionKey, b: SessionKey): number {
+  if (a.micros !== b.micros) return a.micros < b.micros ? -1 : 1;
+  if (a.id === b.id) return 0;
+  return a.id < b.id ? -1 : 1;
+}
+
+/**
+ * The one refusal of an enumeration that cannot be proven complete. `details`
+ * pins a `reason=` token (count_unavailable, count_mismatch, overlong_page,
+ * unparsable_row, foreign_revision, duplicate, out_of_order) for diagnosis.
+ */
+function sessionsReadInconsistent(planRevisionId: string, reason: string, detail: string): CentralNeedsError {
+  return new CentralNeedsError(
+    'import_sessions_read_inconsistent',
+    `the import sessions of revision ${planRevisionId} could not be read completely and consistently (${reason}: ${detail})`,
+    { details: `reason=${reason} ${detail}` },
+  );
+}
+
+/** An exact PostgREST count (`Prefer: count=exact`), or null when the response carried none. */
+function exactCount(count: unknown): number | null {
+  return typeof count === 'number' && Number.isSafeInteger(count) && count >= 0 ? count : null;
+}
+
+/**
+ * EVERY import session of ONE revision, in the stable order `started_at ASC,
+ * id ASC` that `rankImportSessions` numbers — or a refusal. Never a partial list.
+ *
+ * PRE3 N1: PostgREST caps any one response at `max_rows` (1000) and says
+ * nothing about it (HTTP 200, `Content-Range: 0-999/*`), so an unpaged read
+ * silently lost every session after the 1000th — its number, the "of N" total,
+ * and any search hit for it. This read is therefore paged, the house keyset way
+ * (see `listOverrides`):
+ *
+ *   * page 1 is the first rows in `(started_at, id)` order; every later page is
+ *     strictly after the last row read — its exact start-time text plus its id
+ *     (`started_at > t OR (started_at = t AND id > id)`), so a page boundary
+ *     inside a run of equal start times neither repeats nor skips a session;
+ *   * every page asks for an EXACT count (`Prefer: count=exact`). Page 1's count
+ *     is the revision's total; each later page must count exactly the sessions
+ *     not yet read. The read ends once every counted session has been read;
+ *   * a read that spanned more than one page closes with one more exact count of
+ *     the whole revision, which must equal what was read — so a session that
+ *     appeared BEHIND the cursor while the pages were read cannot go unnoticed.
+ *
+ * FAIL CLOSED (`import_sessions_read_inconsistent`): a missing count, a page
+ * that disagrees with the counts, a row of another revision, an unparsable
+ * id or start time, a repeated session, or a row that is not strictly after the
+ * one before it. A failed request throws as every read does. The caller never
+ * receives a list it cannot prove complete.
+ */
 export async function listImportSessions(planRevisionId: string): Promise<ImportSession[]> {
-  const { data, error } = await supabase
+  const out: ImportSession[] = [];
+  const seen = new Set<string>();
+  const revision = planRevisionId.toLowerCase();
+  let total: number | null = null;
+  let cursor: SessionKey | null = null;
+  let pages = 0;
+
+  for (;;) {
+    let query = supabase
+      .from('central_needs_import_sessions')
+      .select(IMPORT_SESSION_COLUMNS, { count: 'exact' })
+      .eq('plan_revision_id', planRevisionId);
+    if (cursor !== null) {
+      // Strictly after the last row read. Its start-time text was validated
+      // (TIMESTAMPTZ_TEXT) and its id is a canonical uuid, so neither can
+      // break out of the quoted logic-tree value.
+      const at = quotedFilterValue(cursor.text);
+      query = query.or(`started_at.gt.${at},and(started_at.eq.${at},id.gt.${cursor.id})`);
+    }
+    const { data, error, count } = await query
+      .order('started_at', { ascending: true })
+      // PRE3-B: a deterministic tie-break, so equal start times never swap places.
+      .order('id', { ascending: true })
+      .limit(IMPORT_SESSION_PAGE_SIZE);
+    if (error) fail(error);
+    pages += 1;
+
+    const counted = exactCount(count);
+    if (counted === null) {
+      throw sessionsReadInconsistent(planRevisionId, 'count_unavailable', `page=${pages}`);
+    }
+    if (total === null) {
+      total = counted;
+    } else if (counted !== total - out.length) {
+      throw sessionsReadInconsistent(planRevisionId, 'count_mismatch',
+        `page=${pages} counted_after_cursor=${counted} expected=${total - out.length}`);
+    }
+    const batch = (data ?? []) as unknown as Array<Record<string, unknown>>;
+    if (batch.length > counted) {
+      throw sessionsReadInconsistent(planRevisionId, 'overlong_page', `page=${pages} rows=${batch.length} counted=${counted}`);
+    }
+    if (batch.length === 0) {
+      // Only an exhausted count may end on an empty page (an empty revision's page 1).
+      if (counted !== 0 || out.length !== total) {
+        throw sessionsReadInconsistent(planRevisionId, 'count_mismatch',
+          `page=${pages} rows=0 counted=${counted} read=${out.length} total=${total}`);
+      }
+      break;
+    }
+
+    for (const r of batch) {
+      const id = r.id;
+      const text = r.started_at;
+      const micros = typeof text === 'string' ? timestampMicros(text) : null;
+      if (typeof id !== 'string' || !CANONICAL_UUID.test(id) || typeof text !== 'string' || micros === null) {
+        throw sessionsReadInconsistent(planRevisionId, 'unparsable_row', `page=${pages} id=${String(id)}`);
+      }
+      if (typeof r.plan_revision_id !== 'string' || r.plan_revision_id.toLowerCase() !== revision) {
+        throw sessionsReadInconsistent(planRevisionId, 'foreign_revision', `page=${pages} id=${id}`);
+      }
+      if (seen.has(id)) throw sessionsReadInconsistent(planRevisionId, 'duplicate', `page=${pages} id=${id}`);
+      const key: SessionKey = { text, micros, id };
+      if (cursor !== null && compareSessionKeys(key, cursor) <= 0) {
+        throw sessionsReadInconsistent(planRevisionId, 'out_of_order', `page=${pages} id=${id}`);
+      }
+      seen.add(id);
+      cursor = key;
+      out.push({
+        id,
+        planRevisionId: r.plan_revision_id as string,
+        sourceFileId: r.source_file_id as string,
+        status: r.status as ImportSessionStatus,
+        previewDigest: (r.preview_digest as string | null) ?? null,
+        authoritativeDigest: (r.authoritative_digest as string | null) ?? null,
+        parserIdentity: (r.parser_identity as Record<string, unknown> | null) ?? null,
+        startedAt: text,
+        completedAt: (r.completed_at as string | null) ?? null,
+        notes: (r.notes as string | null) ?? null,
+        entryPath: (r.entry_path as string | null) ?? null,
+      });
+    }
+    if (out.length === total) break;
+  }
+
+  // One page is one statement: its rows and its count share a snapshot. Several
+  // pages are several snapshots, so the whole revision is counted once more.
+  if (pages > 1) {
+    const { error, count } = await supabase
+      .from('central_needs_import_sessions')
+      .select('id', { count: 'exact', head: true })
+      .eq('plan_revision_id', planRevisionId);
+    if (error) fail(error);
+    const counted = exactCount(count);
+    if (counted === null) throw sessionsReadInconsistent(planRevisionId, 'count_unavailable', 'final');
+    if (counted !== out.length) {
+      throw sessionsReadInconsistent(planRevisionId, 'count_mismatch', `final counted=${counted} read=${out.length}`);
+    }
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// PRE3-B — Work Session search
+// ---------------------------------------------------------------------------
+
+/** The most sessions any one Work Session search query returns before it reports a cut. */
+export const WORK_SESSION_SEARCH_LIMIT = 100;
+
+/**
+ * PRE3 N1 — the largest bound a Work Session search honours. Each bounded query
+ * asks for one row more than it keeps; PostgREST's `max_rows` (1000) would cap a
+ * larger request silently, and the cut would then go unreported. A bigger
+ * `limit` is reduced to this, so a cut is still reported as `truncated`.
+ */
+export const WORK_SESSION_SEARCH_MAX_LIMIT = 999;
+
+/** Why a session matched a Work Session search. Listed in display order. */
+export type WorkSessionMatch =
+  | 'ordinal'
+  | 'session_id'
+  | 'session_id_prefix'
+  | 'entry_path'
+  | 'container_filename'
+  | 'source_filename';
+
+export const WORK_SESSION_MATCH_ORDER: readonly WorkSessionMatch[] = [
+  'ordinal', 'session_id', 'session_id_prefix', 'entry_path', 'container_filename', 'source_filename',
+];
+
+export interface WorkSessionSearchHit {
+  importSessionId: string;
+  /** Every way this session matched, in WORK_SESSION_MATCH_ORDER. */
+  matchedOn: WorkSessionMatch[];
+}
+
+export interface WorkSessionSearchResult {
+  hits: WorkSessionSearchHit[];
+  /** True when any one server query reached its bound — refine the term to see every match. */
+  truncated: boolean;
+}
+
+/** Arabic-Indic (U+0660..0669) and Extended Arabic-Indic (U+06F0..06F9) digits, read as ASCII. */
+function asciiDigits(text: string): string {
+  return text
+    .replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x0660))
+    .replace(/[۰-۹]/g, (d) => String(d.charCodeAt(0) - 0x06F0));
+}
+
+/** A Work Session number as typed: "3", "#3", "٣" or "#٣" → 3. Anything else → null. */
+export function parseSessionOrdinal(term: string): number | null {
+  const match = /^#?\s*(\d{1,6})$/.exec(asciiDigits(term.trim()));
+  if (!match) return null;
+  const ordinal = Number(match[1]);
+  return ordinal >= 1 ? ordinal : null;
+}
+
+function compareSessionStart(a: ImportSession, b: ImportSession): number {
+  const am = timestampMicros(a.startedAt);
+  const bm = timestampMicros(b.startedAt);
+  if (am !== null && bm !== null) {
+    if (am !== bm) return am < bm ? -1 : 1;
+  } else if (a.startedAt !== b.startedAt) {
+    return a.startedAt < b.startedAt ? -1 : 1;
+  }
+  if (a.id === b.id) return 0;
+  return a.id < b.id ? -1 : 1;
+}
+
+/**
+ * The stable Work Session number of every session of a revision: ALL of its
+ * sessions, whatever their status, ordered by start time and then id. It is
+ * computed from the complete list and never from a filtered one, so a search
+ * can never renumber a session, and a new import only ever appends. The
+ * complete list is `listImportSessions`, which pages past PostgREST's
+ * `max_rows` and refuses rather than return a partial list (PRE3 N1).
+ */
+export function rankImportSessions(
+  sessions: readonly ImportSession[],
+): Map<string, { ordinal: number; total: number }> {
+  const ordered = [...sessions].sort(compareSessionStart);
+  return new Map(ordered.map((session, index) => [session.id, { ordinal: index + 1, total: ordered.length }]));
+}
+
+/**
+ * A session-id term: the full UUID, or a prefix of at least four hex digits,
+ * typed with or without hyphens (hyphens only where a UUID has them). Returns
+ * the inclusive UUID range it covers — a uuid column cannot be ILIKE-matched,
+ * and uuid order is the order of its lowercase text — or null.
+ */
+export function sessionIdRange(term: string): { lo: string; hi: string; exact: boolean } | null {
+  const text = term.trim().toLowerCase();
+  const hex = text.replace(/-/g, '');
+  if (!/^[0-9a-f]{4,32}$/.test(hex)) return null;
+  const hyphenate = (h: string) => `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20, 32)}`;
+  const lo = hyphenate(hex.padEnd(32, '0'));
+  if (text.includes('-') && !lo.startsWith(text)) return null;
+  return { lo, hi: hyphenate(hex.padEnd(32, 'f')), exact: hex.length === 32 };
+}
+
+/**
+ * Work Session search: which sessions of ONE revision match a term by archive
+ * entry path, container filename, stored source filename, full session id or
+ * session-id prefix. (The stable number is matched by the caller against
+ * `rankImportSessions`, which needs no query.)
+ *
+ * Every match is decided by the server — filter, then order, then limit — in
+ * small bounded queries, one per field, each asking for one row more than it
+ * keeps so a cut is reported (`truncated`) rather than hidden. The answers are
+ * merged by session id. A failed query throws: a failure is never an empty
+ * result. An empty term searches nothing.
+ */
+export async function searchWorkSessions(
+  planRevisionId: string, query: string, requestedLimit = WORK_SESSION_SEARCH_LIMIT,
+): Promise<WorkSessionSearchResult> {
+  const term = query.trim();
+  if (term === '') return { hits: [], truncated: false };
+  const limit = Math.min(Math.max(1, Math.trunc(requestedLimit) || 1), WORK_SESSION_SEARCH_MAX_LIMIT);
+
+  const sessionsOf = () => supabase
     .from('central_needs_import_sessions')
-    .select('id, plan_revision_id, source_file_id, status, preview_digest, authoritative_digest, parser_identity, started_at, completed_at, notes')
-    .eq('plan_revision_id', planRevisionId)
-    .order('started_at', { ascending: true });
-  if (error) fail(error);
-  return (data ?? []).map((r) => ({
-    id: r.id as string,
-    planRevisionId: r.plan_revision_id as string,
-    sourceFileId: r.source_file_id as string,
-    status: r.status as ImportSessionStatus,
-    previewDigest: (r.preview_digest as string | null) ?? null,
-    authoritativeDigest: (r.authoritative_digest as string | null) ?? null,
-    parserIdentity: (r.parser_identity as Record<string, unknown> | null) ?? null,
-    startedAt: r.started_at as string,
-    completedAt: (r.completed_at as string | null) ?? null,
-    notes: (r.notes as string | null) ?? null,
-  }));
+    .select('id')
+    .eq('plan_revision_id', planRevisionId);
+  const byStart = (q: ReturnType<typeof sessionsOf>) =>
+    q.order('started_at', { ascending: true }).order('id', { ascending: true }).limit(limit + 1);
+
+  interface FieldRead { on: WorkSessionMatch; ids: string[]; truncated: boolean }
+  const idsOf = async (
+    on: WorkSessionMatch,
+    request: PromiseLike<{ data: unknown; error: unknown }>,
+    column = 'id',
+  ): Promise<FieldRead> => {
+    const { data, error } = await request;
+    if (error) fail(error as Parameters<typeof fail>[0]);
+    const ids = ((data ?? []) as Array<Record<string, unknown>>).map((r) => r[column] as string);
+    return { on, ids: ids.slice(0, limit), truncated: ids.length > limit };
+  };
+
+  const reads: Array<Promise<FieldRead>> = [
+    idsOf('entry_path', byStart(sessionsOf().ilike('entry_path', likeContains(term)))),
+    // The server picks the matching containers; their entries name the sessions.
+    batchIdsByContainerFilename(planRevisionId, term, limit).then(async ({ ids, truncated }) => {
+      if (ids.length === 0) return { on: 'container_filename' as const, ids: [], truncated };
+      const read = await idsOf('container_filename', supabase
+        .from('central_needs_import_batch_entries')
+        .select('import_session_id')
+        .eq('plan_revision_id', planRevisionId)
+        .in('batch_id', ids)
+        .order('batch_id', { ascending: true })
+        .order('entry_ordinal', { ascending: true })
+        .limit(limit + 1), 'import_session_id');
+      return { ...read, truncated: read.truncated || truncated };
+    }),
+    // The stored source file's name. M211 stores byte-identical content once,
+    // so this is the name it was first uploaded under.
+    (async () => {
+      const files = await idsOf('source_filename', supabase
+        .from('central_needs_source_files')
+        .select('id')
+        .eq('plan_revision_id', planRevisionId)
+        .ilike('original_filename', likeContains(term))
+        .order('uploaded_at', { ascending: true })
+        .order('id', { ascending: true })
+        .limit(limit + 1));
+      if (files.ids.length === 0) return files;
+      const read = await idsOf('source_filename', byStart(sessionsOf().in('source_file_id', files.ids)));
+      return { ...read, truncated: read.truncated || files.truncated };
+    })(),
+  ];
+  const range = sessionIdRange(term);
+  if (range) {
+    reads.push(range.exact
+      ? idsOf('session_id', sessionsOf().eq('id', range.lo).order('id', { ascending: true }).limit(limit + 1))
+      : idsOf('session_id_prefix', sessionsOf().gte('id', range.lo).lte('id', range.hi).order('id', { ascending: true }).limit(limit + 1)));
+  }
+
+  const results = await Promise.all(reads);
+  const matched = new Map<string, Set<WorkSessionMatch>>();
+  for (const { on, ids } of results) {
+    for (const id of ids) matched.set(id, (matched.get(id) ?? new Set<WorkSessionMatch>()).add(on));
+  }
+  const hits = [...matched.entries()]
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([importSessionId, on]) => ({
+      importSessionId,
+      matchedOn: WORK_SESSION_MATCH_ORDER.filter((field) => on.has(field)),
+    }));
+  return { hits, truncated: results.some((read) => read.truncated) };
 }
 
 export async function listImportBatches(planRevisionId: string): Promise<ImportBatch[]> {
@@ -1748,20 +2167,164 @@ export interface CentralItemOption {
    * treats it as the source unit.
    */
   unit: string;
+  /**
+   * PRE3-A — the discriminators an operator needs to tell two registered
+   * materials apart, read from the same catalog row. All optional so older
+   * fixtures stay valid; a field that is NULL on the row stays null.
+   */
+  nameAr?: string | null;
+  /** `central_items.trade_name` (M114). Null when the row has none. */
+  tradeName?: string | null;
+  concentration?: string | null;
+  dosageForm?: string | null;
+  /** The catalog's national-code semantic, `central_items.barcode` (M114 / G3.2 Decision A). */
+  nationalCode?: string | null;
+  /** How strongly the query matched — a ranking, never an authorization to map. */
+  grade?: MatchGrade;
+  /** i18n key explaining why it matched. */
+  reasonKey?: string;
+}
+
+/** Fewer normalized characters than this searches nothing (the shared resolver's own floor). */
+export const CENTRAL_ITEM_QUERY_MIN = 2;
+
+/**
+ * Candidate central items for a 'mapped' decision.
+ *
+ * PRE3-A: this is now the shared material resolver — the same registered-
+ * catalog read every other material picker uses — and no longer a narrow
+ * name-only ILIKE of its own. That brings, unchanged from the resolver:
+ *   - only ACTIVE catalog rows (`status = 'active'`), so a discontinued or
+ *     inactive item can never be offered as a mapping target;
+ *   - matching on scientific name, Arabic/alternate name, trade name and the
+ *     catalog national code, raw and Arabic-normalized;
+ *   - grading (confirmed / strong / probable) that ranks candidates and never
+ *     picks one.
+ * Only catalog results with a real central item id are returned — a stock lot
+ * or any other non-catalog identity can never become a `mapped` target here.
+ * It is a read: it creates no item, and choosing a result still takes an
+ * explicit operator confirmation before `setRecordDisposition` is called.
+ * A failed read throws; it is never reported as "no match".
+ */
+export async function searchCentralItems(query: string, limit = 25): Promise<CentralItemOption[]> {
+  let resolved: Awaited<ReturnType<typeof resolveMaterials>>;
+  try {
+    resolved = await resolveMaterials(query, { audience: 'internal', limit });
+  } catch (error) {
+    if (error instanceof CentralNeedsError) throw error;
+    fail(error as Parameters<typeof fail>[0]);
+  }
+  return resolved.filter(isMappableCatalogResult).map(centralItemOptionOf);
 }
 
 /**
- * Candidate central items for a 'mapped' decision. A plain RLS-governed read
- * of the existing canonical registry — CN-2B introduces no item catalogue of
- * its own and creates no items.
+ * A resolver result that may become a `mapped` target: a catalog row with a
+ * real central item id that is active and selectable. Nothing else — a stock
+ * lot or any other non-catalog identity — ever is.
  */
-export async function searchCentralItems(query: string, limit = 25): Promise<CentralItemOption[]> {
-  const { data, error } = await supabase
-    .from('central_items')
-    .select('id, name, unit')
-    .ilike('name', `%${query}%`)
-    .order('name', { ascending: true })
-    .limit(limit);
-  if (error) fail(error);
-  return (data ?? []).map((r) => ({ id: r.id as string, name: r.name as string, unit: r.unit as string }));
+function isMappableCatalogResult(m: ResolvedMaterial): boolean {
+  return m.source === 'catalog'
+    && typeof m.centralItemId === 'string' && m.centralItemId !== ''
+    && m.canonical.eligibility.active
+    && m.canonical.eligibility.selectable;
+}
+
+/** The ONE mapping from a resolver result to a mapping candidate — for the search and the exact-match check alike. */
+function centralItemOptionOf(m: ResolvedMaterial): CentralItemOption {
+  const nameAr = m.nameAr ?? null;
+  return {
+    id: m.centralItemId as string,
+    name: m.scientificName,
+    unit: m.unit ?? '',
+    nameAr,
+    // The resolver falls back to the Arabic name when trade_name is empty;
+    // that fallback is already shown as nameAr, so it is not repeated here.
+    tradeName: m.tradeName !== null && m.tradeName !== nameAr ? m.tradeName : null,
+    concentration: m.concentration,
+    dosageForm: m.dosageForm,
+    nationalCode: m.nationalCode,
+    grade: m.grade,
+    reasonKey: m.reasonKey,
+  };
+}
+
+/**
+ * PRE3-A — whether a typed query is long enough to search at all, by the same
+ * normalized measure the resolver applies. A shorter query is "keep typing",
+ * never "nothing is registered".
+ */
+export function centralItemQueryIsSearchable(query: string): boolean {
+  return normalizeSearchText((query ?? '').trim()).length >= CENTRAL_ITEM_QUERY_MIN;
+}
+
+/**
+ * PRE3-A — does this candidate carry exactly this text as one of its names
+ * (scientific, Arabic/alternate or trade — Arabic-normalized), or as its
+ * national code verbatim? It decides only whether a one-click suggestion may be
+ * OFFERED; it never maps anything, and nothing near it is fuzzy.
+ */
+export function centralItemExactlyNames(item: CentralItemOption, text: string): boolean {
+  const raw = (text ?? '').trim();
+  const norm = normalizeSearchText(raw);
+  if (norm === '') return false;
+  const names = [item.name, item.nameAr, item.tradeName];
+  if (names.some((name) => typeof name === 'string' && normalizeSearchText(name) === norm)) return true;
+  return typeof item.nationalCode === 'string' && item.nationalCode.trim() !== '' && item.nationalCode.trim() === raw;
+}
+
+/** PRE3 Run 4 — what a one-click material suggestion may be decided from. */
+export interface CentralItemExactMatches {
+  /** Every candidate the server returned that `centralItemExactlyNames` the text — active, mappable items only. */
+  matches: CentralItemOption[];
+  /**
+   * True ONLY when the server PROVED that its candidate set holds every active
+   * item that could exactly name the text (the shared resolver's exact-candidate
+   * mode: a superset predicate, active rows only, exact count within the cap).
+   * Without it, `matches` may be missing a second exact item — no suggestion.
+   */
+  complete: boolean;
+}
+
+/**
+ * PRE3 Run 4 — the active registered items that carry `text` exactly as a name
+ * or national code (the `centralItemExactlyNames` rule), with whether that list
+ * is PROVEN complete. A single suggestion may be offered only when it is
+ * complete AND holds exactly one item; two or more are a choice; anything
+ * unproven is no suggestion. It is a read: nothing is mapped, and a suggestion
+ * still waits for the person's explicit confirmation. A failed read throws; it
+ * is never reported as "no exact match".
+ */
+export async function findExactCentralItemMatches(text: string): Promise<CentralItemExactMatches> {
+  let found: Awaited<ReturnType<typeof resolveExactCatalogCandidates>>;
+  try {
+    found = await resolveExactCatalogCandidates(text);
+  } catch (error) {
+    if (error instanceof CentralNeedsError) throw error;
+    fail(error as Parameters<typeof fail>[0]);
+  }
+  const candidates = found.items.filter(isMappableCatalogResult).map(centralItemOptionOf);
+  return {
+    matches: candidates.filter((item) => centralItemExactlyNames(item, text)),
+    complete: found.complete,
+  };
+}
+
+/**
+ * PRE3-A — what tells two registered materials apart, as (label key, value)
+ * pairs in a fixed order: Arabic/alternate name, trade name, concentration,
+ * dosage form, national code. A field the catalog row does not carry is left
+ * out, never filled in. (The scientific name is the option's own label and the
+ * catalog unit is shown beside it, so neither is repeated here.)
+ */
+export function centralItemDiscriminators(item: CentralItemOption): Array<{ labelKey: string; value: string }> {
+  const pairs: Array<[string, string | null | undefined]> = [
+    ['cn2b_material_name_ar', item.nameAr],
+    ['inv_trade_name', item.tradeName],
+    ['inv_concentration', item.concentration],
+    ['inv_dosage_form', item.dosageForm],
+    ['inv_national_code', item.nationalCode],
+  ];
+  return pairs.flatMap(([labelKey, value]) => (
+    typeof value === 'string' && value.trim() !== '' ? [{ labelKey, value: value.trim() }] : []
+  ));
 }

@@ -47,17 +47,17 @@ describe('CN-1A/209 static — registration and file hygiene', () => {
     const files = readdirSync(MIGRATIONS).filter((f) => /^\d{3}_.*\.sql$/.test(f)).sort();
     expect(files).toContain(FILENAME);
     expect(files.indexOf(FILENAME)).toBe(208);
-    expect(files.filter((f) => Number(f.slice(0, 3)) > 219)).toEqual([]);
-    expect(files).toHaveLength(219);
+    expect(files.filter((f) => Number(f.slice(0, 3)) > 220)).toEqual([]);
+    expect(files).toHaveLength(220);
     expect(isReviewedMigrationFile(FILENAME)).toBe(true);
     // 209 is no longer last: CN-1B/210 sits directly after it, and 210's own
     // static suite owns the ceiling assertions from here on. This immediate-
     // successor relationship (209 -> 210) is historical and never moves; only
-    // the ceiling below advances, now to AUTH-1/M219.
+    // the ceiling below advances, now to PRE3-B/M220.
     expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.indexOf(FILENAME) + 1])
       .toBe('210_phoenix_central_needs_workflow_rpcs.sql');
-    expect(getMaximumReviewedMigrationNumber()).toBe(219);
-    expect(getNextUnreviewedMigrationNumber()).toBe(220);
+    expect(getMaximumReviewedMigrationNumber()).toBe(220);
+    expect(getNextUnreviewedMigrationNumber()).toBe(221);
   });
 
   it('carries no CR bytes — LF only', () => {
@@ -79,9 +79,10 @@ describe('CN-1A/209 static — registration and file hygiene', () => {
     // CN-2B conformance/212, CN-2B/Finding-1 corrective 213, the M214
     // readiness-RPC volatility correction, the C2/M215 governed correction
     // lifecycle, the C4/M216 beneficiary-region persistence, the C5/M217
-    // safety convergence, the C6-F1/M218 submission integrity fence and the
-    // AUTH-1/M219 sign-up authority hardening above it.
-    expect(others).toHaveLength(218);
+    // safety convergence, the C6-F1/M218 submission integrity fence, the
+    // AUTH-1/M219 sign-up authority hardening and the PRE3-B/M220 active
+    // central item guard above it.
+    expect(others).toHaveLength(219);
   });
 });
 

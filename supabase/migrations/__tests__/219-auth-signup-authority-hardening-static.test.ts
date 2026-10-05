@@ -187,9 +187,12 @@ const sha256 = (s: string) => createHash('sha256').update(s, 'utf8').digest('hex
 const md5 = (s: string) => createHash('md5').update(s, 'utf8').digest('hex');
 
 describe.runIf(PRESENT)('M219 static — sign-up authority hardening', () => {
-  it('219 is the next migration after 218 and the only file above 218; LF only; one BEGIN/COMMIT', () => {
+  it('219 is the next migration after 218; only PRE3-B/M220 sits above it (the ceiling is 220); LF only; one BEGIN/COMMIT', () => {
     const files = readdirSync(MIGRATIONS).filter((f) => /^\d{3}_.*\.sql$/.test(f)).sort();
-    expect(files.filter((f) => Number(f.slice(0, 3)) > 218)).toEqual([FILENAME]);
+    // PRE3-B/M220 (active central item guard) is the reviewed successor and now
+    // the ceiling; its own static suite owns the ceiling assertions. The
+    // 218 -> 219 -> 220 order is exact.
+    expect(files.filter((f) => Number(f.slice(0, 3)) > 218)).toEqual([FILENAME, '220_phoenix_central_needs_active_item_guard.sql']);
     expect(SQL.includes('\r')).toBe(false);
     expect(EXEC.match(/^\s*BEGIN\s*;/gim)).toHaveLength(1);
     expect(EXEC.match(/^\s*COMMIT\s*;/gim)).toHaveLength(1);

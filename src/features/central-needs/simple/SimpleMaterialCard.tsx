@@ -33,17 +33,44 @@
  * MATERIAL SUGGESTION: the existing canonical-item search has never done
  * fuzzy or automatic matching. This card extends the SAME "exact match,
  * never fuzzy" discipline `exactMatchSuggestion` already uses for
- * institutions to materials — an exact (trimmed) name match is offered as a
+ * institutions to materials — an exact name match is offered as a
  * suggestion, never persisted without an explicit [صحيح] confirmation, and
  * a row with no exact match simply has no suggestion (matches current
  * Advanced Mode behavior, which never suggests a material at all).
+ *
+ * PRE3-A — ONE RESOLVER, TWO SEPARATE ACTS. `searchCentralItems` is now the
+ * shared material resolver: ACTIVE registered catalog items only, matched by
+ * scientific, Arabic/alternate and trade name or national code, raw and
+ * Arabic-normalized. A suggestion is offered only when exactly ONE candidate
+ * carries the row's text as one of its names; two or more ask the person to
+ * choose. In the picker, choosing a result only STAGES it beside its
+ * discriminators; nothing is written until the separate confirmation. A search
+ * that finds nothing says so honestly ("material not registered") and leaves
+ * the row undecided — this card can never create a material, register one,
+ * or turn the typed text into one. A search that FAILED says so, and is never
+ * shown as "not registered".
+ *
+ * PRE3 RUN 4 — "EXACTLY ONE" MUST BE PROVEN, NOT GLIMPSED. The suggestion is no
+ * longer read off a capped, alphabetical search window (a second exact item past
+ * the cut was invisible there). It comes from `findExactCentralItemMatches`: the
+ * shared resolver's exact-candidate mode, which returns every active item that
+ * could carry the row's text exactly AND says whether that set is proven
+ * complete. One suggestion only when the set is complete and holds exactly one
+ * item; two or more are a choice; incomplete, failed or stale is NO suggestion
+ * (and the card says it could not confirm one). It still writes nothing until
+ * the person presses [Correct]. The picker shows at most its window and says
+ * when more registered materials match than it shows.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { t } from '@/shared/i18n/strings';
 import { PhoenixButton } from '@/shared/ui/PhoenixButton';
 import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import {
   CentralNeedsError,
+  centralItemDiscriminators,
+  centralItemExactlyNames,
+  centralItemQueryIsSearchable,
+  findExactCentralItemMatches,
   searchCentralItems,
   setRecordDisposition,
   type CentralItemOption,
@@ -52,6 +79,22 @@ import {
 import { centralNeedsErrorText } from '../central-needs.i18n';
 
 const UNIT_HEADER_RE = /^(unit|units|uom|الوحدة|وحدة|وحده|الوحده)$/i;
+
+/** How many registered materials the picker lists; it asks for one more, only to know when there are more. */
+const PICKER_LIMIT = 25;
+
+/**
+ * The proven-uniqueness check behind a suggestion, attributed to the exact
+ * text it was asked about. `complete` is the server's proof that `matches`
+ * holds EVERY active item carrying that text exactly; `failed` is a check that
+ * could not run. Neither an unproven nor a failed check ever yields a suggestion.
+ */
+interface ExactCheck {
+  seed: string;
+  matches: CentralItemOption[];
+  complete: boolean;
+  failed: boolean;
+}
 
 /** The row's own unit field, ONLY when a field header is an exact unit-word match. Never guessed. */
 function sourceUnitOf(fields: SourceRecord[]): string | null {
@@ -75,13 +118,32 @@ function evidenceFields(fields: SourceRecord[]): Array<{ fieldName: string; text
     .filter((f) => f.text.trim() !== '');
 }
 
-/** Exact (trimmed) name match only — the same discipline `exactMatchSuggestion` uses for institutions. */
-function exactCentralItemMatch(candidates: CentralItemOption[], evidenceText: string): CentralItemOption | null {
-  const trimmed = evidenceText.trim();
-  if (trimmed === '') return null;
-  const hit = candidates.find((c) => c.name.trim().toLowerCase() === trimmed.toLowerCase());
-  return hit ?? null;
+/**
+ * Exact name matches only — the same discipline `exactMatchSuggestion` uses for
+ * institutions. More than one exact match is not a suggestion: it is a choice.
+ */
+function exactCentralItemMatches(candidates: CentralItemOption[], evidenceText: string): CentralItemOption[] {
+  if (evidenceText.trim() === '') return [];
+  return candidates.filter((c) => centralItemExactlyNames(c, evidenceText));
 }
+
+/** PRE3-A — what tells two registered materials apart, beside the scientific name and unit. */
+function MaterialFacts({ lang, item }: { lang: 'ar' | 'en'; item: CentralItemOption }) {
+  const facts = centralItemDiscriminators(item);
+  if (facts.length === 0) return null;
+  return (
+    <span className="cn2b-simple-option__meta" data-testid="cn2b-simple-material-facts">
+      {facts.map((fact, index) => (
+        <span key={fact.labelKey}>
+          {index > 0 && ' · '}
+          {t(fact.labelKey, lang)}: <bdi>{fact.value}</bdi>
+        </span>
+      ))}
+    </span>
+  );
+}
+
+type MaterialSearchPhase = 'idle' | 'too_short' | 'searching' | 'done' | 'failed';
 
 interface Props {
   lang: 'ar' | 'en';
@@ -141,7 +203,20 @@ export function materialCardHasLocalWork(state: {
 
 export function SimpleMaterialCard({ lang, importSessionId, editable, targetEntity, fields, onResolved, onRefused, onActivityChange }: Props) {
   const [query, setQuery] = useState('');
-  const [candidates, setCandidates] = useState<CentralItemOption[]>([]);
+  /** The proven-uniqueness check of the row's own text — the only source of a suggestion. */
+  const [exactCheck, setExactCheck] = useState<ExactCheck | null>(null);
+  /** Newest-request-wins for that check: a reply for an older row text is dropped. */
+  const exactSeq = useRef(0);
+  /** The picker's own search, kept apart from the seed so neither overwrites the other. */
+  const [results, setResults] = useState<CentralItemOption[]>([]);
+  /** The picker's server reply held more registered materials than it lists. */
+  const [resultsCapped, setResultsCapped] = useState(false);
+  const [searchPhase, setSearchPhase] = useState<MaterialSearchPhase>('idle');
+  const [searchError, setSearchError] = useState<CentralNeedsError | string | null>(null);
+  /** A result the person chose in the picker. Staged only: nothing is written until it is confirmed. */
+  const [pending, setPending] = useState<CentralItemOption | null>(null);
+  /** Newest-request-wins for the picker search. */
+  const searchSeq = useRef(0);
   const [picking, setPicking] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -166,38 +241,92 @@ export function SimpleMaterialCard({ lang, importSessionId, editable, targetEnti
     [evidence],
   );
 
-  // A one-shot search seeded from the row's own longest text field, purely
-  // to save typing — the reviewer can freely change it. Nothing here is
-  // persisted from this search alone.
+  // The row's own longest text is checked for a PROVEN single exact match —
+  // purely to save typing; the reviewer can always choose something else.
+  // Nothing is persisted from this check. Only the newest check counts, and
+  // only for the text it was asked about. A check that fails or cannot prove
+  // completeness offers no suggestion; the person still chooses explicitly,
+  // and the picker reports its own failures.
   useEffect(() => {
-    let alive = true;
+    const seq = (exactSeq.current += 1);
     const seed = longestEvidenceText.trim();
-    if (seed === '') { setCandidates([]); return; }
-    searchCentralItems(seed, 10)
-      .then((rows) => { if (alive) setCandidates(rows); })
-      .catch(() => { if (alive) setCandidates([]); });
-    return () => { alive = false; };
+    setExactCheck(null);
+    if (!centralItemQueryIsSearchable(seed)) return undefined;
+    Promise.resolve()
+      .then(() => findExactCentralItemMatches(seed))
+      .then(
+        (found) => {
+          if (seq !== exactSeq.current) return;
+          setExactCheck({ seed, matches: found.matches, complete: found.complete === true, failed: false });
+        },
+        () => {
+          if (seq !== exactSeq.current) return;
+          setExactCheck({ seed, matches: [], complete: false, failed: true });
+        },
+      );
+    return undefined;
   }, [targetEntity, longestEvidenceText]);
 
-  const suggestion = useMemo(
-    () => exactCentralItemMatch(candidates, longestEvidenceText),
-    [candidates, longestEvidenceText],
+  /** The check that answers THIS row's current text, or nothing. */
+  const currentCheck = exactCheck !== null && exactCheck.seed === longestEvidenceText.trim() ? exactCheck : null;
+  const exactMatches = useMemo(
+    () => exactCentralItemMatches(currentCheck?.matches ?? [], longestEvidenceText),
+    [currentCheck, longestEvidenceText],
   );
+  // ONE suggestion only when the server proved the exact set complete and it
+  // holds exactly one item. Never from a window, a grade or a partial set.
+  const suggestion = currentCheck !== null && currentCheck.complete && exactMatches.length === 1 ? exactMatches[0] : null;
+  // Checked, but a single match could not be confirmed (failed, or not proven
+  // complete) — said plainly, so "no suggestion" is never read as "no match".
+  const suggestionUnconfirmed = currentCheck !== null
+    && (currentCheck.failed || !currentCheck.complete)
+    && exactMatches.length <= 1;
 
   useEffect(() => {
-    if (!picking) { setCandidates((prev) => prev); return; }
-    let alive = true;
+    const seq = (searchSeq.current += 1);
+    if (!picking) {
+      setResults([]);
+      setResultsCapped(false);
+      setSearchPhase('idle');
+      setSearchError(null);
+      setPending(null);
+      return undefined;
+    }
+    const term = query.trim();
+    if (!centralItemQueryIsSearchable(term)) {
+      setResults([]);
+      setResultsCapped(false);
+      setSearchPhase('too_short');
+      setSearchError(null);
+      return undefined;
+    }
+    setSearchPhase('searching');
+    setSearchError(null);
     const handle = setTimeout(() => {
-      searchCentralItems(query.trim(), 25)
-        .then((rows) => { if (alive) setCandidates(rows); })
-        .catch(() => { if (alive) setCandidates([]); });
+      searchCentralItems(term, PICKER_LIMIT + 1).then(
+        (rows) => {
+          if (seq !== searchSeq.current) return;
+          setResults(rows.slice(0, PICKER_LIMIT));
+          setResultsCapped(rows.length > PICKER_LIMIT);
+          setSearchPhase('done');
+        },
+        (e: unknown) => {
+          if (seq !== searchSeq.current) return;
+          setResults([]);
+          setResultsCapped(false);
+          setSearchError(e instanceof CentralNeedsError ? e : 'unknown_error');
+          setSearchPhase('failed');
+        },
+      );
     }, 150);
-    return () => { alive = false; clearTimeout(handle); };
+    return () => clearTimeout(handle);
   }, [picking, query]);
 
   async function mapTo(item: CentralItemOption) {
-    // Defence in depth: no code path reaches the RPC without `editable`.
+    // Defence in depth: no code path reaches the RPC without `editable`, and
+    // `mapped` always names a real registered item — never typed text.
     if (!editable) return;
+    if (item.id.trim() === '') return;
     setBusy(true);
     setError(null);
     try {
@@ -290,6 +419,7 @@ export function SimpleMaterialCard({ lang, importSessionId, editable, targetEnti
             <p className="cn2b-simple-match__meta" data-testid="cn2b-simple-catalog-unit">
               {t('cn2b_simple_catalog_unit_label', lang)}: <bdi>{suggestion.unit}</bdi>
             </p>
+            <MaterialFacts lang={lang} item={suggestion} />
           </div>
           <div className="cn2b-simple-card__actions">
             <PhoenixButton type="button" variant="primary" size="lg" disabled={busy} onClick={() => void mapTo(suggestion)}>
@@ -306,14 +436,26 @@ export function SimpleMaterialCard({ lang, importSessionId, editable, targetEnti
       )}
 
       {editable && !suggestion && !picking && !showNotApplicable && (
-        <div className="cn2b-simple-card__actions">
-          <PhoenixButton type="button" variant="primary" size="lg" disabled={busy} onClick={() => { setPicking(true); setQuery(''); }}>
-            {t('cn2b_simple_choose_material', lang)}
-          </PhoenixButton>
-          <PhoenixButton type="button" variant="ghost" disabled={busy} onClick={() => setShowNotApplicable(true)}>
-            {t('cn2b_simple_not_a_material', lang)}
-          </PhoenixButton>
-        </div>
+        <>
+          {exactMatches.length > 1 && (
+            <p className="cn2b-simple-card__hint" data-testid="cn2b-simple-material-multiple-matches">
+              {t('cn2b_simple_material_multiple_matches', lang)}
+            </p>
+          )}
+          {suggestionUnconfirmed && (
+            <p className="cn2b-simple-card__hint" data-testid="cn2b-simple-material-suggestion-unconfirmed">
+              {t('cn2b_simple_material_suggestion_unconfirmed', lang)}
+            </p>
+          )}
+          <div className="cn2b-simple-card__actions">
+            <PhoenixButton type="button" variant="primary" size="lg" disabled={busy} onClick={() => { setPicking(true); setQuery(''); }}>
+              {t('cn2b_simple_choose_material', lang)}
+            </PhoenixButton>
+            <PhoenixButton type="button" variant="ghost" disabled={busy} onClick={() => setShowNotApplicable(true)}>
+              {t('cn2b_simple_not_a_material', lang)}
+            </PhoenixButton>
+          </div>
+        </>
       )}
 
       {editable && picking && (
@@ -324,18 +466,62 @@ export function SimpleMaterialCard({ lang, importSessionId, editable, targetEnti
             aria-label={t('cn2b_simple_search_material', lang)}
             placeholder={t('cn2b_simple_search_material', lang)}
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => { setQuery(e.target.value); setPending(null); }}
           />
-          <ul className="cn2b-simple-card__picker-list">
-            {candidates.map((c) => (
-              <li key={c.id}>
-                <PhoenixButton type="button" variant="ghost" className="cn2b-simple-option" disabled={busy} onClick={() => void mapTo(c)}>
-                  <bdi>{c.name}</bdi> <span className="cn2b-simple-option__meta">(<bdi>{c.unit}</bdi>)</span>
+          {/* Where the search stands. "Keep typing", "searching", "failed" and
+              "not registered" are four different facts and are never merged. */}
+          <p className="cn2b-simple-card__hint" role="status" data-testid="cn2b-simple-material-search-state" data-phase={searchPhase}>
+            {searchPhase === 'too_short' && t('cn2b_material_search_min', lang)}
+            {searchPhase === 'searching' && t('cn2b_material_searching', lang)}
+            {searchPhase === 'done' && results.length > 0 && `${t('cn2b_material_search_results', lang)}: ${results.length}`}
+          </p>
+          {searchPhase === 'done' && resultsCapped && (
+            <p className="cn2b-simple-card__hint" data-testid="cn2b-simple-material-search-capped">
+              {t('cn2b_material_search_capped', lang)}
+            </p>
+          )}
+          {searchPhase === 'failed' && (
+            <div className="cn2b-simple-error" role="alert" data-testid="cn2b-simple-material-search-failed">
+              <PhoenixIcon name="warning" size={16} inline aria-hidden="true" /> {t('cn2b_material_search_failed', lang)}
+              {searchError !== null && <> {centralNeedsErrorText(searchError, lang)}</>}
+            </div>
+          )}
+          {searchPhase === 'done' && results.length === 0 && (
+            <div className="cn2b-simple-card__empty" data-testid="cn2b-simple-material-not-registered">
+              <strong>{t('cn2b_material_not_registered', lang)}</strong>
+              <p className="cn2b-simple-card__hint">{t('cn2b_material_not_registered_note', lang)}</p>
+            </div>
+          )}
+          {pending ? (
+            <div className="cn2b-simple-match" data-testid="cn2b-simple-material-pending">
+              <p className="cn2b-simple-match__label">{t('cn2b_simple_material_confirm_title', lang)}</p>
+              <p className="cn2b-simple-match__name"><bdi>{pending.name}</bdi></p>
+              <p className="cn2b-simple-card__hint">
+                {t('cn2b_simple_catalog_unit_label', lang)}: <bdi>{pending.unit}</bdi>
+              </p>
+              <MaterialFacts lang={lang} item={pending} />
+              <div className="cn2b-simple-card__actions">
+                <PhoenixButton type="button" variant="primary" disabled={busy} onClick={() => void mapTo(pending)}>
+                  {t('cn2b_simple_material_confirm', lang)}
                 </PhoenixButton>
-              </li>
-            ))}
-            {candidates.length === 0 && <li className="cn2b-simple-card__empty">{t('cn2b_simple_no_results', lang)}</li>}
-          </ul>
+                <PhoenixButton type="button" variant="secondary" disabled={busy} onClick={() => setPending(null)}>
+                  {t('cn2b_simple_material_choose_different', lang)}
+                </PhoenixButton>
+              </div>
+            </div>
+          ) : results.length > 0 && (
+            <ul className="cn2b-simple-card__picker-list">
+              {results.map((c) => (
+                <li key={c.id}>
+                  {/* Choosing STAGES the item; the write waits for the confirmation above. */}
+                  <PhoenixButton type="button" variant="ghost" className="cn2b-simple-option" disabled={busy} onClick={() => setPending(c)}>
+                    <bdi>{c.name}</bdi> <span className="cn2b-simple-option__meta">(<bdi>{c.unit}</bdi>)</span>{' '}
+                    <MaterialFacts lang={lang} item={c} />
+                  </PhoenixButton>
+                </li>
+              ))}
+            </ul>
+          )}
           <PhoenixButton type="button" variant="ghost" disabled={busy} onClick={() => { setPicking(false); setQuery(''); }}>
             {t('cn2b_simple_cancel', lang)}
           </PhoenixButton>

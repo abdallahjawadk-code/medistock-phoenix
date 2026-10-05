@@ -446,7 +446,19 @@ describe('RAC-3 · I) no backend or migration change', () => {
     // any OTHER migration or supabase/ file. Its static and dynamic suites live
     // under supabase/migrations/__tests__/, which this guard already exempts.
     const M219 = 'supabase/migrations/219_phoenix_auth_signup_authority_hardening.sql';
-    const ALLOWED_SQL = [M200, M201, M202, M203, M204, M205, M206, M207, M208, M209, M210, M211, M212, M213, M214, M215, M216, M217, M218, M219];
+    // PRE3-B/M220: the Central Needs active-item server guard (the disposition
+    // RPC is replaced, with signature, owner, ACL, SECURITY DEFINER and
+    // search_path unchanged, and now requires a mapped central item to exist and
+    // be active, read FOR SHARE; one private SECURITY INVOKER gate function with
+    // no client grant, fired by one BEFORE UPDATE trigger on
+    // central_needs_plan_revisions, re-checks active items at submit and
+    // approve); it touches no command-centre object.
+    // Registered by EXACT filename, exactly as M200-M219 were, so this guard
+    // still fails closed for any OTHER migration or supabase/ file. Its static and
+    // dynamic suites live under supabase/migrations/__tests__/, which this guard
+    // already exempts.
+    const M220 = 'supabase/migrations/220_phoenix_central_needs_active_item_guard.sql';
+    const ALLOWED_SQL = [M200, M201, M202, M203, M204, M205, M206, M207, M208, M209, M210, M211, M212, M213, M214, M215, M216, M217, M218, M219, M220];
     const changed = execSync(
       'git diff --name-only b707f073d60b4cc61205c35003ab491f3aed7468',
       { cwd: process.cwd(), encoding: 'utf8' },

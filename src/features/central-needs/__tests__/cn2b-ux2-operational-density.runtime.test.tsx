@@ -530,8 +530,11 @@ describe('UX-2A — authorization is untouched', () => {
     for (const forbidden of ['searchCentralItems', 'setRecordDisposition', 'recordFieldOverride', 'await ']) {
       expect(memo, forbidden).not.toContain(forbidden);
     }
-    // Mapping still takes an explicit per-row action with a reviewer-chosen id.
-    expect(tableSrc).toContain("applyOne(group.targetEntity, 'mapped', itemQuery.trim())");
+    // Mapping still takes an explicit per-row action with a reviewer-chosen id —
+    // PRE3-A: the id of a SELECTED registered item, never the typed search text.
+    expect(tableSrc).toContain("applyOne(group.targetEntity, 'mapped', chosenItem.id)");
+    expect(tableSrc).not.toContain("applyOne(group.targetEntity, 'mapped', itemQuery");
+    expect(tableSrc).not.toContain('<datalist');
     expect(tableSrc).toContain('if (bulkPreview === null || bulkReason.trim() === \'\') return;');
   });
 });
