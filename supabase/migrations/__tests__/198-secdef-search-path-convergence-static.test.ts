@@ -113,9 +113,15 @@ describe('M198 static — identity and placement', () => {
       // of the thirty it touches, so what this suite converges is untouched. It is now the
       // reviewed ceiling.
       '219_phoenix_auth_signup_authority_hardening.sql',
+      // PRE3-B/M220: the Central Needs active central item guard (disposition RPC item check,
+      // one private gate trigger on plan revisions) — it keeps search_path = public, pg_temp on
+      // the one SECURITY DEFINER function it replaces, pins its new SECURITY INVOKER gate to
+      // pg_catalog, pg_temp, and alters none of the thirty, so what this suite converges is
+      // untouched. It is now the reviewed ceiling.
+      '220_phoenix_central_needs_active_item_guard.sql',
     ]);
-    expect(files.filter((f) => Number(f.slice(0, 3)) > 219)).toEqual([]);
-    expect(files).toHaveLength(219);
+    expect(files.filter((f) => Number(f.slice(0, 3)) > 220)).toEqual([]);
+    expect(files).toHaveLength(220);
   });
 
   it('carries no MANUAL APPLY ONLY banner, so the pinned executor will accept it', () => {

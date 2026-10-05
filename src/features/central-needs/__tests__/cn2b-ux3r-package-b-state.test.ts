@@ -234,7 +234,11 @@ describe('UX-3R Package B shell contract', () => {
     expect(screen).toContain('reviewActivity.dirty || needLineActivity.dirty');
     expect(screen).toContain('reviewActivity.busy');
     expect(screen).toContain('needLineActivity.busy');
-    expect(screen).toContain("searchBatchEntries(id, '', 500).catch(() => [])");
+    // PRE3-B: still the same bounded label read, still fail-soft — but a failed or
+    // capped read is recorded as incomplete membership, never as "not in a batch".
+    expect(screen).toContain("searchBatchEntries(id, '', 500).then(");
+    expect(screen).toContain('(rows) => ({ complete: rows.length < 500, rows })');
+    expect(screen).toContain('() => ({ complete: false, rows: [] as Awaited<ReturnType<typeof searchBatchEntries>> })');
     expect(screen.toLowerCase()).not.toContain('autosave');
   });
 

@@ -13,6 +13,10 @@ vi.mock('../../central-needs.service', async () => {
     ...actual,
     setRecordDisposition: (...a: unknown[]) => setRecordDisposition(...a),
     searchCentralItems: (...a: unknown[]) => searchCentralItems(...a),
+    // PRE3 Run 4: a suggestion now needs the exact-candidate check (findExactCentralItemMatches) to PROVE
+    // its set complete. This file's seed stub reports the stubbed rows as such a proven set; the proof
+    // itself is tested in pre3-suggestion-uniqueness.runtime.test.tsx and material-resolver-exact-candidates.test.ts.
+    findExactCentralItemMatches: async (text: string) => ({ matches: (await searchCentralItems(text, 10)) ?? [], complete: true }),
   };
 });
 

@@ -287,6 +287,18 @@ export const REVIEWED_MIGRATION_FILES: readonly string[] = Object.freeze([
   // phoenix_my_org untouched (AUTH-2). No new table, column, policy, grant or
   // permission key, and no stock, movement, allocation or transfer SQL.
   '219_phoenix_auth_signup_authority_hardening.sql',
+  // PRE3-B / M220: Central Needs active central item guard. A mapped central
+  // item must exist and be ACTIVE: the disposition RPC is the M211 body with
+  // only the item check changed (read FOR SHARE; central_item_not_active), and
+  // one private SECURITY INVOKER gate fired by one BEFORE UPDATE trigger on plan
+  // revisions refuses an entry into submitted or approved that references a
+  // missing or non-active item. Owner, SECURITY DEFINER, search_path and ACL of
+  // the replaced function are unchanged; the only privilege statement is the
+  // REVOKE on the new private function. No table, column, policy, grant or
+  // permission key, and no stock, movement, allocation or transfer SQL.
+  // Registration records repository review only; it says nothing about
+  // Production, where M220 is not applied.
+  '220_phoenix_central_needs_active_item_guard.sql',
 ]);
 
 const REVIEWED_SET: ReadonlySet<string> = new Set(REVIEWED_MIGRATION_FILES);

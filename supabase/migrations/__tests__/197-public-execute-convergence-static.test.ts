@@ -97,9 +97,18 @@ describe('M197 static — identity and placement', () => {
       // that function's ACL (PUBLIC regains no EXECUTE), so what this suite
       // converges is untouched. It is now the reviewed ceiling.
       '219_phoenix_auth_signup_authority_hardening.sql',
+      // PRE3-B/M220: the Central Needs active central item guard (disposition RPC
+      // item check, one private gate function and one trigger on plan revisions),
+      // with no stock, movement, allocation or transfer SQL. It grants no EXECUTE
+      // to PUBLIC (it issues no GRANT; its one REVOKE removes PUBLIC and every
+      // client role from its new private function, and CREATE OR REPLACE keeps the
+      // disposition RPC's ACL) and neither creates, replaces nor re-grants any of
+      // the six functions 197 converges, so what this suite converges is
+      // untouched. It is now the reviewed ceiling.
+      '220_phoenix_central_needs_active_item_guard.sql',
     ]);
-    expect(files.filter((f) => Number(f.slice(0, 3)) > 219)).toEqual([]);
-    expect(files).toHaveLength(219);
+    expect(files.filter((f) => Number(f.slice(0, 3)) > 220)).toEqual([]);
+    expect(files).toHaveLength(220);
   });
 
   it('carries no MANUAL APPLY ONLY banner, so the pinned executor will accept it', () => {

@@ -92,6 +92,10 @@ vi.mock('../central-needs.service', async () => {
     ...actual,
     ...forwarded,
     searchBatchEntries: vi.fn(async () => []),
+    // PRE3 Run 4: the material card's suggestion now needs the exact-candidate check to PROVE its set
+    // complete; here the stubbed search rows stand for such a proven set (the proof is tested in
+    // pre3-suggestion-uniqueness.runtime.test.tsx and material-resolver-exact-candidates.test.ts).
+    findExactCentralItemMatches: async (text: string) => ({ matches: (await svc.searchCentralItems(text, 10)) ?? [], complete: true }),
     searchSourceFiles: vi.fn(async () => []),
   };
 });

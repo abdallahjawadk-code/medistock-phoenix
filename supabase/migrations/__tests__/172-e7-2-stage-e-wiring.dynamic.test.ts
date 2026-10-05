@@ -327,6 +327,13 @@ run('E7-2 · Stage-E application wiring (dynamic)',()=>{
       // stock SQL at all, so "Stage E still ends at 171" remains true. Listed so
       // this guard stays exhaustive and fails closed on any unlisted new file.
       '219_phoenix_auth_signup_authority_hardening.sql',
+      // PRE3-B/M220: the Central Needs active central item guard — the
+      // disposition RPC replaced with only its item check changed and one
+      // private gate trigger on plan revisions; it adds no migration numbered
+      // <= 171 and no corridor, route, dispatch or stock SQL at all, so "Stage E
+      // still ends at 171" remains true. Listed so this guard stays exhaustive
+      // and fails closed on any unlisted new file.
+      '220_phoenix_central_needs_active_item_guard.sql',
     ];
     it('Stage E still ends at 171 — E7-2 introduced no new SQL',()=>{
       const files=readdirSync(join(__dirname,'..')).filter(f=>/^\d{3}_.*\.sql$/.test(f));

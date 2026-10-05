@@ -123,14 +123,19 @@ describe('182 registration and shape', () => {
       // owners, ACLs and search_path unchanged; no facility-scoped RBAC SQL (no scope ledger, permission key, GRANT,
       // REVOKE or policy), so nothing this suite asserts moves. It is now the reviewed ceiling.
       '219_phoenix_auth_signup_authority_hardening.sql',
+      // PRE3-B/M220: the Central Needs active central item guard — the disposition RPC is replaced with only its
+      // item check changed (owner, ACL and search_path unchanged) plus one private gate and one plan-revision
+      // trigger; no facility-scoped RBAC SQL (no scope ledger, role, permission key, GRANT or policy; its one REVOKE
+      // is on its own new private function), so nothing this suite asserts moves. It is now the reviewed ceiling.
+      '220_phoenix_central_needs_active_item_guard.sql',
     ];
     const i = REVIEWED_MIGRATION_FILES.indexOf(NAME);
     expect(REVIEWED_MIGRATION_FILES.slice(i + 1)).toEqual(SUCCESSORS);
     expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1])
       .toBe(SUCCESSORS[SUCCESSORS.length - 1]);
-    // The ceiling is now 219; `[2-9]\d\d` would match it, so this asserts
+    // The ceiling is now 220; `[2-9]\d\d` would match it, so this asserts
     // numerically that nothing sits ABOVE the ceiling.
-    expect(REVIEWED_MIGRATION_FILES.filter(f => Number(f.slice(0, 3)) > 219)).toHaveLength(0);
+    expect(REVIEWED_MIGRATION_FILES.filter(f => Number(f.slice(0, 3)) > 220)).toHaveLength(0);
   });
 
   it('is a single transaction, manual-apply only', () => {

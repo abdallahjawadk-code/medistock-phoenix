@@ -704,6 +704,21 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
       'supabase/migrations/219_phoenix_auth_signup_authority_hardening.sql',
       'supabase/migrations/__tests__/219-auth-signup-authority-hardening-static.test.ts',
       'supabase/migrations/__tests__/219-auth-signup-authority-hardening.dynamic.test.ts',
+      // PRE3-B/M220: the reviewed Central Needs active-item server guard — one
+      // reviewed, forward-only migration plus its static and dynamic proofs. It
+      // adds no branding asset, no table, no RLS policy and no permission key:
+      // the Central Needs disposition RPC is replaced, with signature, owner,
+      // ACL, SECURITY DEFINER and search_path unchanged, and now requires a
+      // mapped central item to exist and be active; one private SECURITY INVOKER
+      // gate function (no client grant), fired by one BEFORE UPDATE trigger on
+      // central_needs_plan_revisions, re-checks active items at submit and
+      // approve. It does not alter A7.2.4's branding/security subject.
+      // Registered by EXACT filename, exactly as M209-M219 were. No wildcard and
+      // no directory exemption, so every other file under supabase/ still fails
+      // this guard closed.
+      'supabase/migrations/220_phoenix_central_needs_active_item_guard.sql',
+      'supabase/migrations/__tests__/220-central-needs-active-item-guard-static.test.ts',
+      'supabase/migrations/__tests__/220-central-needs-active-item-guard.dynamic.test.ts',
       // INTERACTIVE-GUIDE-IG1: one new file under the watched `src/app`
       // prefix, registered by EXACT filename like every entry above.
       //

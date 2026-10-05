@@ -32,6 +32,7 @@ function fakeClient(rowsByTable: Record<string, unknown[]>) {
         in() { return builder; },
         ilike() { return builder; },
         or(expr: string) { state.or = expr; return builder; },
+        order() { return builder; },
         abortSignal() { return builder; },
         limit() {
           calls.push(state);

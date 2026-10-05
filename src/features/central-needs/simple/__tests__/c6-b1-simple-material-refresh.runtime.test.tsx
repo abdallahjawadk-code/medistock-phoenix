@@ -191,6 +191,8 @@ async function mapThroughPicker() {
   fireEvent.change(within(card()).getByLabelText(t('cn2b_simple_search_material', 'en')), { target: { value: 'C6B1' } });
   const option = await within(card()).findByRole('button', { name: new RegExp(ITEM.name) });
   fireEvent.click(option);
+  // PRE3-A: choosing only stages the item; the decision is the separate confirmation.
+  fireEvent.click(await within(card()).findByRole('button', { name: t('cn2b_simple_material_confirm', 'en') }));
 }
 
 // ==============================================================================

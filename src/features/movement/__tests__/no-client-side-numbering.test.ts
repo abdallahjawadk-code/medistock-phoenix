@@ -258,7 +258,15 @@ describe('no client-side document-number sequence exists',()=>{
     // ACLs and search_path unchanged. It introduces no sequence, counter,
     // generated numeric identity or document number, and no numbering SQL.
     // Registered by exact number; boundary moves to 219.
-    const beyond=migrations.filter(f=>/^(1[89]\d|[2-9]\d\d)_/.test(f)&&!/^(179|180|181|182|183|184|185|186|187|188|189|190|191|192|193|194|195|196|197|198|199|200|201|202|203|204|205|206|207|208|209|210|211|212|213|214|215|216|217|218|219)_/.test(f));
+    // PRE3-B / M220: the Central Needs active central item guard — the
+    // disposition RPC is the M211 body with only its central item check changed
+    // (the item row read FOR SHARE; a non-active item raises
+    // central_item_not_active), plus one private SECURITY INVOKER gate and one
+    // BEFORE UPDATE trigger on plan revisions that lock and read but write
+    // nothing. It introduces no sequence, counter, max()+1, generated numeric
+    // identity or document number: its only writes are M211's unchanged mapping
+    // upsert and audit row. Registered by exact number; boundary moves to 220.
+    const beyond=migrations.filter(f=>/^(1[89]\d|[2-9]\d\d)_/.test(f)&&!/^(179|180|181|182|183|184|185|186|187|188|189|190|191|192|193|194|195|196|197|198|199|200|201|202|203|204|205|206|207|208|209|210|211|212|213|214|215|216|217|218|219|220)_/.test(f));
     expect(beyond).toEqual([]);
     for(const f of [
       '211_phoenix_central_needs_batch_and_disposition.sql',
