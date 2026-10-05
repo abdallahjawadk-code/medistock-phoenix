@@ -131,7 +131,7 @@ export const QA_DISPATCH_1 = '0ff88888-0000-4000-8000-000000000001';
  * does. Two undecided entities means `ready: false` with two blockers, which is
  * the honest projection of these rows.
  */
-const CN2B_SESSION = 'qa-cn2b-session-1';
+const CN2B_SESSION = '0c220000-0000-4000-8000-000000000001';
 const CN2B_REVISION = 'qa-cn2b-revision-1';
 const CN2B_BATCH = 'qa-cn2b-batch-1';
 const CN2B_ENTITIES = ['sheet:0:row:5', 'sheet:0:row:6', 'sheet:0:row:7', 'sheet:0:row:8'];
