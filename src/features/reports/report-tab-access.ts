@@ -1,4 +1,5 @@
 import { isFacilityScopedRole } from '@/shared/lib/roles';
+import type { OrganizationKind } from '@/shared/lib/institution-hierarchy';
 
 export type ReportTab =
   | 'overview'
@@ -56,8 +57,17 @@ export const REPORT_TAB_ACCESS = {
  * Phase C3 UNION contract. A tab is visible when its own existing frontend
  * permission (or role, for Global Search) allows it. Nothing here grants a
  * backend capability: every service/RPC/RLS check remains authoritative.
+ *
+ * `organizationKind` is the ACTIVE organization's canonical
+ * organization_kind (AppContext's activeOrganizationKind). Only the
+ * supplementary tab reads it; omitted, null or unknown means "not a care
+ * institution" (see PDA-PROC-1 below).
  */
-export function allowedReportTabs(permissions: ReadonlySet<string>, role: string | null): ReportTab[] {
+export function allowedReportTabs(
+  permissions: ReadonlySet<string>,
+  role: string | null,
+  organizationKind?: OrganizationKind | null,
+): ReportTab[] {
   if (role === null) return [];
 
   /**
@@ -83,6 +93,18 @@ export function allowedReportTabs(permissions: ReadonlySet<string>, role: string
   const facilityScoped = isFacilityScopedRole(role);
 
   return REPORT_TAB_ORDER.filter(tab => {
+    /**
+     * PDA-PROC-1 — supplementary procurement is a care-institution domain.
+     *
+     * A pharmacy department authority never possesses supplementary
+     * purchases, so the tab is DENIED (not rendered empty) unless the active
+     * organization is canonically a care institution. A null, unknown or
+     * still-loading kind is denied too, and no role is an exception, not even
+     * super_admin. Like the facility denial above, this is layered on top of
+     * the tab's own rule: REPORT_TAB_ACCESS is unchanged, and the tab keeps
+     * every pre-existing gate for a care institution.
+     */
+    if (tab === 'supplementary' && organizationKind !== 'care_institution') return false;
     const rule: ReportTabAccessRule = REPORT_TAB_ACCESS[tab];
     if (rule.kind === 'authenticated_rls') return !facilityScoped;
     if (rule.kind === 'permission') return permissions.has(rule.permission);

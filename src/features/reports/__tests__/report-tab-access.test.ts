@@ -24,7 +24,9 @@ describe('Phase C3 report-tab UNION authorization contract', () => {
   });
 
   it('keeps every previously ungated RLS-authoritative tab available to an authenticated user', () => {
-    expect(allowedReportTabs(new Set(), 'viewer')).toEqual([
+    // PDA-PROC-1: the supplementary tab additionally needs a care-institution
+    // organization, so the pre-existing tab set is asserted for that kind.
+    expect(allowedReportTabs(new Set(), 'viewer', 'care_institution')).toEqual([
       'overview', 'institutions', 'materials', 'custody', 'supplementary',
       'corrections', 'monthly', 'library',
     ]);

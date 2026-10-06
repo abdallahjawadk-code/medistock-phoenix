@@ -23,6 +23,8 @@ import {
   withDeadline,
 } from '@/shared/lib/deadline';
 import { getEffectivePermissions } from '@/shared/supabase/services/users.service';
+import { getOrganization } from '@/shared/supabase/services/organizations.service';
+import type { OrganizationKind } from '@/shared/lib/institution-hierarchy';
 import {
   createAuthorizationService, createRbacObservability,
   type AuthorizationService,
@@ -92,6 +94,17 @@ interface AppState {
   session: Session | null;
   profile: Profile | null;
   role: Role;
+  /**
+   * PDA-PROC-1: the canonical organization_kind of `activeOrgId`, read through
+   * getOrganization. Derived and READ-ONLY. It is null in the very render an
+   * org or profile change appears, and stays null while the read is pending,
+   * when there is no active organization, when the row is missing or the read
+   * fails or times out, and for any kind this client does not recognise. It is
+   * never inferred from the role. Pending is therefore fail-closed.
+   */
+  activeOrganizationKind: OrganizationKind | null;
+  /** PDA-PROC-1: true while the kind of a non-null `activeOrgId` is still being read. */
+  activeOrganizationKindPending: boolean;
   /** Org scope for queries. super_admin may switch; others are pinned to their org. */
   activeOrgId: string | null;
   setActiveOrgId: (id: string | null) => void;
@@ -250,6 +263,17 @@ export function AppProvider({ children, skipAuthBootstrap = false }: AppProvider
   const profileRequestRef  = useRef(0);
   const sessionUserIdRef   = useRef<string | null>(null);
   const profileUserIdRef   = useRef<string | null>(null);
+  // PDA-PROC-1: the organization-kind read is keyed by a GENERATION that is
+  // bumped, during render, on every change of the active org or of the profile
+  // identity (A->B->A included). A read is applied only to the generation that
+  // issued it, so the kind is null in the same render the change appears and a
+  // stale answer for a previous organization can never surface.
+  const [organizationKindScope, setOrganizationKindScope] = useState<{
+    profileId: string | null; orgId: string | null; generation: number;
+  }>({ profileId: null, orgId: null, generation: 0 });
+  const [organizationKindRead, setOrganizationKindRead] = useState<{
+    generation: number; kind: OrganizationKind | null;
+  } | null>(null);
   // Once an operator starts signing out, no delayed non-null auth event may
   // resurrect that session. Only a new explicit sign-in attempt, or the
   // already-established recovery flow, opens the barrier again.
@@ -643,6 +667,32 @@ export function AppProvider({ children, skipAuthBootstrap = false }: AppProvider
     rbacTelemetry.clear();
   }, [rbacTelemetry, profile?.id]);
 
+  // PDA-PROC-1: read the canonical classification of the active organization
+  // for the current generation. A deadline, a rejection, a missing row, a row
+  // for another id and an unrecognised kind all settle as null (fail closed),
+  // and the answer is dropped if the generation moved on meanwhile. A failed
+  // read is not retried here: it stays null until the org or the profile
+  // changes, or the page reloads.
+  useEffect(() => {
+    const { profileId: scopeProfileId, orgId, generation } = organizationKindScope;
+    if (orgId === null || scopeProfileId === null) return;
+    let current = true;
+    void (async () => {
+      let kind: OrganizationKind | null = null;
+      try {
+        const org = await withDeadline(getOrganization(orgId), AUTH_PROFILE_DEADLINE_MS);
+        if (!isDeadlineExceeded(org) && org !== null && org.id === orgId) {
+          kind = org.organizationKind;
+        }
+      } catch {
+        // Unreadable is unknown, and unknown is never eligible.
+        kind = null;
+      }
+      if (current) setOrganizationKindRead({ generation, kind });
+    })();
+    return () => { current = false; };
+  }, [organizationKindScope]);
+
   // Keep the authorization service's context in step with the session. Every
   // dependency here is a reason its cached decisions are no longer valid:
   //   session   → login / logout / token refresh to a different user
@@ -817,6 +867,27 @@ export function AppProvider({ children, skipAuthBootstrap = false }: AppProvider
 
   const role: Role = profile?.role ?? 'outlet_officer';
 
+  // PDA-PROC-1: derive the active organization kind. React's "adjust state
+  // while rendering" pattern starts a new generation in the SAME render that
+  // the active org or the profile identity changes (org switch, logout,
+  // profile switch, identity reset), so no consumer can ever render the new
+  // organization with the previous organization's kind. Never role-derived.
+  const kindProfileId = profile?.id ?? null;
+  const organizationKindScopeStale =
+    organizationKindScope.profileId !== kindProfileId || organizationKindScope.orgId !== activeOrgId;
+  if (organizationKindScopeStale) {
+    setOrganizationKindScope({
+      profileId: kindProfileId,
+      orgId: activeOrgId,
+      generation: organizationKindScope.generation + 1,
+    });
+  }
+  const organizationKindSettled = !organizationKindScopeStale
+    && organizationKindRead !== null
+    && organizationKindRead.generation === organizationKindScope.generation;
+  const activeOrganizationKind = organizationKindSettled ? organizationKindRead.kind : null;
+  const activeOrganizationKindPending = activeOrgId !== null && kindProfileId !== null && !organizationKindSettled;
+
   /**
    * PHASE-B1-AUTH-RESILIENCE: the seven-state contract, derived — no new
    * source of truth. Order matters: a failed bootstrap is reported as a
@@ -848,6 +919,7 @@ export function AppProvider({ children, skipAuthBootstrap = false }: AppProvider
 
   return (
     <AppContext.Provider value={{
+      activeOrganizationKind, activeOrganizationKindPending,
       lang, theme, setLang, setTheme, toggleLang, toggleTheme,
       dir: lang === 'ar' ? 'rtl' : 'ltr',
       configured: supabaseConfigured,

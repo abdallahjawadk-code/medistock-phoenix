@@ -9,6 +9,7 @@
 import type { Lang, Role, Theme } from '@/shared/lib/types';
 import type { AppState } from '@/app/AppContext';
 import type { Profile } from '@/shared/supabase/services/auth.service';
+import type { OrganizationKind } from '@/shared/lib/institution-hierarchy';
 import { roleDefaults } from '@/shared/lib/permissions';
 import {
   createAuthorizationService,
@@ -19,7 +20,7 @@ import {
   currentScopedRbacMode,
 } from '@/shared/authz/mode';
 import { QA_HARNESS_MARKER } from './qaConfig';
-import { ORG_A } from './qaData';
+import { ORG_A, ORG_B } from './qaData';
 import { createQaRbacTransport, qaLoadScopes } from './qaScopes';
 
 export type QaPersonaId =
@@ -216,6 +217,33 @@ const QA_EXTRA_PERMISSIONS: Partial<Record<QaPersonaId, readonly string[]>> = {
   super_admin: ['warehouse_transfer.receive', 'warehouse_dispatch.create'],
 };
 
+/**
+ * PDA-PROC-1 — a QA-ONLY pharmacy department authority organization id,
+ * addressable through `?org=`. A canonical UUID with an obviously synthetic
+ * prefix; the production-safety test asserts it is absent from `dist/`. It
+ * has no fixture organization row: it exists only to classify the active
+ * organization below.
+ */
+export const QA_PDA_ORG_ID = '0c22a000-0000-4000-8000-0000000000da';
+
+/**
+ * PDA-PROC-1 — QA-only classification of the active organization. The real
+ * app reads organizations.organization_kind (AppContext); the harness never
+ * signs in, so it answers here instead. Both fixture organizations are care
+ * institutions, which keeps every existing scene exactly as it was, and
+ * QA_PDA_ORG_ID is a pharmacy department authority. Any other id is unknown,
+ * which is null: ineligible, like a failed or unknown read in the real app.
+ */
+const QA_ORGANIZATION_KINDS: ReadonlyMap<string, OrganizationKind> = new Map<string, OrganizationKind>([
+  [ORG_A, 'care_institution'],
+  [ORG_B, 'care_institution'],
+  [QA_PDA_ORG_ID, 'pharmacy_department_authority'],
+]);
+
+function qaOrganizationKind(orgId: string | null): OrganizationKind | null {
+  return orgId === null ? null : QA_ORGANIZATION_KINDS.get(orgId) ?? null;
+}
+
 interface BuildArgs {
   persona: QaPersona;
   lang: Lang;
@@ -292,6 +320,10 @@ export function buildQaAppState({ persona, lang, theme, setLang, setTheme, orgId
     profile: persona.profile,
     role: persona.profile.role,
     activeOrgId,
+    // PDA-PROC-1: classified by the QA-only map above; never read from a
+    // database, so it is never pending.
+    activeOrganizationKind: qaOrganizationKind(activeOrgId),
+    activeOrganizationKindPending: false,
     setActiveOrgId: () => { /* QA: org scope is fixed per persona / ?org= */ },
     signIn: noopResult,
     signOut: noop,

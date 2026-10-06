@@ -3635,6 +3635,9 @@ export const T: Dict = {
   lp_no_warehouse_scope:  { ar: 'لا يوجد مخزن مؤسسة ضمن صلاحياتك',               en: 'No institution warehouse in your scope' },
   lp_denied_title:        { ar: 'لا تملك صلاحية عرض المشتريات الفرعية',           en: 'You do not have permission to view supplementary purchases' },
   lp_denied_hint:         { ar: 'اطلب صلاحية local_procurement.view من مسؤول المؤسسة', en: 'Ask your administrator for the local_procurement.view permission' },
+  // PDA-PROC-1: one message for every non-care organization (pharmacy department, unknown or unreadable kind).
+  lp_org_kind_not_applicable_title: { ar: 'هذا النوع من المنظمات لا يستخدم المشتريات الفرعية', en: 'This organization type does not use supplementary procurement' },
+  lp_org_kind_not_applicable_hint:  { ar: 'المشتريات الفرعية متاحة للمؤسسات الصحية فقط', en: 'Supplementary procurement is available to care institutions only' },
   lp_select_warehouse:    { ar: 'مخزن المؤسسة',                                   en: 'Institution warehouse' },
   lp_tab_orders:          { ar: 'طلبات الشراء',                                   en: 'Purchase Orders' },
   lp_tab_approvals:       { ar: 'الموافقات',                                      en: 'Approvals' },

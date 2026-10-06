@@ -14,10 +14,15 @@
  * every RPC. Nothing here writes a stock table directly: stock enters only
  * through the canonical RPCs, and item_availability stays a read-only
  * projection.
+ *
+ * PDA-PROC-1: supplementary procurement belongs to care institutions only.
+ * The exported screen is an organization-eligibility gate in front of the
+ * workspace; see LocalProcurementScreen below.
  */
 import { useMemo, useState } from 'react';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
+import type { Lang } from '@/shared/lib/types';
 import { PhoenixOrgScope } from '@/shared/ui/PhoenixOrgScope';
 import { PhoenixSelect } from '@/shared/ui/PhoenixSelect';
 import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
@@ -29,7 +34,52 @@ import { PurchaseHistoryPanel } from './PurchaseHistoryPanel';
 
 type Tab = 'entry' | 'history' | 'returns';
 
+/** PDA-PROC-1: the screen header, shared by the workspace and the gate's own states. */
+function LocalProcurementHeader({ lang }: { lang: Lang }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap', marginBottom: '16px' }}>
+      <div>
+        <h2 style={{ fontSize: '22px', fontWeight: 700, letterSpacing: '-.3px' }}>{t('lp_screen_title', lang)}</h2>
+        <p style={{ fontSize: '12.5px', color: 'var(--t2)', marginTop: '3px' }}>{t('lp_screen_sub', lang)}</p>
+      </div>
+      <PhoenixOrgScope />
+    </div>
+  );
+}
+
+/**
+ * PDA-PROC-1 — organization eligibility gate (defence in depth behind the
+ * Screen 19 route decision in isScreenAuthorized).
+ *
+ * Eligibility is the existing role/permission authorization AND the active
+ * organization's canonical organization_kind === 'care_institution', as
+ * AppContext reads it from organizations.organization_kind. It is never
+ * inferred from the role, the warehouse type or any name, and super_admin is
+ * NOT an exception. A pharmacy department authority, a missing, unknown or
+ * unreadable kind, and a kind still being read are all ineligible: the
+ * workspace, and with it every procurement data hook (useInventoryScopes,
+ * useProcurementPermissions), is not mounted at all. The ineligible state
+ * says why, and is deliberately not the "no warehouse in your scope" message.
+ * Migration 221 refuses the same writes in the database on its own.
+ */
 export function LocalProcurementScreen() {
+  const { lang, dir, activeOrgId, activeOrganizationKind, activeOrganizationKindPending } = useApp();
+
+  // A care institution gets the workspace alone; it renders its own header.
+  if (activeOrganizationKind === 'care_institution') return <LocalProcurementWorkspace />;
+
+  const header = <LocalProcurementHeader lang={lang} />;
+  if (!activeOrgId) {
+    return <div dir={dir}>{header}<PhoenixEmptyState icon="hospital" title={t('no_org_scope', lang)} description={t('empty_hint', lang)} /></div>;
+  }
+  // Pending fails closed: nothing procurement-related mounts until the kind settles.
+  if (activeOrganizationKindPending) {
+    return <div dir={dir}>{header}<PhoenixLoadingState /></div>;
+  }
+  return <div dir={dir}>{header}<PhoenixEmptyState icon="lock" title={t('lp_org_kind_not_applicable_title', lang)} description={t('lp_org_kind_not_applicable_hint', lang)} /></div>;
+}
+
+function LocalProcurementWorkspace() {
   const { lang, dir, activeOrgId } = useApp();
   const scopes = useInventoryScopes(activeOrgId);
   const warehouses = scopes.data?.manageableWarehouses ?? [];
@@ -43,15 +93,7 @@ export function LocalProcurementScreen() {
   );
   const perms = useProcurementPermissions(activeOrgId, activeWarehouse?.id ?? null);
 
-  const header = (
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap', marginBottom: '16px' }}>
-      <div>
-        <h2 style={{ fontSize: '22px', fontWeight: 700, letterSpacing: '-.3px' }}>{t('lp_screen_title', lang)}</h2>
-        <p style={{ fontSize: '12.5px', color: 'var(--t2)', marginTop: '3px' }}>{t('lp_screen_sub', lang)}</p>
-      </div>
-      <PhoenixOrgScope />
-    </div>
-  );
+  const header = <LocalProcurementHeader lang={lang} />;
 
   if (!activeOrgId) {
     return <div dir={dir}>{header}<PhoenixEmptyState icon="hospital" title={t('no_org_scope', lang)} description={t('empty_hint', lang)} /></div>;

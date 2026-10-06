@@ -28,6 +28,7 @@
  */
 import { institutionsScreenAccess, isScreenAuthorized } from './screen-access';
 import { normalizeRole } from '@/shared/lib/roles';
+import type { OrganizationKind } from '@/shared/lib/institution-hierarchy';
 
 /** The minimum shape a navigation candidate must have to be projected. */
 export interface NavProjectable {
@@ -41,6 +42,13 @@ export interface NavProjectable {
 export interface NavActor {
   role: string | null | undefined;
   permissions: ReadonlySet<string>;
+  /**
+   * PDA-PROC-1: the canonical organization_kind of the active organization, so
+   * every surface gets the SAME organization-eligibility answer from
+   * isScreenAuthorized. Omitted or null means unknown, which is denied for the
+   * organization-scoped screens (Screen 19).
+   */
+  organizationKind?: OrganizationKind | null;
 }
 
 /**
@@ -58,7 +66,7 @@ export function projectNavigation<T extends NavProjectable>(
   const role = normalizeRole(actor.role ?? '');
   return candidates
     .filter(item => !item.superAdminOnly || role === 'super_admin')
-    .filter(item => isScreenAuthorized(item.screen, actor.role, actor.permissions))
+    .filter(item => isScreenAuthorized(item.screen, actor.role, actor.permissions, actor.organizationKind))
     .map(item => item.screen === 11 && institutionsScreenAccess(actor.role) === 'own'
       ? { ...item, labelKey: 'nav_my_organization' }
       : item);

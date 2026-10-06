@@ -161,7 +161,23 @@ describe('U-B · report tabs whose only boundary is RLS are DENIED, not filtered
         if (rule.kind === 'permission') return perms(role).has(rule.permission);
         return role === rule.role;
       });
-      expect(allowedReportTabs(perms(role), role), role).toEqual(before);
+      // PDA-PROC-1: the pre-existing tab set is the CARE-INSTITUTION answer; the
+      // supplementary tab now also requires organization_kind = care_institution.
+      expect(allowedReportTabs(perms(role), role, 'care_institution'), role).toEqual(before);
+    }
+  });
+
+  it('PDA-PROC-1: a pharmacy department authority or an unknown kind loses ONLY the supplementary tab', () => {
+    for (const role of OFFICIAL_ROLES.filter(r => !isFacilityScopedRole(r))) {
+      const care = allowedReportTabs(perms(role), role, 'care_institution');
+      // Every pre-existing non-facility role does hold the tab as a care institution,
+      // so the negatives below are not vacuous.
+      expect(care, role).toContain('supplementary');
+      for (const kind of ['pharmacy_department_authority', null, undefined] as const) {
+        const tabs = allowedReportTabs(perms(role), role, kind);
+        expect(tabs, `${role} / ${kind}`).not.toContain('supplementary');
+        expect(tabs, `${role} / ${kind}`).toEqual(care.filter(tab => tab !== 'supplementary'));
+      }
     }
   });
 
@@ -255,10 +271,11 @@ describe('U-B corrective · the canonical screen decision refuses unsafe surface
 
   it('the app resolves the screen through the canonical decision, not per-component', () => {
     const app = read('app/AuthenticatedApp.tsx');
-    expect(app).toContain('isScreenAuthorized(requestedScreen, profile.role, myPermissions)');
+    // PDA-PROC-1: the same delegation, now carrying the active organization kind.
+    expect(app).toContain('isScreenAuthorized(requestedScreen, profile.role, myPermissions, activeOrganizationKind)');
     expect(app).toContain('roleLandingScreen(profile.role)');
     // The restoration module must delegate rather than re-implement the gates.
-    expect(continuity).toContain('isScreenAuthorized(screen, role, permissions)');
+    expect(continuity).toContain('isScreenAuthorized(screen, role, permissions, organizationKind)');
     expect(continuity).not.toContain('institutionsScreenAccess');
   });
 });

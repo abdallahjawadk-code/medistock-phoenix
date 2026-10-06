@@ -1,6 +1,11 @@
 import { useEffect, useState } from 'react';
 import { t } from '@/shared/i18n/strings';
-import { institutionsScreenAccess, isScreenAuthorized, roleLandingScreen } from '@/shared/authz/screen-access';
+import {
+  institutionsScreenAccess,
+  isScreenAuthorized,
+  roleLandingScreen,
+  screenAwaitsOrganizationKind,
+} from '@/shared/authz/screen-access';
 import { useApp } from './AppContext';
 import { LoginScreen } from '@/features/auth/LoginScreen';
 import { PhoenixWelcomeExperience } from '@/features/auth/PhoenixWelcomeExperience';
@@ -52,6 +57,7 @@ export function AuthenticatedApp() {
   const {
     authReady, session, profile, signOut, passwordRecovery, role, lang,
     authStatus, retryAuthBootstrap, retryProfileLoad, myPermissions,
+    activeOrganizationKind, activeOrganizationKindPending,
   } = useApp();
   // Keep explicit navigation scoped to the profile that created it. A later
   // session on the same workstation must derive its own role-safe landing
@@ -66,14 +72,44 @@ export function AuthenticatedApp() {
   useEffect(() => {
     if (authStatus !== 'authenticated' || !profile) return;
     const profileId = profile.id;
-    const restored = resolveRestoredScreen(profileId, profile.role, myPermissions);
-    setNavigation(previous => previous?.profileId === profileId
-      ? previous
-      : { profileId, screen: restored });
-    rememberScreen(profileId, restored, 'replace');
+    if (activeOrganizationKindPending) {
+      // PDA-PROC-1: while the organization kind is being read, the first
+      // restoration for this profile proceeds at once unless its target depends
+      // on the kind (Screen 19). Nothing is written to storage or history while
+      // the kind is unknown, so a legitimate stored 19 is not thrown away.
+      const careRestored = resolveRestoredScreen(profileId, profile.role, myPermissions, 'care_institution');
+      if (!screenAwaitsOrganizationKind(careRestored, profile.role, myPermissions)) {
+        setNavigation(previous => previous?.profileId === profileId
+          ? previous
+          : { profileId, screen: careRestored });
+      }
+    } else {
+      const restored = resolveRestoredScreen(profileId, profile.role, myPermissions, activeOrganizationKind);
+      // PDA-PROC-1: a settled decision normalises in-memory navigation too. A
+      // current screen the active organization may not occupy (care -> 19 ->
+      // pharmacy department authority) is replaced, so it cannot come back
+      // later when the organization changes again. It is replaced by the very
+      // landing the route gate below already renders for it, so the screen on
+      // display does not change - or remount - a second time.
+      setNavigation(previous => {
+        if (previous?.profileId !== profileId) return { profileId, screen: restored };
+        if (isScreenAuthorized(previous.screen, profile.role, myPermissions, activeOrganizationKind)) return previous;
+        return { profileId, screen: roleLandingScreen(profile.role) };
+      });
+      rememberScreen(profileId, restored, 'replace');
+    }
 
     const onPopState = (event: PopStateEvent) => {
-      const next = screenFromPopState(event.state, profileId, profile.role, myPermissions);
+      if (activeOrganizationKindPending) {
+        // PDA-PROC-1: a Back/Forward entry whose decision depends on the
+        // pending kind is held (the render waits) and decided once it settles.
+        const careNext = screenFromPopState(event.state, profileId, profile.role, myPermissions, 'care_institution');
+        if (screenAwaitsOrganizationKind(careNext, profile.role, myPermissions)) {
+          setNavigation({ profileId, screen: careNext });
+          return;
+        }
+      }
+      const next = screenFromPopState(event.state, profileId, profile.role, myPermissions, activeOrganizationKind);
       setNavigation({ profileId, screen: next });
       rememberScreen(profileId, next, 'storage-only');
       if (event.state === null || typeof event.state !== 'object') {
@@ -82,7 +118,7 @@ export function AuthenticatedApp() {
     };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
-  }, [authStatus, profile, myPermissions]);
+  }, [authStatus, profile, myPermissions, activeOrganizationKind, activeOrganizationKindPending]);
 
   // ── Password recovery (from reset email) — takes priority over the app ──
   if (passwordRecovery) {
@@ -200,16 +236,28 @@ export function AuthenticatedApp() {
    * Falling back to the role landing rather than rendering ForbiddenScreen keeps
    * a legitimately-navigating user out of a dead end; the refusal itself is the
    * authorization decision, and it is asserted directly in the tests.
+   *
+   * PDA-PROC-1: the same decision now carries the active organization kind, so
+   * a forged, direct, restored or Back-button Screen 19 never mounts Local
+   * Procurement for a pharmacy department authority or an unknown kind. While
+   * the kind is still being read, ONLY a kind-dependent target (Screen 19)
+   * waits on a loading state, never rendering 19 or flashing the landing;
+   * every other screen renders immediately, exactly as before.
    */
+  const navigatedScreen = navigation?.profileId === profile.id ? navigation.screen : null;
+  const awaitingCandidate = navigatedScreen
+    ?? resolveRestoredScreen(profile.id, profile.role, myPermissions, 'care_institution');
+  const awaitingOrganizationKind = activeOrganizationKindPending
+    && screenAwaitsOrganizationKind(awaitingCandidate, profile.role, myPermissions);
   const requestedScreen = navigation?.profileId === profile.id
     ? navigation.screen
-    : resolveRestoredScreen(profile.id, profile.role, myPermissions);
-  const screen = isScreenAuthorized(requestedScreen, profile.role, myPermissions)
+    : resolveRestoredScreen(profile.id, profile.role, myPermissions, activeOrganizationKind);
+  const screen = isScreenAuthorized(requestedScreen, profile.role, myPermissions, activeOrganizationKind)
     ? requestedScreen
     : roleLandingScreen(profile.role);
   const setScreen = (nextScreen: number) => {
     setNavigation({ profileId: profile.id, screen: nextScreen });
-    if (isScreenRestorable(nextScreen, profile.role, myPermissions)) {
+    if (isScreenRestorable(nextScreen, profile.role, myPermissions, activeOrganizationKind)) {
       rememberScreen(profile.id, nextScreen, 'push');
     }
   };
@@ -220,7 +268,7 @@ export function AuthenticatedApp() {
       screen: nextScreen,
       suggestionDocument: target,
     });
-    if (isScreenRestorable(nextScreen, profile.role, myPermissions)) {
+    if (isScreenRestorable(nextScreen, profile.role, myPermissions, activeOrganizationKind)) {
       rememberScreen(profile.id, nextScreen, 'push');
     }
   };
@@ -327,9 +375,11 @@ export function AuthenticatedApp() {
       {/* PHASE-1-CONTROLLED-RBAC-ACTIVATION-SHADOW-MODE: in 'off'/'shadow' this
           renders screenContent() unchanged and only observes. It gates solely
           under PHOENIX_SCOPED_RBAC_MODE=enforce_super_admin, for super_admin. */}
-      <ScreenAuthzGuard screen={screen}>
-        {screenContent()}
-      </ScreenAuthzGuard>
+      {awaitingOrganizationKind ? <PhoenixLoadingState /> : (
+        <ScreenAuthzGuard screen={screen}>
+          {screenContent()}
+        </ScreenAuthzGuard>
+      )}
     </PhoenixAppShell>
   );
 }

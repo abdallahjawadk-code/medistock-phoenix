@@ -128,14 +128,20 @@ describe('182 registration and shape', () => {
       // trigger; no facility-scoped RBAC SQL (no scope ledger, role, permission key, GRANT or policy; its one REVOKE
       // is on its own new private function), so nothing this suite asserts moves. It is now the reviewed ceiling.
       '220_phoenix_central_needs_active_item_guard.sql',
+      // PDA-PROC-1/M221: the pharmacy department supplementary procurement exclusion — one trigger guard function
+      // and twelve BEFORE triggers on the procurement tables and warehouse_stock that refuse a non-care
+      // organization's procurement or purchase/supplementary stock; no RPC is created or replaced and there is no
+      // facility-scoped RBAC SQL (no scope ledger, role, permission key, GRANT or policy; its one REVOKE is on its own
+      // new guard function), so nothing this suite asserts moves. It is now the reviewed ceiling.
+      '221_phoenix_pharmacy_department_subpurchase_exclusion.sql',
     ];
     const i = REVIEWED_MIGRATION_FILES.indexOf(NAME);
     expect(REVIEWED_MIGRATION_FILES.slice(i + 1)).toEqual(SUCCESSORS);
     expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1])
       .toBe(SUCCESSORS[SUCCESSORS.length - 1]);
-    // The ceiling is now 220; `[2-9]\d\d` would match it, so this asserts
+    // The ceiling is now 221; `[2-9]\d\d` would match it, so this asserts
     // numerically that nothing sits ABOVE the ceiling.
-    expect(REVIEWED_MIGRATION_FILES.filter(f => Number(f.slice(0, 3)) > 220)).toHaveLength(0);
+    expect(REVIEWED_MIGRATION_FILES.filter(f => Number(f.slice(0, 3)) > 221)).toHaveLength(0);
   });
 
   it('is a single transaction, manual-apply only', () => {

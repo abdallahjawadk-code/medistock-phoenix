@@ -78,6 +78,9 @@ const FORBIDDEN = [
   '0cc33333-0000-4000-8000',
   '0dd44444-0000-4000-8000',
   '0ee55555-0000-4000-8000',
+  // PDA-PROC-1 — the QA-only pharmacy department authority organization id
+  // (qaFixtures.ts QA_PDA_ORG_ID).
+  '0c22a000-0000-4000-8000-0000000000da',
 ];
 
 function bundleFiles(): string[] {

@@ -47,17 +47,17 @@ describe('CN-1A/209 static — registration and file hygiene', () => {
     const files = readdirSync(MIGRATIONS).filter((f) => /^\d{3}_.*\.sql$/.test(f)).sort();
     expect(files).toContain(FILENAME);
     expect(files.indexOf(FILENAME)).toBe(208);
-    expect(files.filter((f) => Number(f.slice(0, 3)) > 220)).toEqual([]);
-    expect(files).toHaveLength(220);
+    expect(files.filter((f) => Number(f.slice(0, 3)) > 221)).toEqual([]);
+    expect(files).toHaveLength(221);
     expect(isReviewedMigrationFile(FILENAME)).toBe(true);
     // 209 is no longer last: CN-1B/210 sits directly after it, and 210's own
     // static suite owns the ceiling assertions from here on. This immediate-
     // successor relationship (209 -> 210) is historical and never moves; only
-    // the ceiling below advances, now to PRE3-B/M220.
+    // the ceiling below advances, now to PDA-PROC-1/M221.
     expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.indexOf(FILENAME) + 1])
       .toBe('210_phoenix_central_needs_workflow_rpcs.sql');
-    expect(getMaximumReviewedMigrationNumber()).toBe(220);
-    expect(getNextUnreviewedMigrationNumber()).toBe(221);
+    expect(getMaximumReviewedMigrationNumber()).toBe(221);
+    expect(getNextUnreviewedMigrationNumber()).toBe(222);
   });
 
   it('carries no CR bytes — LF only', () => {
@@ -80,9 +80,10 @@ describe('CN-1A/209 static — registration and file hygiene', () => {
     // readiness-RPC volatility correction, the C2/M215 governed correction
     // lifecycle, the C4/M216 beneficiary-region persistence, the C5/M217
     // safety convergence, the C6-F1/M218 submission integrity fence, the
-    // AUTH-1/M219 sign-up authority hardening and the PRE3-B/M220 active
-    // central item guard above it.
-    expect(others).toHaveLength(219);
+    // AUTH-1/M219 sign-up authority hardening, the PRE3-B/M220 active
+    // central item guard and the PDA-PROC-1/M221 pharmacy department
+    // supplementary procurement exclusion above it.
+    expect(others).toHaveLength(220);
   });
 });
 

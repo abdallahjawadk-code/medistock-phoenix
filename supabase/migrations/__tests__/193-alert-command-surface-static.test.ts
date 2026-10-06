@@ -69,8 +69,8 @@ describe('193 · registration and file hygiene', () => {
   });
 
   it('is immediately followed by 194 through 210, the new ceiling, and 211 stays absent', () => {
-    expect(getMaximumReviewedMigrationNumber()).toBe(220);
-    expect(getNextUnreviewedMigrationNumber()).toBe(221);
+    expect(getMaximumReviewedMigrationNumber()).toBe(221);
+    expect(getNextUnreviewedMigrationNumber()).toBe(222);
     const NEXT = '194_phoenix_authorization_surface_reproducibility_convergence.sql';
     const NEXT_2 = '195_phoenix_auth_helper_profile_schema_qualification.sql';
     const NEXT_3 = '196_phoenix_secdef_relation_schema_qualification.sql';
@@ -99,18 +99,19 @@ describe('193 · registration and file hygiene', () => {
     expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.indexOf(NAME) + 9]).toBe(NEXT_9);
     expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.indexOf(NAME) + 15]).toBe(NEXT_15);
     expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.indexOf(NAME) + 16]).toBe(NEXT_16);
-    // PRE3-B/M220 (the Central Needs active central item guard) is now the
-    // reviewed successor at the end of the array. It is Central-Needs-only
-    // (disposition RPC item check, one private gate trigger on plan revisions,
-    // ACL-neutral) and adds no alert-command SQL, so what 193 asserts is
+    // PDA-PROC-1/M221 (the pharmacy department supplementary procurement
+    // exclusion) is now the reviewed successor at the end of the array. It is
+    // procurement/stock-guard-only (one trigger guard function, twelve BEFORE
+    // triggers on the procurement tables and warehouse_stock, no RPC created or
+    // replaced) and adds no alert-command SQL, so what 193 asserts is
     // unaffected.
     expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1])
-      .toBe('220_phoenix_central_needs_active_item_guard.sql');
-    // The ceiling is now 220; `[2-9]\d\d` would match it, so this asserts
+      .toBe('221_phoenix_pharmacy_department_subpurchase_exclusion.sql');
+    // The ceiling is now 221; `[2-9]\d\d` would match it, so this asserts
     // numerically that nothing sits ABOVE the ceiling.
-    expect(REVIEWED_MIGRATION_FILES.filter(f => Number(f.slice(0, 3)) > 220)).toHaveLength(0);
+    expect(REVIEWED_MIGRATION_FILES.filter(f => Number(f.slice(0, 3)) > 221)).toHaveLength(0);
     expect(readdirSync(MIGRATIONS_DIR)
-      .filter(f => /^\d{3}_.*\.sql$/.test(f) && Number(f.slice(0, 3)) > 220)).toEqual([]);
+      .filter(f => /^\d{3}_.*\.sql$/.test(f) && Number(f.slice(0, 3)) > 221)).toEqual([]);
     expect(isReviewedMigrationFile('211_unreviewed_test_migration.sql')).toBe(false);
   });
 
@@ -128,11 +129,12 @@ describe('193 · registration and file hygiene', () => {
   });
 
   it('edits no historical migration — it is self-contained', () => {
-    // 203-220 (material-dispensing-suspension through the PRE3-B/M220 active
-    // central item guard) are the newest chain members; they edit nothing
-    // here, so this count moves by exactly sixteen more.
+    // 203-221 (material-dispensing-suspension through the PDA-PROC-1/M221
+    // pharmacy department supplementary procurement exclusion) are the newest
+    // chain members; they edit nothing here, so this count moves by exactly
+    // seventeen more.
     const others = readdirSync(MIGRATIONS_DIR).filter(f => f.endsWith('.sql') && f !== NAME);
-    expect(others).toHaveLength(219);
+    expect(others).toHaveLength(220);
   });
 });
 

@@ -1,4 +1,5 @@
 import { commandCenterLanding, isScreenAuthorized, roleLandingScreen } from '@/shared/authz/screen-access';
+import type { OrganizationKind } from '@/shared/lib/institution-hierarchy';
 
 const STORAGE_PREFIX = 'medistock-phoenix-screen:';
 const EPOCH_PREFIX = 'medistock-phoenix-continuity-epoch:';
@@ -21,14 +22,20 @@ interface ScreenHistoryState {
  *
  * The first line remains a genuine restoration allow-list: a screen may be
  * authorized and still not be worth restoring into.
+ *
+ * PDA-PROC-1: the organization kind participates too. A stored, restored or
+ * Back-button Screen 19 written while a care institution was active resolves
+ * away once the active organization is a pharmacy department authority, or
+ * its kind is unknown (omitted = unknown = refused).
  */
 export function isScreenRestorable(
   screen: number,
   role: string | null | undefined,
   permissions: ReadonlySet<string>,
+  organizationKind?: OrganizationKind | null,
 ): boolean {
   if (![3, 6, 11, 13, 14, 15, 17, 18, 19, 21, 22].includes(screen)) return false;
-  return isScreenAuthorized(screen, role, permissions);
+  return isScreenAuthorized(screen, role, permissions, organizationKind);
 }
 
 function storageKey(profileId: string): string {
@@ -113,6 +120,7 @@ export function resolveRestoredScreen(
   profileId: string,
   role: string | null | undefined,
   permissions: ReadonlySet<string>,
+  organizationKind?: OrganizationKind | null,
 ): number {
   // RAC-3: an actor eligible for the Command Center prefers it as the
   // landing; everyone else keeps the exact expression they had before.
@@ -121,7 +129,8 @@ export function resolveRestoredScreen(
   const epoch = currentEpoch(profileId);
   const fromHistory = historyScreen(window.history.state, profileId, epoch);
   const candidate = fromHistory === undefined ? storedScreen(profileId, epoch) : fromHistory;
-  return candidate !== null && candidate !== undefined && isScreenRestorable(candidate, role, permissions)
+  return candidate !== null && candidate !== undefined
+    && isScreenRestorable(candidate, role, permissions, organizationKind)
     ? candidate
     : landing;
 }
@@ -131,9 +140,11 @@ export function screenFromPopState(
   profileId: string,
   role: string | null | undefined,
   permissions: ReadonlySet<string>,
+  organizationKind?: OrganizationKind | null,
 ): number {
   const candidate = historyScreen(state, profileId, currentEpoch(profileId));
-  return candidate !== null && candidate !== undefined && isScreenRestorable(candidate, role, permissions)
+  return candidate !== null && candidate !== undefined
+    && isScreenRestorable(candidate, role, permissions, organizationKind)
     ? candidate
     : (commandCenterLanding(role, permissions) ?? roleLandingScreen(role));
 }

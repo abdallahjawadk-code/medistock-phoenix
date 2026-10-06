@@ -22,6 +22,7 @@ import { join } from 'path';
 import { projectNavigation, canSearchInstitutions } from '../nav-projection';
 import { isScreenAuthorized, roleLandingScreen } from '../screen-access';
 import { isScreenRestorable } from '@/app/screen-continuity';
+import type { OrganizationKind } from '@/shared/lib/institution-hierarchy';
 
 const SRC = join(__dirname, '../../../');
 const read = (rel: string) => readFileSync(join(SRC, rel), 'utf8').replace(/\r\n/g, '\n');
@@ -49,7 +50,10 @@ const SURFACES = {
 const HCM = { role: 'health_center_manager', permissions: new Set<string>() };
 
 /** What a surface actually shows this actor. */
-function visibleScreens(rel: string, actor: { role: string; permissions: ReadonlySet<string> }): number[] {
+function visibleScreens(
+  rel: string,
+  actor: { role: string; permissions: ReadonlySet<string>; organizationKind?: OrganizationKind | null },
+): number[] {
   const items = candidateScreens(rel).map(screen => ({ screen, labelKey: `k${screen}` }));
   return projectNavigation(items, actor).map(i => i.screen);
 }
@@ -151,7 +155,22 @@ describe('C) historical roles keep their exact previous menus', () => {
    * for a pre-182 role, this fails — which is the "no historical role loses a
    * legal navigation item" requirement, asserted rather than asserted-about.
    */
-  const legacyOracle = (screen: number, role: string, perms: ReadonlySet<string>): boolean => {
+  const legacyOracle = (
+    screen: number,
+    role: string,
+    perms: ReadonlySet<string>,
+    organizationKind: OrganizationKind | null,
+  ): boolean => {
+    /**
+     * PDA-PROC-1 restated the oracle once more, for an ORGANIZATION dimension
+     * the pre-R1.1-P gates never had: supplementary procurement (screen 19)
+     * belongs to care institutions only. A care institution keeps exactly the
+     * historical answer (the catch-all `true`); a pharmacy department authority
+     * and an unknown/unread kind (null) drop screen 19 and nothing else. KINDS
+     * below exercises all three, so this parity check cannot pass by never
+     * supplying a kind.
+     */
+    if (screen === 19) return organizationKind === 'care_institution';
     if (screen === 11) {
       return role === 'super_admin' || role === 'institution_admin' || role === 'hospital_admin';
     }
@@ -227,14 +246,19 @@ describe('C) historical roles keep their exact previous menus', () => {
     new Set(['central_needs.view', 'dashboard.view']),
   ];
 
+  // PDA-PROC-1 — every organization kind the projection can be handed.
+  const KINDS: (OrganizationKind | null)[] = ['care_institution', 'pharmacy_department_authority', null];
+
   it.each(HISTORICAL)('%s: identical to the pre-R1.1-P gates on every surface and permission set', (role) => {
-    for (const permissions of PERM_SETS) {
-      for (const [name, rel] of Object.entries(SURFACES)) {
-        const expected = candidateScreens(rel).filter(s => legacyOracle(s, role, permissions));
-        expect(
-          visibleScreens(rel, { role, permissions }),
-          `${name} / ${role} / [${[...permissions].join(',')}]`,
-        ).toEqual(expected);
+    for (const organizationKind of KINDS) {
+      for (const permissions of PERM_SETS) {
+        for (const [name, rel] of Object.entries(SURFACES)) {
+          const expected = candidateScreens(rel).filter(s => legacyOracle(s, role, permissions, organizationKind));
+          expect(
+            visibleScreens(rel, { role, permissions, organizationKind }),
+            `${name} / ${role} / [${[...permissions].join(',')}] / ${organizationKind}`,
+          ).toEqual(expected);
+        }
       }
     }
   });
@@ -283,7 +307,8 @@ describe('D) a forged, deep-linked or restored unsafe screen fails closed', () =
 
   it('the route guard still routes an unauthorized request to that landing', () => {
     const app = read('app/AuthenticatedApp.tsx');
-    expect(app).toContain('isScreenAuthorized(requestedScreen, profile.role, myPermissions)');
+    // PDA-PROC-1: the same choke point, now carrying the active organization kind.
+    expect(app).toContain('isScreenAuthorized(requestedScreen, profile.role, myPermissions, activeOrganizationKind)');
     expect(app).toContain('roleLandingScreen(profile.role)');
   });
 });

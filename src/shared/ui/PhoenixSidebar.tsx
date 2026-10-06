@@ -52,6 +52,7 @@ const NAV_ITEMS: NavItem[] = [
   // INSTITUTION-LOCAL-PROCUREMENT-087: ungated like nav_editor — the screen
   // self-gates by 062 warehouse assignments plus the scoped local_procurement.*
   // keys, and every action is re-checked server-side.
+  // PDA-PROC-1: the projection additionally admits it for care institutions only.
   { screen: 19, icon: 'warehouse', labelKey: 'nav_local_procurement' },
   // DECISION-INTELLIGENCE-REPORTS-119/REPORTING-UNIFICATION: ungated like
   // nav_editor. Screen 21 preserves each tab's original boundary: legacy
@@ -80,15 +81,21 @@ interface Props {
 }
 
 export function PhoenixSidebar({ currentScreen, onNavigate, onLogout }: Props) {
-  const { lang, role, profile, myPermissions } = useApp();
+  const { lang, role, profile, myPermissions, activeOrganizationKind } = useApp();
   const ri = ROLE_MAP[role] ?? ROLE_MAP.viewer;
   /* R1.1-P (P1): ONE projection, shared with the drawer, the bottom bar and the
      command palette. It replaces the hand-copied users.view / users.edit_scope /
      institutions gates that used to live here — those predicates are reproduced
      exactly inside isScreenAuthorized, so no historical role's menu moves, while
-     a facility-scoped role no longer sees a screen the guard would refuse. */
-  const primaryItems = projectNavigation(NAV_ITEMS, { role, permissions: myPermissions });
-  const secondaryItems = projectNavigation(SECONDARY_ITEMS, { role, permissions: myPermissions });
+     a facility-scoped role no longer sees a screen the guard would refuse.
+     PDA-PROC-1: the active organization kind rides in the same actor, so the
+     organization-eligibility answer (Screen 19) is the guard's, not a local one. */
+  const primaryItems = projectNavigation(NAV_ITEMS, {
+    role, permissions: myPermissions, organizationKind: activeOrganizationKind,
+  });
+  const secondaryItems = projectNavigation(SECONDARY_ITEMS, {
+    role, permissions: myPermissions, organizationKind: activeOrganizationKind,
+  });
 
   /* PHASE-A7-VISUAL-CONVERGENCE: active/inactive fill and colour now live in
      phase-a-visual-convergence.css, keyed off the data-active attribute

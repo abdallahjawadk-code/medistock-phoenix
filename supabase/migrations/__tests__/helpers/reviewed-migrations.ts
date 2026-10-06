@@ -299,6 +299,29 @@ export const REVIEWED_MIGRATION_FILES: readonly string[] = Object.freeze([
   // Registration records repository review only; it says nothing about
   // Production, where M220 is not applied.
   '220_phoenix_central_needs_active_item_guard.sql',
+  // PDA-PROC-1 / M221: pharmacy department supplementary procurement exclusion.
+  // Procurement state is limited to care institutions: a procurement supplier,
+  // order, order line, order event, receipt, receipt line or return may not be
+  // written for (nor a supplier, order or order line re-labelled onto) an
+  // organization whose canonical
+  // organizations.organization_kind is not care_institution
+  // (pharmacy_department_authority, or a missing organization), and no
+  // warehouse_stock lot with purchase_origin 'supplementary' (any supply_type)
+  // may enter such an organization's domain. One SECURITY DEFINER trigger
+  // function (search_path pg_catalog, pg_temp; no client EXECUTE) fired by
+  // twelve narrow BEFORE INSERT / BEFORE UPDATE OF triggers on
+  // procurement_suppliers, procurement_orders, procurement_order_lines,
+  // procurement_order_events, procurement_receipts, procurement_receipt_lines,
+  // procurement_returns and warehouse_stock raises
+  // pharmacy_department_supplementary_procurement_forbidden (23514). Order
+  // lines also guard UPDATE OF organization_id; the other children's UPDATE
+  // stays closed by their M087 immutability triggers; quarantine
+  // custody is deliberately not guarded. No RPC is created or replaced; the
+  // only privilege statement is the REVOKE on the new function.
+  // No table, column, policy, grant or permission key, and no stock, movement,
+  // allocation or transfer write. Registration records repository review only;
+  // it says nothing about Production, where M221 is not applied.
+  '221_phoenix_pharmacy_department_subpurchase_exclusion.sql',
 ]);
 
 const REVIEWED_SET: ReadonlySet<string> = new Set(REVIEWED_MIGRATION_FILES);

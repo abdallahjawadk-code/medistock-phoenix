@@ -176,18 +176,20 @@ describe('C6-F1/M218 static — the file exists under its canonical name', () =>
 });
 
 guard('C6-F1/M218 static — registration, hygiene and frozen predecessors', () => {
-  it('218 is the next migration after 217; only AUTH-1/M219 and PRE3-B/M220 sit above it (the ceiling is 220); no timestamp-named migration exists', () => {
+  it('218 is the next migration after 217; only AUTH-1/M219, PRE3-B/M220 and PDA-PROC-1/M221 sit above it (the ceiling is 221); no timestamp-named migration exists', () => {
     const all = readdirSync(MIGRATIONS).filter((f) => f.endsWith('.sql'));
     const files = all.filter((f) => /^\d{3}_.*\.sql$/.test(f)).sort();
     expect(files).toContain(FILENAME);
-    // AUTH-1/M219 (sign-up authority hardening) is the reviewed successor and
-    // PRE3-B/M220 (active central item guard) now the ceiling; its own static
-    // suite owns the ceiling assertions. The 217 -> 218 -> 219 -> 220 order is
-    // exact.
+    // AUTH-1/M219 (sign-up authority hardening) and PRE3-B/M220 (active central
+    // item guard) are the reviewed successors and PDA-PROC-1/M221 (pharmacy
+    // department supplementary procurement exclusion) now the ceiling; its own
+    // static suite owns the ceiling assertions. The 217 -> 218 -> 219 -> 220 ->
+    // 221 order is exact.
     expect(files.filter((f) => Number(f.slice(0, 3)) > 217))
       .toEqual([FILENAME, '219_phoenix_auth_signup_authority_hardening.sql',
-        '220_phoenix_central_needs_active_item_guard.sql']);
-    expect(Math.max(...files.map((f) => Number(f.slice(0, 3))))).toBe(220);
+        '220_phoenix_central_needs_active_item_guard.sql',
+        '221_phoenix_pharmacy_department_subpurchase_exclusion.sql']);
+    expect(Math.max(...files.map((f) => Number(f.slice(0, 3))))).toBe(221);
     expect(files[files.indexOf(FILENAME) - 1]).toBe('217_phoenix_central_needs_c5_safety_convergence.sql');
     expect(all.filter((f) => /^\d{14}_/.test(f))).toEqual([]);
     expect(all.filter((f) => f.includes('submission_integrity_fence'))).toEqual([FILENAME]);

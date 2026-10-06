@@ -106,9 +106,18 @@ describe('M197 static — identity and placement', () => {
       // the six functions 197 converges, so what this suite converges is
       // untouched. It is now the reviewed ceiling.
       '220_phoenix_central_needs_active_item_guard.sql',
+      // PDA-PROC-1/M221: the pharmacy department supplementary procurement
+      // exclusion (one trigger guard function and twelve BEFORE triggers on the
+      // procurement tables and warehouse_stock), with no stock, movement,
+      // allocation or transfer write. It grants no EXECUTE to PUBLIC (it issues
+      // no GRANT; its one REVOKE removes PUBLIC and every client role from its new
+      // guard function) and neither creates, replaces nor re-grants any of the
+      // six functions 197 converges, so what this suite converges is untouched.
+      // It is now the reviewed ceiling.
+      '221_phoenix_pharmacy_department_subpurchase_exclusion.sql',
     ]);
-    expect(files.filter((f) => Number(f.slice(0, 3)) > 220)).toEqual([]);
-    expect(files).toHaveLength(220);
+    expect(files.filter((f) => Number(f.slice(0, 3)) > 221)).toEqual([]);
+    expect(files).toHaveLength(221);
   });
 
   it('carries no MANUAL APPLY ONLY banner, so the pinned executor will accept it', () => {

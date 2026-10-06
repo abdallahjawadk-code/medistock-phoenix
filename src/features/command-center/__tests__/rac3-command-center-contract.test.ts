@@ -458,7 +458,20 @@ describe('RAC-3 · I) no backend or migration change', () => {
     // dynamic suites live under supabase/migrations/__tests__/, which this guard
     // already exempts.
     const M220 = 'supabase/migrations/220_phoenix_central_needs_active_item_guard.sql';
-    const ALLOWED_SQL = [M200, M201, M202, M203, M204, M205, M206, M207, M208, M209, M210, M211, M212, M213, M214, M215, M216, M217, M218, M219, M220];
+    // PDA-PROC-1/M221: the pharmacy department supplementary procurement
+    // exclusion (one SECURITY DEFINER trigger guard function with no client
+    // grant, fired by twelve BEFORE triggers on procurement_suppliers,
+    // procurement_orders, procurement_order_lines, procurement_order_events,
+    // procurement_receipts, procurement_receipt_lines, procurement_returns and
+    // warehouse_stock, refuses procurement and purchase/supplementary stock for
+    // any organization that is not a care_institution; no RPC is created or
+    // replaced); it touches no command-centre object.
+    // Registered by EXACT filename, exactly as M200-M220 were, so this guard
+    // still fails closed for any OTHER migration or supabase/ file. Its static and
+    // dynamic suites live under supabase/migrations/__tests__/, which this guard
+    // already exempts.
+    const M221 = 'supabase/migrations/221_phoenix_pharmacy_department_subpurchase_exclusion.sql';
+    const ALLOWED_SQL = [M200, M201, M202, M203, M204, M205, M206, M207, M208, M209, M210, M211, M212, M213, M214, M215, M216, M217, M218, M219, M220, M221];
     const changed = execSync(
       'git diff --name-only b707f073d60b4cc61205c35003ab491f3aed7468',
       { cwd: process.cwd(), encoding: 'utf8' },

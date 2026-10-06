@@ -109,9 +109,13 @@ const NEW_ITEM_CHECK = `  IF v_item IS NOT NULL THEN
 `;
 
 describe.runIf(PRESENT)('M220 static — active central item guard', () => {
-  it('220 is the next migration after 219 and the only file above 219; LF only; one BEGIN/COMMIT', () => {
+  it('220 is the next migration after 219; only PDA-PROC-1/M221 sits above it (the ceiling is 221); LF only; one BEGIN/COMMIT', () => {
     const files = readdirSync(MIGRATIONS).filter((f) => /^\d{3}_.*\.sql$/.test(f)).sort();
-    expect(files.filter((f) => Number(f.slice(0, 3)) > 219)).toEqual([FILENAME]);
+    // PDA-PROC-1/M221 (pharmacy department supplementary procurement exclusion)
+    // is the reviewed successor and now the ceiling; its own static suite owns
+    // the ceiling assertions. The 219 -> 220 -> 221 order is exact.
+    expect(files.filter((f) => Number(f.slice(0, 3)) > 219)).toEqual([FILENAME,
+      '221_phoenix_pharmacy_department_subpurchase_exclusion.sql']);
     expect(files.filter((f) => f.startsWith('220_'))).toEqual([FILENAME]);
     expect(SQL.includes('\r')).toBe(false);
     expect(EXEC.match(/^\s*BEGIN\s*;/gim)).toHaveLength(1);
