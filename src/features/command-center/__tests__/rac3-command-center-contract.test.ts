@@ -494,7 +494,7 @@ describe('RAC-3 · I) no backend or migration change', () => {
    * replaces: it would also catch a dependency edit smuggled in beside a
    * version bump, which a filename check never could.
    */
-  it('changes no dependency — only the release version, the reviewed GHSA-3wwx-pv8p-q78v undici patch and the reviewed brace-expansion 5.0.12 patch may differ', () => {
+  it('changes no dependency — package.json keeps its reviewed 6ce98332 contract and the lockfile must equal the complete SEC-HOTFIX-1 graph (sharp 0.35.5, source-map-js 1.2.2) frozen by exact commit', () => {
     // CN-2A-SHEETJS: the audited dependency baseline advances from d70b24a9
     // to 6ce98332, the reviewed CN-2A commit that adds exactly one runtime
     // dependency — `xlsx` (SheetJS Community Edition 0.20.3, vendored
@@ -521,6 +521,10 @@ describe('RAC-3 · I) no backend or migration change', () => {
     // different `xlsx` version, a different install source, or any other
     // unapproved package — still fails closed. Advancing the pin changes
     // what the approved graph IS, never how strictly it is enforced.
+    //
+    // Since SEC-HOTFIX-1, BASE anchors the package.json contract and the
+    // historical lockfile derivation only; the lockfile itself is anchored by
+    // the separately reviewed graph frozen at SEC_HOTFIX_1_LOCK_BASE below.
     const BASE = '6ce9833269536b5e5745d4139a648c6bf7d545ca';
     const jsonAt = (ref: string, file: string) => JSON.parse(
       execSync(`git show ${ref}:${file}`, { cwd: process.cwd(), encoding: 'utf8' }),
@@ -554,7 +558,12 @@ describe('RAC-3 · I) no backend or migration change', () => {
     expect(head.name).toBe(base.name);
 
     // The lockfile's whole graph must be identical too — only the two root
-    // version fields may move, plus the TWO reviewed security exceptions below.
+    // version fields may move (the release-version normalisation below). Since
+    // SEC-HOTFIX-1 the approved graph is no longer re-derived from BASE: it is
+    // the complete reviewed lockfile frozen by EXACT commit
+    // (SEC_HOTFIX_1_LOCK_BASE below), which carries the TWO earlier reviewed
+    // security exceptions (CI-HOTFIX-2 and CI-HOTFIX-3, below) and the reviewed
+    // SEC-HOTFIX-1 sharp 0.35.5 / source-map-js 1.2.2 security fix.
     //
     // CI-HOTFIX-2 / GHSA-3wwx-pv8p-q78v: undici >=7.28.0 <7.29.1 is vulnerable
     // to denial of service through an unhandled error in WebSocket
@@ -582,18 +591,50 @@ describe('RAC-3 · I) no backend or migration change', () => {
     // (5.0.9 -> 5.0.12) and ONE lockfile transformation: that entry takes npm's
     // generated 5.0.12 version/resolved/integrity and keeps every other field.
     //
-    // The expected lockfile is BASE's lockfile with EXACTLY those three
-    // transformations applied, and nothing else. Any other package version,
-    // dependency edge, addition, removal, override, root metadata, or a
-    // different undici or brace-expansion version still fails closed.
+    // Until SEC-HOTFIX-1 the approved lockfile was BASE's lockfile with EXACTLY
+    // those three transformations applied, and nothing else. That historical
+    // contract is still asserted below, in full, against the commit SEC-HOTFIX-1
+    // was built on (SEC_HOTFIX_1_LOCK_BASE~1), where it was last the approved
+    // graph — so the evidence for CI-HOTFIX-2 and CI-HOTFIX-3 is kept, not
+    // erased.
+    //
+    // SEC-HOTFIX-1 / GHSA-wq5f-xc86-pv6w (sharp < 0.35.5, through its librsvg
+    // dependency) and GHSA-68fv-2mgg-jv7q (source-map-js 1.0.0 - 1.2.1, an
+    // event-loop denial of service), both reported by npm audit as high:
+    // sharp 0.35.4 -> 0.35.5 and source-map-js 1.2.1 -> 1.2.2, as a
+    // lockfile-only change. package.json is not changed by it (asserted below),
+    // and sharp 0.35.5 moves the 25 @img/sharp-* platform and libvips packages
+    // it pins exactly, plus @img/sharp-wasm32, which @img/sharp-freebsd-wasm32
+    // and @img/sharp-webcontainers-wasm32 pin exactly — 28 lockfile entries in
+    // all, none added or removed. That reviewed result is deliberately NOT
+    // re-typed here entry by entry: the approved graph IS the lockfile committed
+    // at SEC_HOTFIX_1_LOCK_BASE, read with `git show`, so every version,
+    // resolved URL, integrity hash, dependency edge, optional dependency,
+    // platform-specific sharp package and unrelated entry is frozen exactly as
+    // reviewed (reviewed commit patch, `git diff --full-index`, SHA-256
+    // cc15bfd93cdf9717f996462935764c168195769ba6c922aa0f18415368cde078; frozen
+    // package-lock.json SHA-256
+    // d354aa57a59b5a7aa1de9fff34a40e7fce0f5cd420dbb5e31a990a3f37b03321).
+    //
+    // HEAD's complete lockfile must equal that frozen graph, with only the
+    // pre-existing release-version normalisation. No range, allowlist, filter,
+    // exemption or registry lookup is introduced, so ANY other lockfile drift —
+    // a package version, resolved URL, integrity, dependency edge, addition,
+    // removal, override, root metadata, or a different undici, brace-expansion,
+    // sharp or source-map-js version — still fails closed. Advancing the pin
+    // changes what the approved graph IS, never how strictly it is enforced.
     expect(head.engines).toEqual({ node: '22.x' });
     const UNDICI = 'node_modules/undici';
     const BRACE_EXPANSION = 'node_modules/brace-expansion';
+    const SHARP = 'node_modules/sharp';
+    const SOURCE_MAP_JS = 'node_modules/source-map-js';
     const expectedLock = (() => {
       const lock = jsonAt(BASE, 'package-lock.json');
       const packages = { ...(lock.packages as Record<string, Record<string, unknown>>) };
       expect(packages[UNDICI].version).toBe('7.29.0');
       expect(packages[BRACE_EXPANSION].version).toBe('5.0.9');
+      expect(packages[SHARP].version).toBe('0.35.4');
+      expect(packages[SOURCE_MAP_JS].version).toBe('1.2.1');
       expect(packages[''].engines).toBeUndefined();
       packages[''] = { ...packages[''], engines: { node: '22.x' } };
       packages[UNDICI] = {
@@ -615,8 +656,34 @@ describe('RAC-3 · I) no backend or migration change', () => {
       packages[''] = { ...packages[''], version: 'RELEASE_VERSION' };
       return JSON.stringify({ ...lock, version: 'RELEASE_VERSION', packages });
     };
-    expect(normalise(jsonAt('HEAD', 'package-lock.json')))
+
+    // Like BASE, SEC_HOTFIX_1_LOCK_BASE must stay reachable in the CI checkout
+    // that runs this test (the verify job, fetch-depth: 0): land PR #242 as a
+    // merge commit, never squash or rebase, and never amend or rebase 84a8f720.
+    // If it cannot be read, `git show` throws and this test fails closed — it
+    // never passes silently.
+    const SEC_HOTFIX_1_LOCK_BASE = '84a8f7207bbe03cb8b20814b51941377ef91f914';
+    const SEC_HOTFIX_1_PARENT = `${SEC_HOTFIX_1_LOCK_BASE}~1`;
+    // Historical: the graph SEC-HOTFIX-1 started from was exactly BASE plus the
+    // CI-HOTFIX-2/-3 transformations, and SEC-HOTFIX-1 left package.json as it was.
+    expect(normalise(jsonAt(SEC_HOTFIX_1_PARENT, 'package-lock.json')))
       .toBe(normalise(expectedLock));
+    expect(jsonAt(SEC_HOTFIX_1_LOCK_BASE, 'package.json'))
+      .toEqual(jsonAt(SEC_HOTFIX_1_PARENT, 'package.json'));
+    const frozenLock = jsonAt(SEC_HOTFIX_1_LOCK_BASE, 'package-lock.json');
+    const frozen = frozenLock.packages as Record<string, Record<string, unknown>>;
+    // The frozen graph keeps the CI-HOTFIX-2/-3 entries exactly as reviewed ...
+    expect(frozen[''].engines).toEqual({ node: '22.x' });
+    expect(frozen[UNDICI]).toEqual(expectedLock.packages[UNDICI]);
+    expect(frozen[BRACE_EXPANSION]).toEqual(expectedLock.packages[BRACE_EXPANSION]);
+    // ... and carries exactly the four reviewed security versions.
+    expect(frozen[UNDICI].version).toBe('7.30.0');
+    expect(frozen[BRACE_EXPANSION].version).toBe('5.0.12');
+    expect(frozen[SHARP].version).toBe('0.35.5');
+    expect(frozen[SOURCE_MAP_JS].version).toBe('1.2.2');
+    // The authoritative assertion: HEAD's whole lockfile IS the frozen graph.
+    expect(normalise(jsonAt('HEAD', 'package-lock.json')))
+      .toBe(normalise(frozenLock));
   });
 });
 
