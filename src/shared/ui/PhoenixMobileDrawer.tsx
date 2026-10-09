@@ -45,6 +45,7 @@ const ALL_NAV: {
   // INSTITUTION-LOCAL-PROCUREMENT-087: mirrors the desktop sidebar entry so
   // Screen 19 is reachable on mobile too; the screen self-gates by 062
   // warehouse scope + the scoped local_procurement.* keys, re-checked server-side.
+  // PDA-PROC-1: the projection additionally admits it for care institutions only.
   { screen: 19, icon: 'warehouse', labelKey: 'nav_local_procurement' },
   { screen: 21, icon: 'reports', labelKey: 'nav_decision_reports' },
 ];
@@ -68,13 +69,18 @@ interface Props {
 }
 
 export function PhoenixMobileDrawer({ currentScreen, onNavigate, onClose, onLogout, onOpenGuide }: Props) {
-  const { lang, dir, role, myPermissions } = useApp();
+  const { lang, dir, role, myPermissions, activeOrganizationKind } = useApp();
   const overlayRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLElement>(null);
   const previouslyFocused = useRef<HTMLElement | null>(null);
   // R1.1-P (P1): the same projection the desktop rail uses — see nav-projection.ts.
-  const primaryItems = projectNavigation(ALL_NAV, { role, permissions: myPermissions });
-  const secondaryItems = projectNavigation(SECONDARY_NAV, { role, permissions: myPermissions });
+  // PDA-PROC-1: including the same active organization kind.
+  const primaryItems = projectNavigation(ALL_NAV, {
+    role, permissions: myPermissions, organizationKind: activeOrganizationKind,
+  });
+  const secondaryItems = projectNavigation(SECONDARY_NAV, {
+    role, permissions: myPermissions, organizationKind: activeOrganizationKind,
+  });
 
   /* PHASE-A7-VISUAL-CONVERGENCE: same data-active contract as PhoenixSidebar —
      fill/colour live in phase-a-visual-convergence.css so the drawer and the

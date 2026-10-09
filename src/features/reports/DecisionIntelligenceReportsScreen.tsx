@@ -119,6 +119,9 @@ export function DecisionIntelligenceReportsScreen({ onNavigate, onOpenSuggestion
   initialTab?: Tab;
 }) {
   const { lang, dir, activeOrgId, role, myPermissions } = useApp();
+  // PDA-PROC-1: the supplementary tab also needs the active organization to be a
+  // care institution (report-tab-access.ts); the kind is null while it is read.
+  const { activeOrganizationKind, activeOrganizationKindPending } = useApp();
   const [tab, setTab] = useState<Tab>(initialTab ?? 'overview');
   const [toast, setToast] = useState<string | null>(null);
   const [mobilePrint, setMobilePrint] = useState<{ html: string; title: string; fileNameBase: string } | null>(null);
@@ -127,12 +130,21 @@ export function DecisionIntelligenceReportsScreen({ onNavigate, onOpenSuggestion
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3000); };
   const openMobilePrint = (html: string, title: string, fileNameBase: string) => setMobilePrint({ html, title, fileNameBase });
 
-  const allowedTabs = useMemo(() => allowedReportTabs(myPermissions, role), [myPermissions, role]);
+  const allowedTabs = useMemo(
+    () => allowedReportTabs(myPermissions, role, activeOrganizationKind),
+    [myPermissions, role, activeOrganizationKind],
+  );
   const activeTab = resolveAllowedReportTab(tab, allowedTabs);
 
   useEffect(() => {
+    // PDA-PROC-1: while the organization kind is being read the supplementary
+    // tab is withheld (it is never rendered for an unverified organization),
+    // but the fallback is not persisted yet: a care -> care switch keeps the
+    // user's supplementary choice once the kind settles, and an ineligible
+    // organization persists the fallback as soon as its kind is known.
+    if (activeOrganizationKindPending) return;
     if (activeTab !== null && activeTab !== tab) setTab(activeTab);
-  }, [activeTab, tab]);
+  }, [activeTab, tab, activeOrganizationKindPending]);
 
   /**
    * PHASE-C4-TAB-ACCESSIBILITY: when the active tab disappears from the

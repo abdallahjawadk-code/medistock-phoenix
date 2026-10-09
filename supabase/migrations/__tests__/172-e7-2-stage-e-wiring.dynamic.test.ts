@@ -334,6 +334,14 @@ run('E7-2 · Stage-E application wiring (dynamic)',()=>{
       // still ends at 171" remains true. Listed so this guard stays exhaustive
       // and fails closed on any unlisted new file.
       '220_phoenix_central_needs_active_item_guard.sql',
+      // PDA-PROC-1/M221: the pharmacy department supplementary procurement
+      // exclusion — one trigger guard function and twelve BEFORE triggers on the
+      // procurement tables and warehouse_stock that only refuse a non-care
+      // organization's procurement or purchase/supplementary stock and write
+      // nothing; it adds no migration numbered <= 171 and no corridor, route or
+      // dispatch SQL, so "Stage E still ends at 171" remains true. Listed so
+      // this guard stays exhaustive and fails closed on any unlisted new file.
+      '221_phoenix_pharmacy_department_subpurchase_exclusion.sql',
     ];
     it('Stage E still ends at 171 — E7-2 introduced no new SQL',()=>{
       const files=readdirSync(join(__dirname,'..')).filter(f=>/^\d{3}_.*\.sql$/.test(f));

@@ -719,6 +719,35 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
       'supabase/migrations/220_phoenix_central_needs_active_item_guard.sql',
       'supabase/migrations/__tests__/220-central-needs-active-item-guard-static.test.ts',
       'supabase/migrations/__tests__/220-central-needs-active-item-guard.dynamic.test.ts',
+      // PDA-PROC-1/M221: the reviewed pharmacy department supplementary
+      // procurement exclusion — one reviewed, forward-only migration plus its
+      // static and dynamic proofs. It adds no branding asset, no table, no RLS
+      // policy and no permission key, and creates or replaces no RPC: one
+      // SECURITY DEFINER trigger guard function (no client grant), fired by
+      // twelve narrow BEFORE triggers on procurement_suppliers,
+      // procurement_orders, procurement_order_lines, procurement_order_events,
+      // procurement_receipts, procurement_receipt_lines, procurement_returns and
+      // warehouse_stock, refuses procurement and purchase/supplementary stock
+      // for any organization that is not a care_institution. It does not alter
+      // A7.2.4's branding/security subject. Registered by EXACT filename,
+      // exactly as M209-M220 were.
+      'supabase/migrations/221_phoenix_pharmacy_department_subpurchase_exclusion.sql',
+      'supabase/migrations/__tests__/221-pharmacy-department-subpurchase-exclusion-static.test.ts',
+      'supabase/migrations/__tests__/221-pharmacy-department-subpurchase-exclusion.dynamic.test.ts',
+      // PDA-PROC-1 frontend: three new TEST-ONLY files under the watched
+      // `src/shared/authz` and `src/app` prefixes, each by EXACT filename. The
+      // runtime change lands in files already listed above (AppContext.tsx,
+      // AuthenticatedApp.tsx, screen-continuity.ts, screen-access.ts,
+      // nav-projection.ts): Screen 19 additionally requires the active
+      // organization's canonical kind to be care_institution, so the change only
+      // ever DENIES — no role, permission or screen gains access. These are its
+      // proofs: the screen-access decision, restore/popstate continuity across
+      // an organization switch, and the read-only activeOrganizationKind state.
+      // No wildcard and no directory exemption, so every other file under
+      // supabase/, src/shared/authz and src/app still fails this guard closed.
+      'src/shared/authz/__tests__/pda-proc-1-screen-access.test.ts',
+      'src/app/__tests__/pda-proc-1-screen-continuity.runtime.test.tsx',
+      'src/app/__tests__/pda-proc-1-active-organization-kind.runtime.test.tsx',
       // INTERACTIVE-GUIDE-IG1: one new file under the watched `src/app`
       // prefix, registered by EXACT filename like every entry above.
       //

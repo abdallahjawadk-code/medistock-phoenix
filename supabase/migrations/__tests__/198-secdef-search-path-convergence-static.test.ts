@@ -119,9 +119,15 @@ describe('M198 static — identity and placement', () => {
       // pg_catalog, pg_temp, and alters none of the thirty, so what this suite converges is
       // untouched. It is now the reviewed ceiling.
       '220_phoenix_central_needs_active_item_guard.sql',
+      // PDA-PROC-1/M221: the pharmacy department supplementary procurement exclusion (one trigger
+      // guard function, twelve BEFORE triggers on the procurement tables and warehouse_stock) — it
+      // pins its one new SECURITY DEFINER guard function to search_path = pg_catalog, pg_temp,
+      // creates or replaces no other function and alters none of the thirty, so what this suite
+      // converges is untouched. It is now the reviewed ceiling.
+      '221_phoenix_pharmacy_department_subpurchase_exclusion.sql',
     ]);
-    expect(files.filter((f) => Number(f.slice(0, 3)) > 220)).toEqual([]);
-    expect(files).toHaveLength(220);
+    expect(files.filter((f) => Number(f.slice(0, 3)) > 221)).toEqual([]);
+    expect(files).toHaveLength(221);
   });
 
   it('carries no MANUAL APPLY ONLY banner, so the pinned executor will accept it', () => {

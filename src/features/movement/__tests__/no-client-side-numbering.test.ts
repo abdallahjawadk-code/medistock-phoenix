@@ -266,7 +266,15 @@ describe('no client-side document-number sequence exists',()=>{
     // nothing. It introduces no sequence, counter, max()+1, generated numeric
     // identity or document number: its only writes are M211's unchanged mapping
     // upsert and audit row. Registered by exact number; boundary moves to 220.
-    const beyond=migrations.filter(f=>/^(1[89]\d|[2-9]\d\d)_/.test(f)&&!/^(179|180|181|182|183|184|185|186|187|188|189|190|191|192|193|194|195|196|197|198|199|200|201|202|203|204|205|206|207|208|209|210|211|212|213|214|215|216|217|218|219|220)_/.test(f));
+    // PDA-PROC-1 / M221: the pharmacy department supplementary procurement
+    // exclusion — one SECURITY DEFINER trigger guard function and twelve BEFORE
+    // triggers on the procurement tables and warehouse_stock that read the
+    // owning organization's kind and either pass the row unchanged or raise
+    // pharmacy_department_supplementary_procurement_forbidden; they write
+    // nothing. It introduces no sequence, counter, max()+1, generated numeric
+    // identity or document number, and no numbering SQL. Registered by exact
+    // number; boundary moves to 221.
+    const beyond=migrations.filter(f=>/^(1[89]\d|[2-9]\d\d)_/.test(f)&&!/^(179|180|181|182|183|184|185|186|187|188|189|190|191|192|193|194|195|196|197|198|199|200|201|202|203|204|205|206|207|208|209|210|211|212|213|214|215|216|217|218|219|220|221)_/.test(f));
     expect(beyond).toEqual([]);
     for(const f of [
       '211_phoenix_central_needs_batch_and_disposition.sql',

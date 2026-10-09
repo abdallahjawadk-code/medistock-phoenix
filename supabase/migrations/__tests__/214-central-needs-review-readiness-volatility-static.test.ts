@@ -33,10 +33,11 @@ describe('M214 static — registration and exact scope', () => {
     // C2/M215 (the governed correction lifecycle) sits directly after 214; its
     // own static suite owns the ceiling assertions from here on. The 214 -> 215
     // relationship is HISTORICAL and never moves; only the ceiling below
-    // advances, now to PRE3-B/M220 (active central item guard).
+    // advances, now to PDA-PROC-1/M221 (pharmacy department supplementary
+    // procurement exclusion).
     expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.indexOf(FILENAME) + 1]).toBe('215_phoenix_central_needs_governed_correction_lifecycle.sql');
-    expect(getMaximumReviewedMigrationNumber()).toBe(220);
-    expect(getNextUnreviewedMigrationNumber()).toBe(221);
+    expect(getMaximumReviewedMigrationNumber()).toBe(221);
+    expect(getNextUnreviewedMigrationNumber()).toBe(222);
   });
 
   it('changes exactly the readiness RPC volatility to VOLATILE', () => {

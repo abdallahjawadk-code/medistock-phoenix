@@ -25,7 +25,7 @@ interface Props {
 }
 
 export function PhoenixMobileBottomNav({ currentScreen, onNavigate }: Props) {
-  const { lang, role, myPermissions } = useApp();
+  const { lang, role, myPermissions, activeOrganizationKind } = useApp();
   /**
    * R1.1-P (P1-C): the same projection every other nav surface uses.
    *
@@ -38,8 +38,13 @@ export function PhoenixMobileBottomNav({ currentScreen, onNavigate }: Props) {
    * role legitimately sees fewer slots; the drawer still carries everything it
    * may reach. With nothing left to show the bar removes itself rather than
    * reserving empty chrome above the home indicator.
+   *
+   * PDA-PROC-1: the actor carries the active organization kind like every
+   * other surface, so an organization-gated slot could never appear here.
    */
-  const visibleItems = projectNavigation(BOTTOM_NAV, { role, permissions: myPermissions });
+  const visibleItems = projectNavigation(BOTTOM_NAV, {
+    role, permissions: myPermissions, organizationKind: activeOrganizationKind,
+  });
   if (visibleItems.length === 0) return null;
 
   const bns = (n: number) => ({

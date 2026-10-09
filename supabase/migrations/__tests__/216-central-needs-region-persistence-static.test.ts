@@ -53,20 +53,22 @@ const gitBlob = (content: Buffer) =>
   createHash('sha1').update(Buffer.concat([Buffer.from(`blob ${content.length}\0`), content])).digest('hex');
 
 describe('C4/M216 static — file hygiene and protected surface', () => {
-  it('216 is the next migration after 215, and only C5/M217, C6-F1/M218, AUTH-1/M219 and PRE3-B/M220 sit above it', () => {
+  it('216 is the next migration after 215, and only C5/M217, C6-F1/M218, AUTH-1/M219, PRE3-B/M220 and PDA-PROC-1/M221 sit above it', () => {
     // C5/M217 (Central Needs safety convergence), C6-F1/M218 (Central Needs
-    // submission integrity fence) and AUTH-1/M219 (sign-up authority
-    // hardening) are the reviewed successors and PRE3-B/M220 (active central
-    // item guard) now the ceiling; its own static suite owns the ceiling
-    // assertions. The 215 -> 216 -> 217 -> 218 -> 219 -> 220 order is exact,
-    // so any other file >= 216 fails closed.
+    // submission integrity fence), AUTH-1/M219 (sign-up authority hardening)
+    // and PRE3-B/M220 (active central item guard) are the reviewed successors
+    // and PDA-PROC-1/M221 (pharmacy department supplementary procurement
+    // exclusion) now the ceiling; its own static suite owns the ceiling
+    // assertions. The 215 -> 216 -> 217 -> 218 -> 219 -> 220 -> 221 order is
+    // exact, so any other file >= 216 fails closed.
     const files = readdirSync(MIGRATIONS).filter((f) => /^\d{3}_.*\.sql$/.test(f)).sort();
     expect(files).toContain(FILENAME);
     expect(files.filter((f) => Number(f.slice(0, 3)) >= 216))
       .toEqual([FILENAME, '217_phoenix_central_needs_c5_safety_convergence.sql',
         '218_phoenix_central_needs_submission_integrity_fence.sql',
         '219_phoenix_auth_signup_authority_hardening.sql',
-        '220_phoenix_central_needs_active_item_guard.sql']);
+        '220_phoenix_central_needs_active_item_guard.sql',
+        '221_phoenix_pharmacy_department_subpurchase_exclusion.sql']);
   });
 
   it('leaves M209-M215 byte-identical (git blob ids of the frozen baseline)', () => {

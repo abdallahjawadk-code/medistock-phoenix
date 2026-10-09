@@ -671,7 +671,23 @@ describe('PHASE2-DASHBOARD-PERFORMANCE-RPCS-054-A: DB-only phase — no frontend
     const PHOENIX_DSO_1_AUTHORIZED = [
       'src/features/movement/DirectSupplyComposer.tsx',
     ];
-    const STAGE_AUTHORIZED = [...DELEGATED_AUTHORIZED, ...G3_2_AUTHORIZED, ...G4_1_AUTHORIZED, ...G4_2_AUTHORIZED, ...G5_AUTHORIZED, ...TS_REGULATORY_UX_AUTHORIZED, ...PHOENIX_DSO_1_AUTHORIZED];
+    // PDA-PROC-1 — pharmacy department supplementary procurement exclusion
+    // (frontend half of M221). Screen 19 and the Reports 'supplementary' tab
+    // additionally require the active organization's canonical kind to be
+    // care_institution; the change only ever denies. Listed: exactly the edited
+    // production files this pathspec does not already exclude (AppContext,
+    // AuthenticatedApp, the four navigation surfaces, the Decision Intelligence
+    // reports screen and strings.ts already are). No schema, RLS, RPC or
+    // permission-catalog change in any of them. Registered by EXACT path.
+    const PDA_PROC_1_AUTHORIZED = [
+      'src/app/screen-continuity.ts',
+      'src/shared/authz/screen-access.ts',
+      'src/shared/authz/nav-projection.ts',
+      'src/features/procurement/LocalProcurementScreen.tsx',
+      'src/features/reports/report-tab-access.ts',
+      'src/features/qa/qaFixtures.ts',
+    ];
+    const STAGE_AUTHORIZED = [...DELEGATED_AUTHORIZED, ...G3_2_AUTHORIZED, ...G4_1_AUTHORIZED, ...G4_2_AUTHORIZED, ...G5_AUTHORIZED, ...TS_REGULATORY_UX_AUTHORIZED, ...PHOENIX_DSO_1_AUTHORIZED, ...PDA_PROC_1_AUTHORIZED];
     const delegatedFiles = [...diff.matchAll(/^diff --git a\/(.+?) b\//gm)].map(match => match[1]).sort();
     expect(delegatedFiles.filter(f => !STAGE_AUTHORIZED.includes(f))).toEqual([]);
   });

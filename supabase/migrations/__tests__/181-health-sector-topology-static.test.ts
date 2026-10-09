@@ -122,12 +122,18 @@ describe('181 registration and shape', () => {
       // item check changed, ACL-neutral; one private gate function and one trigger on Central Needs plan
       // revisions) — no policy or topology SQL, so nothing this suite asserts moves. It is now the reviewed ceiling.
       '220_phoenix_central_needs_active_item_guard.sql',
+      // PDA-PROC-1/M221: the pharmacy department supplementary procurement exclusion (one trigger guard function
+      // and twelve BEFORE triggers on the procurement tables and warehouse_stock that refuse a non-care
+      // organization's procurement or purchase/supplementary stock) — its triggers sit only on procurement and
+      // stock tables and it carries no policy or topology SQL, so nothing this suite asserts moves. It is now the
+      // reviewed ceiling.
+      '221_phoenix_pharmacy_department_subpurchase_exclusion.sql',
     ];
     const i = REVIEWED_MIGRATION_FILES.indexOf(NAME);
     expect(REVIEWED_MIGRATION_FILES.slice(i + 1)).toEqual(SUCCESSORS);
-    // The ceiling is now 220; `[2-9]\d\d` would match it, so this asserts
+    // The ceiling is now 221; `[2-9]\d\d` would match it, so this asserts
     // numerically that nothing sits ABOVE the ceiling.
-    expect(REVIEWED_MIGRATION_FILES.filter(f => Number(f.slice(0, 3)) > 220)).toHaveLength(0);
+    expect(REVIEWED_MIGRATION_FILES.filter(f => Number(f.slice(0, 3)) > 221)).toHaveLength(0);
   });
 
   it('is a single transaction, manual-apply only, through Supabase.apply_migration', () => {

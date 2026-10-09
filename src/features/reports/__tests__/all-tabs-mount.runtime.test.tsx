@@ -87,9 +87,12 @@ vi.mock('@/features/inventory/useInventoryScopes', () => ({
 let currentRole: string | null = 'super_admin';
 let permissions = new Set<string>(['reports.view', 'status_center.view', 'audit.view']);
 
+// PDA-PROC-1: 'org1' is a care institution, so the supplementary tab keeps
+// its pre-existing place in the sweep (it is withheld from any other kind).
 vi.mock('@/app/AppContext', () => ({
   useApp: () => ({
     lang: 'en', dir: 'ltr', activeOrgId: 'org1', role: currentRole,
+    activeOrganizationKind: 'care_institution', activeOrganizationKindPending: false,
     myPermissions: permissions,
     authz: { getContext: () => ({ authenticated: false }) },
   }),
