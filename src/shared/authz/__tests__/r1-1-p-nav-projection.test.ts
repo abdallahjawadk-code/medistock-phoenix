@@ -307,8 +307,10 @@ describe('D) a forged, deep-linked or restored unsafe screen fails closed', () =
 
   it('the route guard still routes an unauthorized request to that landing', () => {
     const app = read('app/AuthenticatedApp.tsx');
-    // PDA-PROC-1: the same choke point, now carrying the active organization kind.
-    expect(app).toContain('isScreenAuthorized(requestedScreen, profile.role, myPermissions, activeOrganizationKind)');
+    // PDA-PROC-1: the same choke point, now carrying the organization kind. RD-3A:
+    // that kind is the authority-verified screen kind, never the canonical one
+    // (rd3a-route-choke-point.runtime.test.tsx proves which value flows in).
+    expect(app).toContain('isScreenAuthorized(requestedScreen, profile.role, myPermissions, screenKind)');
     expect(app).toContain('roleLandingScreen(profile.role)');
   });
 });

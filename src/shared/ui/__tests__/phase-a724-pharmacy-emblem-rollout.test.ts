@@ -781,6 +781,12 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
       // No wildcard and no directory exemption, so every other file under
       // `src/shared/supabase` still fails this guard closed.
       'src/shared/supabase/services/__tests__/auth-tab-refocus.runtime.test.ts',
+      // CI-3 / D3 (PDA-PROC-1 RD-3A): one new TEST-ONLY runtime suite under the
+      // watched `src/app` prefix, registered by EXACT filename like every entry
+      // above. It drives the REAL AppProvider and AuthenticatedApp route gate for
+      // Screen 19, including the same-identity hold. No wildcard and no directory
+      // exemption, so every other file under src/app still fails this guard closed.
+      'src/app/__tests__/rd3a-screen19-authority.runtime.test.tsx',
     ];
     const changed=execSync(`git diff --name-only ${BASE}`,{cwd:ROOT,encoding:'utf8'}).split('\n').map(l=>l.trim()).filter(Boolean);
     const prohibited=changed.filter(f=>WATCHED.some(p=>f===p||f.startsWith(p+'/'))&&!EXCLUDED.includes(f));

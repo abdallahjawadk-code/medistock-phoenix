@@ -271,8 +271,10 @@ describe('U-B corrective · the canonical screen decision refuses unsafe surface
 
   it('the app resolves the screen through the canonical decision, not per-component', () => {
     const app = read('app/AuthenticatedApp.tsx');
-    // PDA-PROC-1: the same delegation, now carrying the active organization kind.
-    expect(app).toContain('isScreenAuthorized(requestedScreen, profile.role, myPermissions, activeOrganizationKind)');
+    // PDA-PROC-1: the same delegation, now carrying the organization kind. RD-3A:
+    // that kind is the authority-verified screen kind, never the canonical one
+    // (rd3a-route-choke-point.runtime.test.tsx proves which value flows in).
+    expect(app).toContain('isScreenAuthorized(requestedScreen, profile.role, myPermissions, screenKind)');
     expect(app).toContain('roleLandingScreen(profile.role)');
     // The restoration module must delegate rather than re-implement the gates.
     expect(continuity).toContain('isScreenAuthorized(screen, role, permissions, organizationKind)');

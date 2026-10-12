@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState, type MutableRefObject, type ReactNode } from 'react';
 import { t } from '@/shared/i18n/strings';
 import {
   institutionsScreenAccess,
   isScreenAuthorized,
+  LOCAL_PROCUREMENT_SCREEN,
   roleLandingScreen,
   screenAwaitsOrganizationKind,
 } from '@/shared/authz/screen-access';
@@ -56,9 +57,13 @@ import {
 export function AuthenticatedApp() {
   const {
     authReady, session, profile, signOut, passwordRecovery, role, lang,
-    authStatus, retryAuthBootstrap, retryProfileLoad, myPermissions,
-    activeOrganizationKind, activeOrganizationKindPending,
+    authStatus, retryAuthBootstrap, retryProfileLoad, myPermissions, activeOrgId,
+    screenOrganizationKind, screenOrganizationKindPending, revalidateScreenAuthority,
   } = useApp();
+  // RD-3A: the screen gates read only the authority-verified kind. A missing value
+  // reads as unknown, which is denied, so an incomplete state can never open Screen 19.
+  const screenKind = screenOrganizationKind ?? null;
+  const screenKindPending = screenOrganizationKindPending ?? false;
   // Keep explicit navigation scoped to the profile that created it. A later
   // session on the same workstation must derive its own role-safe landing
   // instead of inheriting the previous user's screen.
@@ -68,11 +73,17 @@ export function AuthenticatedApp() {
     suggestionDocument?: SuggestionDocumentTarget;
   } | null>(null);
   const [welcomeCompletedFor, setWelcomeCompletedFor] = useState<string | null>(null);
+  // CI-3 / R-2: the workspace whose Screen 19 subtree is mounted and admitted (see ProcurementWorkspaceFrame).
+  const admittedWorkspaceRef = useRef<string | null>(null);
+  // CI-3 / R-2: who the workspace belongs to. A change of person, role, organization or permissions is a
+  // different workspace, so nothing mounted for the previous one can be held for the next.
+  const workspaceKey = profile === null ? null
+    : `${profile.id}|${profile.role}|${activeOrgId ?? ''}|${[...myPermissions].sort().join(',')}`;
 
   useEffect(() => {
     if (authStatus !== 'authenticated' || !profile) return;
     const profileId = profile.id;
-    if (activeOrganizationKindPending) {
+    if (screenKindPending) {
       // PDA-PROC-1: while the organization kind is being read, the first
       // restoration for this profile proceeds at once unless its target depends
       // on the kind (Screen 19). Nothing is written to storage or history while
@@ -84,7 +95,7 @@ export function AuthenticatedApp() {
           : { profileId, screen: careRestored });
       }
     } else {
-      const restored = resolveRestoredScreen(profileId, profile.role, myPermissions, activeOrganizationKind);
+      const restored = resolveRestoredScreen(profileId, profile.role, myPermissions, screenKind);
       // PDA-PROC-1: a settled decision normalises in-memory navigation too. A
       // current screen the active organization may not occupy (care -> 19 ->
       // pharmacy department authority) is replaced, so it cannot come back
@@ -93,23 +104,24 @@ export function AuthenticatedApp() {
       // display does not change - or remount - a second time.
       setNavigation(previous => {
         if (previous?.profileId !== profileId) return { profileId, screen: restored };
-        if (isScreenAuthorized(previous.screen, profile.role, myPermissions, activeOrganizationKind)) return previous;
+        if (isScreenAuthorized(previous.screen, profile.role, myPermissions, screenKind)) return previous;
         return { profileId, screen: roleLandingScreen(profile.role) };
       });
       rememberScreen(profileId, restored, 'replace');
     }
 
     const onPopState = (event: PopStateEvent) => {
-      if (activeOrganizationKindPending) {
+      // RD-3A: a Back/Forward entry re-enters the screen gates only through a fresh
+      // authority check. The re-check's pending state holds Screen 19 in the same render.
+      revalidateScreenAuthority?.();
+      const careNext = screenFromPopState(event.state, profileId, profile.role, myPermissions, 'care_institution');
+      if (screenAwaitsOrganizationKind(careNext, profile.role, myPermissions)) {
         // PDA-PROC-1: a Back/Forward entry whose decision depends on the
-        // pending kind is held (the render waits) and decided once it settles.
-        const careNext = screenFromPopState(event.state, profileId, profile.role, myPermissions, 'care_institution');
-        if (screenAwaitsOrganizationKind(careNext, profile.role, myPermissions)) {
-          setNavigation({ profileId, screen: careNext });
-          return;
-        }
+        // organization kind is held (the render waits) and decided once it settles.
+        setNavigation({ profileId, screen: careNext });
+        return;
       }
-      const next = screenFromPopState(event.state, profileId, profile.role, myPermissions, activeOrganizationKind);
+      const next = screenFromPopState(event.state, profileId, profile.role, myPermissions, screenKind);
       setNavigation({ profileId, screen: next });
       rememberScreen(profileId, next, 'storage-only');
       if (event.state === null || typeof event.state !== 'object') {
@@ -118,7 +130,7 @@ export function AuthenticatedApp() {
     };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
-  }, [authStatus, profile, myPermissions, activeOrganizationKind, activeOrganizationKindPending]);
+  }, [authStatus, profile, myPermissions, screenKind, screenKindPending, revalidateScreenAuthority]);
 
   // ── Password recovery (from reset email) — takes priority over the app ──
   if (passwordRecovery) {
@@ -247,17 +259,28 @@ export function AuthenticatedApp() {
   const navigatedScreen = navigation?.profileId === profile.id ? navigation.screen : null;
   const awaitingCandidate = navigatedScreen
     ?? resolveRestoredScreen(profile.id, profile.role, myPermissions, 'care_institution');
-  const awaitingOrganizationKind = activeOrganizationKindPending
+  const awaitingOrganizationKind = screenKindPending
     && screenAwaitsOrganizationKind(awaitingCandidate, profile.role, myPermissions);
   const requestedScreen = navigation?.profileId === profile.id
     ? navigation.screen
-    : resolveRestoredScreen(profile.id, profile.role, myPermissions, activeOrganizationKind);
-  const screen = isScreenAuthorized(requestedScreen, profile.role, myPermissions, activeOrganizationKind)
-    ? requestedScreen
-    : roleLandingScreen(profile.role);
+    : resolveRestoredScreen(profile.id, profile.role, myPermissions, screenKind);
+  // CI-3 / R-2: a pending re-check of the SAME admitted workspace keeps Screen 19 mounted (hidden under the
+  // loading state, see ProcurementWorkspaceFrame). Every other pending target is still not admitted.
+  const holdsWorkspace = awaitingOrganizationKind
+    && navigatedScreen === LOCAL_PROCUREMENT_SCREEN
+    && workspaceKey !== null
+    && admittedWorkspaceRef.current === workspaceKey;
+  const screen = holdsWorkspace
+    ? LOCAL_PROCUREMENT_SCREEN
+    : isScreenAuthorized(requestedScreen, profile.role, myPermissions, screenKind)
+      ? requestedScreen
+      : roleLandingScreen(profile.role);
   const setScreen = (nextScreen: number) => {
+    // RD-3A: entering Screen 19 re-checks the caller's authority. The pending state
+    // holds the screen in the same render until the re-check settles.
+    if (nextScreen === LOCAL_PROCUREMENT_SCREEN) revalidateScreenAuthority?.();
     setNavigation({ profileId: profile.id, screen: nextScreen });
-    if (isScreenRestorable(nextScreen, profile.role, myPermissions, activeOrganizationKind)) {
+    if (isScreenRestorable(nextScreen, profile.role, myPermissions, screenKind)) {
       rememberScreen(profile.id, nextScreen, 'push');
     }
   };
@@ -268,7 +291,7 @@ export function AuthenticatedApp() {
       screen: nextScreen,
       suggestionDocument: target,
     });
-    if (isScreenRestorable(nextScreen, profile.role, myPermissions, activeOrganizationKind)) {
+    if (isScreenRestorable(nextScreen, profile.role, myPermissions, screenKind)) {
       rememberScreen(profile.id, nextScreen, 'push');
     }
   };
@@ -375,11 +398,66 @@ export function AuthenticatedApp() {
       {/* PHASE-1-CONTROLLED-RBAC-ACTIVATION-SHADOW-MODE: in 'off'/'shadow' this
           renders screenContent() unchanged and only observes. It gates solely
           under PHOENIX_SCOPED_RBAC_MODE=enforce_super_admin, for super_admin. */}
-      {awaitingOrganizationKind ? <PhoenixLoadingState /> : (
+      {awaitingOrganizationKind && !holdsWorkspace ? <PhoenixLoadingState /> : screen === LOCAL_PROCUREMENT_SCREEN ? (
+        <ProcurementWorkspaceFrame
+          key={workspaceKey ?? ''}
+          workspaceKey={workspaceKey ?? ''}
+          pending={awaitingOrganizationKind}
+          admittedRef={admittedWorkspaceRef}
+        >
+          <ScreenAuthzGuard screen={screen}>
+            {screenContent()}
+          </ScreenAuthzGuard>
+        </ProcurementWorkspaceFrame>
+      ) : (
         <ScreenAuthzGuard screen={screen}>
           {screenContent()}
         </ScreenAuthzGuard>
       )}
     </PhoenixAppShell>
+  );
+}
+
+/**
+ * CI-3 / R-2: the Screen 19 frame. While a re-check of the SAME workspace is pending, the mounted subtree
+ * stays mounted but hidden beside the loading state. An operator's in-progress action is therefore not
+ * discarded by a same-screen re-activation or a Back/Forward entry, and nothing is shown or reachable until
+ * the check settles. A denial unmounts it through the gate, as before. The frame is keyed by the workspace
+ * identity, so a change of person, role, organization or permissions always remounts it.
+ * `admittedRef` names the workspace this frame holds, and is cleared when the frame unmounts.
+ */
+function ProcurementWorkspaceFrame({ workspaceKey, pending, admittedRef, children }: {
+  workspaceKey: string;
+  pending: boolean;
+  admittedRef: MutableRefObject<string | null>;
+  children: ReactNode;
+}) {
+  const hostRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    admittedRef.current = workspaceKey;
+    return () => {
+      if (admittedRef.current === workspaceKey) admittedRef.current = null;
+    };
+  }, [admittedRef, workspaceKey]);
+  // A dialog portalled to the document body sits outside this frame, so hiding the frame does not hide it. While the
+  // check is pending, every other top-level element of the body is inert; the application container is left alone.
+  useEffect(() => {
+    if (!pending) return undefined;
+    const appContainer = hostRef.current?.closest('body > *') ?? null;
+    const madeInert: Element[] = [];
+    for (const element of Array.from(document.body.children)) {
+      if (element === appContainer || element.hasAttribute('inert')) continue;
+      element.setAttribute('inert', '');
+      madeInert.push(element);
+    }
+    return () => {
+      for (const element of madeInert) element.removeAttribute('inert');
+    };
+  }, [pending]);
+  return (
+    <>
+      {pending && <PhoenixLoadingState />}
+      <div ref={hostRef} hidden={pending}>{children}</div>
+    </>
   );
 }

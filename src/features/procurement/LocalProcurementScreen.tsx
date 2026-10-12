@@ -80,7 +80,9 @@ export function LocalProcurementScreen() {
 }
 
 function LocalProcurementWorkspace() {
-  const { lang, dir, activeOrgId } = useApp();
+  const { lang, dir, activeOrgId, profile } = useApp();
+  // CI-3 / R-2: the identity and organization that own any unresolved direct-entry attempt.
+  const attemptScope = `${profile?.id ?? ''}|${activeOrgId ?? ''}`;
   const scopes = useInventoryScopes(activeOrgId);
   const warehouses = scopes.data?.manageableWarehouses ?? [];
 
@@ -157,7 +159,7 @@ function LocalProcurementWorkspace() {
       </div>
 
       {activeTab === 'entry' && (
-        <DirectEntryPanel key={activeWarehouse.id} lang={lang} warehouseId={activeWarehouse.id} onDone={() => { /* result card is the feedback */ }} />
+        <DirectEntryPanel key={`${attemptScope}|${activeWarehouse.id}`} lang={lang} warehouseId={activeWarehouse.id} scopeKey={attemptScope} onDone={() => { /* result card is the feedback */ }} />
       )}
 
       {activeTab === 'history' && (

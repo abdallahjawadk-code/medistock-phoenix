@@ -105,6 +105,24 @@ interface AppState {
   activeOrganizationKind: OrganizationKind | null;
   /** PDA-PROC-1: true while the kind of a non-null `activeOrgId` is still being read. */
   activeOrganizationKindPending: boolean;
+  /**
+   * RD-3A: the organization kind the screen gates may use (Screen 19 and the
+   * kind-restored navigation). It equals activeOrganizationKind only when the
+   * active organization is the caller's freshly verified primary organization,
+   * or, for super_admin, a verified selected organization. Otherwise null, so a
+   * delegated or unverified organization can never open Screen 19. Fixtures that
+   * build this state directly leave it absent, and consumers treat absence as null.
+   */
+  screenOrganizationKind?: OrganizationKind | null;
+  /** RD-3A: true while the screen authority for the active organization is being re-checked. */
+  screenOrganizationKindPending?: boolean;
+  /**
+   * RD-3A: re-checks the caller's current authority with a non-mutating read of
+   * their own profile. Pass the organization being selected, or nothing to use
+   * the active one. A superseded answer is discarded. It never reloads the
+   * profile and never resets the active organization.
+   */
+  revalidateScreenAuthority?: (requestedOrgId?: string | null) => void;
   /** Org scope for queries. super_admin may switch; others are pinned to their org. */
   activeOrgId: string | null;
   setActiveOrgId: (id: string | null) => void;
@@ -153,6 +171,39 @@ interface AppState {
   requestPasswordReset: (email: string) => Promise<SignInResult>;
   updatePassword: (newPassword: string) => Promise<SignInResult>;
   clearRecovery: () => Promise<void>;
+}
+
+/**
+ * RD-3A: one non-mutating authority snapshot for the active organization. It is
+ * written only by a freshly applied profile, a fresh read of the caller's own
+ * profile, and an organization selection awaiting that read. A superseded read
+ * never reaches it (generation guard). It never replaces the shared profile,
+ * permission or organization-selection state.
+ */
+interface ScreenAuthority {
+  generation: number;
+  profileId: string;
+  requestedOrgId: string | null;
+  settled: boolean;
+  verified: boolean;
+}
+
+/**
+ * RD-3A: does a fresh, server-derived self-profile still grant screen scope for
+ * the identity and organization the client holds? super_admin is subject to the
+ * organization-kind rule only, so for super_admin the check is identity, status
+ * and role. Every other role must still be the primary member of the
+ * organization it has selected, and a role change or deactivation denies.
+ */
+function screenAuthorityHolds(
+  fresh: Profile,
+  expected: { profileId: string; role: string | null; orgId: string | null },
+): boolean {
+  if (fresh.id !== expected.profileId) return false;
+  if (fresh.status !== 'active') return false;
+  if (fresh.role !== expected.role) return false;
+  if (fresh.role === 'super_admin') return true;
+  return expected.orgId !== null && fresh.organization_id === expected.orgId;
 }
 
 const AppContext = createContext<AppState | null>(null);
@@ -281,6 +332,14 @@ export function AppProvider({ children, skipAuthBootstrap = false }: AppProvider
   const [activeOrgId, setActiveOrgId] = useState<string | null>(null);
   const [myPermissions, setMyPermissions] = useState<Set<string>>(new Set());
   const [myPermissionsMigrationMissing, setMyPermissionsMigrationMissing] = useState(false);
+  // RD-3A: the authority snapshot (see revalidateScreenAuthority). The current
+  // identity is mirrored into a ref so an event-driven re-check never reads a
+  // stale render.
+  const [screenAuthority, setScreenAuthority] = useState<ScreenAuthority | null>(null);
+  const screenAuthorityGenRef = useRef(0);
+  const authorityIdentityRef = useRef<{
+    profileId: string | null; role: string | null; orgId: string | null;
+  }>({ profileId: null, role: null, orgId: null });
 
   // ── Scoped-RBAC service (PHASE-1-CONTROLLED-RBAC-ACTIVATION-SHADOW-MODE) ──
   // One instance per provider, created once: its cache and in-flight dedup map
@@ -406,6 +465,9 @@ export function AppProvider({ children, skipAuthBootstrap = false }: AppProvider
     setActiveOrgId(null);
     setMyPermissions(new Set());
     setMyPermissionsMigrationMissing(false);
+    // RD-3A: an identity clear retires any authority snapshot and any re-check in flight.
+    screenAuthorityGenRef.current += 1;
+    setScreenAuthority(null);
   }, []);
 
   /**
@@ -493,6 +555,16 @@ export function AppProvider({ children, skipAuthBootstrap = false }: AppProvider
     // previous profile pinned — a stale org id is a scoped query on the wrong
     // organization, not a cosmetic leftover.
     setActiveOrgId(p.role === 'super_admin' ? null : p.organization_id);
+    // RD-3A: the profile just read is the authority snapshot for this identity.
+    // It supersedes any re-check still in flight. Nothing is re-read here.
+    screenAuthorityGenRef.current += 1;
+    setScreenAuthority({
+      generation: screenAuthorityGenRef.current,
+      profileId: p.id,
+      requestedOrgId: p.role === 'super_admin' ? null : p.organization_id,
+      settled: true,
+      verified: p.status === 'active' && (p.role === 'super_admin' || p.organization_id !== null),
+    });
     setMyPermissions(perms);
     setMyPermissionsMigrationMissing(migrationMissing);
     setProfileStatus('ready');
@@ -733,6 +805,46 @@ export function AppProvider({ children, skipAuthBootstrap = false }: AppProvider
   }, [loadProfileFor]);
 
   /**
+   * RD-3A: non-mutating authority re-check for the screen gates. It reads the
+   * caller's own profile, the same read the profile load uses, but never applies
+   * it, so no shared profile, permission or organization-selection state changes
+   * and no shell remounts. Generation-guarded: a newer re-check, a profile apply,
+   * or an identity clear supersedes an answer still in flight.
+   */
+  const revalidateScreenAuthority = useCallback((requestedOrgId?: string | null) => {
+    const identity = authorityIdentityRef.current;
+    if (identity.profileId === null) return;
+    const profileId = identity.profileId;
+    const role = identity.role;
+    const orgId = requestedOrgId === undefined ? identity.orgId : requestedOrgId;
+    const generation = ++screenAuthorityGenRef.current;
+    setScreenAuthority({ generation, profileId, requestedOrgId: orgId, settled: false, verified: false });
+    void (async () => {
+      let verified = false;
+      try {
+        const load = await withDeadline(getMyProfileResult(), AUTH_PROFILE_DEADLINE_MS);
+        verified = !isDeadlineExceeded(load) && load.status === 'ok'
+          && screenAuthorityHolds(load.profile, { profileId, role, orgId });
+      } catch {
+        // Unreadable authority is unknown, and unknown is never eligible.
+        verified = false;
+      }
+      if (screenAuthorityGenRef.current !== generation) return;
+      setScreenAuthority({ generation, profileId, requestedOrgId: orgId, settled: true, verified });
+    })();
+  }, []);
+
+  /**
+   * RD-3A: organization selection keeps the public setter's signature. Selecting
+   * an organization starts a re-check for it, so no screen gate acts on an
+   * organization that has not been verified.
+   */
+  const selectActiveOrgId = useCallback((id: string | null) => {
+    setActiveOrgId(id);
+    revalidateScreenAuthority(id);
+  }, [revalidateScreenAuthority]);
+
+  /**
    * PHASE-B1-AUTH-RESILIENCE: one manual re-attempt of the initial session
    * read. It re-reads the session ONLY — it never re-subscribes, never signs
    * anybody in or out, and schedules nothing, so it cannot become a loop. One
@@ -888,6 +1000,32 @@ export function AppProvider({ children, skipAuthBootstrap = false }: AppProvider
   const activeOrganizationKind = organizationKindSettled ? organizationKindRead.kind : null;
   const activeOrganizationKindPending = activeOrgId !== null && kindProfileId !== null && !organizationKindSettled;
 
+  // RD-3A: the screen gates may use the kind only when the authority snapshot for
+  // the CURRENT identity and organization is settled and verified. Otherwise the
+  // answer is null, and pending while a re-check is in flight. Every other
+  // consumer keeps activeOrganizationKind unchanged.
+  const authoritySnapshot = profile !== null && screenAuthority !== null
+    && screenAuthority.profileId === profile.id && screenAuthority.requestedOrgId === activeOrgId
+    ? screenAuthority
+    : null;
+  let screenOrganizationKind: OrganizationKind | null = null;
+  let screenOrganizationKindPending = false;
+  if (profile !== null) {
+    if (authoritySnapshot === null) {
+      screenOrganizationKindPending = activeOrgId !== null;
+    } else if (!authoritySnapshot.settled) {
+      screenOrganizationKindPending = true;
+    } else if (authoritySnapshot.verified) {
+      screenOrganizationKind = activeOrganizationKind;
+      screenOrganizationKindPending = activeOrganizationKindPending;
+    }
+  }
+  useEffect(() => {
+    authorityIdentityRef.current = {
+      profileId: profile?.id ?? null, role: profile?.role ?? null, orgId: activeOrgId,
+    };
+  }, [profile, activeOrgId]);
+
   /**
    * PHASE-B1-AUTH-RESILIENCE: the seven-state contract, derived — no new
    * source of truth. Order matters: a failed bootstrap is reported as a
@@ -920,12 +1058,13 @@ export function AppProvider({ children, skipAuthBootstrap = false }: AppProvider
   return (
     <AppContext.Provider value={{
       activeOrganizationKind, activeOrganizationKindPending,
+      screenOrganizationKind, screenOrganizationKindPending, revalidateScreenAuthority,
       lang, theme, setLang, setTheme, toggleLang, toggleTheme,
       dir: lang === 'ar' ? 'rtl' : 'ltr',
       configured: supabaseConfigured,
       authReady, authStatus, retryAuthBootstrap, retryProfileLoad: reloadProfile,
       session, profile, role,
-      activeOrgId, setActiveOrgId,
+      activeOrgId, setActiveOrgId: selectActiveOrgId,
       signIn, signOut, reloadProfile,
       myPermissions, myPermissionsMigrationMissing, reloadMyPermissions,
       authz, scopedRbacMode, rbacTelemetry, scopedRbacDiagnostic,

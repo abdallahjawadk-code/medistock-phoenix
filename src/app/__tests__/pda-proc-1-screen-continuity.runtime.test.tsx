@@ -114,6 +114,13 @@ import { AuthenticatedApp } from '../AuthenticatedApp';
 const CARE: OrganizationKind = 'care_institution';
 const PDA: OrganizationKind = 'pharmacy_department_authority';
 const USER = 'user-1';
+/** The operator's verified primary organization in these fixtures (what actor() profiles). */
+const PRIMARY_ORG = 'org-care-a';
+/** Fixture organization id per kind. A pharmacy department authority is never a primary here. */
+const ORG_OF: Record<OrganizationKind, string> = {
+  care_institution: PRIMARY_ORG,
+  pharmacy_department_authority: 'org-pda',
+};
 
 const signOut = vi.fn(async () => undefined);
 const retryAuthBootstrap = vi.fn(async () => undefined);
@@ -128,7 +135,7 @@ function actor(role: string, permissions: string[] = []) {
     authReady: true,
     authStatus: 'authenticated',
     session: { user: { id: USER } } as unknown as AppState['session'],
-    profile: { id: USER, role, organization_id: 'org-care-a' } as unknown as AppState['profile'],
+    profile: { id: USER, role, organization_id: PRIMARY_ORG } as unknown as AppState['profile'],
     role: role as AppState['role'],
     passwordRecovery: false,
     signOut,
@@ -138,9 +145,26 @@ function actor(role: string, permissions: string[] = []) {
   };
 }
 
-/** The organization-kind facts AppContext would publish for the active org. */
-function org(kind: OrganizationKind | null, pending = false) {
-  state = { ...base, activeOrganizationKind: kind, activeOrganizationKindPending: pending };
+/**
+ * The organization facts AppContext would publish for the active org, including
+ * the authority-verified screen kind (RD-3A). It mirrors AppContext's rule from
+ * the same explicit facts: a super_admin's selected organization is verified for
+ * its kind; any other role's organization is verified only when it is the
+ * operator's primary organization. An unverified or pending organization publishes
+ * a null screen kind. No value is ever copied from activeOrganizationKind by
+ * default, so an absent or unrecognised verified kind keeps Screen 19 closed.
+ */
+function org(kind: OrganizationKind | null, pending = false, orgId: string | null = kind === null ? null : ORG_OF[kind]) {
+  const isSuper = base.role === 'super_admin';
+  const verified = !pending && kind !== null && orgId !== null && (isSuper || orgId === PRIMARY_ORG);
+  state = {
+    ...base,
+    activeOrgId: orgId,
+    activeOrganizationKind: kind,
+    activeOrganizationKindPending: pending,
+    screenOrganizationKind: verified ? kind : null,
+    screenOrganizationKindPending: pending,
+  };
 }
 
 const app = () => <AuthenticatedApp />;
@@ -353,7 +377,7 @@ describe('PDA-PROC-1 · AuthenticatedApp never mounts Screen 19 for a non-care o
     expect(shown()).toBe('screen-21');
   });
 
-  it('F1: care -> 19 -> PDA -> care B stays on the landing; 19 does not come back by itself', () => {
+  it('F1a: care -> 19 -> PDA -> back to the PRIMARY care organization stays on the landing; 19 does not come back by itself', () => {
     actor('institution_admin');
     org(CARE);
     const view = render(app());
@@ -367,7 +391,8 @@ describe('PDA-PROC-1 · AuthenticatedApp never mounts Screen 19 for a non-care o
     view.rerender(app());
     expect(shown()).toBe('screen-21');
 
-    // Switch to another care institution B.
+    // Back to an ELIGIBLE organization: the operator's own, verified care institution
+    // (org-care-a). Screen 19 is not resurrected by the organization change alone.
     org(null, true);
     view.rerender(app());
     expect(loading()).toBe(false);
@@ -377,6 +402,12 @@ describe('PDA-PROC-1 · AuthenticatedApp never mounts Screen 19 for a non-care o
     expect(shown()).toBe('screen-21');
     expect(storedScreen()).toBe(21);
     expect(h.procurementRenders).toBe(rendersOn19);
+
+    // Positive control: the block above is the stored-state rule, not a blanket denial.
+    // The same eligible organization still admits an explicit navigation to 19.
+    fireEvent.click(screen.getByRole('button', { name: 'forge-19' }));
+    expect(shown()).toBe('screen-19');
+    expect(h.procurementRenders).toBeGreaterThan(rendersOn19);
   });
 
   it('a forged or direct navigation to 19 is refused for PDA: no mount, nothing remembered', () => {
@@ -459,4 +490,118 @@ describe('PDA-PROC-1 · AuthenticatedApp never mounts Screen 19 for a non-care o
     expect(historyScreen()).toBe(21);
     expect(h.procurementRenders).toBe(rendersOn19);
   });
+});
+
+// ── Part 3 — negative controls: no permissive fallback ──────────────────────
+
+describe('PDA-PROC-1 · an absent or unknown verified kind cannot open Screen 19', () => {
+  it('a care activeOrganizationKind with NO verified screen kind published keeps 19 closed', () => {
+    rememberScreen(USER, 19, 'replace');
+    actor('institution_admin');
+    state = { ...base, activeOrganizationKind: CARE, activeOrganizationKindPending: false };
+    render(app());
+    expect(shown()).toBe('screen-21');
+    expect(h.procurementRenders).toBe(0);
+
+    fireEvent.click(screen.getByRole('button', { name: 'forge-19' }));
+    expect(shown()).toBe('screen-21');
+    expect(h.procurementRenders).toBe(0);
+  });
+
+  it('an unrecognised verified kind keeps 19 closed, even beside a care activeOrganizationKind', () => {
+    actor('institution_admin');
+    state = {
+      ...base,
+      activeOrganizationKind: CARE,
+      activeOrganizationKindPending: false,
+      screenOrganizationKind: 'unknown_kind' as unknown as OrganizationKind,
+      screenOrganizationKindPending: false,
+    };
+    render(app());
+    fireEvent.click(screen.getByRole('button', { name: 'forge-19' }));
+    expect(shown()).toBe('screen-21');
+    expect(h.procurementRenders).toBe(0);
+  });
+
+  it('a null verified kind for an unverified organization keeps 19 closed, beside a care activeOrganizationKind', () => {
+    actor('institution_admin');
+    state = {
+      ...base,
+      activeOrganizationKind: CARE,
+      activeOrganizationKindPending: false,
+      screenOrganizationKind: null,
+      screenOrganizationKindPending: false,
+    };
+    render(app());
+    fireEvent.click(screen.getByRole('button', { name: 'forge-19' }));
+    expect(shown()).toBe('screen-21');
+    expect(h.procurementRenders).toBe(0);
+  });
+});
+
+// ── Part 4 — F1b: a foreign care organization is refused, discriminatingly ──
+
+describe('PDA-PROC-1 · F1b: a FOREIGN care organization never opens Screen 19 for a non-super operator', () => {
+  /**
+   * A care organization that is neither the operator's primary nor independently
+   * authorized (delegation cannot reach procurement: the migration 187 allowlist holds no
+   * local_procurement.* key). Two published shapes: the
+   * production-faithful one, where the caller cannot read a foreign organization's
+   * kind (canonical null), and the stricter one where the canonical kind IS care but
+   * the authority-verified kind is null. In both the verified kind is null.
+   *
+   * This harness has no delegation state and the route reads no delegation fact, so
+   * the recipient roles below check only that no ROLE grants a bypass; the real
+   * provider proves the verification itself (rd3a-screen19-authority).
+   */
+  function foreignCare(variant: 'canonical-null' | 'canonical-care') {
+    state = {
+      ...base,
+      activeOrgId: 'org-care-b',
+      activeOrganizationKind: variant === 'canonical-care' ? CARE : null,
+      activeOrganizationKindPending: false,
+      screenOrganizationKind: null,
+      screenOrganizationKindPending: false,
+    };
+  }
+
+  const PERSONAS: Array<[string, string]> = [
+    ['institution_admin', 'screen-21'],
+    ['central_warehouse_manager', 'screen-21'],
+    ['warehouse_officer', 'screen-21'],
+    ['outlet_officer', 'screen-18'],
+  ];
+  const VARIANTS = ['canonical-null', 'canonical-care'] as const;
+
+  for (const [role, landing] of PERSONAS) {
+    for (const variant of VARIANTS) {
+      it(`${role} on a foreign care org (${variant}): forged 19 is refused, nothing mounts, nothing is remembered`, () => {
+        actor(role);
+        org(CARE);
+        const view = render(app());
+        fireEvent.click(screen.getByRole('button', { name: 'forge-19' }));
+        // The operator's own care organization is eligible: 19 opens (positive control).
+        expect(shown()).toBe('screen-19');
+        const rendersOnPrimary = h.procurementRenders;
+
+        // care -> PDA -> a foreign care organization B.
+        org(null, true);
+        view.rerender(app());
+        org(PDA);
+        view.rerender(app());
+        foreignCare(variant);
+        view.rerender(app());
+        expect(shown()).toBe(landing);
+
+        // The discriminating step: an explicit navigation to 19 on the foreign organization.
+        fireEvent.click(screen.getByRole('button', { name: 'forge-19' }));
+        expect(shown()).toBe(landing);
+        expect(h.procurementRenders).toBe(rendersOnPrimary);
+        // Exactly the landing is remembered: nothing was remembered for the refused 19.
+        const landingNumber = Number(landing.replace('screen-', ''));
+        expect(storedScreen()).toBe(landingNumber);
+        expect(historyScreen()).toBe(landingNumber);
+      });
+    }
+  }
 });
