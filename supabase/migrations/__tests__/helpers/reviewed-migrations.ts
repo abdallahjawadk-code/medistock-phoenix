@@ -322,6 +322,8 @@ export const REVIEWED_MIGRATION_FILES: readonly string[] = Object.freeze([
   // allocation or transfer write. Registration records repository review only;
   // it says nothing about Production, where M221 is not applied.
   '221_phoenix_pharmacy_department_subpurchase_exclusion.sql',
+  // Route A proposed: OPS2-F1 v2 exact SQL, never an automatic apply.
+  '222_phoenix_governed_warehouse_correction_security.sql',
 ]);
 
 const REVIEWED_SET: ReadonlySet<string> = new Set(REVIEWED_MIGRATION_FILES);

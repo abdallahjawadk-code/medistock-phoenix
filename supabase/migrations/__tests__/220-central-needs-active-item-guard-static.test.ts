@@ -115,7 +115,8 @@ describe.runIf(PRESENT)('M220 static — active central item guard', () => {
     // is the reviewed successor and now the ceiling; its own static suite owns
     // the ceiling assertions. The 219 -> 220 -> 221 order is exact.
     expect(files.filter((f) => Number(f.slice(0, 3)) > 219)).toEqual([FILENAME,
-      '221_phoenix_pharmacy_department_subpurchase_exclusion.sql']);
+      '221_phoenix_pharmacy_department_subpurchase_exclusion.sql',
+      '222_phoenix_governed_warehouse_correction_security.sql']);
     expect(files.filter((f) => f.startsWith('220_'))).toEqual([FILENAME]);
     expect(SQL.includes('\r')).toBe(false);
     expect(EXEC.match(/^\s*BEGIN\s*;/gim)).toHaveLength(1);

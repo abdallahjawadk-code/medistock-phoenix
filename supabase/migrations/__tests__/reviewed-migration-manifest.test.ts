@@ -48,6 +48,7 @@ const EXPECTED:readonly string[]=Object.freeze([
 '219_phoenix_auth_signup_authority_hardening.sql',
 '220_phoenix_central_needs_active_item_guard.sql',
 '221_phoenix_pharmacy_department_subpurchase_exclusion.sql',
+'222_phoenix_governed_warehouse_correction_security.sql',
 ]);
 
 // PDA-PROC-1/M221 is the pharmacy department supplementary procurement
@@ -58,12 +59,12 @@ const EXPECTED:readonly string[]=Object.freeze([
 // repository review only; it says nothing about Production.
 // The synthetic unknown boundary moves to 222 and must remain genuinely absent:
 // approving 221 authorizes 221 by exact filename and nothing after it.
-const SYNTH_NEXT='222_unauthorized_probe.sql';
+const SYNTH_NEXT='223_unauthorized_probe.sql';
 const SYNTH_ALT='187_phoenix_some_other_name.sql';
 
-describe('reviewed migration manifest through 221',()=>{
+describe('reviewed migration manifest through 222',()=>{
   it('counter-gates registry and disk by exact filename',()=>{
-    expect(EXPECTED).toHaveLength(221);
+    expect(EXPECTED).toHaveLength(222);
     expect([...REVIEWED_MIGRATION_FILES]).toEqual([...EXPECTED]);
     expect(sortMigrationFiles(actualSqlFiles())).toEqual([...EXPECTED]);
     expect(findMissingReviewedMigrationFiles(actualSqlFiles())).toEqual([]);
@@ -77,9 +78,9 @@ describe('reviewed migration manifest through 221',()=>{
     expect([...REVIEWED_MIGRATION_FILES]).toEqual(sortMigrationFiles(REVIEWED_MIGRATION_FILES));
     for(const f of EXPECTED) expect(isNumberedMigrationFile(f),f).toBe(true);
   });
-  it('pins maximum 221 and next unreviewed 222',()=>{
-    expect(getMaximumReviewedMigrationNumber()).toBe(221);
-    expect(getNextUnreviewedMigrationNumber()).toBe(222);
+  it('pins maximum 222 and next unreviewed 223',()=>{
+    expect(getMaximumReviewedMigrationNumber()).toBe(222);
+    expect(getNextUnreviewedMigrationNumber()).toBe(223);
     expect(isReviewedMigrationFile('178_phoenix_distribution_point_owner_guard_privilege_fix.sql')).toBe(true);
     expect(isReviewedMigrationFile('179_phoenix_canonical_authenticated_availability_hardening.sql')).toBe(true);
     expect(isReviewedMigrationFile('180_phoenix_emergency_initial_provisioning_boundary.sql')).toBe(true);
@@ -124,12 +125,13 @@ describe('reviewed migration manifest through 221',()=>{
     expect(isReviewedMigrationFile('219_phoenix_auth_signup_authority_hardening.sql')).toBe(true);
     expect(isReviewedMigrationFile('220_phoenix_central_needs_active_item_guard.sql')).toBe(true);
     expect(isReviewedMigrationFile('221_phoenix_pharmacy_department_subpurchase_exclusion.sql')).toBe(true);
+    expect(isReviewedMigrationFile('222_phoenix_governed_warehouse_correction_security.sql')).toBe(true);
     expect(isReviewedMigrationFile(SYNTH_ALT)).toBe(false);
     expect(isReviewedMigrationFile(SYNTH_NEXT)).toBe(false);
   });
   it('derived above/between slices remain exact against the independent list',()=>{
     const num=(f:string)=>{const n=extractMigrationNumber(f);if(n===null)throw new Error(f);return n;};
-    for(let n=0;n<=221;n++) expect(reviewedMigrationFilesAbove(n),`above ${n}`).toEqual(EXPECTED.filter(f=>num(f)>n));
+    for(let n=0;n<=222;n++) expect(reviewedMigrationFilesAbove(n),`above ${n}`).toEqual(EXPECTED.filter(f=>num(f)>n));
     for(const [a,b] of [[1,181],[150,181],[170,181],[174,181],[175,181],[176,181],[177,181],[178,181],[179,181],[180,181],[181,181],[182,182],[183,183],[184,184],[185,185],[186,186],[187,187],[188,200],[198,200],[199,200],[200,200],[200,201],[201,201],[201,202],[202,202],[202,203],[203,203],[203,204],[204,204],[204,205],[205,205],[205,206],[206,206],[206,207],[207,207],[207,208],[208,208],[208,209],[209,209],[209,210],[210,210],[210,211],[211,211],[211,212],[212,212],[212,213],[213,213],[213,214],[214,214],[214,215],[215,215],[215,216],[216,216],[216,217],[217,217],[217,218],[218,218],[218,219],[219,219],[219,220],[220,220],[220,221],[221,221]] as const)
       expect(reviewedMigrationFilesBetween(a,b),`${a}-${b}`).toEqual(EXPECTED.filter(f=>num(f)>=a&&num(f)<=b));
   });

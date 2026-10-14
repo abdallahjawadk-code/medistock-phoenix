@@ -196,7 +196,8 @@ guard('C5/M217 static — registration, hygiene and frozen predecessors', () => 
       .toEqual([FILENAME, '218_phoenix_central_needs_submission_integrity_fence.sql',
         '219_phoenix_auth_signup_authority_hardening.sql',
         '220_phoenix_central_needs_active_item_guard.sql',
-        '221_phoenix_pharmacy_department_subpurchase_exclusion.sql']);
+        '221_phoenix_pharmacy_department_subpurchase_exclusion.sql',
+        '222_phoenix_governed_warehouse_correction_security.sql']);
     expect(files[files.indexOf(FILENAME) - 1]).toBe('216_phoenix_central_needs_region_persistence.sql');
   });
 

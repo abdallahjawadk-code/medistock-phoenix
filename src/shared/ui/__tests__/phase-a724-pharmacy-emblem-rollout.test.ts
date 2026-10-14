@@ -787,6 +787,28 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
       // Screen 19, including the same-identity hold. No wildcard and no directory
       // exemption, so every other file under src/app still fails this guard closed.
       'src/app/__tests__/rd3a-screen19-authority.runtime.test.tsx',
+      // OPS2-F1 v2 accepted TEST-ONLY patch (88969106…): it reconciles the existing
+      // 103 dynamic suite with the governed warehouse correction (direct correction
+      // through the guarded writer is now refused with
+      // warehouse_correction_requires_governed_request). One existing test file
+      // under the watched `supabase` prefix, registered by EXACT filename like
+      // every entry above; it touches no migration, RPC, RLS, permission,
+      // dependency, branding asset or environment surface. No wildcard and no
+      // directory exemption, so every other file under supabase/ still fails this
+      // guard closed.
+      'supabase/migrations/__tests__/103-institution-warehouse-no-direct-entry.dynamic.test.ts',
+      // Route A proposed M222 (OPS2-F1 v2 governed warehouse correction): the
+      // reviewed, forward-only migration plus its two accepted dynamic security
+      // suites (OPS2-F1 v2 test patch 88969106…). It adds no branding asset, no
+      // table, no RLS policy and no permission key: one owner-only correction
+      // applier, and the correction-request RPC plus the generic guarded movement
+      // writer re-bodied with unchanged ACLs. It does not alter A7.2.4's
+      // branding/security subject. Registered by EXACT filename, exactly as
+      // M209-M221 were; no wildcard and no directory exemption, so every other
+      // file under supabase/ still fails this guard closed.
+      'supabase/migrations/222_phoenix_governed_warehouse_correction_security.sql',
+      'supabase/migrations/__tests__/ops2f1-correction-replay-binding.dynamic.test.ts',
+      'supabase/migrations/__tests__/ops2f1-governed-warehouse-correction.dynamic.test.ts',
     ];
     const changed=execSync(`git diff --name-only ${BASE}`,{cwd:ROOT,encoding:'utf8'}).split('\n').map(l=>l.trim()).filter(Boolean);
     const prohibited=changed.filter(f=>WATCHED.some(p=>f===p||f.startsWith(p+'/'))&&!EXCLUDED.includes(f));

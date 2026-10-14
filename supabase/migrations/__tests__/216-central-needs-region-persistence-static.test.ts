@@ -68,7 +68,8 @@ describe('C4/M216 static — file hygiene and protected surface', () => {
         '218_phoenix_central_needs_submission_integrity_fence.sql',
         '219_phoenix_auth_signup_authority_hardening.sql',
         '220_phoenix_central_needs_active_item_guard.sql',
-        '221_phoenix_pharmacy_department_subpurchase_exclusion.sql']);
+        '221_phoenix_pharmacy_department_subpurchase_exclusion.sql',
+        '222_phoenix_governed_warehouse_correction_security.sql']);
   });
 
   it('leaves M209-M215 byte-identical (git blob ids of the frozen baseline)', () => {

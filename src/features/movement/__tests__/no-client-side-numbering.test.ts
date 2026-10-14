@@ -274,7 +274,12 @@ describe('no client-side document-number sequence exists',()=>{
     // nothing. It introduces no sequence, counter, max()+1, generated numeric
     // identity or document number, and no numbering SQL. Registered by exact
     // number; boundary moves to 221.
-    const beyond=migrations.filter(f=>/^(1[89]\d|[2-9]\d\d)_/.test(f)&&!/^(179|180|181|182|183|184|185|186|187|188|189|190|191|192|193|194|195|196|197|198|199|200|201|202|203|204|205|206|207|208|209|210|211|212|213|214|215|216|217|218|219|220|221)_/.test(f));
+    // Route A proposed M222 (OPS2-F1 v2 governed warehouse correction): one
+    // owner-only applier and two correction functions re-bodied; it only passes
+    // the caller-supplied source_document_number through unchanged and
+    // introduces no sequence, counter, max()+1, generated numeric identity or
+    // document number. Registered by exact number; boundary moves to 222.
+    const beyond=migrations.filter(f=>/^(1[89]\d|[2-9]\d\d)_/.test(f)&&!/^(179|180|181|182|183|184|185|186|187|188|189|190|191|192|193|194|195|196|197|198|199|200|201|202|203|204|205|206|207|208|209|210|211|212|213|214|215|216|217|218|219|220|221|222)_/.test(f));
     expect(beyond).toEqual([]);
     for(const f of [
       '211_phoenix_central_needs_batch_and_disposition.sql',

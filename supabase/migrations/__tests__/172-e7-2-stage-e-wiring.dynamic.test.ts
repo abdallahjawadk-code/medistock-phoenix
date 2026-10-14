@@ -342,6 +342,13 @@ run('E7-2 · Stage-E application wiring (dynamic)',()=>{
       // dispatch SQL, so "Stage E still ends at 171" remains true. Listed so
       // this guard stays exhaustive and fails closed on any unlisted new file.
       '221_phoenix_pharmacy_department_subpurchase_exclusion.sql',
+      // Route A proposed M222 (OPS2-F1 v2): the governed warehouse correction —
+      // one owner-only applier and two correction functions re-bodied with
+      // unchanged ACLs; it adds no migration numbered <= 171 and no corridor,
+      // route or dispatch SQL, so "Stage E still ends at 171" remains true.
+      // Listed so this guard stays exhaustive and fails closed on any unlisted
+      // new file.
+      '222_phoenix_governed_warehouse_correction_security.sql',
     ];
     it('Stage E still ends at 171 — E7-2 introduced no new SQL',()=>{
       const files=readdirSync(join(__dirname,'..')).filter(f=>/^\d{3}_.*\.sql$/.test(f));

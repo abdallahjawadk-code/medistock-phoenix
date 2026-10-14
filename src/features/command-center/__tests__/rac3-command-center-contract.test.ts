@@ -471,7 +471,16 @@ describe('RAC-3 · I) no backend or migration change', () => {
     // dynamic suites live under supabase/migrations/__tests__/, which this guard
     // already exempts.
     const M221 = 'supabase/migrations/221_phoenix_pharmacy_department_subpurchase_exclusion.sql';
-    const ALLOWED_SQL = [M200, M201, M202, M203, M204, M205, M206, M207, M208, M209, M210, M211, M212, M213, M214, M215, M216, M217, M218, M219, M220, M221];
+    // Route A proposed M222 (OPS2-F1 v2 governed warehouse correction: one new
+    // owner-only correction applier, plus the correction-request RPC and the generic
+    // guarded movement writer re-bodied with unchanged ACLs); it touches no
+    // command-centre object.
+    // Registered by EXACT filename, exactly as M200-M221 were, so this guard
+    // still fails closed for any OTHER migration or supabase/ file. Its two dynamic
+    // security suites live under supabase/migrations/__tests__/, which this guard
+    // already exempts.
+    const M222 = 'supabase/migrations/222_phoenix_governed_warehouse_correction_security.sql';
+    const ALLOWED_SQL = [M200, M201, M202, M203, M204, M205, M206, M207, M208, M209, M210, M211, M212, M213, M214, M215, M216, M217, M218, M219, M220, M221, M222];
     const changed = execSync(
       'git diff --name-only b707f073d60b4cc61205c35003ab491f3aed7468',
       { cwd: process.cwd(), encoding: 'utf8' },

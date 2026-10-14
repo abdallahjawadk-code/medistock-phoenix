@@ -125,9 +125,13 @@ describe('M198 static — identity and placement', () => {
       // creates or replaces no other function and alters none of the thirty, so what this suite
       // converges is untouched. It is now the reviewed ceiling.
       '221_phoenix_pharmacy_department_subpurchase_exclusion.sql',
+      // Route A proposed M222 (OPS2-F1 v2): its three SECURITY DEFINER functions (one new owner-only
+      // applier, two re-bodied warehouse correction functions) all pin search_path = public, pg_temp,
+      // and it alters none of the thirty functions this suite converges.
+      '222_phoenix_governed_warehouse_correction_security.sql',
     ]);
-    expect(files.filter((f) => Number(f.slice(0, 3)) > 221)).toEqual([]);
-    expect(files).toHaveLength(221);
+    expect(files.filter((f) => Number(f.slice(0, 3)) > 222)).toEqual([]);
+    expect(files).toHaveLength(222);
   });
 
   it('carries no MANUAL APPLY ONLY banner, so the pinned executor will accept it', () => {

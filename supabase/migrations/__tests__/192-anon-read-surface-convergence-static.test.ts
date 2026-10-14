@@ -119,11 +119,17 @@ describe('192 · registration and file hygiene', () => {
     // guard function, it creates or replaces no RPC, and it adds no anon surface, so what this suite
     // asserts is unaffected; listed to keep this successor guard exhaustive.
     const NEXT_29 = '221_phoenix_pharmacy_department_subpurchase_exclusion.sql';
+    // Route A proposed M222 (OPS2-F1 v2): one new owner-only warehouse correction applier, plus the
+    // correction-request RPC and the generic guarded movement writer re-bodied; its only GRANTs
+    // restate those two functions' unchanged authenticated grants, every one of its REVOKEs removes
+    // PUBLIC, and it adds no anon surface, so what this suite asserts is unaffected; listed to keep
+    // this successor guard exhaustive.
+    const NEXT_30 = '222_phoenix_governed_warehouse_correction_security.sql';
     expect(REVIEWED_MIGRATION_FILES.filter(f => f.startsWith('212_'))).toEqual([NEXT_20]);
-    expect(getMaximumReviewedMigrationNumber()).toBe(221);
-    expect(getNextUnreviewedMigrationNumber()).toBe(222);
-    expect(REVIEWED_MIGRATION_FILES.slice(REVIEWED_MIGRATION_FILES.indexOf(NAME) + 1)).toEqual([NEXT, NEXT_2, NEXT_3, NEXT_4, NEXT_5, NEXT_6, NEXT_7, NEXT_8, NEXT_9, NEXT_10, NEXT_11, NEXT_12, NEXT_13, NEXT_14, NEXT_15, NEXT_16, NEXT_17, NEXT_18, NEXT_19, NEXT_20, NEXT_21, NEXT_22, NEXT_23, NEXT_24, NEXT_25, NEXT_26, NEXT_27, NEXT_28, NEXT_29]);
-    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1]).toBe(NEXT_29);
+    expect(getMaximumReviewedMigrationNumber()).toBe(222);
+    expect(getNextUnreviewedMigrationNumber()).toBe(223);
+    expect(REVIEWED_MIGRATION_FILES.slice(REVIEWED_MIGRATION_FILES.indexOf(NAME) + 1)).toEqual([NEXT, NEXT_2, NEXT_3, NEXT_4, NEXT_5, NEXT_6, NEXT_7, NEXT_8, NEXT_9, NEXT_10, NEXT_11, NEXT_12, NEXT_13, NEXT_14, NEXT_15, NEXT_16, NEXT_17, NEXT_18, NEXT_19, NEXT_20, NEXT_21, NEXT_22, NEXT_23, NEXT_24, NEXT_25, NEXT_26, NEXT_27, NEXT_28, NEXT_29, NEXT_30]);
+    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1]).toBe(NEXT_30);
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^193_/.test(f))).toEqual([NEXT]);
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^194_/.test(f))).toEqual([NEXT_2]);
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^195_/.test(f))).toEqual([NEXT_3]);
@@ -149,9 +155,9 @@ describe('192 · registration and file hygiene', () => {
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^219_/.test(f))).toEqual([NEXT_27]);
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^220_/.test(f))).toEqual([NEXT_28]);
     expect(REVIEWED_MIGRATION_FILES.filter(f => /^221_/.test(f))).toEqual([NEXT_29]);
-    // The ceiling is now 221; `[2-9]\d\d` would match the ceiling itself, so
+    // The ceiling is now 222; `[2-9]\d\d` would match the ceiling itself, so
     // this asserts numerically that nothing sits ABOVE it.
-    expect(REVIEWED_MIGRATION_FILES.filter(f => Number(f.slice(0, 3)) > 221)).toHaveLength(0);
+    expect(REVIEWED_MIGRATION_FILES.filter(f => Number(f.slice(0, 3)) > 222)).toHaveLength(0);
     expect(isReviewedMigrationFile('211_unreviewed_test_migration.sql')).toBe(false);
   });
 
@@ -171,7 +177,7 @@ describe('192 · registration and file hygiene', () => {
     // pharmacy department supplementary procurement exclusion) are newer chain
     // members and do not edit M192, so this count moves by exactly seventeen more.
     const others = readdirSync(MIGRATIONS_DIR).filter(f => f.endsWith('.sql') && f !== NAME);
-    expect(others).toHaveLength(220);
+    expect(others).toHaveLength(221);
   });
 });
 

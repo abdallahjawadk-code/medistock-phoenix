@@ -70,6 +70,16 @@ const M220_FILE = '220_phoenix_central_needs_active_item_guard.sql';
 const M220_SHA256 = '1e7636a23122572faed2f639d56cd5a09a8de67c4197ea88531b766de0d8e669';
 const M220_BLOB = '70ab8424a69503b7ebbbcafc1c5dfc103a079c28';
 
+/**
+ * Frozen raw-byte SHA-256 pins of M221 itself and of the Route A proposed M222 (which has no static suite of its
+ * own), as independently reviewed: literals, never derived from the file, the directory, the registry or a manifest.
+ * Each test reads its file itself (not RAW above), so a missing file fails an explicit assertion, and any changed
+ * byte (prose, whitespace and line endings included) fails closed even under the registered exact filename.
+ */
+const M221_SHA256 = '76405b7540c327d069fe80782003ee3cfea2ecc38facba2b4f3e39c798cc37b2';
+const M222_FILE = '222_phoenix_governed_warehouse_correction_security.sql';
+const M222_SHA256 = 'b2bb6640ed5b506ad09f48fa5744897925e85a3f900e174de5ea20ff3701554a';
+
 const GUARD = 'public._phoenix_pda_supplementary_procurement_guard_v1';
 const GUARD_HEAD = `CREATE FUNCTION ${GUARD}()`;
 const TOKEN = 'pharmacy_department_supplementary_procurement_forbidden';
@@ -220,10 +230,13 @@ describe('PDA-PROC-1/M221 static — the file exists under its canonical name', 
 describe('PDA-PROC-1/M221 static — registration and hygiene', () => {
   it('221 is the ONLY migration above 220 (no 222+), and the only 221_ file', () => {
     const files = readdirSync(MIGRATIONS).filter((f) => /^\d{3}_.*\.sql$/.test(f)).sort();
-    expect(files.filter((f) => Number(f.slice(0, 3)) > 220)).toEqual([FILENAME]);
+    expect(files.filter((f) => Number(f.slice(0, 3)) > 220)).toEqual([FILENAME, '222_phoenix_governed_warehouse_correction_security.sql']);
     expect(files.filter((f) => f.startsWith('221_'))).toEqual([FILENAME]);
-    expect(files.filter((f) => Number(f.slice(0, 3)) >= 222)).toEqual([]);
-    expect(readdirSync(MIGRATIONS).filter((f) => /^2(2[2-9]|[3-9]\d)/.test(f))).toEqual([]);
+    // Route A proposed M222 is the one reviewed file above 221 (asserted exactly above); every
+    // 223+ migration stays absent, and the raw directory scan still admits nothing in its 222-299
+    // band except that exact M222 filename (no alternate 222 name, no other 222-299 entry).
+    expect(files.filter((f) => Number(f.slice(0, 3)) >= 223)).toEqual([]);
+    expect(readdirSync(MIGRATIONS).filter((f) => /^2(2[2-9]|[3-9]\d)/.test(f))).toEqual(['222_phoenix_governed_warehouse_correction_security.sql']);
   });
 
   it('one BEGIN; and one COMMIT;, the file ends with COMMIT;, ASCII and LF only, never MANUAL APPLY ONLY', () => {
@@ -285,6 +298,24 @@ describe('PDA-PROC-1/M221 static — registration and hygiene', () => {
     expect(gitBlob(m220)).toBe(M220_BLOB);
     const tree = git('ls-tree', 'HEAD', '--', `supabase/migrations/${M220_FILE}`).trim();
     expect(tree).toBe(`100644 blob ${M220_BLOB}\tsupabase/migrations/${M220_FILE}`);
+  });
+
+  it('M221 raw bytes equal the frozen SHA-256 pin', () => {
+    const path = join(MIGRATIONS, FILENAME);
+    expect(existsSync(path), `${FILENAME} is not on disk`).toBe(true);
+    expect(sha256(readFileSync(path)), `${FILENAME} raw-byte SHA-256`).toBe(M221_SHA256);
+  });
+
+  it('Route A proposed M222 raw bytes equal the frozen SHA-256 pin', () => {
+    const path = join(MIGRATIONS, M222_FILE);
+    expect(existsSync(path), `${M222_FILE} is not on disk`).toBe(true);
+    expect(sha256(readFileSync(path)), `${M222_FILE} raw-byte SHA-256`).toBe(M222_SHA256);
+  });
+
+  it('Route A proposed M222 never declares MANUAL APPLY ONLY (the governed executor refuses that banner) and still declares NOT APPROVED FOR APPLY', () => {
+    const m222 = readFileSync(join(MIGRATIONS, M222_FILE), 'utf8');
+    expect(m222, `${M222_FILE} apply-policy banner`).not.toMatch(/MANUAL APPLY ONLY/i);
+    expect(m222, `${M222_FILE} release status`).toContain('NOT APPROVED FOR APPLY');
   });
 
   it('no tracked migration is modified against HEAD', () => {

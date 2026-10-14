@@ -62,10 +62,11 @@ describe('C2/M215 static — registration and file hygiene', () => {
     const M219 = '219_phoenix_auth_signup_authority_hardening.sql';
     const M220 = '220_phoenix_central_needs_active_item_guard.sql';
     const M221 = '221_phoenix_pharmacy_department_subpurchase_exclusion.sql';
+    const M222 = '222_phoenix_governed_warehouse_correction_security.sql';
     const files = readdirSync(MIGRATIONS).filter((f) => /^\d{3}_.*\.sql$/.test(f)).sort();
     expect(files).toContain(FILENAME);
-    expect(files).toHaveLength(221);
-    expect(files.filter((f) => Number(f.slice(0, 3)) > 214)).toEqual([FILENAME, M216, M217, M218, M219, M220, M221]);
+    expect(files).toHaveLength(222);
+    expect(files.filter((f) => Number(f.slice(0, 3)) > 214)).toEqual([FILENAME, M216, M217, M218, M219, M220, M221, M222]);
     expect(isReviewedMigrationFile(FILENAME)).toBe(true);
     // C4/M216 (Central Needs beneficiary-region persistence) sits directly after
     // 215 — that relationship is HISTORICAL and never moves. C5/M217 (Central
@@ -80,9 +81,9 @@ describe('C2/M215 static — registration and file hygiene', () => {
     expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.indexOf(FILENAME) + 4]).toBe(M219);
     expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.indexOf(FILENAME) + 5]).toBe(M220);
     expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.indexOf(FILENAME) + 6]).toBe(M221);
-    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1]).toBe(M221);
-    expect(getMaximumReviewedMigrationNumber()).toBe(221);
-    expect(getNextUnreviewedMigrationNumber()).toBe(222);
+    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1]).toBe(M222);
+    expect(getMaximumReviewedMigrationNumber()).toBe(222);
+    expect(getNextUnreviewedMigrationNumber()).toBe(223);
   });
 
   it('carries no CR bytes, is one transaction, never rolls itself back, has no MANUAL APPLY ONLY banner', () => {
