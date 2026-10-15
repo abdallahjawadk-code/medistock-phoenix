@@ -1092,6 +1092,26 @@ export const T: Dict = {
   sp_entry_recorded:       { ar: 'تم تسجيل الشراء الفرعي',           en: 'Supplementary purchase recorded' },
   sp_entry_ok:             { ar: 'تم تسجيل الشراء الفرعي بنجاح',     en: 'Supplementary purchase recorded successfully' },
   sp_entry_replayed:       { ar: 'تم استرجاع نفس الإدخال (تكرار آمن)', en: 'Same entry replayed (safe retry)' },
+  /* CI-4C: an unresolved direct-entry attempt. A read-only status check and a write retry are never named alike, no
+     copy promises protection across a page reload, and the conflict copy never says this purchase failed. */
+  sp_attempt_unknown:          { ar: 'لم تتأكد نتيجة هذا الشراء بعد، وقد يكون قد سُجِّل فعلًا. لا تُدخله مرة أخرى؛ تحقّق من حالته أو أعد إرسال الإدخال الأصلي.', en: 'The outcome of this purchase is not confirmed yet. It may already have been recorded. Do not enter it again: check its status, or retry the original request.' },
+  sp_attempt_check_status:     { ar: 'التحقق من الحالة (قراءة فقط)', en: 'Check status (read-only)' },
+  sp_attempt_check_unconfirmed:{ ar: 'لم يتمكن التحقق من تأكيد وصل مسجَّل لهذا الإدخال، وهذا لا يعني أن الشراء لم يُسجَّل.', en: 'The status check could not confirm a recorded receipt for this request. This does not mean the purchase was not recorded.' },
+  sp_attempt_retry_original:   { ar: 'إعادة إرسال الإدخال الأصلي', en: 'Retry the original request' },
+  sp_attempt_retry_hint:       { ar: 'إعادة الإرسال تُرسل الإدخال نفسه تمامًا مرة أخرى؛ فإذا كان الخادم قد سجّله سابقًا أعاد رقم الوصل الموجود بدلًا من تسجيل وصل جديد. لا تُعِد تحميل الصفحة ولا تُدخل هذا الشراء من جديد ما دامت نتيجته غير مؤكدة.', en: 'Retrying sends exactly the same request again. If the server already recorded it, it returns the existing receipt number instead of recording a new one. Do not reload the page or re-enter this purchase while its outcome is unconfirmed.' },
+  sp_attempt_conflict:         { ar: 'أبلغ الخادم عن تعارض مع سجل موجود لهذا الإدخال، ولا تستطيع هذه الشاشة تحديد ما إذا كان شراؤك قد سُجِّل. راجِع تبويب «السجل والوصولات» قبل إدخال أي شيء من جديد.', en: 'The server reported a conflict with an existing record for this entry. This screen cannot tell whether your purchase was recorded. Check the History & receipts tab before entering anything again.' },
+  sp_attempt_existing_receipt: { ar: 'تم التأكيد بالتحقق من الحالة: هذا الشراء مسجَّل', en: 'Confirmed by the status check: this purchase is recorded' },
+  sp_attempt_acknowledge:      { ar: 'اطّلعتُ على هذه النتيجة', en: 'I have reviewed this result' },
+  sp_attempt_technical_details:{ ar: 'التفاصيل التقنية (لفريق الدعم)', en: 'Technical details (for the support team)' },
+  sp_attempt_rejected:         { ar: 'لم يُسجَّل هذا الشراء. راجِع البيانات المُدخلة وحاول مرة أخرى.', en: 'This purchase was not recorded. Review the entered data and try again.' },
+  /* CI-4D-A: operator wording for the readiness refusal (replaces sp_awaiting_migration in the panel; that key is kept),
+     and the in-progress line shown while a purchase is being submitted (identity check, then the request in flight). */
+  sp_attempt_unavailable:      { ar: 'الإدخال المباشر للمشتريات غير متاح على الخادم حاليًا. تواصل مع مدير النظام قبل إدخال هذا الشراء مرة أخرى.', en: 'Direct purchase entry is not available on the server right now. Contact your system administrator before entering this purchase again.' },
+  /* CI-4D-B: identity refusals (replace the reused auth_boot_failed_msg in the direct-entry panel only). A refused
+     retry never says the earlier attempt failed and never suggests a new request. */
+  sp_attempt_identity_unsent:  { ar: 'لم يُرسَل هذا الشراء: تعذّر التحقق من أن الحساب المسجَّل دخوله هو المشغّل الذي أدخله، ولم يُسجَّل شيء بهذا الإدخال. تأكد من أنك مسجَّل الدخول بحسابك، ثم أكِّد الإدخال وأرسله.', en: 'This purchase was not sent: the signed-in account could not be verified as the operator who entered it, so nothing was recorded by this entry. Make sure you are signed in as yourself, then confirm the entry and submit it.' },
+  sp_attempt_identity_retry_refused: { ar: 'لم تُرسَل إعادة المحاولة هذه: تعذّر التحقق من أن الحساب المسجَّل دخوله هو المشغّل الذي أدخل هذا الشراء. قد تكون المحاولة السابقة قد سُجِّلت فعلًا. يجب أن يسجّل المشغّل الأصلي دخوله لإعادة إرسال الإدخال نفسه؛ لا تُدخل هذا الشراء من جديد.', en: 'This retry was not sent: the signed-in account could not be verified as the operator who entered this purchase. The earlier attempt may already be recorded. The original operator must sign in to retry the same request; do not enter this purchase again.' },
+  sp_attempt_in_progress:      { ar: 'جارٍ تقديم هذا الشراء… لا تُعِد تحميل الصفحة ولا تغلقها ولا تغادرها حتى تظهر النتيجة.', en: 'Submitting this purchase… Do not reload, close or leave this page until the result appears.' },
   sp_official_order_no:    { ar: 'رقم الطلب الرسمي',                en: 'Official order number' },
   sp_official_receipt_no:  { ar: 'رقم الوصل الرسمي',                en: 'Official receipt number' },
   sp_awaiting_migration:   { ar: 'ميزة الإدخال المباشر بانتظار تفعيل migration 089', en: 'Direct entry awaits migration 089 activation' },
@@ -3635,6 +3655,9 @@ export const T: Dict = {
   lp_no_warehouse_scope:  { ar: 'لا يوجد مخزن مؤسسة ضمن صلاحياتك',               en: 'No institution warehouse in your scope' },
   lp_denied_title:        { ar: 'لا تملك صلاحية عرض المشتريات الفرعية',           en: 'You do not have permission to view supplementary purchases' },
   lp_denied_hint:         { ar: 'اطلب صلاحية local_procurement.view من مسؤول المؤسسة', en: 'Ask your administrator for the local_procurement.view permission' },
+  // PDA-PROC-1: one message for every non-care organization (pharmacy department, unknown or unreadable kind).
+  lp_org_kind_not_applicable_title: { ar: 'هذا النوع من المنظمات لا يستخدم المشتريات الفرعية', en: 'This organization type does not use supplementary procurement' },
+  lp_org_kind_not_applicable_hint:  { ar: 'المشتريات الفرعية متاحة للمؤسسات الصحية فقط', en: 'Supplementary procurement is available to care institutions only' },
   lp_select_warehouse:    { ar: 'مخزن المؤسسة',                                   en: 'Institution warehouse' },
   lp_tab_orders:          { ar: 'طلبات الشراء',                                   en: 'Purchase Orders' },
   lp_tab_approvals:       { ar: 'الموافقات',                                      en: 'Approvals' },

@@ -15,6 +15,7 @@
  *   outlet_officer            — one dispensing outlet
  */
 import { normalizeRole, isFacilityScopedRole } from '@/shared/lib/roles';
+import type { OrganizationKind } from '@/shared/lib/institution-hierarchy';
 
 /** Platform administrator — the ONLY role that manages institutions globally. */
 export function isPlatformAdmin(role: string | null | undefined): boolean {
@@ -106,17 +107,41 @@ const FACILITY_SAFE_SCREENS: readonly number[] = [3, 6, 15, 18];
  * refused the supply surface to the role whose whole purpose is to use it. See
  * the inline note on that branch for why this grants no scope-admin authority
  * and cannot reach a facility-scoped role.
+ *
+ * PDA-PROC-1 adds the ORGANIZATION dimension: `organizationKind` is the
+ * canonical organization_kind of the actor's active organization. Only Screen
+ * 19 reads it today. Omitting it means "unknown", and unknown is denied.
  */
 export function isScreenAuthorized(
   screen: number,
   role: string | null | undefined,
   permissions: ReadonlySet<string>,
+  organizationKind?: OrganizationKind | null,
 ): boolean {
   const n = normalizeRole(role ?? '');
 
   // A facility-scoped role is confined to the proven-safe surfaces, whatever
   // permissions it may additionally hold.
   if (isFacilityScopedRole(n)) return FACILITY_SAFE_SCREENS.includes(screen);
+
+  /**
+   * PDA-PROC-1 - Local Procurement is a DOMAIN-eligibility surface.
+   *
+   * Supplementary procurement belongs to care institutions only. A
+   * pharmacy_department_authority must not possess or operate it, and
+   * migration 221 refuses every such write server-side. This branch keeps the
+   * route, the restoration path and the four navigation surfaces agreeing with
+   * that rule, so the screen is REFUSED rather than opened onto a workflow the
+   * database will reject.
+   *
+   * The kind is the organization's canonical classification, never inferred
+   * from the role, a permission or a warehouse. super_admin is NOT a bypass:
+   * its permission top-up says nothing about which organization is active.
+   * null, undefined (omitted), pending and unrecognised kinds are all denied.
+   * Every existing role/permission rule is preserved, because the facility
+   * branch above still runs first and Screen 19 had no other gate.
+   */
+  if (screen === LOCAL_PROCUREMENT_SCREEN) return organizationKind === 'care_institution';
 
   if (screen === 11) return institutionsScreenAccess(n) !== false;
   if (screen === 14) return n === 'super_admin' || permissions.has('users.view');
@@ -199,6 +224,32 @@ export const COMMAND_CENTER_SCREEN = 22;
  * constant.
  */
 export const CENTRAL_NEEDS_SCREEN = 23;
+
+/**
+ * PDA-PROC-1 - the Local Procurement (supplementary purchases) screen id,
+ * declared next to the predicate that gates it on the organization kind.
+ */
+export const LOCAL_PROCUREMENT_SCREEN = 19;
+
+/**
+ * PDA-PROC-1 - does this screen's decision still depend on an organization
+ * kind that has not been read yet?
+ *
+ * True exactly when the screen is refused while the kind is unknown but would
+ * be admitted for a care institution. It NEVER grants anything: callers use it
+ * only to WAIT (render a loading state, defer a restoration) instead of
+ * discarding a legitimate Screen 19 while the kind read is in flight. The
+ * admission itself is always decided by isScreenAuthorized with the settled
+ * kind.
+ */
+export function screenAwaitsOrganizationKind(
+  screen: number,
+  role: string | null | undefined,
+  permissions: ReadonlySet<string>,
+): boolean {
+  return !isScreenAuthorized(screen, role, permissions, null)
+    && isScreenAuthorized(screen, role, permissions, 'care_institution');
+}
 
 /** The capability that admits an actor to the Central Needs surface. */
 export const CENTRAL_NEEDS_VIEW_PERMISSION = 'central_needs.view';

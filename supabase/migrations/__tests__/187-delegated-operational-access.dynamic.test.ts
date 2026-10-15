@@ -46,6 +46,13 @@ run('187 delegated operational access — dynamic', () => {
     try { await work(); } catch (error: any) { return `${error.code ?? ''}:${error.message}`; }
     throw new Error('expected rejection');
   };
+  // OPS2-F1: a real canonical warehouse correction is posted ONLY through the governed
+  // request RPC (within the organization's variance threshold, set for B in beforeAll), never
+  // through the generic guarded writer — which refuses 'correction' for every actor.
+  const governedCorrection = (actor: string, stock: string, qty: number, note: string, seq: number) =>
+    rpc(actor, 'phoenix_request_warehouse_stock_correction', [randomUUID(), stock, qty, note, seq, null, null]);
+  const directCorrection = (actor: string, stock: string, qty: number, note: string, seq: number) =>
+    rpc(actor, 'phoenix_apply_warehouse_stock_movement_guarded', [randomUUID(), stock, 'correction', qty, note, seq, null, null]);
 
   beforeAll(async () => {
     rig = await buildRig({});
@@ -84,6 +91,9 @@ run('187 delegated operational access — dynamic', () => {
       INSERT INTO profile_scope_assignments(profile_id,organization_id,scope_type,distribution_point_id,is_active)
         VALUES ('${OO}','${A}','distribution_point','${PA}',true);
     `);
+    // OPS2-F1: B's variance threshold covers every correction this file posts, so the
+    // governed request applies immediately and each proof below stays a REAL mutation.
+    await rpc(SUPER, 'phoenix_set_variance_approval_policy', [B, 100]);
   });
 
   afterAll(async () => { if (rig) await rig.end(); });
@@ -140,13 +150,14 @@ run('187 delegated operational access — dynamic', () => {
     await rpc(SUPER, 'assign_profile_permissions', [WO, { 'outlet_stock.view': false }]);
     expect(await allowed(WO, 'outlet_stock.view', B, null, PB)).toBe(false);
 
-    const movement = await rpc(WO, 'phoenix_apply_warehouse_stock_movement_guarded',
-      [randomUUID(), STOCK_B, 'correction', 49, 'delegated physical count', 0, null, null]);
-    expect(movement.ok).toBe(true);
+    const movement = await governedCorrection(WO, STOCK_B, 49, 'delegated physical count', 0);
+    expect(movement).toMatchObject({ ok: true, requires_approval: false, quantity_after: 49 });
+    // OPS2-F1: the same delegated WHAT+WHERE never posts a correction unilaterally.
+    expect(await rejects(() => directCorrection(WO, STOCK_B, 48, 'unilateral', 1)))
+      .toMatch(/warehouse_correction_requires_governed_request/);
     await rpc(SUPER, 'phoenix_admin_revoke_delegated_scope',
       [warehouseAssignment, null, 'custody delegation expired']);
-    expect(await rejects(() => rpc(WO, 'phoenix_apply_warehouse_stock_movement_guarded',
-      [randomUUID(), STOCK_B, 'correction', 48, 'must now fail', 1, null, null])))
+    expect(await rejects(() => governedCorrection(WO, STOCK_B, 48, 'must now fail', 1)))
       .toMatch(/forbidden|permission|scope/i);
   });
 
@@ -271,9 +282,7 @@ run('187 delegated operational access — dynamic', () => {
       `SELECT (SELECT on_hand_quantity FROM warehouse_stock WHERE id=$1) AS qty,
               (SELECT count(*)::int FROM warehouse_stock_movements WHERE warehouse_stock_id=$1) AS moves`,
       [STOCK_B2])).rows[0];
-    const correct = (qty: number, note: string, seq: number) =>
-      rpc(WO2, 'phoenix_apply_warehouse_stock_movement_guarded',
-        [randomUUID(), STOCK_B2, 'correction', qty, note, seq, null, null]);
+    const correct = (qty: number, note: string, seq: number) => governedCorrection(WO2, STOCK_B2, qty, note, seq);
 
     // 1. WHAT without any delegated WHERE.
     await rpc(SUPER, 'assign_profile_permissions', [WO2, { 'warehouse_stock.correct': true }]);
@@ -295,6 +304,11 @@ run('187 delegated operational access — dynamic', () => {
     const after3 = await snapshot();
     expect(after3.qty).toBe(39);
     expect(after3.moves).toBe(before2.moves + 1);
+
+    // 3b. OPS2-F1: the very same WHAT + WHERE cannot post unilaterally on the generic writer.
+    expect(await rejects(() => directCorrection(WO2, STOCK_B2, 38, 'unilateral', 1)))
+      .toMatch(/warehouse_correction_requires_governed_request/);
+    expect(await snapshot()).toEqual(after3);
 
     // 4. Revoke the WHERE only — the very same call must fail with zero delta.
     await rpc(SUPER, 'phoenix_admin_revoke_delegated_scope',
@@ -344,8 +358,7 @@ run('187 delegated operational access — dynamic', () => {
     const before = (await admin(
       `SELECT on_hand_quantity qty, movement_seq seq FROM warehouse_stock WHERE id=$1`, [STOCK_B2])).rows[0];
 
-    const mutation = rpc(WO2, 'phoenix_apply_warehouse_stock_movement_guarded',
-      [randomUUID(), STOCK_B2, 'correction', 37, 'racing the revoke', before.seq, null, null])
+    const mutation = governedCorrection(WO2, STOCK_B2, 37, 'racing the revoke', before.seq)
       .then(r => ({ committed: true, r })).catch(e => ({ committed: false, e }));
     const revoke = rpc(SUPER, 'phoenix_admin_revoke_delegated_scope',
       [grant.assignment_id, null, 'revoked during a live operation'])
@@ -371,8 +384,7 @@ run('187 delegated operational access — dynamic', () => {
     expect(await allowed(WO2, 'warehouse_stock.correct', B, WB, null)).toBe(false);
     const seq = (await admin(`SELECT movement_seq FROM warehouse_stock WHERE id=$1`, [STOCK_B2]))
       .rows[0].movement_seq;
-    expect(await rejects(() => rpc(WO2, 'phoenix_apply_warehouse_stock_movement_guarded',
-      [randomUUID(), STOCK_B2, 'correction', 30, 'post-revoke', seq, null, null])))
+    expect(await rejects(() => governedCorrection(WO2, STOCK_B2, 30, 'post-revoke', seq)))
       .toMatch(/forbidden|permission|scope/i);
   });
 

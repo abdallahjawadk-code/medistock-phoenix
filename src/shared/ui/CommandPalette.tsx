@@ -63,6 +63,7 @@ const PALETTE_ITEMS: PaletteItem[] = [
   // OUTLET-CORRIDOR: ungated like nav_editor — the screen self-gates by outlet scope.
   { screen: 18, icon: 'outlet', labelKey: 'nav_outlet_ops' },
   // INSTITUTION-LOCAL-PROCUREMENT-087: ungated — the screen self-gates by warehouse scope.
+  // PDA-PROC-1: the projection additionally admits it for care institutions only.
   { screen: 19, icon: 'warehouse', labelKey: 'nav_local_procurement' },
   { screen: 21, icon: 'reports', labelKey: 'nav_decision_reports' },
   { screen: 6,  icon: 'qr', labelKey: 'nav_qr' },
@@ -109,7 +110,7 @@ interface Props {
 }
 
 export function CommandPalette({ onNavigate }: Props) {
-  const { lang, role, myPermissions } = useApp();
+  const { lang, role, myPermissions, activeOrganizationKind } = useApp();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
@@ -128,10 +129,13 @@ export function CommandPalette({ onNavigate }: Props) {
   // It reproduces the users.view / users.edit_scope / institutions predicates
   // this component used to spell out by hand, so no historical role's palette
   // moves, and additionally refuses every screen outside a facility-scoped
-  // role's safe set.
+  // role's safe set. PDA-PROC-1: the active organization kind is part of the
+  // same actor, so Screen 19 is offered exactly when the route guard admits it.
   const items = useMemo(
-    () => projectNavigation(PALETTE_ITEMS, { role, permissions: myPermissions }),
-    [role, myPermissions],
+    () => projectNavigation(PALETTE_ITEMS, {
+      role, permissions: myPermissions, organizationKind: activeOrganizationKind,
+    }),
+    [role, myPermissions, activeOrganizationKind],
   );
   const maySearchInstitutions = canSearchInstitutions({ role, permissions: myPermissions });
 

@@ -129,8 +129,11 @@ run('103 institution-warehouse no-direct-entry — dynamic (RPC bypass proof)', 
       ])).rejects.toThrow(/institution_warehouse_direct_adjustment_forbidden/);
     });
 
-    // 'correction' is the audited path (098/101) and remains reachable — NOT
-    // this migration's concern to close.
+    // On THIS historical prefix (001->103) a direct 'correction' is still
+    // reachable: 103 closed add/subtract/set_exact only. It is NOT the audited
+    // path — OPS2-F1 found that it bypassed 098/101 entirely. On the full chain
+    // a caller-chosen correction is accepted only through the governed request /
+    // second-person workflow; see ops2f1-governed-warehouse-correction.dynamic.test.ts.
     await rig.asUser(WO, async (c: any) => {
       const r = await call(c, 'phoenix_apply_warehouse_stock_movement_guarded', [
         randomUUID(), stockId, 'correction', 45, 'physical count', 0, null, null,

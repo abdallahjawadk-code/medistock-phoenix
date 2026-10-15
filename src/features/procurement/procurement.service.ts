@@ -1,4 +1,5 @@
 import { supabase, supabaseConfigured } from '@/shared/supabase/client';
+import { isDeadlineExceeded, withDeadline } from '@/shared/lib/deadline';
 
 /**
  * INSTITUTION-LOCAL-PROCUREMENT-087 — thin client over the migration 087
@@ -308,6 +309,174 @@ export async function getReceiptLines(receiptId: string): Promise<ReceiptLineRow
     .order('created_at');
   if (error) throw new Error(error.message);
   return (data ?? []).map(mapReceiptLine);
+}
+
+/**
+ * CI-4C — CONFIRM-ONLY reconciliation of one direct-entry request id, read through the EXISTING RLS-protected tables
+ * (087 SELECT policies on receipts, orders, order events, order lines, receipt lines and suppliers). No RPC, no write.
+ *
+ * It can only CONFIRM that the server recorded THIS operator's purchase for THIS request. An empty, filtered, refused,
+ * failing or slow read is `unresolved`, never a verdict that the purchase did not happen: RLS filters silently, the
+ * original call may still be in flight, and the reader's access may have changed since the purchase.
+ */
+export const RECONCILE_DEADLINE_MS = 10_000;
+
+export interface DirectEntryExpectation {
+  /** The request id of the locked attempt. */
+  requestId: string;
+  /** The profile that created the attempt. It must be the signed-in user and the receipt's received_by. */
+  actorId: string;
+  organizationId: string;
+  warehouseId: string;
+  /** The frozen RPC arguments of the attempt, without p_request_id. */
+  args: Readonly<Record<string, unknown>>;
+}
+
+export type DirectEntryReconciliation =
+  | { status: 'confirmed'; orderNumber: string; receiptNumber: string }
+  | {
+      status: 'unresolved';
+      reason: 'not_configured' | 'no_session' | 'not_own_session' | 'not_found' | 'ambiguous_rows' | 'not_own_receipt'
+        | 'scope_mismatch' | 'order_mismatch' | 'provenance_missing' | 'payload_mismatch' | 'read_error' | 'timeout';
+    };
+
+type UnresolvedReconciliation = Extract<DirectEntryReconciliation, { status: 'unresolved' }>;
+const notConfirmed = (reason: UnresolvedReconciliation['reason']): UnresolvedReconciliation => ({ status: 'unresolved', reason });
+
+/**
+ * 116 stores NULLIF(btrim(x), ''); the frozen argument is normalized the same way. PostgreSQL btrim with no character
+ * list removes only U+0020 spaces, so JavaScript trim() (which also removes tabs, line breaks and no-break spaces) is
+ * not used.
+ */
+function trimmedOrNull(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.replace(/^ +| +$/g, '');
+  return trimmed === '' ? null : trimmed;
+}
+
+function sameNumber(stored: unknown, expected: unknown): boolean {
+  if (expected === null || expected === undefined) return stored === null || stored === undefined;
+  return stored !== null && stored !== undefined && Number(stored) === Number(expected);
+}
+
+/** One bounded SELECT (at most two rows, so a duplicate is visible). A transport or RLS refusal is reported, not thrown. */
+async function selectRows(
+  table: string,
+  columns: string,
+  filters: Array<[string, unknown]>,
+): Promise<Record<string, unknown>[] | 'error'> {
+  let query = supabase.from(table).select(columns);
+  for (const [column, value] of filters) query = query.eq(column, value);
+  const { data, error } = await query.limit(2);
+  if (error) return 'error';
+  return (data ?? []) as unknown as Record<string, unknown>[];
+}
+
+async function verifyDirectEntry(expected: DirectEntryExpectation): Promise<DirectEntryReconciliation> {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const userId = sessionData.session?.user?.id ?? null;
+  if (userId === null) return notConfirmed('no_session');
+  if (userId !== expected.actorId) return notConfirmed('not_own_session');
+
+  const receipts = await selectRows('procurement_receipts',
+    'id, order_id, organization_id, warehouse_id, request_id, received_by, receipt_number, notes',
+    [['request_id', expected.requestId]]);
+  if (receipts === 'error') return notConfirmed('read_error');
+  if (receipts.length === 0) return notConfirmed('not_found');
+  if (receipts.length !== 1 || receipts[0].request_id !== expected.requestId) return notConfirmed('ambiguous_rows');
+  const receipt = receipts[0];
+  if (receipt.received_by !== userId) return notConfirmed('not_own_receipt');
+  if (receipt.organization_id !== expected.organizationId || receipt.warehouse_id !== expected.warehouseId) {
+    return notConfirmed('scope_mismatch');
+  }
+
+  const orders = await selectRows('procurement_orders',
+    'id, organization_id, warehouse_id, supplier_id, order_number, invoice_number, invoice_date, notes',
+    [['id', receipt.order_id]]);
+  if (orders === 'error') return notConfirmed('read_error');
+  if (orders.length !== 1) return notConfirmed('order_mismatch');
+  const order = orders[0];
+  if (order.id !== receipt.order_id || order.organization_id !== expected.organizationId
+    || order.warehouse_id !== expected.warehouseId) {
+    return notConfirmed('order_mismatch');
+  }
+
+  // Provenance: 116:193-195 logs the order's 'created' event with direct_entry and the request id.
+  const events = await selectRows('procurement_order_events', 'order_id, event_type, payload',
+    [['order_id', order.id], ['event_type', 'created']]);
+  if (events === 'error') return notConfirmed('read_error');
+  const provenance = (events.length === 1 ? events[0].payload : null) as Record<string, unknown> | null;
+  if (provenance === null || provenance.direct_entry !== true || provenance.request_id !== expected.requestId) {
+    return notConfirmed('provenance_missing');
+  }
+
+  const orderLines = await selectRows('procurement_order_lines',
+    'id, order_id, central_item_id, scientific_name, trade_name, concentration, dosage_form, unit, national_code, ordered_quantity',
+    [['order_id', order.id]]);
+  if (orderLines === 'error') return notConfirmed('read_error');
+  const receiptLines = await selectRows('procurement_receipt_lines',
+    'receipt_id, order_line_id, quantity, batch_number, has_no_batch_number, national_code, expiry_date, unit_price',
+    [['receipt_id', receipt.id]]);
+  if (receiptLines === 'error') return notConfirmed('read_error');
+  const suppliers = await selectRows('procurement_suppliers', 'id, name', [['id', order.supplier_id]]);
+  if (suppliers === 'error') return notConfirmed('read_error');
+  if (orderLines.length !== 1 || receiptLines.length !== 1 || suppliers.length !== 1) return notConfirmed('payload_mismatch');
+
+  // The recorded purchase must equal the frozen payload as 116 stores it (116:178-237): every argument the RPC persists
+  // for a direct entry, not only the replay fingerprint (116:109-113).
+  const args = expected.args;
+  const orderLine = orderLines[0];
+  const receiptLine = receiptLines[0];
+  const supplierName = suppliers[0].name;
+  const expectedSupplier = trimmedOrNull(args.p_supplier_name) ?? 'شراء مباشر';
+  const expectedNotes = trimmedOrNull(args.p_notes);
+  const consistent = receiptLine.order_line_id === orderLine.id
+    && orderLine.scientific_name === trimmedOrNull(args.p_scientific_name)
+    && sameNumber(orderLine.ordered_quantity, args.p_quantity)
+    && sameNumber(receiptLine.quantity, args.p_quantity)
+    && (receiptLine.batch_number ?? null) === trimmedOrNull(args.p_batch_number)
+    && receiptLine.has_no_batch_number === (args.p_has_no_batch === true)
+    && (receiptLine.expiry_date ?? null) === (args.p_expiry_date ?? null)
+    && sameNumber(receiptLine.unit_price, args.p_unit_price)
+    && (order.invoice_number ?? null) === trimmedOrNull(args.p_invoice_number)
+    && (order.invoice_date ?? null) === (args.p_purchase_date ?? null)
+    && (order.notes ?? null) === expectedNotes
+    && (receipt.notes ?? null) === expectedNotes
+    && (orderLine.central_item_id ?? null) === (args.p_central_item_id ?? null)
+    && (orderLine.trade_name ?? null) === trimmedOrNull(args.p_trade_name)
+    && (orderLine.concentration ?? null) === trimmedOrNull(args.p_concentration)
+    && (orderLine.dosage_form ?? null) === trimmedOrNull(args.p_dosage_form)
+    && (orderLine.unit ?? null) === trimmedOrNull(args.p_unit)
+    && (orderLine.national_code ?? null) === trimmedOrNull(args.p_national_code)
+    && (receiptLine.national_code ?? null) === trimmedOrNull(args.p_national_code)
+    // 116:157-158 reuses an existing supplier matched by lower(name), so the stored name may differ in letter case.
+    && typeof supplierName === 'string' && supplierName.toLowerCase() === expectedSupplier.toLowerCase();
+  if (!consistent) return notConfirmed('payload_mismatch');
+
+  const orderNumber = order.order_number;
+  const receiptNumber = receipt.receipt_number;
+  if (typeof orderNumber !== 'string' || typeof receiptNumber !== 'string') return notConfirmed('payload_mismatch');
+
+  // The answer is only usable by the user it was read for: a sign-out or a user switch during the reads voids it.
+  const { data: finalSession } = await supabase.auth.getSession();
+  const finalUserId = finalSession.session?.user?.id ?? null;
+  if (finalUserId === null) return notConfirmed('no_session');
+  if (finalUserId !== userId) return notConfirmed('not_own_session');
+  return { status: 'confirmed', orderNumber, receiptNumber };
+}
+
+/** One bounded, read-only check. It never polls, never retries, and never writes. */
+export async function reconcileDirectEntry(
+  expected: DirectEntryExpectation,
+  deadlineMs: number = RECONCILE_DEADLINE_MS,
+): Promise<DirectEntryReconciliation> {
+  if (!supabaseConfigured) return notConfirmed('not_configured');
+  try {
+    const result = await withDeadline(verifyDirectEntry(expected), deadlineMs);
+    return isDeadlineExceeded(result) ? notConfirmed('timeout') : result;
+  } catch {
+    return notConfirmed('read_error');
+  }
 }
 
 export async function getReturnsForOrder(orderId: string): Promise<ReturnRow[]> {
