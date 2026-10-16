@@ -809,6 +809,9 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
       'supabase/migrations/222_phoenix_governed_warehouse_correction_security.sql',
       'supabase/migrations/__tests__/ops2f1-correction-replay-binding.dynamic.test.ts',
       'supabase/migrations/__tests__/ops2f1-governed-warehouse-correction.dynamic.test.ts',
+      // M222-A-CI-GUARD-REG-01: exact-name registration of the independently
+      // reviewed authorization-before-replay test; no wildcard exemption.
+      'supabase/migrations/__tests__/m222a-authorization-before-replay.dynamic.test.ts',
     ];
     const changed=execSync(`git diff --name-only ${BASE}`,{cwd:ROOT,encoding:'utf8'}).split('\n').map(l=>l.trim()).filter(Boolean);
     const prohibited=changed.filter(f=>WATCHED.some(p=>f===p||f.startsWith(p+'/'))&&!EXCLUDED.includes(f));
