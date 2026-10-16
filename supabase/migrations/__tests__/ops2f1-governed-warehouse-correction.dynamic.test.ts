@@ -285,7 +285,8 @@ run('OPS2-F1 governed warehouse correction — dynamic acceptance', () => {
       // once approved, its underlying id cannot be reused on the generic writer
       const ok = await approve(SUPER, q.correction_request_id);
       const r = await refusal(P1(OFF_A, lot, 'correction', 5, qid, 'reuse'));
-      expect(r.message).toMatch(/request_id_conflict/);
+      // M222-A: this approved movement belongs to the approver, not its proposer.
+      expect(r.message).toBe('warehouse_correction_requires_governed_request');
       expect((await snapshot(lot)).qty).toBe(ok.quantity_after);
     } finally {
       await setThreshold(ORG_A, 0);
