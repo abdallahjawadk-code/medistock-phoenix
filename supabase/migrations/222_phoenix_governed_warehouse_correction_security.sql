@@ -297,8 +297,7 @@ AS $guarded_movement$
 DECLARE
   v_seq          bigint;
   v_found        boolean;
-  v_prior_actor  uuid;
-  v_prior_type   text;
+  v_replay_authorized boolean;
 BEGIN
   IF p_request_id IS NULL THEN
     RAISE EXCEPTION 'request_id_required' USING ERRCODE = '23514';
@@ -306,22 +305,49 @@ BEGIN
 
   PERFORM pg_advisory_xact_lock(hashtextextended(p_request_id::text, 65065));
 
-  SELECT m.actor_id, m.movement_type
-    INTO v_prior_actor, v_prior_type
-    FROM public.warehouse_stock_movements m
-   WHERE m.reference_type = 'warehouse_request'
-     AND m.reference_id   = p_request_id
-   LIMIT 1;
-  IF FOUND THEN
-    -- v2: an already-posted correction is never answered to another actor.
-    IF v_prior_type IN ('correction', 'set_exact') AND v_prior_actor IS DISTINCT FROM auth.uid() THEN
-      RAISE EXCEPTION 'request_id_conflict' USING ERRCODE = '23505';
+  -- M222-A: prove CURRENT authority on the supplied lot before reading replay
+  -- state. This is a silent gate: a caller without authority follows exactly
+  -- the ordinary new-request path below, without a request-dependent response.
+  -- Keep the existing new add/subtract generation diagnostic order (M186);
+  -- this does not remediate the separate inherited stock/generation oracles.
+  SELECT EXISTS (
+    SELECT 1
+      FROM public.warehouse_stock s
+      JOIN public.warehouses w ON w.id = s.warehouse_id
+     WHERE s.id = p_warehouse_stock_id
+       AND auth.uid() IS NOT NULL
+       AND p_movement_type IN ('correction', 'set_exact', 'add', 'subtract')
+       AND (p_movement_type = 'correction' OR w.warehouse_kind = 'central')
+       AND public.phoenix_profile_has_scoped_permission(
+         auth.uid(),
+         CASE WHEN p_movement_type IN ('correction', 'set_exact')
+              THEN 'warehouse_stock.correct' ELSE 'warehouse_stock.adjust' END,
+         s.organization_id, s.warehouse_id, NULL
+       )
+  ) INTO v_replay_authorized;
+
+  IF v_replay_authorized THEN
+    -- Correction replay is visible only to its original actor with CURRENT
+    -- authority on the recorded movement scope as well as the supplied lot.
+    -- Another actor (even using an authorized substitute lot) follows the same
+    -- direct-target refusal as an unused id. Add/subtract replay is unchanged.
+    IF EXISTS (
+      SELECT 1 FROM public.warehouse_stock_movements m
+       WHERE m.reference_type = 'warehouse_request'
+         AND m.reference_id = p_request_id
+         AND (m.movement_type NOT IN ('correction', 'set_exact') OR (
+           m.actor_id = auth.uid()
+           AND public.phoenix_profile_has_scoped_permission(
+             auth.uid(), 'warehouse_stock.correct', m.organization_id, m.warehouse_id, NULL
+           )
+         ))
+    ) THEN
+      RETURN public.phoenix_apply_warehouse_stock_movement(
+        p_request_id, p_warehouse_stock_id, p_movement_type, p_amount,
+        p_reason, p_source_document_number, p_notes,
+        CASE WHEN p_movement_type IN ('correction', 'set_exact') THEN 'corrected' ELSE NULL END
+      );
     END IF;
-    RETURN public.phoenix_apply_warehouse_stock_movement(
-      p_request_id, p_warehouse_stock_id, p_movement_type, p_amount,
-      p_reason, p_source_document_number, p_notes,
-      CASE WHEN p_movement_type IN ('correction', 'set_exact') THEN 'corrected' ELSE NULL END
-    );
   END IF;
 
   -- OPS2-F1: a caller-chosen quantity target is never posted unilaterally.

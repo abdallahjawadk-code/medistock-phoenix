@@ -171,9 +171,9 @@ run('OPS2-F1 v2 correction replay binding — dynamic', () => {
         expect(r.message).toMatch(CONFLICT);
         expectOpaque(r, [secret]);
       }
-      // the generic writer is no second door to the same replay
+      // M222-A: the generic writer gives another actor the same direct-target refusal as an unused id.
       const viaP1 = await refusal(P1(PEER, appliedId, lot, { ...p, qty: 45 }));
-      expect(viaP1.message).toMatch(CONFLICT);
+      expect(viaP1.message).toBe('warehouse_correction_requires_governed_request');
       expectOpaque(viaP1, [applied.movement_id]);
       expect(await world()).toEqual(before);
     } finally {
