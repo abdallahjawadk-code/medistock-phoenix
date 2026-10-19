@@ -74,7 +74,7 @@ export default async function handler(req: Request): Promise<Response> {
       TRANSPORT_LIMITS.maxSourceBytes,
       sha256Hex,
     );
-    if (!integrity.ok) return errorResponse(integrity.status, integrity.code);
+    if (integrity.ok !== true) return errorResponse(integrity.status, integrity.code);
 
     const signed = await service.storage
       .from(SOURCE_BUCKET)

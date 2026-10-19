@@ -249,7 +249,7 @@ export default async function handler(req: Request): Promise<Response> {
     // it narrows the window in which a revoked caller can still create evidence.
     const authorityDeps: AuthorityDeps = { resolveRevision: resolveRevisionAsCaller, isAuthorized: callerIsAuthorized };
     const beforePermanent = await reassertImportAuthority(caller, revision.id, revision.organizationId, authorityDeps);
-    if (!beforePermanent.ok) return errorResponse(beforePermanent.status, beforePermanent.code, beforePermanent.detail);
+    if (beforePermanent.ok !== true) return errorResponse(beforePermanent.status, beforePermanent.code, beforePermanent.detail);
     const permanentKey = permanentSourceKey(revision.organizationId, revision.id, containerSha256);
     const stored = await service.storage
       .from(SOURCE_BUCKET)
@@ -335,7 +335,7 @@ export default async function handler(req: Request): Promise<Response> {
       // R1 / ST-15: the trusted replay carries no caller identity, so the caller's
       // authority is re-asserted right before it.
       const beforeReplay = await reassertImportAuthority(caller, revision.id, revision.organizationId, authorityDeps);
-      if (!beforeReplay.ok) return errorResponse(beforeReplay.status, beforeReplay.code, beforeReplay.detail);
+      if (beforeReplay.ok !== true) return errorResponse(beforeReplay.status, beforeReplay.code, beforeReplay.detail);
       const replayed = await service.rpc('phoenix_central_needs_apply_authoritative_replay', {
         p_import_session_id: session.import_session_id,
         p_source_file_sha256: entrySha256,
@@ -361,7 +361,7 @@ export default async function handler(req: Request): Promise<Response> {
 
     // R1 / ST-15: same for the trusted batch registration.
     const beforeRegister = await reassertImportAuthority(caller, revision.id, revision.organizationId, authorityDeps);
-    if (!beforeRegister.ok) return errorResponse(beforeRegister.status, beforeRegister.code, beforeRegister.detail);
+    if (beforeRegister.ok !== true) return errorResponse(beforeRegister.status, beforeRegister.code, beforeRegister.detail);
     const registered = await service.rpc('phoenix_central_needs_register_import_batch', {
       p_plan_revision_id: revision.id,
       p_container_kind: declaredKind,
