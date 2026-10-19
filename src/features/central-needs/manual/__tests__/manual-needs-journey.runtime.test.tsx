@@ -291,3 +291,56 @@ describe('scope, language, network', () => {
     expect(supabaseFrom).not.toHaveBeenCalled();
   });
 });
+
+describe('separation of duties in the UI - the independent approver is NOT an entrant (and the entrant is not an approver)', () => {
+  const approverCaps = caps({ edit: false, manualSet: false, approve: true });
+  const entrantCaps = caps({ edit: true, manualSet: true, approve: false });
+  const forbiddenEntry = () => {
+    expect(screen.queryByRole('button', { name: 'Start a new plan' })).toBeNull();
+    expect(screen.queryByLabelText('Search a registered material')).toBeNull();
+    expect(screen.queryByRole('form', { name: 'Add line' })).toBeNull();
+    expect(screen.queryByText('Optional medicine-identity help from a workbook')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Check readiness' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Submit for independent review' })).toBeNull();
+  };
+  it('approver on a SUBMITTED plan: can approve/reject; sees no entry control', async () => {
+    const m = make([rev({ id: 'r1', status: 'submitted', createdBy: 'u-maker' })], approverCaps);
+    mount(m, { actorId: 'u-approver' }); await open();
+    expect(await screen.findByRole('button', { name: 'Approve' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reject' })).toBeInTheDocument();
+    forbiddenEntry();
+    fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+    await waitFor(() => expect(m.api.approve).toHaveBeenCalledTimes(1));
+  });
+  it('approver on a DRAFT plan or with NO plan: read-only - no picker, no workbook assistant, no registration, no add-line, no start', async () => {
+    const draft = make([rev({ id: 'r1', status: 'draft' })], approverCaps);
+    mount(draft, { actorId: 'u-approver' }); await open();
+    await screen.findByText('Revision 1 — draft');
+    forbiddenEntry();
+    expect(draft.api.openPlan).not.toHaveBeenCalled();
+    cleanup();
+    const none = make([], approverCaps);
+    mount(none, { actorId: 'u-approver' }); await open();
+    await screen.findByText('There is no plan for this year yet.');
+    forbiddenEntry();
+  });
+  it('approver on an APPROVED plan: no correction can be opened', async () => {
+    const m = make([rev({ id: 'r1', status: 'approved' })], approverCaps);
+    mount(m, { actorId: 'u-approver' }); await open();
+    await screen.findByText('Revision 1 — approved');
+    expect(screen.queryByRole('button', { name: 'Open a correction' })).toBeNull();
+  });
+  it('entrant (no approve key) on a submitted plan: no Approve / Reject at all', async () => {
+    const m = make([rev({ id: 'r1', status: 'submitted' })], entrantCaps);
+    mount(m); await open();
+    await screen.findByText('Revision 1 — submitted');
+    expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Reject' })).toBeNull();
+  });
+  it('a holder of BOTH keys who made the revision is still excluded by the server flag (approve_excluded_for_revision) - no decision controls', async () => {
+    const m = make([rev({ id: 'r1', status: 'submitted' })], caps({ approve: true, approveExcludedForRevision: true }));
+    mount(m); await open();
+    await screen.findByText('Revision 1 — submitted');
+    expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull();
+  });
+});

@@ -812,6 +812,41 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
       // M222-A-CI-GUARD-REG-01: exact-name registration of the independently
       // reviewed authorization-before-replay test; no wildcard exemption.
       'supabase/migrations/__tests__/m222a-authorization-before-replay.dynamic.test.ts',
+      // R1 (staging release candidate): exact-filename registration of the R1 files under the watched prefixes (the un-numbered SQL candidates and
+      // their tests/tooling, the Screen-3 tab wiring, the shared i18n strings). No wildcard and no directory exemption: every other file under
+      // these prefixes still fails this guard closed. No migration is added to the numbered chain, no RPC/RLS/permission/dependency/branding/
+      // environment surface of A7.2.4's subject is touched.
+      'supabase/candidates/R1a_01_manual_source_schema_inert.sql',
+      'supabase/candidates/R1a_02_authorization_closure.sql',
+      'supabase/candidates/R1a_03_lifecycle_relations_and_sod.sql',
+      'supabase/candidates/R1a_04_manual_routines_inert.sql',
+      'supabase/candidates/R1a_05_blockers_digest_d27.sql',
+      'supabase/candidates/R1a_06_material_registration_inert.sql',
+      'supabase/candidates/R1b_01_manual_activation_NOT_APPLIED.sql',
+      'supabase/candidates/R1b_02_material_registration_activation_NOT_APPLIED.sql',
+      'supabase/candidates/__tests__/m182-equivalence.dynamic.test.ts',
+      'supabase/candidates/__tests__/r1-manual-lifecycle-canonical.dynamic.test.ts',
+      'supabase/candidates/__tests__/r1a-01-manual-source-schema.dynamic.test.ts',
+      'supabase/candidates/__tests__/r1a-02-authorization-closure.dynamic.test.ts',
+      'supabase/candidates/__tests__/r1a-03-lifecycle-sod.dynamic.test.ts',
+      'supabase/candidates/__tests__/r1a-04-manual-routines.dynamic.test.ts',
+      'supabase/candidates/__tests__/r1a-05-blockers-digest-d27.dynamic.test.ts',
+      'supabase/candidates/__tests__/r1a-06-material-registration.dynamic.test.ts',
+      'supabase/candidates/__tests__/r1a-fixtures.ts',
+      'supabase/candidates/__tests__/r1b-01-manual-activation.dynamic.test.ts',
+      'supabase/candidates/__tests__/r1b-02-material-registration-activation.dynamic.test.ts',
+      'supabase/candidates/__tests__/staging-baseline.dynamic.test.ts',
+      'supabase/candidates/_build/R1a_05.template.sql',
+      'supabase/candidates/_build/R1a_06.template.sql',
+      'supabase/candidates/_build/R1a_06.writers.sql',
+      'supabase/candidates/staging-baseline/182b_production_body_overlay.sql',
+      'supabase/candidates/staging-baseline/M001-M221-freeze.json',
+      'supabase/candidates/staging-baseline/audit-derivations.mjs',
+      'supabase/candidates/staging-baseline/rollback_phase1_disposable.sql',
+      'supabase/candidates/staging-baseline/sql-tokens.mjs',
+      'supabase/candidates/staging-baseline/staging-baseline.mjs',
+      'supabase/candidates/staging-baseline/verify_085_preconditions.sql',
+      'supabase/candidates/staging-baseline/verify_baseline_221.sql',
     ];
     const changed=execSync(`git diff --name-only ${BASE}`,{cwd:ROOT,encoding:'utf8'}).split('\n').map(l=>l.trim()).filter(Boolean);
     const prohibited=changed.filter(f=>WATCHED.some(p=>f===p||f.startsWith(p+'/'))&&!EXCLUDED.includes(f));

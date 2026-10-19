@@ -480,7 +480,43 @@ describe('RAC-3 · I) no backend or migration change', () => {
     // security suites live under supabase/migrations/__tests__/, which this guard
     // already exempts.
     const M222 = 'supabase/migrations/222_phoenix_governed_warehouse_correction_security.sql';
-    const ALLOWED_SQL = [M200, M201, M202, M203, M204, M205, M206, M207, M208, M209, M210, M211, M212, M213, M214, M215, M216, M217, M218, M219, M220, M221, M222];
+    // R1 (staging release candidate): the un-numbered SQL CANDIDATES and their tooling/tests under supabase/candidates/ (never in the numbered
+    // chain, never applied outside a disposable database) are registered by EXACT filename, exactly as M200-M222 were; no wildcard and no
+    // directory exemption, so every other supabase/ file still fails this guard closed. They touch no command-centre object.
+    const R1_CANDIDATES = [
+      'supabase/candidates/R1a_01_manual_source_schema_inert.sql',
+      'supabase/candidates/R1a_02_authorization_closure.sql',
+      'supabase/candidates/R1a_03_lifecycle_relations_and_sod.sql',
+      'supabase/candidates/R1a_04_manual_routines_inert.sql',
+      'supabase/candidates/R1a_05_blockers_digest_d27.sql',
+      'supabase/candidates/R1a_06_material_registration_inert.sql',
+      'supabase/candidates/R1b_01_manual_activation_NOT_APPLIED.sql',
+      'supabase/candidates/R1b_02_material_registration_activation_NOT_APPLIED.sql',
+      'supabase/candidates/__tests__/m182-equivalence.dynamic.test.ts',
+      'supabase/candidates/__tests__/r1-manual-lifecycle-canonical.dynamic.test.ts',
+      'supabase/candidates/__tests__/r1a-01-manual-source-schema.dynamic.test.ts',
+      'supabase/candidates/__tests__/r1a-02-authorization-closure.dynamic.test.ts',
+      'supabase/candidates/__tests__/r1a-03-lifecycle-sod.dynamic.test.ts',
+      'supabase/candidates/__tests__/r1a-04-manual-routines.dynamic.test.ts',
+      'supabase/candidates/__tests__/r1a-05-blockers-digest-d27.dynamic.test.ts',
+      'supabase/candidates/__tests__/r1a-06-material-registration.dynamic.test.ts',
+      'supabase/candidates/__tests__/r1a-fixtures.ts',
+      'supabase/candidates/__tests__/r1b-01-manual-activation.dynamic.test.ts',
+      'supabase/candidates/__tests__/r1b-02-material-registration-activation.dynamic.test.ts',
+      'supabase/candidates/__tests__/staging-baseline.dynamic.test.ts',
+      'supabase/candidates/_build/R1a_05.template.sql',
+      'supabase/candidates/_build/R1a_06.template.sql',
+      'supabase/candidates/_build/R1a_06.writers.sql',
+      'supabase/candidates/staging-baseline/182b_production_body_overlay.sql',
+      'supabase/candidates/staging-baseline/M001-M221-freeze.json',
+      'supabase/candidates/staging-baseline/audit-derivations.mjs',
+      'supabase/candidates/staging-baseline/rollback_phase1_disposable.sql',
+      'supabase/candidates/staging-baseline/sql-tokens.mjs',
+      'supabase/candidates/staging-baseline/staging-baseline.mjs',
+      'supabase/candidates/staging-baseline/verify_085_preconditions.sql',
+      'supabase/candidates/staging-baseline/verify_baseline_221.sql',
+    ];
+    const ALLOWED_SQL = [...R1_CANDIDATES, M200, M201, M202, M203, M204, M205, M206, M207, M208, M209, M210, M211, M212, M213, M214, M215, M216, M217, M218, M219, M220, M221, M222];
     const changed = execSync(
       'git diff --name-only b707f073d60b4cc61205c35003ab491f3aed7468',
       { cwd: process.cwd(), encoding: 'utf8' },

@@ -7,7 +7,8 @@
  *   2. the signed-in role is one of the two Central Needs authoring roles (super_admin, central_warehouse_manager);
  *   3. the actor is acting for HOME organization, and that organization is a Pharmacy Department authority
  *      (org-level scope: no warehouse involved, a care institution never qualifies);
- *   4. the SERVER says the actor holds the manual key for that organization (`my_capabilities.manual_set`).
+ *   4. the SERVER says the actor holds the manual-entry key (`manual_set`) OR the approve key (`approve`) for that organization: an independent
+ *      approver reaches the tab WITHOUT any entry right - every write control inside stays gated by the server capability.
  * The gate is a UX affordance only: every routine re-authorizes on the server, and the writers stay owner-only (no EXECUTE for
  * authenticated) until the independently approved R1-b activation.
  */
@@ -29,7 +30,7 @@ export interface ManualNeedsGateInputs {
   orgKind: string | null;
   orgKindLoaded: boolean;
   /** The server's capability answer: undefined = not asked yet, null = the question failed. */
-  capabilities: Pick<ManualCapabilities, 'manualSet'> | null | undefined;
+  capabilities: Pick<ManualCapabilities, 'manualSet' | 'approve'> | null | undefined;
 }
 
 const AUTHORING_ROLES = new Set(['super_admin', 'central_warehouse_manager']);
@@ -43,7 +44,9 @@ export function computeManualNeedsTabState(i: ManualNeedsGateInputs): ManualNeed
   if (i.orgKind !== 'pharmacy_department_authority') return 'off';
   if (i.capabilities === undefined) return 'checking';
   if (i.capabilities === null) return 'off';
-  return i.capabilities.manualSet === true ? 'on' : 'off';
+  // The tab is for the two roles the server confirms: an ENTRANT (manual_set) and an independent APPROVER (approve). Seeing the tab grants no
+  // right: every write control inside is gated by the server's own capability answer (an approver without manual_set cannot enter needs).
+  return i.capabilities.manualSet === true || i.capabilities.approve === true ? 'on' : 'off';
 }
 
 /** The build flag. A function so tests can pin it; the default build has no such variable. */

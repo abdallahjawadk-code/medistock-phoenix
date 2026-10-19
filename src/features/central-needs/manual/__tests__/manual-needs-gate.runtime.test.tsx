@@ -12,7 +12,24 @@ const appState = { role: 'super_admin' as string | null, activeOrgId: 'org-1' as
 vi.mock('@/app/AppContext', () => ({ useApp: () => appState }));
 const { computeManualNeedsTabState, useManualNeedsTabGate, manualNeedsTabFlag } = await import('../manual-needs-gate');
 
-const base = { flag: true, role: 'central_warehouse_manager', activeOrgId: 'org-1', homeOrgId: 'org-1', orgKind: 'pharmacy_department_authority', orgKindLoaded: true, capabilities: { manualSet: true } };
+const base = { flag: true, role: 'central_warehouse_manager', activeOrgId: 'org-1', homeOrgId: 'org-1', orgKind: 'pharmacy_department_authority', orgKindLoaded: true, capabilities: { manualSet: true, approve: false } };
+
+describe('gate decision (pure) - entrant vs independent approver', () => {
+  it('an independent approver (approve key, NO entry key) reaches the tab; an entrant (entry key, no approve key) too; neither/other keys do not', () => {
+    expect(computeManualNeedsTabState({ ...base, capabilities: { manualSet: false, approve: true } })).toBe('on');
+    expect(computeManualNeedsTabState({ ...base, capabilities: { manualSet: true, approve: false } })).toBe('on');
+    expect(computeManualNeedsTabState({ ...base, capabilities: { manualSet: false, approve: false } })).toBe('off');
+    expect(computeManualNeedsTabState({ ...base, capabilities: { manualSet: false, approve: undefined } as never })).toBe('off');
+    expect(computeManualNeedsTabState({ ...base, capabilities: { manualSet: 'true', approve: 1 } as never })).toBe('off');
+  });
+  it('the approver path keeps every OTHER condition: flag, role, home organization, PDA kind, and the server answer', () => {
+    const approver = { manualSet: false, approve: true };
+    for (const patch of [{ flag: false }, { role: 'institution_admin' }, { activeOrgId: 'org-2' }, { orgKind: 'care_institution' }, { capabilities: null }] as const) {
+      expect(computeManualNeedsTabState({ ...base, capabilities: approver, ...patch } as never), JSON.stringify(patch)).toBe('off');
+    }
+    expect(computeManualNeedsTabState({ ...base, capabilities: undefined })).toBe('checking');
+  });
+});
 
 describe('gate decision (pure)', () => {
   it('is ON only when every condition holds', () => {
@@ -23,7 +40,7 @@ describe('gate decision (pure)', () => {
     for (const patch of [
       { flag: false }, { role: null }, { role: 'institution_admin' }, { role: 'outlet_officer' }, { role: 'public' },
       { activeOrgId: null }, { homeOrgId: null }, { activeOrgId: 'org-2' },
-      { orgKind: 'care_institution' }, { orgKind: null }, { capabilities: null }, { capabilities: { manualSet: false } },
+      { orgKind: 'care_institution' }, { orgKind: null }, { capabilities: null }, { capabilities: { manualSet: false, approve: false } },
     ] as const) {
       expect(computeManualNeedsTabState({ ...base, ...patch } as never), JSON.stringify(patch)).toBe('off');
     }
@@ -39,7 +56,7 @@ describe('gate decision (pure)', () => {
   });
 });
 
-const caps = (manualSet: boolean): ManualCapabilities => ({ view: true, edit: true, approve: false, manualSet, excelImportOpen: true, approveExcludedForRevision: false });
+const caps = (manualSet: boolean, approve = false): ManualCapabilities => ({ view: true, edit: manualSet, approve, manualSet, excelImportOpen: true, approveExcludedForRevision: false });
 const org = (id: string, kind: string) => ({ id, organizationKind: kind } as never);
 
 function Probe({ deps }: { deps: Parameters<typeof useManualNeedsTabGate>[0] }) {
@@ -82,6 +99,11 @@ describe('gate hook', () => {
     await waitFor(() => expect(screen.getByTestId('gate')).toHaveTextContent('on'));
     expect(m.getManualCapabilities).toHaveBeenCalledTimes(1);
     expect(m.getManualCapabilities).toHaveBeenCalledWith('org-1', null);
+  });
+  it('server says approve only (no entry key): on - the independent approver reaches the tab', async () => {
+    const m = mkDeps({ caps: caps(false, true) });
+    render(<Probe deps={m.deps} />);
+    await waitFor(() => expect(screen.getByTestId('gate')).toHaveTextContent('on'));
   });
   it('care institution: off, and the capability question is never asked', async () => {
     const m = mkDeps({ orgs: [org('org-1', 'care_institution')] });

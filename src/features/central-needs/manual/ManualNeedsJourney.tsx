@@ -208,7 +208,7 @@ export function ManualNeedsJourney({ lang, organizationId, actorId, api = realJo
         <>
           <section aria-labelledby="step-lines">
             <h3 id="step-lines">{jt('step_lines', lang)}</h3>
-            {isManualDraft && (
+            {isManualDraft && caps.manualSet && (
               <>
                 <MaterialPicker lang={lang} scopeKey={`${organizationId}:${latest.id}`} search={api.searchCatalog} selected={items}
                   onPick={addItem} onRemove={(id) => setItems((c) => c.filter((x) => x.id !== id))} onRequestRegistration={() => setShowRegistration(true)} />
@@ -224,7 +224,7 @@ export function ManualNeedsJourney({ lang, organizationId, actorId, api = realJo
               sourceMode={latest.sourceMode} beneficiaries={beneficiaryOptions} items={itemOptions} api={workspaceApi} />
           </section>
 
-          {isManualDraft && (
+          {isManualDraft && caps.edit && (
             <section aria-labelledby="step-review">
               <h3 id="step-review">{jt('step_review', lang)}</h3>
               <button type="button" disabled={busy} onClick={() => void checkReadiness()}>{jt('readiness', lang)}</button>
