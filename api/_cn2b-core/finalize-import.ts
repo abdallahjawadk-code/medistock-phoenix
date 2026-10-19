@@ -30,6 +30,7 @@ import { errorResponse, failureResponse, jsonResponse, readJsonBody, requireMeth
 import { SOURCE_BUCKET, TRANSPORT_LIMITS } from '../_lib/env.ts';
 import { authenticate, callerIsAuthorized, resolveRevisionAsCaller, serviceClient } from '../_lib/supabase.ts';
 import { entryLocator, permanentSourceKey, stagingPreviewKey, stagingSourceKey } from '../_lib/storage-paths.ts';
+import { reassertImportAuthority, type AuthorityDeps } from '../_lib/import-authority.ts';
 import { compareParsedResults } from '../_lib/parity.ts';
 import { replayArchive, replayWorkbook } from '../../src/features/central-needs/import/node-replay.ts';
 import { sha256Hex } from '../../src/features/central-needs/import/parser-core.ts';
@@ -242,6 +243,13 @@ export default async function handler(req: Request): Promise<Response> {
     //   * byte-identical  -> reuse, the retry is a true no-op;
     //   * anything else   -> fail closed, touching nothing.
     // Nothing here ever replaces or deletes a permanent object.
+    //
+    // R1 / ST-15: re-assert the caller's authority IMMEDIATELY before the first
+    // permanent write. Not an atomic revocation guarantee (a separate request);
+    // it narrows the window in which a revoked caller can still create evidence.
+    const authorityDeps: AuthorityDeps = { resolveRevision: resolveRevisionAsCaller, isAuthorized: callerIsAuthorized };
+    const beforePermanent = await reassertImportAuthority(caller, revision.id, revision.organizationId, authorityDeps);
+    if (!beforePermanent.ok) return errorResponse(beforePermanent.status, beforePermanent.code, beforePermanent.detail);
     const permanentKey = permanentSourceKey(revision.organizationId, revision.id, containerSha256);
     const stored = await service.storage
       .from(SOURCE_BUCKET)
@@ -324,6 +332,10 @@ export default async function handler(req: Request): Promise<Response> {
       // silently accepted as "already done". So the trusted RPC is called every
       // time and M210 — not this function — decides whether it is an exact
       // retry (no-op) or a conflict (refused).
+      // R1 / ST-15: the trusted replay carries no caller identity, so the caller's
+      // authority is re-asserted right before it.
+      const beforeReplay = await reassertImportAuthority(caller, revision.id, revision.organizationId, authorityDeps);
+      if (!beforeReplay.ok) return errorResponse(beforeReplay.status, beforeReplay.code, beforeReplay.detail);
       const replayed = await service.rpc('phoenix_central_needs_apply_authoritative_replay', {
         p_import_session_id: session.import_session_id,
         p_source_file_sha256: entrySha256,
@@ -347,6 +359,9 @@ export default async function handler(req: Request): Promise<Response> {
     const excludedCount =
       previewKind === 'archive' ? (nodeResult as ArchiveParseResult).excludedEntries.length : 0;
 
+    // R1 / ST-15: same for the trusted batch registration.
+    const beforeRegister = await reassertImportAuthority(caller, revision.id, revision.organizationId, authorityDeps);
+    if (!beforeRegister.ok) return errorResponse(beforeRegister.status, beforeRegister.code, beforeRegister.detail);
     const registered = await service.rpc('phoenix_central_needs_register_import_batch', {
       p_plan_revision_id: revision.id,
       p_container_kind: declaredKind,

@@ -283,6 +283,20 @@ export async function buildRig({
     if (f.startsWith('001_')) await c.query(SEED_AFTER_001);
     log(`applied ${f}`);
   }
+  // R1 (opt-in, off by default): PHOENIX_RIG_CANDIDATES=path1,path2 applies proposed,
+  // NON-numbered candidate SQL files (supabase/candidates) after the canonical chain,
+  // so their effect on the existing suites can be measured on the disposable rig only.
+  if (process.env.PHOENIX_RIG_CANDIDATES && upTo >= 220) {
+    for (const cand of process.env.PHOENIX_RIG_CANDIDATES.split(',').map((x) => x.trim()).filter(Boolean)) {
+      try {
+        await c.query(readFileSync(cand, 'utf8').split(String.fromCharCode(13, 10)).join(String.fromCharCode(10)));
+      } catch (e) {
+        await c.end();
+        throw new Error(`candidate ${cand} failed: ${e.message}`);
+      }
+      log(`applied candidate ${cand}`);
+    }
+  }
   // The migration-apply client is never needed again once the pool below
   // exists — leaving it open leaked one idle connection per buildRig() call
   // for that call's entire lifetime (the error path a few lines up already

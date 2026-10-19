@@ -62,6 +62,19 @@ run('CN-2B/213 beneficiary column mapping — dynamic', () => {
   const admin = <T = any>(sql: string, params: unknown[] = []): Promise<T[]> =>
     rig.asAdmin((c: any) => c.query(sql, params).then((r: any) => r.rows));
 
+  // R1-a: revision INSERTs are gated on an authorized actor (single authority predicate). The fixture
+  // therefore inserts them inside a transaction that carries the plan-owning editor's JWT subject.
+  const adminAsEditor = async <T = any>(sql: string, params: unknown[] = []): Promise<T[]> =>
+    rig.asAdmin(async (c: any) => {
+      await c.query('BEGIN');
+      try {
+        await c.query(`SELECT set_config('request.jwt.claim.sub', $1, true)`, [U_EDIT]);
+        const r = await c.query(sql, params);
+        await c.query('COMMIT');
+        return r.rows;
+      } catch (e) { await c.query('ROLLBACK').catch(() => undefined); throw e; }
+    });
+
   function provenance(sheetIndex: number, row: number, col: number, fileHash: string) {
     return {
       fileFingerprintSha256: fileHash,
@@ -136,7 +149,7 @@ run('CN-2B/213 beneficiary column mapping — dynamic', () => {
     const [{ id: planId }] = await admin(
       `INSERT INTO central_needs_plans (organization_id, plan_year) VALUES ($1,$2) RETURNING id`,
       [ORG_OWNER, y]);
-    const [{ id: revId }] = await admin(
+    const [{ id: revId }] = await adminAsEditor(
       `INSERT INTO central_needs_plan_revisions (plan_id, organization_id, revision_number, status)
          VALUES ($1,$2,1,'draft') RETURNING id`,
       [planId, ORG_OWNER]);

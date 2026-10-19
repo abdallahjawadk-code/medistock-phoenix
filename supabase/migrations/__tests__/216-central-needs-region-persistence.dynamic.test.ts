@@ -85,6 +85,19 @@ run('C4/M216 beneficiary-region persistence — dynamic (PostgreSQL)', { timeout
   const admin = <T = any>(sql: string, params: unknown[] = []): Promise<T[]> =>
     rig.asAdmin((c: any) => c.query(sql, params).then((r: any) => r.rows));
 
+  // R1-a: revision INSERTs are gated on an authorized actor (single authority predicate). The fixture
+  // therefore inserts them inside a transaction that carries the plan-owning editor's JWT subject.
+  const adminAsEditor = async <T = any>(sql: string, params: unknown[] = []): Promise<T[]> =>
+    rig.asAdmin(async (c: any) => {
+      await c.query('BEGIN');
+      try {
+        await c.query(`SELECT set_config('request.jwt.claim.sub', $1, true)`, [U_EDIT]);
+        const r = await c.query(sql, params);
+        await c.query('COMMIT');
+        return r.rows;
+      } catch (e) { await c.query('ROLLBACK').catch(() => undefined); throw e; }
+    });
+
   /** Superuser transaction (a privileged bypass), committed unless fn throws. */
   const bypass = <T = any>(fn: (c: any) => Promise<T>): Promise<T> => rig.asAdmin(async (c: any) => {
     await c.query('BEGIN');
@@ -201,7 +214,7 @@ run('C4/M216 beneficiary-region persistence — dynamic (PostgreSQL)', { timeout
     const y = year++;
     const [{ id: planId }] = await admin(
       `INSERT INTO central_needs_plans (organization_id, plan_year) VALUES ($1,$2) RETURNING id`, [org, y]);
-    const [{ id: revId }] = await admin(
+    const [{ id: revId }] = await adminAsEditor(
       `INSERT INTO central_needs_plan_revisions (plan_id, organization_id, revision_number, status)
          VALUES ($1,$2,1,'draft') RETURNING id`, [planId, org]);
     return { planId, revId, year: y };
@@ -683,7 +696,7 @@ run('C4/M216 beneficiary-region persistence — dynamic (PostgreSQL)', { timeout
       await refused(s.revId, () => setRegions(U_EDIT, { rev: s.revId, session: s.sessionId, expected: [], changes: [add(1, 2, 2, 2)] }),
         'plan_revision_not_editable');
       const t = await standard();
-      await admin(`INSERT INTO central_needs_plan_revisions (plan_id, organization_id, revision_number, status)
+      await adminAsEditor(`INSERT INTO central_needs_plan_revisions (plan_id, organization_id, revision_number, status)
                    VALUES ($1,$2,2,'rejected')`, [t.planId, ORG_OWNER]);
       await refused(t.revId, () => setRegions(U_EDIT, { rev: t.revId, session: t.sessionId, expected: [], changes: [add(1, 2, 2, 2)] }),
         'central_needs_lifecycle_state_ambiguous');

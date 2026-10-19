@@ -1,4 +1,4 @@
-import { lazy, Suspense, useMemo, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { useAsync } from '@/shared/lib/useAsync';
@@ -29,6 +29,8 @@ import { QuarantinePanel } from './QuarantinePanel';
 import { useMaterialDispensingSuspensionPermission } from './useMaterialDispensingSuspensionPermission';
 import { MaterialDispensingSuspensionPanel } from './MaterialDispensingSuspensionPanel';
 import { GUIDE_ANCHORS, guideAnchor } from '@/features/guide/guide.anchors';
+import { useManualNeedsTabGate } from '@/features/central-needs/manual/manual-needs-gate';
+import { jt as needsTabCopy } from '@/features/central-needs/manual/manual-journey.i18n';
 import {
   useGuideSurface, useGuideCapabilities, useScopedGuideCapabilities,
   useGuidePresence, useGuideExampleRow,
@@ -39,6 +41,7 @@ import { SUPPLY_TYPES, supplyTypeLabelKey } from '@/shared/lib/supply-types';
 import { isReplenishmentDestinationPointType } from '@/shared/lib/emergency-replenishment';
 import { normalizedIncludes } from '@/shared/lib/search-normalize';
 import { SourceBalancesPanel } from './SourceBalancesPanel';
+import { scopeStockLoad } from './stock-load-state';
 import { getPaperReferencesFor } from '@/features/movement/paper-reference.service';
 import { paperReferenceSummary } from '@/features/movement/ui/PaperReferenceFields';
 import {
@@ -68,7 +71,10 @@ import type { SuggestionDocumentTarget } from './suggestion-document-navigation'
  * write.
  */
 
-type Tab = 'intake' | 'stock' | 'ledger' | 'incoming' | 'dispatch' | 'returns' | 'return_exceptions' | 'quarantine' | 'suspensions' | 'corrections';
+type Tab = 'intake' | 'stock' | 'ledger' | 'incoming' | 'dispatch' | 'returns' | 'return_exceptions' | 'quarantine' | 'suspensions' | 'corrections' | 'needs';
+
+// R1-A4: the protected annual-needs tab. Loaded lazily and mounted ONLY when the activation gate says 'on'.
+const ManualNeedsTab = lazy(() => import('@/features/central-needs/manual/ManualNeedsTab').then((m) => ({ default: m.ManualNeedsTab })));
 
 export function InventoryCenterScreen({
   initialSuggestionDocument,
@@ -171,6 +177,10 @@ export function InventoryCenterScreen({
   const canViewCorrections = canApproveAnyCorrection || hasInventoryReadAffordance;
 
   const [tab, setTab] = useState<Tab>(opensDispatch ? 'dispatch' : 'intake');
+  // R1-A4 — inactive by default and fail-closed: 'off' unless the build flag, role, home PDA organization and the server's manual capability all hold.
+  // With the flag off this performs no request at all. It is org-level: independent of the warehouse selected below.
+  const needsGate = useManualNeedsTabGate();
+  useEffect(() => { if (tab === 'needs' && needsGate !== 'on') setTab('intake'); }, [tab, needsGate]);
 
   /**
    * INTERACTIVE-GUIDE-IG2 — tell the guide which screen and tab are open.
@@ -247,10 +257,24 @@ export function InventoryCenterScreen({
   const [toast, setToast] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
 
-  const stock = useAsync<WarehouseStockBatch[]>(
-    () => (activeWarehouseId ? getWarehouseStock(activeWarehouseId) : Promise.resolve([])),
+  // S1 (R1-A5): the loader result is tagged with the warehouse it was loaded
+  // for, and `scopeStockLoad` never exposes rows of another warehouse or rows of
+  // a load that failed (useAsync keeps both).
+  const stockLoad = useAsync<{ warehouseId: string; rows: WarehouseStockBatch[] }>(
+    async () => ({
+      warehouseId: activeWarehouseId,
+      rows: activeWarehouseId ? await getWarehouseStock(activeWarehouseId) : [],
+    }),
     [activeWarehouseId, reloadKey],
   );
+  const stock = scopeStockLoad<WarehouseStockBatch>(activeWarehouseId, stockLoad);
+  // S2 (R1-A5): independent physical total for the reconciliation line. Unknown
+  // (null) while loading, on error, or when the read may be truncated at the
+  // PostgREST row cap (max_rows = 1000).
+  const STOCK_ROW_CAP = 1000;
+  const physicalOnHand = stock.data !== null && stock.data.length < STOCK_ROW_CAP
+    ? stock.data.reduce((s, b) => s + b.onHandQuantity, 0)
+    : null;
 
   const warehouseOptions = useMemo(
     () => manageableWarehouses.map(w => ({
@@ -351,6 +375,21 @@ export function InventoryCenterScreen({
   }
 
   if (manageableWarehouses.length === 0) {
+    // R1-A4 — the annual-needs journey is ORG-LEVEL: an actor with no manageable warehouse (but whose activation gate is 'on')
+    // still reaches it. Every other tab needs a warehouse and stays denied; with the gate off this branch is exactly the old one.
+    if (needsGate === 'on') {
+      return (
+        <div dir={dir} className="nexus-inventory-transfers nexus-inventory-transfers--center">
+          {header}
+          <div role="tablist" className="nexus-it-tabs" style={{ display: 'flex', gap: '6px', margin: '16px 0' }}>
+            <button role="tab" aria-selected="true" className="nexus-it-tab" style={{ padding: '8px 14px', minHeight: '44px', borderRadius: 'var(--r3)', border: '1px solid var(--brd)', fontSize: '12.5px', fontWeight: 600, background: 'var(--p2)', color: 'var(--pd)' }}>
+              {needsTabCopy('tab', lang === 'ar' ? 'ar' : 'en')}
+            </button>
+          </div>
+          <div className="nexus-it-content"><Suspense fallback={<PhoenixLoadingState />}><ManualNeedsTab /></Suspense></div>
+        </div>
+      );
+    }
     return (
       <div dir={dir} className="nexus-inventory-transfers nexus-inventory-transfers--center">
         {header}
@@ -426,6 +465,8 @@ export function InventoryCenterScreen({
           // either scope's history; approve/reject stay gated per scope on
           // outlet_stock.approve_correction / warehouse_stock.approve_correction (098/101).
           ...(canViewCorrections ? [{ id: 'corrections' as const, labelKey: 'cor_pending_title' }] : []),
+          // R1-A4 — الاحتياجات والتحصيص: present only while the activation gate is 'on' (label comes from the feature's own copy).
+          ...(needsGate === 'on' ? [{ id: 'needs' as const, labelKey: 'inv_tab_stock' }] : []),
         ]).map(x => (
           <button
             key={x.id}
@@ -449,7 +490,7 @@ export function InventoryCenterScreen({
               color: tab === x.id ? 'var(--pd)' : 'var(--t2)',
             }}
           >
-            {t(x.labelKey, lang)}
+            {x.id === 'needs' ? needsTabCopy('tab', lang === 'ar' ? 'ar' : 'en') : t(x.labelKey, lang)}
           </button>
         ))}
       </div>
@@ -459,7 +500,9 @@ export function InventoryCenterScreen({
       </div>
 
       <div className="nexus-it-content">
-      {!activeWarehouseId ? (
+      {tab === 'needs' ? (
+        needsGate === 'on' ? <Suspense fallback={<PhoenixLoadingState />}><ManualNeedsTab /></Suspense> : null
+      ) : !activeWarehouseId ? (
         <PhoenixEmptyState icon="📦" title={t('inv_select_warehouse', lang)} />
       ) : tab === 'intake' ? (
         isInstitutionWarehouse ? (
@@ -486,7 +529,7 @@ export function InventoryCenterScreen({
       ) : tab === 'stock' ? (
         <div className="nexus-it-stock-panel" style={{ display: 'grid', gap: '12px' }}>
         {/* SOURCE-BALANCES-PANEL (088): fail-closed readiness gate inside. */}
-        <SourceBalancesPanel warehouseId={activeWarehouseId} />
+        <SourceBalancesPanel warehouseId={activeWarehouseId} physicalOnHand={physicalOnHand} />
         <StockList
           state={stock}
           lang={lang}
@@ -865,7 +908,7 @@ function IntakeForm({ warehouseId, canSubmit, lang, onSuccess, onError, onConfli
 // ─── Warehouse stock + correction movements ──────────────────────────────────
 
 interface StockListProps {
-  state: { data: WarehouseStockBatch[] | null; loading: boolean };
+  state: { data: WarehouseStockBatch[] | null; loading: boolean; error?: string | null; reload?: () => void };
   lang: 'ar' | 'en';
   canAdjust: boolean;
   canCorrect: boolean;
@@ -906,6 +949,10 @@ function StockList({ state, lang, canAdjust, canCorrect, isInstitutionWarehouse,
   });
 
   if (state.loading) return <PhoenixLoadingState />;
+  // S1: a failed read is an error, never "no stock" and never another warehouse's rows.
+  if (state.error) {
+    return <PhoenixErrorState title={t('load_error', lang)} message={t('inv_stock_read_failed', lang)} onRetry={state.reload} />;
+  }
   if (allBatches.length === 0) return <PhoenixEmptyState icon="📭" title={t('inv_no_stock', lang)} />;
 
   return (

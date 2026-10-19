@@ -5,6 +5,7 @@ import { PhoenixCard } from '@/shared/ui/PhoenixCard';
 import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import { PhoenixButton } from '@/shared/ui/PhoenixButton';
 import { PhoenixInput } from '@/shared/ui/PhoenixInput';
+import { parseStrictWholeQuantity } from './strict-quantity';
 import { PhoenixSelect } from '@/shared/ui/PhoenixSelect';
 import { PhoenixEmptyState } from '@/shared/ui/PhoenixEmptyState';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
@@ -759,7 +760,7 @@ function AddForwardLineForm({ lang, requestId, onDone }: {
   const [selected, setSelected] = useState<ResolvedMaterial | null>(null);
   const [qty, setQty] = useState('');
   const [busy, setBusy] = useState(false);
-  const n = parseInt(qty, 10);
+  const n = parseStrictWholeQuantity(qty);
   const canAdd = selected !== null && Number.isFinite(n) && n > 0 && !busy;
   return (
     <PhoenixCard className="nexus-it-form-card" padding="12px 14px" style={{ marginBottom: '8px' }}>
@@ -834,7 +835,7 @@ function ForwardLineRow({ lang, line, isDraft, canSend, stock, onDone, organizat
         <div style={{ display: 'flex', gap: '8px', marginTop: '8px', alignItems: 'end' }}>
           <PhoenixInput label={t('net_op_qty', lang)} type="number" value={qty} onChange={e => setQty(e.target.value)} />
           <PhoenixButton size="sm" onClick={async () => {
-            const n = parseInt(qty, 10);
+            const n = parseStrictWholeQuantity(qty);
             if (!Number.isFinite(n) || n <= 0) return;
             const res = await updateTransferRequestLine({ transferRequestLineId: line.id, requestedQuantity: n });
             setEditing(false); onDone(res);
@@ -871,7 +872,7 @@ function SendForwardLineForm({ lang, line, remaining, stock, organizationId, war
   const [fefoPrompt, setFefoPrompt] = useState<{ picked: StockCandidate; alternatives: FefoBatch[] } | null>(null);
   const canOverrideFefo = useFefoOverridePermission(organizationId, warehouseId).data ?? false;
   const effStock = candidates.some(s => s.id === stockId) ? stockId : (candidates[0]?.id ?? '');
-  const n = parseInt(qty, 10);
+  const n = parseStrictWholeQuantity(qty);
   const canSend = effStock !== '' && Number.isFinite(n) && n > 0 && n <= remaining && number.trim() !== '' && !busy;
 
   const doSend = async (fefoOverride: boolean, overrideReason: string | null) => {
@@ -1216,7 +1217,7 @@ function AddReturnLineForm({ lang, requestId, transfers, sourceWarehouseId, onDo
   const [reason, setReason] = useState<string>(RETURN_REASON_CODES[0]);
   const [busy, setBusy] = useState(false);
   const effOriginal = candidates.some(c => c.id === originalId) ? originalId : (candidates[0]?.id ?? '');
-  const n = parseInt(qty, 10);
+  const n = parseStrictWholeQuantity(qty);
   const canAdd = effOriginal !== '' && Number.isFinite(n) && n > 0 && !busy;
 
   return (
@@ -1252,7 +1253,7 @@ function ReturnLineRow({ lang, line, isDraft, canSend, onDone }: {
   const [qty, setQty] = useState(String(remaining));
   const [number, setNumber] = useState('');
   const [busy, setBusy] = useState(false);
-  const n = parseInt(qty, 10);
+  const n = parseStrictWholeQuantity(qty);
   const canDoSend = Number.isFinite(n) && n > 0 && n <= remaining && number.trim() !== '' && !busy;
 
   return (
@@ -1360,6 +1361,7 @@ function ReviewForm({ lang, lines, onSubmit }: {
   const [vals, setVals] = useState<Record<string, string>>(() =>
     Object.fromEntries(lines.map(l => [l.id, String(l.requestedQuantity)])));
   const [busy, setBusy] = useState(false);
+  const hasInvalidDecision = lines.some(l => !Number.isFinite(parseStrictWholeQuantity(vals[l.id] ?? '')));
   return (
     <PhoenixCard padding="14px" style={{ marginTop: '12px', borderColor: 'var(--p)' }}>
       <div style={{ fontSize: '12.5px', fontWeight: 700, marginBottom: '8px' }}>{t('net_op_review', lang)}</div>
@@ -1377,8 +1379,11 @@ function ReviewForm({ lang, lines, onSubmit }: {
           onClick={() => setVals(Object.fromEntries(lines.map(l => [l.id, String(l.requestedQuantity)])))}>
           {t('net_op_approve_all', lang)}
         </PhoenixButton>
-        <PhoenixButton size="sm" loading={busy} onClick={async () => {
-          const decisions = lines.map(l => ({ line_id: l.id, approved_quantity: Math.max(0, parseInt(vals[l.id] ?? '0', 10) || 0) }));
+        <PhoenixButton size="sm" loading={busy} disabled={hasInvalidDecision} onClick={async () => {
+          // S3: every line needs an explicit canonical whole number. An invalid
+          // or blank value blocks the submit; it is never converted into zero.
+          if (hasInvalidDecision) return;
+          const decisions = lines.map(l => ({ line_id: l.id, approved_quantity: parseStrictWholeQuantity(vals[l.id] ?? '') }));
           setBusy(true); await onSubmit(decisions); setBusy(false);
         }}>{t('net_op_submit_review', lang)}</PhoenixButton>
       </div>
@@ -1408,7 +1413,7 @@ function ReceiveLineForm({ lang, label, sent, done, onReceive }: {
   const [qty, setQty] = useState(String(sent));
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
-  const n = parseInt(qty, 10);
+  const n = parseStrictWholeQuantity(qty);
   const needsReason = Number.isFinite(n) && n !== sent;
   const canReceive = Number.isFinite(n) && n >= 0 && n <= sent && (!needsReason || reason.trim() !== '') && !busy;
   if (done) return <div style={{ fontSize: '12px', color: 'var(--t2)', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>{label} · <PhoenixIcon name="check" size={12} inline /></div>;
@@ -1432,7 +1437,7 @@ function ReceiveReturnLineForm({ lang, label, sent, done, onReceive }: {
   const [reason, setReason] = useState('');
   const [disposition, setDisposition] = useState('');
   const [busy, setBusy] = useState(false);
-  const n = parseInt(qty, 10);
+  const n = parseStrictWholeQuantity(qty);
   const needsReason = Number.isFinite(n) && n !== sent;
   const canReceive = Number.isFinite(n) && n >= 0 && n <= sent && (!needsReason || reason.trim() !== '') && !busy;
   if (done) return <div style={{ fontSize: '12px', color: 'var(--t2)', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>{label} · <PhoenixIcon name="check" size={12} inline /></div>;

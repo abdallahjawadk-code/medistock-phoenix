@@ -1,0 +1,164 @@
+/**
+ * R1-A4 — copy for the Screen-3 "الاحتياجات والتحصيص" journey, the material-registration panel and the identity assist.
+ * Arabic first, English parity (a test enforces both for every key). A server refusal is rendered by `journeyErrorText`:
+ * a translation for the stable database identifier when one exists, otherwise `centralNeedsErrorText` (which degrades to the
+ * identifier itself) - never a generic "something went wrong".
+ */
+import { centralNeedsErrorText, type CentralNeedsRefusal } from '../central-needs.i18n';
+
+export type JourneyLang = 'ar' | 'en';
+
+const D = {
+  tab: { ar: 'الاحتياجات والتحصيص', en: 'Needs & allocation' },
+  title: { ar: 'الاحتياج السنوي — مسار الإدخال اليدوي', en: 'Annual needs — manual entry journey' },
+  loading: { ar: 'جارٍ التحميل…', en: 'Loading…' },
+  choose: { ar: 'اختر…', en: 'Choose…' },
+  reg_save_draft: { ar: 'حفظ الطلب كمسودة', en: 'Save request as draft' },
+  failed: { ar: 'تعذّر التحميل. لم يتغيّر شيء.', en: 'Could not load. Nothing was changed.' },
+  step_year: { ar: '١. السنة', en: '1. Year' },
+  step_lines: { ar: '٢. المؤسسة والمادة والكمية', en: '2. Institution, material, quantity' },
+  step_review: { ar: '٣. المراجعة', en: '3. Review' },
+  step_submit: { ar: '٤. الإرسال', en: '4. Submit' },
+  step_decide: { ar: '٥. القرار المستقل', en: '5. Independent decision' },
+  step_history: { ar: '٦. السجل', en: '6. History' },
+  year: { ar: 'سنة الخطة', en: 'Plan year' },
+  open_year: { ar: 'فتح السنة', en: 'Open year' },
+  start_plan: { ar: 'بدء خطة جديدة', en: 'Start a new plan' },
+  open_correction: { ar: 'فتح تصحيح', en: 'Open a correction' },
+  correction_reason: { ar: 'سبب التصحيح', en: 'Reason for the correction' },
+  revision_label: { ar: 'الإصدار __N__ — __S__', en: 'Revision __N__ — __S__' },
+  status_draft: { ar: 'مسودة', en: 'draft' },
+  status_submitted: { ar: 'مُرسل', en: 'submitted' },
+  status_approved: { ar: 'معتمد', en: 'approved' },
+  status_rejected: { ar: 'مرفوض', en: 'rejected' },
+  status_withdrawn: { ar: 'مسحوب', en: 'withdrawn' },
+  status_superseded: { ar: 'مستبدل', en: 'superseded' },
+  excel_revision_readonly: { ar: 'هذا الإصدار من مصدر Excel التاريخي ويُعرض للقراءة فقط.', en: 'This revision comes from the historical Excel source and is read-only.' },
+  no_revision: { ar: 'لا توجد خطة لهذه السنة بعد.', en: 'There is no plan for this year yet.' },
+  readiness: { ar: 'فحص الجاهزية', en: 'Check readiness' },
+  ready: { ar: 'الإصدار جاهز للإرسال.', en: 'The revision is ready to submit.' },
+  not_ready: { ar: 'لا يمكن الإرسال بعد. عالج ما يلي:', en: 'It cannot be submitted yet. Resolve the following:' },
+  submit: { ar: 'إرسال للمراجعة المستقلة', en: 'Submit for independent review' },
+  confirm_submit: { ar: 'تأكيد الإرسال', en: 'Confirm submission' },
+  cancel: { ar: 'إلغاء', en: 'Cancel' },
+  submitted_ok: { ar: 'أُرسل الإصدار. لا يمكنك اعتماده بنفسك.', en: 'Submitted. You cannot approve it yourself.' },
+  approve: { ar: 'اعتماد', en: 'Approve' },
+  reject: { ar: 'رفض', en: 'Reject' },
+  reject_reason: { ar: 'سبب الرفض', en: 'Reason for rejection' },
+  maker_cannot_decide: { ar: 'لا يمكن لمن أدخل الاحتياج أو أرسله أن يقرر بشأنه.', en: 'Whoever entered or submitted this need cannot decide on it.' },
+  no_decide_rights: { ar: 'ليست لديك صلاحية القرار على هذا الإصدار.', en: 'You do not have the right to decide on this revision.' },
+  decided_ok: { ar: 'سُجّل القرار وحُدّثت الحالة من الخادم.', en: 'The decision was recorded and the state refreshed from the server.' },
+  stale: { ar: 'تغيّرت الحالة في الخادم. حُدّثت الشاشة؛ راجع ثم أعد المحاولة.', en: 'The state changed on the server. The screen was refreshed; review and try again.' },
+  beneficiaries_failed: { ar: 'تعذّر تحميل المؤسسات المستفيدة.', en: 'Could not load the beneficiary institutions.' },
+  // material picker
+  material_search: { ar: 'ابحث عن مادة مسجّلة', en: 'Search a registered material' },
+  material_search_btn: { ar: 'بحث', en: 'Search' },
+  material_none: { ar: 'لا توجد مادة مسجّلة بهذا الاسم. يمكنك طلب تسجيلها.', en: 'No registered material matches. You can request its registration.' },
+  material_search_failed: { ar: 'تعذّر البحث. ليس معناه عدم وجود المادة.', en: 'The search failed. That does not mean the material does not exist.' },
+  material_use: { ar: 'استخدام', en: 'Use' },
+  material_working: { ar: 'المواد المختارة', en: 'Selected materials' },
+  material_remove: { ar: 'إزالة', en: 'Remove' },
+  // registration panel
+  reg_title: { ar: 'طلب تسجيل مادة جديدة', en: 'Request registration of a new material' },
+  reg_scientific: { ar: 'الاسم العلمي', en: 'Scientific name' },
+  reg_name_ar: { ar: 'الاسم بالعربية', en: 'Arabic name' },
+  reg_trade: { ar: 'الاسم التجاري (اختياري)', en: 'Commercial name (optional)' },
+  reg_strength: { ar: 'التركيز', en: 'Strength' },
+  reg_form: { ar: 'الشكل الصيدلاني', en: 'Dosage form' },
+  reg_unit: { ar: 'الوحدة', en: 'Unit' },
+  reg_barcode: { ar: 'الباركود', en: 'Barcode' },
+  reg_note: { ar: 'ملاحظة', en: 'Note' },
+  reg_submit: { ar: 'إرسال الطلب', en: 'Submit request' },
+  reg_cancel_request: { ar: 'سحب الطلب', en: 'Withdraw request' },
+  reg_edit: { ar: 'تعديل', en: 'Edit' },
+  reg_requests: { ar: 'طلبات التسجيل', en: 'Registration requests' },
+  reg_none: { ar: 'لا توجد طلبات.', en: 'No requests.' },
+  reg_from_workbook: { ar: 'مقترح من ملف Excel (الهوية فقط)', en: 'Suggested from the workbook (identity only)' },
+  reg_strong: { ar: 'تطابق قوي', en: 'Strong match' },
+  reg_advisory: { ar: 'تشابه استرشادي', en: 'Advisory similarity' },
+  reg_start_review: { ar: 'بدء المراجعة', en: 'Start review' },
+  reg_ask_info: { ar: 'طلب معلومات', en: 'Ask for information' },
+  reg_resolve_existing: { ar: 'ربط بمادة قائمة', en: 'Resolve to existing' },
+  reg_approve_new: { ar: 'اعتماد مادة جديدة', en: 'Approve as new' },
+  reg_ack: { ar: 'أؤكد أن هذه ليست المادة نفسها', en: 'I confirm this is not the same material' },
+  reg_ack_needed: { ar: 'يجب تأكيد كل مادة مشابهة قبل اعتماد مادة جديدة.', en: 'Every similar item must be confirmed before approving a new material.' },
+  reg_strong_blocks: { ar: 'توجد مادة مطابقة؛ اربط الطلب بها بدل إنشاء جديدة.', en: 'A matching item exists; resolve to it instead of creating a new one.' },
+  reg_note_label: { ar: 'ملاحظة القرار', en: 'Decision note' },
+  reg_use_in_needs: { ar: 'استخدام في الاحتياج', en: 'Use in the needs' },
+  reg_link: { ar: 'ربط بالمسودة الحالية', en: 'Link to the current draft' },
+  reg_history: { ar: 'السجل', en: 'History' },
+  reg_independent: { ar: 'مراجع مستقل مطلوب: لا يمكنك مراجعة طلبك.', en: 'An independent reviewer is required: you cannot review your own request.' },
+  reg_status_draft: { ar: 'مسودة', en: 'draft' },
+  reg_status_submitted: { ar: 'مُرسل', en: 'submitted' },
+  reg_status_under_review: { ar: 'قيد المراجعة', en: 'under review' },
+  reg_status_needs_info: { ar: 'يحتاج معلومات', en: 'needs information' },
+  reg_status_resolved_existing: { ar: 'رُبط بمادة قائمة', en: 'resolved to existing' },
+  reg_status_approved_new: { ar: 'اعتُمدت مادة جديدة', en: 'approved as new' },
+  reg_status_rejected: { ar: 'مرفوض', en: 'rejected' },
+  reg_status_cancelled: { ar: 'مسحوب', en: 'withdrawn' },
+  // identity assist
+  ia_title: { ar: 'مساعدة هوية المواد من ملف Excel (اختيارية)', en: 'Optional medicine-identity help from a workbook' },
+  ia_explain: { ar: 'يُستخدم الملف للتعرف على أسماء المواد فقط. لا تُقرأ أي كمية منه ولا تُنقل إلى الاحتياج.', en: 'The workbook is used to recognise material names only. No quantity is read from it or carried into the needs.' },
+  ia_choose_file: { ar: 'اختر ملف Excel', en: 'Choose an Excel file' },
+  ia_pick_header: { ar: 'حدّد صف العناوين', en: 'Select the header row' },
+  ia_header_required: { ar: 'لن يُقرأ شيء قبل أن تؤكد صف العناوين.', en: 'Nothing is read until you confirm the header row.' },
+  ia_sheet: { ar: 'الورقة', en: 'Sheet' },
+  ia_rows_only_note: { ar: 'لا يُعرض هنا أي محتوى للخلايا. اختر صف العناوين برقمه كما في ملفك.', en: 'No cell content is shown here. Choose the header row by its number, as in your file.' },
+  ia_pick_header_group: { ar: 'اختر صف العناوين', en: 'Select the header row' },
+  ia_header_row_number: { ar: 'رقم صف العناوين', en: 'Header row number' },
+  ia_confirm_header: { ar: 'تأكيد صف العناوين والبحث', en: 'Confirm header row and look up' },
+  ia_row_n: { ar: 'الصف __N__', en: 'Row __N__' },
+  ia_archive_unsupported: { ar: 'الأرشيف المضغوط غير مدعوم هنا؛ اختر مصنفًا واحدًا.', en: 'A ZIP archive is not supported here; choose a single workbook.' },
+  ia_parse_failed: { ar: 'تعذّرت قراءة الملف.', en: 'The file could not be read.' },
+  ia_no_candidates: { ar: 'لم تُستخرج أي مادة. تحقق من صف العناوين.', en: 'No material was extracted. Check the header row.' },
+  ia_truncated: { ar: 'عُرضت أول __N__ مادة فقط.', en: 'Only the first __N__ materials were looked up.' },
+  ia_kind_exact_unique: { ar: 'مادة مطابقة', en: 'Matching material' },
+  ia_kind_ambiguous: { ar: 'عدة احتمالات — اختر بنفسك', en: 'Several possibilities — choose yourself' },
+  ia_kind_conflict: { ar: 'تعارض في التركيز/الشكل/الوحدة', en: 'Strength / form / unit conflict' },
+  ia_kind_none: { ar: 'غير مسجّلة', en: 'Not registered' },
+  ia_kind_lookup_failed: { ar: 'تعذّر البحث', en: 'Lookup failed' },
+  ia_use_item: { ar: 'استخدام هذه المادة', en: 'Use this material' },
+  ia_request_registration: { ar: 'طلب تسجيل', en: 'Request registration' },
+  ia_warning_header_confirmation_required: { ar: 'يجب تأكيد صف العناوين.', en: 'The header row must be confirmed.' },
+  ia_warning_no_header: { ar: 'صف العناوين غير صالح.', en: 'The header row is not valid.' },
+  ia_warning_no_name_column: { ar: 'لا يوجد عمود لاسم المادة في هذا الصف.', en: 'No material-name column in this row.' },
+  ia_warning_ambiguous_name_column: { ar: 'يوجد أكثر من عمود لاسم المادة.', en: 'More than one material-name column.' },
+  ia_warning_name_column_not_text: { ar: 'عمود الاسم لا يحوي نصًا؛ أُهملت الأرقام.', en: 'The name column holds no text; numbers were ignored.' },
+  ia_warning_sheet_too_large: { ar: 'الورقة كبيرة جدًا.', en: 'The sheet is too large.' },
+  ia_warning_row_without_name: { ar: 'بعض الصفوف بلا اسم وأُهملت.', en: 'Some rows have no name and were ignored.' },
+  ia_warning_header_like_row: { ar: 'أُهمل سطر يشبه العناوين.', en: 'A header-like line was ignored.' },
+  // server refusal codes introduced by A2 / A4
+  err_material_request_stale: { ar: 'تغيّر الطلب في الخادم. حُدّثت القائمة؛ راجع ثم قرّر من جديد.', en: 'The request changed on the server. The list was refreshed; review and decide again.' },
+  err_material_duplicate_strong_match: { ar: 'توجد مادة مطابقة في الدليل؛ اربط الطلب بها.', en: 'A matching item already exists in the catalog; resolve to it.' },
+  err_material_duplicate_review_too_large: { ar: 'عدد المواد المشابهة كبير جدًا لمراجعة آمنة؛ ضيّق الطلب أو اربطه بمادة قائمة أو ارفضه.', en: 'Too many similar items to review safely; narrow the request, resolve it to an existing item, or reject it.' },
+  reg_too_many: { ar: 'عدد المواد المشابهة يتجاوز الحد المؤقت للمراجعة الآمنة (__N__ — حد مؤقت بانتظار قرار المالك)؛ لا يمكن اعتماد مادة جديدة قبل تضييق الطلب.', en: 'The number of similar items exceeds the provisional safe-review limit (__N__ — provisional, owner decision pending); a new material cannot be approved until the request is narrowed.' },
+  err_material_duplicate_review_required: { ar: 'يجب تأكيد كل مادة مشابهة قبل الاعتماد.', en: 'Every similar item must be confirmed before approval.' },
+  err_material_request_duplicate_open: { ar: 'يوجد طلب مفتوح لنفس المادة.', en: 'An open request for the same material already exists.' },
+  err_material_resolution_must_match_strong: { ar: 'يجب اختيار المادة المطابقة بقوة.', en: 'You must choose the strongly matching item.' },
+  err_material_resolution_item_not_active: { ar: 'المادة المختارة غير فعّالة.', en: 'The chosen material is not active.' },
+  err_material_request_not_assigned_reviewer: { ar: 'هذا الطلب مُسند لمراجع آخر.', en: 'This request is assigned to another reviewer.' },
+  err_material_request_requester_only: { ar: 'مقدّم الطلب وحده يستطيع هذا الإجراء.', en: 'Only the requester can do this.' },
+  err_central_needs_separation_of_duties_violation: { ar: 'لا يجوز أن تقرر في ما أدخلته أو أرسلته بنفسك.', en: 'You cannot decide on what you entered or submitted yourself.' },
+  err_manual_intake_not_activated: { ar: 'الإدخال اليدوي لم يُفعَّل لهذه المؤسسة بعد.', en: 'Manual intake is not activated for this organization yet.' },
+  err_forbidden_central_needs: { ar: 'ليست لديك صلاحية لهذا الإجراء.', en: 'You do not have permission for this action.' },
+  err_material_link_revision_ineligible: { ar: 'يمكن الربط بمسودة يدوية لنفس المؤسسة فقط.', en: 'Linking is only possible to a manual draft of the same organization.' },
+  err_material_request_not_resolved: { ar: 'الطلب لم يُحسم بعد.', en: 'The request is not resolved yet.' },
+  err_material_scientific_name_required: { ar: 'الاسم العلمي مطلوب.', en: 'The scientific name is required.' },
+  err_load_failed: { ar: 'انقطع الاتصال. أعد المحاولة؛ لن يتكرر الإجراء إن كان قد نُفّذ.', en: 'The connection failed. Try again; the action will not repeat if it already went through.' },
+} as const;
+
+export type JourneyKey = keyof typeof D;
+
+export function jt(key: JourneyKey, lang: JourneyLang): string {
+  return D[key][lang];
+}
+
+export const JOURNEY_COPY_KEYS = Object.keys(D) as JourneyKey[];
+
+/** A refusal rendered for a human: a specific translation of the database identifier when one exists. */
+export function journeyErrorText(error: string | CentralNeedsRefusal, lang: JourneyLang): string {
+  const code = typeof error === 'string' ? error : error.businessCode;
+  const key = `err_${code}` as JourneyKey;
+  if (key in D) return D[key][lang];
+  return centralNeedsErrorText(error, lang);
+}

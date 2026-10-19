@@ -1,0 +1,1328 @@
+[
+  {
+    "path": "supabase/migrations/001_phoenix_core_schema.sql",
+    "git_blob": "31b6d309febf303c75f917c010f21bf11f104f18",
+    "sha256": "4af1575536a374fa9ee564298e3ca35b03ec14fbaba22c84af30307dd6efce6b",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/002_phoenix_rls_policies.sql",
+    "git_blob": "7f5515ef36cc4edfec4115eb7d05549ef998ecc7",
+    "sha256": "fdbc343e7309b90edcc60779e0ed830fc2ee11b8b4b641aa1eec86d182fa5c6c",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/003_phoenix_rpc_lifecycle.sql",
+    "git_blob": "c0104e5bcd6b9db995a7518c6bd03e04422c5081",
+    "sha256": "a0c1bf8d2909e2a4bff6f43f58a4f387af53172c2879ed7263cf15308ec42045",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/004_phoenix_seed_demo_data.sql",
+    "git_blob": "48835ee3a71faa3136beb07b04c60468cd327b57",
+    "sha256": "bf50f32332425c39ccc578a5e117c0d34bdd3b3b4b181c73776e36be0ce85728",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/005_phoenix_assign_profile_role.sql",
+    "git_blob": "36c2d089df1d87b3f3b95522225bbd4976c32cac",
+    "sha256": "29cf983d302f1f35faa6d9b308e8b6aacd3ab2a3eff5a13b72fe368dd899b26e",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/006_phoenix_status_reports.sql",
+    "git_blob": "8cffc7ab5f0987d64a712a0a80f5717bc59252e7",
+    "sha256": "b38af99060602c107ef92f4fee54e254643d54233917093f188b7661deefbcb6",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/007_phoenix_clear_port_availability.sql",
+    "git_blob": "e29ddf83b00f51cb79b741a7b2ace1d52d365d24",
+    "sha256": "7afcf6bd0926ad32f06b31b5179f4218d10ef55c5d9ba4f12034716202d06ebc",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/008_phoenix_org_status_contacts.sql",
+    "git_blob": "70a594c02efe1e0acf218d0bd8cd1f6f57591f2b",
+    "sha256": "6260e1055d742d7e31371409e67de7d0e81b7d9ad1060e4a626f676df4745134",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/009_phoenix_inter_institution_alerts.sql",
+    "git_blob": "831c83b83ac455ac6c991f3668f34ff39adf552c",
+    "sha256": "81dba4a5acf0d2b2686cba7c97539a5893a14fa468b26419da67dbbfa22eebf8",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/010_phoenix_user_permission_matrix.sql",
+    "git_blob": "c3e7077dad6fa8530c1c4b1559f6ee365c8ef08d",
+    "sha256": "bbd103a1fd8bbcbb743e3d5f5769040405e26a78641b858054b5f8616e01179a",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/011_phoenix_user_lifecycle_controls.sql",
+    "git_blob": "93dde1b4e0b0e2df365d503df81c236f0e7c52cf",
+    "sha256": "d2d23f54eab99e144c056792b0cc26576282ee0b82d1465ee216b585e00cf96e",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/012_phoenix_institution_admin_role.sql",
+    "git_blob": "29705bd18f0eb977d7bb95c4b5313a4173625273",
+    "sha256": "0a7ab89e9031ac93434d974665b4c76109398d4b3e63208c5e0d90c05a6dd0b3",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/013_phoenix_user_identity_snapshot_foundation.sql",
+    "git_blob": "2edeb160350e6457c4f37a0a1c5630a8c17b1173",
+    "sha256": "ee7ce1d3968591fbaaaaaa92109c62d2ef286050c8d6b1e019d191680d7e58cf",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/014_phoenix_actor_snapshot_write_path_triggers.sql",
+    "git_blob": "dce47086841418b471e9f75feff498336ebc2a48",
+    "sha256": "7dece9606665de67b8785fd77eb001d0b1177419ae086a57448f8398ef1b4d7a",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/015_phoenix_user_account_recycling.sql",
+    "git_blob": "7efc37a877ee3f46c1073aa3522dd53a0a2b5b65",
+    "sha256": "5dc3bca9a4c5fc593769b324407d9c5016aedc9c4b6b2e027e91458d0b2f9c8b",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/016_phoenix_local_credentials_mode.sql",
+    "git_blob": "61b9d4824cc1899c23bd12e7b2b361ef4f3a6958",
+    "sha256": "58fe82cbf650a08f29e5fccc78e15eaf1e6a6035f4168bc17f60e5ab54032982",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/017_phoenix_permission_rpc_42703_fix.sql",
+    "git_blob": "697abd85419c56996fad71a489dc0d1bb1d1ded6",
+    "sha256": "eea83d58ff31d765bbcba5d452f7fc1520e401cc30323095748f6568741aba54",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/018_phoenix_actor_snapshot_record_field_fix.sql",
+    "git_blob": "0dcd9d88b91f630de3af30c85c4b9600519073e8",
+    "sha256": "c65952886db90caffd1a42ea07324f470f5b24501624c13df4a504369fe54ae2",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/019_phoenix_availability_editor_institution_ux.sql",
+    "git_blob": "7a36d0d8419adc6087ec02fb8e3aa97527fad729",
+    "sha256": "6d15c09ca5e44c1c409d08220fe8e955d033b383211ecf92ef6ae50e9d05f1ba",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/020_phoenix_availability_material_fields_and_status_editor.sql",
+    "git_blob": "79e0a03210f28d3b9212f8f8d847131845977920",
+    "sha256": "6f37d623697dc73b3476084db35480acb92f0f5c69fc2683cb5c4300165d5101",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/021_phoenix_ports_permissions_warehouse_retirement.sql",
+    "git_blob": "05fa61f183c0fd4e86ebf8c22bf6f945b6335562",
+    "sha256": "90ebab338b5108e4f1f7f91697335167dcda3c8507031b91966010f1571a9da1",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/022_phoenix_qr_permission_fix.sql",
+    "git_blob": "2cf0f911a9843e4b14f105d900ac0392bc61a039",
+    "sha256": "d1f7a128526145dbb696d7e2d46a3116c7a8d08f844776e5718e4477036a74cf",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/023_phoenix_live_profile_role_resolution_fix.sql",
+    "git_blob": "5575e7643f31fe7a52b9bd51c9777f8efd3c4d82",
+    "sha256": "9e75dce01048ee135ccdf9a9c9c20159f6b9b723d2e93322d093974a2c0ab6ee",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/024_phoenix_distribution_points_rls_state_repair.sql",
+    "git_blob": "4ef1efaef6cc320640b6df57c7e36ca4c5a95eb1",
+    "sha256": "1a597e1cfcf9097c48a8c1a53c431dcc39033356a13497233360617b8bd1924e",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/025_phoenix_distribution_points_grants_fix.sql",
+    "git_blob": "072999486d54c060304d9bffdadd0015b56fe9c9",
+    "sha256": "0fb15ac44c3aadd8fdbdb5bc10b23f4d551b1ec6f7671bbbc837f5bd01acff72",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/026_phoenix_qr_random_bytes_fix.sql",
+    "git_blob": "afd8ddd707af04e471ba6f45d005ceb66f0840c9",
+    "sha256": "b8f9839cfb286a60d278bec0382204619df0d216aa706db2d425f6d5e944fcfe",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/027_phoenix_public_availability_privacy_hardening.sql",
+    "git_blob": "73b9fb5db359d52b101a9dc3251db6a2e46c66ef",
+    "sha256": "5e65ea68d61dca2be4f405e5352ef87663f0de342b8cc61f578f52238240d887",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/028_phoenix_public_qr_expiry_scientific_name_fix.sql",
+    "git_blob": "b291a2c1bb43c919f2d8279e6492b937912c1648",
+    "sha256": "54de2436b4b9c2da64fbea1170c7c06512b737f215985a51b0805535c08a30da",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/029_phoenix_availability_scientific_name_unique.sql",
+    "git_blob": "6c896ea05d68fdd5fbbe11c54d08884f3ef62d0d",
+    "sha256": "a9ac554abd131d066f27dabe7b29462369390951c2188abdde1102224dbf987a",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/030_phoenix_availability_upsert_rpc.sql",
+    "git_blob": "066f898163a3a894effd5047dfbdcb21dc4cbf51",
+    "sha256": "b50835c5740f309d5116688ed03b0f545d4999324fe39201dc182505b3b7832a",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/031_phoenix_availability_upsert_rpc_port_name_fix.sql",
+    "git_blob": "775defb67096b293fe38bcf1e1229814b0abd7fb",
+    "sha256": "1e8afbcfee2971d0aba7f138032ce09baccc75f176bd58996db65153823bb537",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/032_phoenix_availability_permission_matrix_integration.sql",
+    "git_blob": "5a5a60d24dc03bec15a51657fd4fcc0015b9df85",
+    "sha256": "9b207ac6dcbb7301e9f34363b933d1b8fd488812c63f9da79abc3b612f4fa623",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/033_phoenix_availability_movements_schema.sql",
+    "git_blob": "818819f1b26ce43c8a1a23eaffa52967cc4f644e",
+    "sha256": "64e333c9952ba48c8511873ca5f89e1ffd740c8b6c09b3f2018df817cd37e15f",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/034_phoenix_apply_availability_movement_rpc.sql",
+    "git_blob": "e57b340e1c6ffe4e7174dfc75c05f31047e58f32",
+    "sha256": "21edcf5b0119e882f5d5adc95ddbde9dd33d825f2ab18d27a1ddf8b82b8bd984",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/035_phoenix_upsert_quantity_hard_guard.sql",
+    "git_blob": "88c6e9d046849b94180c7d0c3e630c61bd074385",
+    "sha256": "411ad8c21c08342c4f0b9f0d490123fab8638c32179f880ee832b410bf1d2f90",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/036_phoenix_live_inter_institution_alerts_rpc.sql",
+    "git_blob": "ead165f0b857ff7d53bef6a61ee84f073dfcc082",
+    "sha256": "ae8002d6a2821c314e269e9fe8543c595dda142dbae2487e0a9962a3482f0579",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/037_phoenix_live_alert_identifiers.sql",
+    "git_blob": "7be631f2d6d4e24b2a48a7ed5096de8724a31623",
+    "sha256": "efe3dac35c2e6e0cbc2e6603c87895ae0498c5595a78a0fa8da22d70c6f42f23",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/038_phoenix_inter_org_alert_lifecycle_schema.sql",
+    "git_blob": "f0553984adad166c978e8b38ed0738c3e58b6440",
+    "sha256": "3e214e9d4b53c9520897027f7ae941c40a003be82b77eb25fb0813cb3a9ffbc7",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/039_phoenix_inter_org_alert_lifecycle_rpcs.sql",
+    "git_blob": "288caee31ee2152f5f7c8ccf8537fda87324b99b",
+    "sha256": "d9ea979fb780d04a25f29ad52147761eb0d9280b876ffe668a63de1ed4cd06ca",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/040_phoenix_inter_org_exchange_schema.sql",
+    "git_blob": "651fb7658d6f91800297f15101331172571d2987",
+    "sha256": "88bc760ac83d8fba482b7eea0c97fa742d30ee1e155899715d9609291315684e",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/041_phoenix_inter_org_exchange_rpcs.sql",
+    "git_blob": "f0d259d3cc1c0f8deb8e60d12d77a13960b440fd",
+    "sha256": "1fbac2ddf802275679c02e37dddfb0529eeb1be6fd599b7053e9e717becaa2fb",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/042_phoenix_clear_port_availability_movement_safe.sql",
+    "git_blob": "1d613592f0144bcda4f075d99ef45f123b3d8d0e",
+    "sha256": "c5ce35a8691be5e0d8754c97249cda3265cb03f1aefe5a993454053bb56df80f",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/043_phoenix_fix_item_availability_unique_indexes.sql",
+    "git_blob": "9136c5aa1a45a8d404b750deb13ee01cfbe6e636",
+    "sha256": "8394ab65b6fea89c7f7b025e5276dac9423e2e880fb5954c734d6b18c2141ed6",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/044_phoenix_profiles_whatsapp_phone.sql",
+    "git_blob": "46c68dfadee9b99c253a06e87938b9a00b8318dd",
+    "sha256": "12c7c2b375bebbcd224891a1b25c5d49a70594add5ec29c29e2607dcfc35ee4a",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/045_phoenix_update_my_whatsapp_phone_rpc.sql",
+    "git_blob": "51c2c03ab6dc48fe33987c3b6f6bc0ff8e1c8e7e",
+    "sha256": "6ab71768e204f252d5bcb5956e97d63d3577743c0079bcee5e9875d4d0683c2e",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/046_phoenix_set_my_org_whatsapp_contact_rpc.sql",
+    "git_blob": "28f619ad24c867cd0232d3396a3473f7ca212389",
+    "sha256": "f2fc1dbc4a2ef425266ed0fdc291a3d6a2421504ced0505b5a5e6575caae5e08",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/047_phoenix_live_alerts_contact_fields.sql",
+    "git_blob": "0959730846d993a7ceeab173732af056598ea26b",
+    "sha256": "061eee1d86bdadc2fe07f38ab63eee98ec54d012f49ff61d132917c5477bce48",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/048_live_alerts_expiry_risk_tiers.sql",
+    "git_blob": "d45c194fdd7f488ee06b3f0532651aed0d2b4463",
+    "sha256": "7f229802c2644c707f720c068805f17685004c12638c51fc01fa8f83d3d71203",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/049_add_national_code_to_item_availability.sql",
+    "git_blob": "9e9c53dcac721d56b54c2261e4b1f397fd246d8b",
+    "sha256": "cd24436aa7a1912e85c7de2cb1bcb45053464140e11062cfeedb558ef5148d20",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/050_phoenix_upsert_availability_national_code.sql",
+    "git_blob": "6a7abe4dd20a1a3ae18311801f0a965a83c4f26b",
+    "sha256": "ae0b50af7356664988a79110181eed00250229a2c0b4e5434e7a14248367a93b",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/051_material_batch_identity_option_a.sql",
+    "git_blob": "6d08bed385e019878dca0e86ade1fac485db627d",
+    "sha256": "4b08080d9644a6224ddfa722c1a2b3a4f04c10583949bc1c389c4fd731e2143d",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/052_qr_effective_condition_quantity_zero.sql",
+    "git_blob": "24036a8a117ab430e16d13986184408209ff4c91",
+    "sha256": "a4b2278237e9196ae7597a733ffb30622d71c142dfe8577dc0e55c42bb7d1e31",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/053_item_availability_removed_marker.sql",
+    "git_blob": "7d0b4db12365023fc8e398a1852430da96a31602",
+    "sha256": "5bf78e3a0bb8e5cdcfddba88fac74747ae30a670502e5f03464bc3888bf6bf6f",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/054_dashboard_condition_counts_rpcs.sql",
+    "git_blob": "1ba904396156934dbec75ca172d12087ea63bacb",
+    "sha256": "9dc1b2130caa50158015f79753d2231e6126f759370f9792f24e0f354a948920",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/055_phoenix_clean_availability_data.sql",
+    "git_blob": "9f74d80a54a3a6625978eba7dbfd6ea5b3269660",
+    "sha256": "c5e27f8d6ad48ca3321f4618cec33dd7a14c58592f5169a95e629e17dc562a46",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/056_phoenix_platform_broadcast_notices.sql",
+    "git_blob": "4e847111f6e8c351b45fea9579f3cfda66e0d5cb",
+    "sha256": "2c73a612c541e36d9f32b553a8e228f7e562b6816a14ed3686f0c6724bc06ec7",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/057_phoenix_platform_broadcast_admin_details_delete.sql",
+    "git_blob": "13b2f241c81579a81316e2a18bed3031762de40b",
+    "sha256": "a6a42dbdc582270310939c1cb889122b81effbb1b4376bd8744bc715575040ac",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/058_phoenix_public_qr_dosage_form.sql",
+    "git_blob": "bedcfe29e1a6d79fedbb5f717581bd3e59b9e7bf",
+    "sha256": "6381a41ab625396a1d676610e6004ddc3104d4265acaec95bc6901cd5577174f",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/059_phoenix_public_qr_concentration.sql",
+    "git_blob": "7147c66eaf4f95ba9e8d86603b5ee6c29032fc7f",
+    "sha256": "dc2b99597a532cfe0417f8d28a832fcaadc6368afddcb97f2303594cc838d098",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/060_phoenix_warehouse_foundation.sql",
+    "git_blob": "80ffe8debf89ea30bf9eb88fa339c3ff782ea5c5",
+    "sha256": "92be3cf5c27b79c48356edff1f88a3d079b4807a1968b7935537ff914588efbc",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/061_phoenix_warehouse_dispatch_schema.sql",
+    "git_blob": "63102ff83a2a768814cdb740d71fef09fcc95eee",
+    "sha256": "a56428ae5dd0419078567a996dd42afb03d6d34f981c3fe3eb279e506c0b802c",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/062_phoenix_user_rbac_scope_foundation.sql",
+    "git_blob": "14ed945b60365f6bf6ae4d8f310a43564151aeb4",
+    "sha256": "947b48b5dbda4bca5b1b3492156c1da98a6dec70ee764994b9bef1579bae3fd5",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/063_phoenix_rbac_security_hardening.sql",
+    "git_blob": "927214c58a219162143779979c675168550d7a07",
+    "sha256": "653dcc52ee1a6daaefa8d757825009daa32b8d919c660b8fff13bd5f214f4641",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/064_fix_profile_identity_snapshot_return_type.sql",
+    "git_blob": "70d1fe6bf90e6eafddde3bbffb9c02112d0bd9e5",
+    "sha256": "81123b8a0df96b777b9822b5b8fcafa982abad888d4e797c220a90aac056e7da",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/065_phoenix_warehouse_truth_and_stock_rpcs.sql",
+    "git_blob": "60ac4c6b1c0317dacd30c533846dba715315b8b2",
+    "sha256": "51052cbe853a032473481e35b4a45649884dc0ad929fd74fa85c3feab27ad2da",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/066_phoenix_inventory_network_expand.sql",
+    "git_blob": "69eb4105287cf21212b9d88a59ecf9681a074c01",
+    "sha256": "cc569f473538c4478012166d370a0d50d1429645b88ef5aad177f53b2bee5daf",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/067_phoenix_outlet_stock_expand.sql",
+    "git_blob": "719abf26e41008b47372f7e42aa533ab16dbf9d0",
+    "sha256": "90f129de78a27c86ae34685859c31e2d2067dba9189a750ae2ebb7026d344409",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/068_phoenix_central_to_institution_supply.sql",
+    "git_blob": "2c17210b0c4035751b62ba3d055df6f68ba5ac41",
+    "sha256": "9c9fa527067ef645abd9568ece8df41abb247cd74184ce755eac1b4ef89211f4",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/069_phoenix_institution_to_central_return.sql",
+    "git_blob": "a2a39f746dee67b7592d8e9e1baa32916f1aeffe",
+    "sha256": "3ab1a201706026cf3a2c30a2dffaf36d7a46dc1299d619ae10dddacc862923ea",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/070_phoenix_institution_warehouse_outlet_dispatch.sql",
+    "git_blob": "55c916a7c13e7d1670fafa4c84046023288042de",
+    "sha256": "565f8b64abfc7bb43ac83164cfefd602313d1407b53ae1193d57e92f6befd8ed",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/071_phoenix_outlet_to_institution_return.sql",
+    "git_blob": "7a9d6a9992525dfc4d310f9216d1caa07c137fa3",
+    "sha256": "9103930fa96d8560918255568a7346748b7c5d335d6eb34d0959de042a7df4a7",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/072_phoenix_inventory_intelligence.sql",
+    "git_blob": "c64a5fcd03c3872ee7f2bea451bafccee486c3c8",
+    "sha256": "50fef47109f574f29cd70010031b48d55e3b35b81be3906aafca7200b259e53d",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/073_phoenix_fixed_near_expiry_policy.sql",
+    "git_blob": "9d0636d167155e2f78616fd4d31187d21cca350f",
+    "sha256": "e071c56f6c15e033cc09a1085ec9bbfededcf818b66b6f856bdbecb02c13e4ba",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/074_phoenix_warehouse_management_rpcs.sql",
+    "git_blob": "2811dd1ec6beb8f08e586d5d53a4b96d0c7ef798",
+    "sha256": "be2f7e28f2cff9815f849496083573da2fff7b3cce491f8366ae3c611d2c6770",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/075_phoenix_supply_route_rpcs.sql",
+    "git_blob": "528f0f5493704f435890c7190105a0287a62c368",
+    "sha256": "65d72c20c110ff5909aec81c6587e16dc3b6c549123f5e8c0f04d9a0df9d96f1",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/076_phoenix_profile_scope_assignment_rpcs.sql",
+    "git_blob": "402b90de195f9bf4ce420cc8ff9548d619dabebd",
+    "sha256": "816d4cbdb9341028a8fe7d5ed59b7e11cf81bf760ff375ac419bfed84f382591",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/077_phoenix_direct_central_to_institution_supply.sql",
+    "git_blob": "8526b474dd76d6ce89aebd2295ac6f2aa6fa69f9",
+    "sha256": "fa4897f9b9d1ba55a421df7c2ce85d550e38d902ea2247f7454f9db0706a2f08",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/078_phoenix_warehouse_receipt_expected_generation.sql",
+    "git_blob": "aa586b685e0f3194ed43993a2bcf545e56d268ad",
+    "sha256": "7fc33102d13fb9b0f56bbdb00bd844872bfaa4bf7e5116d0ae7be14c68b05757",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/079_phoenix_warehouse_generation_fail_closed.sql",
+    "git_blob": "ad9766ddc6b80f2fc024124e5978351c4b1118fd",
+    "sha256": "4c0b3ffe2eb06ad94ddfd9c24c4c5246ac5130ebefc3813cd683661d349dfa22",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/080_phoenix_revoke_unguarded_warehouse_writers.sql",
+    "git_blob": "cefdc86321c8a918cf37629a2b277664e1d6d5cc",
+    "sha256": "e50d7d07ce079fe108799aacd8e181d0b03ca427fe45bf5f04733de4888ffd5c",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/081_phoenix_movement_timeline.sql",
+    "git_blob": "8958a9340902063f879335dc7aae6a363dcdae66",
+    "sha256": "0f805d961efa1b24a4f03b3922e551e6d620b69446d8da803a58893b36021375",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/082_phoenix_movement_event_capture.sql",
+    "git_blob": "e19ba69e57b9bb91361518dfca22ea927f4c5f0f",
+    "sha256": "43fadfe45380eb28f4a934d24b41592d9f2144408a7a4783d86ba7ca0b8a4853",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/083_phoenix_inventory_derived_availability.sql",
+    "git_blob": "0525349b1c912f9f04e8820e1546680a356c195f",
+    "sha256": "2243acf2eb80905d832c1cacaadb08505980068ae67ac31e5a092d92600a2120",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/084_phoenix_availability_visibility.sql",
+    "git_blob": "21fd09ccd20be1cf01fe4369b842cc129d364b7a",
+    "sha256": "da33c6e83720fa0695ee391d68ac631b2010b79094a0fbb7adef8d95e191171d",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/085_phoenix_revoke_manual_availability_writers.sql",
+    "git_blob": "a4c8a1f92f6c38828d880add63df60e115032fe5",
+    "sha256": "b69326713c273f468bd53b8d66430ac907aff54f27c06ab9149427833eb20ab0",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/086_phoenix_outlet_stock_correction_expected_generation.sql",
+    "git_blob": "13c050bfd7e06c6c00f04c0aa24ce849ffb58428",
+    "sha256": "7ba1f4c5f7b1154a6be8938ded58afec6860fa55cb261b9a4fe48d1745809d11",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/087_phoenix_institution_local_procurement.sql",
+    "git_blob": "77e85f14b0c2ac43800efcf02109d7a32db2c0ac",
+    "sha256": "6d42470644cadd667cabb33365fda2616562b3c28a78153a93c6683838be941d",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/088_phoenix_canonical_supply_provenance.sql",
+    "git_blob": "5c6c4f45fa7fbf1f12ff30ebc69a07a193ecf3e4",
+    "sha256": "12caf94ea3483d6e9b7aec71f2c9ce9fcc9921bc4cc1a731aab12d950211c7cc",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/089_phoenix_subpurchase_direct_entry.sql",
+    "git_blob": "6ab3c4a65448f8d3525f804c6b074d90d567e6fc",
+    "sha256": "5cbebacd1b99e04e65711a9ffaa32447dd6a051eedc4ba3d99fdecd521fd151a",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/090_phoenix_warehouse_receipt_official_number.sql",
+    "git_blob": "b7f59e6069f5abb032009cff003b5ce665e350af",
+    "sha256": "dda30db6a04fd5fc4302432443811e3eaeb2c5efd3f589810aefdba292f776e0",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/091_phoenix_five_role_cutover.sql",
+    "git_blob": "bc2f5be061bdf2eb1de532cd6f50bf845b45ffbc",
+    "sha256": "b1ce6dd756b4abc21565733701f4f5d1152e4ff598948c8dcedefe834dd7a4a6",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/092_phoenix_monthly_status_redesign.sql",
+    "git_blob": "c071cf4a55daf5e1acc1c8090d2f11b6e673fadb",
+    "sha256": "9177b44cea1a50a077c8e772482edb2ab1026e44bbe65bc69f2e7b28d2b29a7a",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/093_phoenix_super_admin_lifecycle_guard.sql",
+    "git_blob": "cc679ce132db25b65234557b7796271b4b7f5feb",
+    "sha256": "ed4ef2725e8d5d081c6aa164b7c967422c36edc2a20f03e1dad91a8fb18952fb",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/094_phoenix_custody_chain_notifications.sql",
+    "git_blob": "3b1b5b10aa250e3e5016efae848f83b18cdabee7",
+    "sha256": "607624bf11baaf9e7a36b11b46dd81ee972c387ffb3e85742de576069bd49111",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/095_phoenix_return_availability_cap.sql",
+    "git_blob": "00e7131a35e6bc11efc7cfeb8c6a9261aafb1842",
+    "sha256": "64ef9453fec7d810db98ae39f7e2fed0fd59c00696e4a4366dd4de6facb93ce9",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/096_phoenix_bulk_receive_matching_dispatch_lines.sql",
+    "git_blob": "7986fa3e9acb36f8c96ce22f9c0fbd0e7437f3a7",
+    "sha256": "9ba154d34149201e28ce109f4c52e2630fac540ddb4f52ed6b45b9b5616f676f",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/097_phoenix_fefo_reasoned_override.sql",
+    "git_blob": "fdb5106ceb493d345de1ec748cd5f153d284307e",
+    "sha256": "8a22585bba1b684fe00f836bc08ef98cca8e3439785538e7f02883a642223527",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/098_phoenix_second_person_correction_approval.sql",
+    "git_blob": "895311cdd454a7091dabb8820a03909bab855cf0",
+    "sha256": "06eefb57b5d1658e41ebcfcbfd2bd8c8a5ff561ecc52dd31833d9eef2ce31959",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/099_phoenix_notification_wiring_and_quarantine_disposition.sql",
+    "git_blob": "80afe70789ed4bec62669eb70dff5c694e690183",
+    "sha256": "16a42f8ae8d5e21d5758cc3796ff98a4dcb0dd98300eefdf47dbb96032e77d12",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/100_phoenix_bulk_receive_remaining_corridors.sql",
+    "git_blob": "a1c0f1b1898823a5a99c72f438e8ec30324b32f4",
+    "sha256": "1b0ae2df265c4c2d621fb72ea83793118c6f9675b723d7edb6a8a9cd59258434",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/101_phoenix_warehouse_second_person_correction_approval.sql",
+    "git_blob": "9f98ae6d730187bdfbd66057bc430bb01678d5cc",
+    "sha256": "44569ac1e53ec3618bb20f920d3682f0dfc04f9550aee634a1b2f01552d98651",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/102_phoenix_transfer_send_fefo_guarded.sql",
+    "git_blob": "e310263a62ae15d0cfb810aa86702c9614be16b6",
+    "sha256": "e0bd170b658009ffe9d9728107ca42ad1450fc443cb04fceaa8d6f7defef3a8e",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/103_phoenix_institution_warehouse_no_direct_entry.sql",
+    "git_blob": "1cf7fc530c71027dfb279c7a7a361b5e60f02aff",
+    "sha256": "23b3a15959dfc2c1cc6dec36b0a8e5d4d4046d3f7217574f406c788f1df69683",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/104_phoenix_return_quarantine_insert_column_fix.sql",
+    "git_blob": "d78d3136c2a1ab4216727b9229b09a62c83aca2f",
+    "sha256": "82fd93d2de0752e3a4f496246b03cd6999d144a00b7a1c0b751aa5cd6fb29228",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/105_phoenix_quarantine_read_policy_disposition_parity.sql",
+    "git_blob": "d5d67ed7c953eab80f7544194b3ad4761c484d10",
+    "sha256": "fd1b0c0771aad83d50b7eac5eea507a84dfe46501b884bb4d5be957d3534be0b",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/106_phoenix_dispatch_line_idempotency.sql",
+    "git_blob": "be4e3e859b4e1e102c9a3ae2a1e37b2919b8ecb2",
+    "sha256": "f0c81902a7439b8c3d98a2c2c9483afe8d1ea847697481f4087a55d356f05f34",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/107_phoenix_dispatch_line_request_id_required.sql",
+    "git_blob": "8a7505285bb65c798103c9c8b9feaf917368e50b",
+    "sha256": "6b3a94ef60a2349dade382c46f6ea255d1aed48fc5709ac7181bf67fbf22ef0d",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/108_phoenix_custody_chain_direct_write_lockdown.sql",
+    "git_blob": "791c5ba99cf1aa72245db124fd49888804184788",
+    "sha256": "b4e55e3d76b9ef8e8b3b2c4badce6674592db5a22e379209c3917717ef324b92",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/109_phoenix_public_schema_default_privileges_lockdown.sql",
+    "git_blob": "e22976cc789f4933101c9055b63b99509fdc9802",
+    "sha256": "64c2cf25a9138e5fe5f78ff69bcbe7d2bef090e3b38108d4cca662d1c52d496a",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/110_phoenix_paper_reference_contract.sql",
+    "git_blob": "35fe39f04d8bddcc835108f44fa93831a98a42c0",
+    "sha256": "16532da948218e0f912d23e29da30b69541bba6e12911a0db9bfd7cc50a62385",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/111_phoenix_threshold_batch_apply.sql",
+    "git_blob": "3d58758371a0e264bafeab895812eb99160f01ff",
+    "sha256": "1e45da9f657e2d4fd9eaee97e46a5af9410a945e584d0f09d6e79a980034a471",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/112_phoenix_status_classification_boundary_correction.sql",
+    "git_blob": "7f5b835c4ced45afbfe58917be83239addf34c39",
+    "sha256": "fd7930898fd4d7c89d1d4148fd366e5b527bfb7751aa36469c107e162ca78756",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/113_phoenix_monthly_status_direct_write_lockdown.sql",
+    "git_blob": "eac218df714cee5e2b44adf8445be345d9a9697b",
+    "sha256": "758141093b85b90e9d60c527cfbc552d9bfdda0bb24cb9a982058dc636d57472",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/114_phoenix_central_items_catalog_detail.sql",
+    "git_blob": "104959cda684acfdda4ec51f1dec34b460406ab2",
+    "sha256": "0a89be730c4e29330342d988e9d2f0771f3436c1a4f0792a403d7988f52e5196",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/115_phoenix_central_intake_catalog_lockdown.sql",
+    "git_blob": "f21a43981cd8efd68a1ba2eba4812f0943154a6d",
+    "sha256": "ebf3baffc48e281c6eecb9003c06da54259d06db4d2833ac86354d20cf69be80",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/116_phoenix_subpurchase_national_code.sql",
+    "git_blob": "6eccfc9f708cd537ceb71a1dc43222a45bc6e4e2",
+    "sha256": "00734c476af84d4a935d0004d941b4478f10c438280dcdb23ae963254b72e120",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/117_phoenix_subpurchase_duplicate_candidates.sql",
+    "git_blob": "9357f14226ac1a055e1bb9c83d4e39b45b55f182",
+    "sha256": "6b6e3307bc022acaef3a75f993e075635b7de1d678570acfaaf37f2f182b9b73",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/118_phoenix_central_intake_manual_identity.sql",
+    "git_blob": "1d71de2017d59635029317cc79b547a4fb04757c",
+    "sha256": "e343ebf12dbfe7691be1ae76f27881047bc8a389ca792756cf146bd590903511",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/119_phoenix_report_snapshots_and_executive_overview.sql",
+    "git_blob": "79064161f2d441463dc99fab8ea0bb314e5f0727",
+    "sha256": "b1e752322a38994a81b476e87533dc621e4a39fbadaefddabc3e8f8399802db0",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/120_phoenix_supply_sources_detail.sql",
+    "git_blob": "2ee2453cfa4558e336903a971367b7f9445a4941",
+    "sha256": "37fe6faf1839e0310ef60a1e31889f1c930e310dc1f505566efc2149eb139621",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/121_phoenix_monthly_status_public_execute_lockdown.sql",
+    "git_blob": "198b41a14cddf6434d0737ee3b5d4c2f045ee5fa",
+    "sha256": "a3c170d1b7810f8f4536765cdf13f84603788e6ae0e4ef678ab38fca3dbe111d",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/122_phoenix_movement_timeline_correction_coverage.sql",
+    "git_blob": "c0cdc7a3f85fda6ec962a65030acd1903b7fcac9",
+    "sha256": "725bc36053f2811aca24b969459f3e3c94cc6e895fb074c15f79a54b33ed6bf1",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/123_phoenix_movement_ledger_event_capture.sql",
+    "git_blob": "aa0876ecef8f8130d7e706ca4d684fa1cf0603fa",
+    "sha256": "baecb952b8c29d7bd200f686c3d3ea5012e465748b186fc3be1cb7397374beee",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/124_phoenix_movement_contract_correlation_fields.sql",
+    "git_blob": "fea23e9b833b565171aad814684f86a5bea641c6",
+    "sha256": "bef25393329d09490f1ccce90afbd9a7f2ba10069cd12f5d301166ff78ef84af",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/125_phoenix_movement_reason_code_vocabulary.sql",
+    "git_blob": "8eb292ed8d1fbe9bb9ec65585abbb2bed0443614",
+    "sha256": "bd4956a51ed8738b10116d84790ac5e5971d230acb73eeb71fd807cb1d212a2f",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/126_phoenix_movement_reason_code_group_a_warehouse_intake.sql",
+    "git_blob": "628b3415fdb29b2cdf74a65773ffe748fc85ace2",
+    "sha256": "abc02dead60643a94d6350aabcb6622e466c8ea3b73bb4f158ed17fc73d3f669",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/127_phoenix_movement_reason_code_group_b_warehouse_transfer.sql",
+    "git_blob": "ccc48d83336ed5f36fa06410f7c1282d4ba256ba",
+    "sha256": "ee4771e3f4dd4145f1ebaf6f157d82ed62fab5461a68256bc7e2188c221f9b69",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/128_phoenix_movement_reason_code_group_c_warehouse_return.sql",
+    "git_blob": "751e1425d224e23778e813064f29a96cf7b07677",
+    "sha256": "b5560c99ff3b4c8ed1792f3bb22372b98e55eda8f366ec5137cf4e39304545d7",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/129_phoenix_movement_reason_code_group_d_direct_supply.sql",
+    "git_blob": "a9e995f21a8457b9644f8d3ea63bc4ef225717f5",
+    "sha256": "d398b965602de041d210cb7136c6db11e0d6f069d7ce174c01c7dc07b999539e",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/130_phoenix_movement_reason_code_group_e_procurement.sql",
+    "git_blob": "824cd9a90416579053d3a4dd6b0cea6e7ec14fc1",
+    "sha256": "810e349b4ccd2a735479d5ff35ae9b9222e3b694f72218f7f032f5abf6d7d9e6",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/131_phoenix_movement_reason_code_group_f_outlet.sql",
+    "git_blob": "7a66f9a0af738e68278e586cff1be5453e5e55b0",
+    "sha256": "9cbfc897b5f5fcc1f648185355fac01e186ca163d7c343950bbf974699ddbae7",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/132_phoenix_movement_reason_code_group_g_quarantine.sql",
+    "git_blob": "d51c68981e64f5f834e2f9a0d1bcd79c28139607",
+    "sha256": "4293e06eb2125fc4ebdb2b03ba403fdd82c3ba054b2684e398991a92d9f557a5",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/133_phoenix_movement_reason_code_group_h_correction_approval.sql",
+    "git_blob": "44ca047f1411caed1ab32b290f951fe0ab360eb9",
+    "sha256": "47d09546269f348a09ebbe68da8fd878205a637d9bd0e983644237226db277f5",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/134_phoenix_movement_dispense_context.sql",
+    "git_blob": "35e5ba87b65e0a3681aac5ef70f09ee19f2c6fff",
+    "sha256": "cb2275c3676a169c79e78d4945adab8072e532973fdc3fc13c274009350dcc89",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/135_phoenix_movement_reason_code_group_i_outlet_return_receive.sql",
+    "git_blob": "2b5cc65bb8ae5e310197c77f7e4fbf851142a002",
+    "sha256": "018045a8059d131d456630c390301ce27f4dd779c51704d0da441400b5f876d9",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/136_phoenix_dispense_with_context_atomic.sql",
+    "git_blob": "62e965330d1a025a4d8dda4c823a009836a98127",
+    "sha256": "21620a1e1446929b892a7fe8d1f98061e61fa3be3879cbcd3c12edd9944b4016",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/137_phoenix_five_role_cutover_ports_view_gap.sql",
+    "git_blob": "a9e2a59e75ad46a23f4df2b9df0c9f24b7eeed50",
+    "sha256": "e23ed90ac2c07e6837709ef206734b304dc22560fafea0d12310916fd37cc447",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/138_phoenix_movement_ledger_report.sql",
+    "git_blob": "cce2ae757a3cf2b31aad93ab4b42886c3ae5a0bb",
+    "sha256": "6c0d8f1cbf1dd2b6f471c1b44d4f80a65ffb78cd475cbf36557135eff06f6b9d",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/139_phoenix_movement_timeline_contract_fields.sql",
+    "git_blob": "ca3ade1441d85f07b5599840cc48923baf55e698",
+    "sha256": "593d8bf37c56046c92a0900c51949661ec476d594f602ca6dd20f48f8c5fca0c",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/140_phoenix_demo_dataset_manifest.sql",
+    "git_blob": "8572f18eb61b8d615ab207434b3f2b4de5441b27",
+    "sha256": "9b3af14a58292330fbe10ee297795708fd2456ca39e1cf2bfd36a10a909d91e3",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/141_phoenix_demo_immutable_exemption.sql",
+    "git_blob": "cdb5e718d832232622e6f03badef0608309e65ad",
+    "sha256": "f377b7390d4c81e1ad66905c6b7bb1fcbc26ec2c57ffba97b84d5fc1879c0816",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/142_phoenix_demo_profile_detach.sql",
+    "git_blob": "7d65f78a2577874ea8fd88c291ea35865d2b1f68",
+    "sha256": "5c3beb84b703cc0049bfbe970b75baef176a9e963b347e0d7f9c6b54974d49f5",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/143_phoenix_demo_purge_restrict_violation_and_ordering.sql",
+    "git_blob": "ac78910dc0051d0e97d9908c7fddf9f54407853b",
+    "sha256": "9ea08282d36b78af5ad8d4f606a312fa872021d7388efadc5b32dfb4a5982635",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/144_phoenix_demo_availability_purge_exemption.sql",
+    "git_blob": "852e1f3970929a07d8ae0993389207800fdfb700",
+    "sha256": "1ba967d8eb6ffb777f68753568f0ba5d167918bb697a99f0330929b31e9c819c",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/145_phoenix_demo_organization_watermark.sql",
+    "git_blob": "20adb2d57c98dfa339752af43e566a6a7d2fdbe3",
+    "sha256": "b24f2ad7b9514b27f1dfb82b24635340712fc517d6933704079ba8554d26869f",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/146_phoenix_secure_user_provisioning.sql",
+    "git_blob": "c4f316ec9711e693d9abb409ace017357dee28f3",
+    "sha256": "fc42354052b43adcaed1a024b1feaf7852857a743294f9047ac040e453085bb1",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/147_phoenix_secure_user_delete_history_guard.sql",
+    "git_blob": "4be05be7b1a90477b7af41f11af1ffcfbe6c2a9a",
+    "sha256": "e5e3de7648d77abf170313ad3ddebb91e032901a9e431a5c56158098b6beb5fb",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/148_phoenix_transfer_suggestion_draft_bridge.sql",
+    "git_blob": "c6a24e64bafeb915a836a1ad2ac873e5f2b31dda",
+    "sha256": "5e5f2ea2ea594b9e4e083c0204fe4ed60d4423b0ec4d4d64b00e4862dd2634fe",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/149_phoenix_inventory_suggestion_lineage_commitments.sql",
+    "git_blob": "6d3bd7729e053c606dbbce7296704ba6f1416ae0",
+    "sha256": "82c08fa83c46d85a1c5759874b6bb25858583e6ad47473e2e570562e6531ee07",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/150_phoenix_material_identity_fefo_provenance_hardening.sql",
+    "git_blob": "290e8c0d74fca5d18879638607b904961f4ed46e",
+    "sha256": "87ca8beadde42816d2e805d4b27e787ef1d8f0e8dffbb7b6bcfedc2ba258ae5d",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/151_phoenix_suggestion_route_policy_gates.sql",
+    "git_blob": "0982947e78e1c62fd05ed7f6ec33010a4b86f3cd",
+    "sha256": "a873aa05d649278106630786f73f332e4fde1ebf8459c5829e09a1f1975269fa",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/152_phoenix_suggestion_action_read_model.sql",
+    "git_blob": "40e5551bb9e1a3e34f15a88c5e881af1a83e769a",
+    "sha256": "abde1380be5d104ce91c91444e87e8c1a5f2136e06a32dcb1a214b113c257d8f",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/153_phoenix_retire_inter_org_exchange_status_writer.sql",
+    "git_blob": "a878afcc7aa866e10e5af38a265d3aabb2a99be5",
+    "sha256": "4854665771e837a5641fb6c187fda15bacf9d7c12baccd6a46e072bd4a8dea84",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/154_phoenix_transfer_corridor_privilege_lockdown.sql",
+    "git_blob": "d1bd66771f0bb0134e1ee2d9cf39ec464a16f3c4",
+    "sha256": "e04f75da0cd4ab15d6ebbc08c4c54b13e595dba251f4bc5359fdec83a1027ddf",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/155_phoenix_transfer_send_receive_lifecycle_notifications.sql",
+    "git_blob": "9e8a8f90c1800c4549f9bc175672a276411bb3c0",
+    "sha256": "ae70dbedb5e1349f2340e7b8220f977169e78135e1874244a29587b10c085e46",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/156_phoenix_outlet_return_line_idempotency.sql",
+    "git_blob": "c8ab72b50f7e9a50f57c878b7312875f96c2e171",
+    "sha256": "1a3d08aa5b859e182b4187eaf4447ac5e6595f0399875b1168c72f9490a3570d",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/157_phoenix_outlet_return_exception_resolution.sql",
+    "git_blob": "43b4e0569a44f2a1ff4c41d2eeeabb0053c38fab",
+    "sha256": "5a9a5ffd62d53d452d16c63a84e712da573b577ef9f5fa5add1464161d7fdd31",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/158_phoenix_transactional_outbox_foundation.sql",
+    "git_blob": "687a3d562e181d14a7a05f4ccf5c3515469cb2af",
+    "sha256": "12597835a584e5739e1ea7e474184f363e8601cab907073d14b16ca458e2b206",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/159_phoenix_lifecycle_outbox_producer.sql",
+    "git_blob": "870faaf0082812f1b09692efcd63038e35b63378",
+    "sha256": "b95cd4e3fa4df238f90745e2775edff723289f248c043671bad122a6e7cee278",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/160_phoenix_demo_purge_outbox_compatibility.sql",
+    "git_blob": "e1b42eae902a49d58eecd1dfb0c3d47fe2367712",
+    "sha256": "2122d714f5b658a8e8697de6cbafedd5400ac4379cd175483e98560c870825c9",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/161_phoenix_movement_outbox_producer.sql",
+    "git_blob": "64380fddf21b6239778451394f05de3f6c034846",
+    "sha256": "bd4fd36e9729483de1d2fff46376b425a999ebee8cf077ec5dde2f22e09dfe57",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/162_phoenix_stocktake_and_exception_outbox_producers.sql",
+    "git_blob": "3ece0ce13988ca4e779323ef76de473e8137ecf6",
+    "sha256": "7613f0b8bd4af7f4a321dfef939e79915c34048e950d2534d26f525d98807b95",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/163_phoenix_outbox_consumer_foundation.sql",
+    "git_blob": "20b57ef654b236fefc1fe01d055b19925a5eaeb6",
+    "sha256": "8502fd7f17aa977189d9d20565e93865d9444e817eca748c5e95480361c34a06",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/164_phoenix_facility_identity_and_routing_foundation.sql",
+    "git_blob": "e336d074baa0f51aa774c275bdbfe2f6ff9efce4",
+    "sha256": "7d72823b2f2b118fde2e1e9fec0b72ffd02acc057e2c8b2e409cc20b076ec928",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/165_phoenix_sector_health_center_supply_and_return.sql",
+    "git_blob": "58f99d0ffb39045a10b1c173f9d9c1083f3dff8e",
+    "sha256": "ec0895e618250d40ca91b49b506b806c7182425d4dbfe5cfb82e56e11369ce56",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/166_phoenix_initial_provisioning_invariant.sql",
+    "git_blob": "47f4d6ea39aed2e9afe67ae9849c6f37671a6442",
+    "sha256": "232dd9a538940dddf1c5d89441ff53f22585455ba76af44961ab68fe20656133",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/167_phoenix_dispatch_line_full_rejection_reconciliation.sql",
+    "git_blob": "c5e9557578491b6815156ca2965fca17068bd3dd",
+    "sha256": "61db59b4cdfbdbdd5b46c2086c5da24a99dcf79d6f8fd9afeaa1c409765ea63c",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/168_phoenix_atomic_emergency_outlet_replenishment.sql",
+    "git_blob": "897eb821d313aae3c48a1e5cd645d2486f329758",
+    "sha256": "fb8fb7012d3919bb93625d2a9f89091cb1391405c0fb59216dc76d959f5a5204",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/169_phoenix_outlet_replenishment_reversal.sql",
+    "git_blob": "d525831fb9abfc9563d3c9d27fba3f09319b59a2",
+    "sha256": "f317fcbcd10fb047ae70dd0470090f1b3af08372448f5f2136e2402cc3494682",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/170_phoenix_organization_class_and_warehouse_facility_assignment.sql",
+    "git_blob": "ec82922e889737533abb9f045ef9e49e90948ab0",
+    "sha256": "7420427882f19c3ef6ccc371e02b884ce69a75803b833670c9d42ad857f535dd",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/171_phoenix_organization_kind_pharmacy_department_authority.sql",
+    "git_blob": "ac1fcf8ed3e4431727c54b62df1a7f78f24454ac",
+    "sha256": "face71b087a6cf5d321987fe8d806bed9e30028a53fedd09d2faeb8f9e42c54b",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/172_phoenix_patient_dispensing_contract.sql",
+    "git_blob": "df87b8fb1d15e96b0b445e34986bcf22fab7eb8f",
+    "sha256": "4df3acd55571469abe69eebd289c98a5a214cc02e9413e33d9883f849fc2cffd",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/173_phoenix_database_security_surface_hardening.sql",
+    "git_blob": "98d2512d13d8cd159a2869eb544fd0d01806238d",
+    "sha256": "a8aa3a704376dadacd5f692614d58788f4108f623dc71501f282ec9475e1c6cf",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/174_phoenix_authenticated_rpc_surface_hardening.sql",
+    "git_blob": "a560fa898bd1eba3b6a0a234098a521b1cf548cd",
+    "sha256": "d992fc8ace46941e15ee273e08f24f5a4a38fc6b230ae36ebb56312844cbf6e0",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/175_phoenix_read_helper_anonymous_surface_hardening.sql",
+    "git_blob": "690e37b897c696daffd8255ac9ce6f7918776563",
+    "sha256": "0d31a3d3d87a3d7729207f3fb77a2afb84b8a4c8d68bb4577891b55c15a1d2f9",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/176_phoenix_canonical_outlet_availability_read_model.sql",
+    "git_blob": "b4592028710cae15ac8b2918fea66b168b13ada1",
+    "sha256": "faab055ca3aa21ea05259285d8ecce7383b8c7385175459922b731643068d115",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/177_phoenix_canonical_public_qr.sql",
+    "git_blob": "7f50f6f4a1b330b6a26816dd62ef99f64cfbfbdb",
+    "sha256": "844002c7e21e6a1a79d88cbc576c235cf715b7a86948a8a44098f3acd04c0ef3",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/178_phoenix_distribution_point_owner_guard_privilege_fix.sql",
+    "git_blob": "88f3dbd0e56f4f05d9e7c62867b84871c4935dde",
+    "sha256": "5962ce29b1ebf8f50d02eb7d97ffbcbb56262d11f68670df4585add554f05ce9",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/179_phoenix_canonical_authenticated_availability_hardening.sql",
+    "git_blob": "432913754e6dbbb7006abaf6c060a7cff89c9b52",
+    "sha256": "94cd68d22434fcc3631b0a6ec0c5488fe54009135ce4900c295502760c55d2da",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/180_phoenix_emergency_initial_provisioning_boundary.sql",
+    "git_blob": "1c8d38daa737d9994d75995f8dc775e434ca59b9",
+    "sha256": "fe87e407aee3c47a387cfbf50d2fc2bde98fb51f72d75ee2d83ad6253cc43b82",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/181_phoenix_health_sector_topology_reconciliation.sql",
+    "git_blob": "88500c1072285d919bd77cded13abda9cc9c7273",
+    "sha256": "1f2a733deee82bfdf720bee9f391ea0510af47d7a53b607944e8036ed3e35000",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/182_phoenix_health_center_facility_scoped_rbac.sql",
+    "git_blob": "90c866635b6a2aaa149a567eaceb0933af684eed",
+    "sha256": "5915832037c6ca08c2d873a10eb4896884abe72667f4b7e71c27768572734fb0",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/183_phoenix_emergency_outlet_integrity.sql",
+    "git_blob": "2cf1e05afbac802d867e56ca43f046b590045886",
+    "sha256": "ec30df054052d3e652bacfaf61aef99d3eff2e77568bb4d7ffc044d1440e5e23",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/184_phoenix_canonical_supply_cycle.sql",
+    "git_blob": "98dae7926614d5c745616df9422506baa5528730",
+    "sha256": "17ce1778592345e4a7eb3af7aa9dbebf003fc032e69f9ea1964c8d0e66ea0ce9",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/185_phoenix_return_quarantine_recall_parity.sql",
+    "git_blob": "868e49017657a3263b7d71de0950043039ebbceb",
+    "sha256": "b8389fdd5c56c105a4c632f6113ac63eab540e89e56abe648402172fad5288db",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/186_phoenix_correction_reason_code_wrapper_parity.sql",
+    "git_blob": "b1793ade9e0cf728bf54e328887e7677b8a29095",
+    "sha256": "a84e83b32ffa0fbf7abe2111d7c07a2a3a61107d64e436dbd7b5818708f0142d",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/187_phoenix_delegated_operational_access.sql",
+    "git_blob": "7367cd62581fcf0b06a974e3dae71c914575e748",
+    "sha256": "932f5c618ddbd91c4d8c3ad9a064ad6551e388fbd0bd075f2ae4328c92117d09",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/188_phoenix_public_qr_facility_context.sql",
+    "git_blob": "17b3a33c7c1e95bf8a97485608164f9baa8a6678",
+    "sha256": "64224d8cd5ed0a821f382c257ee86336326c74cc1dbb41a085f5b23f56336701",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/189_phoenix_inter_org_alert_canonical_identity.sql",
+    "git_blob": "af307f4daf4a179e82bf604041cca8c5e331d3f5",
+    "sha256": "5e897aa327f2cd9b46ae18304e5603e2ca18e87b25bad4c9fecedb5c8c0d1801",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/190_phoenix_inter_org_alert_cqrs_boundary.sql",
+    "git_blob": "faf7dcd18ec18066a544b332aa4a41246806a20b",
+    "sha256": "958ed5bbfb718be296164ddd52a8aa95ed06c3c3af9af7cef014da8ee953c9dd",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/191_phoenix_canonical_scope_topology_read_contract.sql",
+    "git_blob": "58703f114396846209978f8b34c9d77327577031",
+    "sha256": "e0788766d026e071afc6366f33748305113816fabdca76e45f951c74adc6e3d4",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/192_phoenix_anonymous_read_surface_convergence.sql",
+    "git_blob": "8f0f4649071e3df6ecafab0b1c5fc519cc35171f",
+    "sha256": "d0abc6c2109178ad87c12f9bc993f333cc33aeaab3bdae6846547bfef9ed9d96",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/193_phoenix_inter_org_alert_command_surface_hardening.sql",
+    "git_blob": "278bcc222fe7df86ac5ee6463fa88e4fbec0a8c9",
+    "sha256": "3d5013a930c2a7eff6b75583d01df40eb9ea152a446996c436be72d2c6304905",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/194_phoenix_authorization_surface_reproducibility_convergence.sql",
+    "git_blob": "02e8edbb476962af2ca39c898e1e0ec59ea66bf7",
+    "sha256": "9fbc995dcf8bdd8f5408a18cc9154a1039239b0c4794e95ea0ffc110f0251b47",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/195_phoenix_auth_helper_profile_schema_qualification.sql",
+    "git_blob": "d25cc02e1b811fd287b399b494815ae84d2e22b4",
+    "sha256": "3a02087b9876eb6af958a336869cedb7ff28ddf9de15947a99c4c1228b9ae81f",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/196_phoenix_secdef_relation_schema_qualification.sql",
+    "git_blob": "e8c891f69fb718cf35b66cb0a6b6249db109ff46",
+    "sha256": "cac58c134c67e6c64bcc180004203400e32366da02d1fee000ec1db9c366b326",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/197_phoenix_public_execute_convergence.sql",
+    "git_blob": "278be14c0ebd86cc879103fffffd66365a3baf76",
+    "sha256": "e61ef9c670c7d73811b10350e303ccd07da4bb188ad6ac2117d0a8f0a9d6a292",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/198_phoenix_secdef_search_path_convergence.sql",
+    "git_blob": "259a1b1584d81fd016157879ed83286fc030ad1f",
+    "sha256": "dd05445aec66435f8145ed0415da1a919acf52a96f00809b5a10001a86d7b707",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/199_phoenix_command_center_read_contract.sql",
+    "git_blob": "542a4e863c7f9c82a7cc924270755d81c8deb392",
+    "sha256": "bb468d74e5cd4b0150e4108e95c995dfff2263630c071712df69bb6e08ce9477",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/200_phoenix_demo_purge_auth_boundary_correction.sql",
+    "git_blob": "b0c7c15d98a8c52079676cf0367a19e292ec50c8",
+    "sha256": "14b2484e6f9fef4c15643eac46413cdc23d28206654eeec4c9bf0953f9260e42",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/201_phoenix_organization_archive_dependency_guard.sql",
+    "git_blob": "4567fae9db4c2d8dda11b865a674c4d45eb69427",
+    "sha256": "0fb554ce3b632c8965ea97d527b62e3f8af42ac432ea883d0e32abfb2a660d4f",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/202_phoenix_organization_archive_reciprocal_guard.sql",
+    "git_blob": "2add8ad634b42064319e828500dcc0a298e93653",
+    "sha256": "3d19ff755ff06c7cb18aba668e7bff21a0333fc2ffe0ad6f8c6d96c1a136b3ad",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/203_phoenix_material_dispensing_suspension.sql",
+    "git_blob": "f26d634972c6a0bdc94f67001428bae9df17c244",
+    "sha256": "bc46c2f9e984d8a5e8f40548878ff15ad9ae38410ef180aa909c0453d4cb6de8",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/204_phoenix_dispensing_suspension_enforcement_dispense.sql",
+    "git_blob": "0ac058c4af3941ac1e65db9365f5eb13df095791",
+    "sha256": "a29d301361fd83b85fff14056872e0eabf05bb4c34e34ede5cb0331a3f9d13fe",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/205_phoenix_dispensing_suspension_enforcement_fefo.sql",
+    "git_blob": "f2eba996195aa74fde12e5d27e7ae4301c1216c6",
+    "sha256": "46f2b93e8cea4d05d28223b1d1f1cd4b3494a959c2352d5b61dabc463369b47c",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/206_phoenix_dispensing_suspension_enforcement_suggestions.sql",
+    "git_blob": "a5e22998c15afbe6be9930bc473b5d08316e3d3d",
+    "sha256": "1a155c94068eaa364f559668b3db06526a65f674980d31e45f904dfe2c7ce079",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/207_phoenix_dispensing_suspension_enforcement_warehouse_send.sql",
+    "git_blob": "81f3a7766630066b03fdffd55e9da27007a0a07c",
+    "sha256": "44a0cb934376da07f19fe5dbea20d924a425e4daed56ce78c536fb35b2869b78",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/208_phoenix_dispensing_suspension_enforcement_replenishment_and_drafts.sql",
+    "git_blob": "c4fec561ab58f0d6a981a7da9a1235e9ceea69eb",
+    "sha256": "0a7a1dd1788f9e86a95a07e93bc84d662125a9cb25d3fbd06e09db9d398468bd",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/209_phoenix_central_needs_registry.sql",
+    "git_blob": "9378bdaf44e6808ac9a0b0abb4ab42c6e283e9e1",
+    "sha256": "a06dddf4214b94634d87f400b3d71274b05c153a5db0d9e899ac62b534d777f4",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/210_phoenix_central_needs_workflow_rpcs.sql",
+    "git_blob": "f61c5206ab843a2bc50dfae972d998700aa9f2bc",
+    "sha256": "9592adc90653d0449fd28f90376e731d6150b8914910ef6f5f25766cb1cffe21",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/211_phoenix_central_needs_batch_and_disposition.sql",
+    "git_blob": "999c6c62154827bd350fea681678a1fa22d74e1e",
+    "sha256": "d5791431847903db6c1cf0eb9864f862c7372511242179296b1b2bfb4b082358",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/212_phoenix_central_needs_need_lines.sql",
+    "git_blob": "938a6c7f8a10ff2e89cf5496b46affe43bc1db58",
+    "sha256": "f124d775acabb27bc7463f084ba085ac933bc476bf1a4b6a4328c024031a2a43",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/213_phoenix_central_needs_beneficiary_column_mapping.sql",
+    "git_blob": "a465d323b2cfc9e72e43b9c577163a045c28aa6a",
+    "sha256": "d57e572f5cdb66dfc26bdb1c44123fc0124728fdff027f6a72629da5627c991f",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/214_phoenix_central_needs_review_readiness_volatility.sql",
+    "git_blob": "2954b3bf349370a6a2701216dc89e3385873601c",
+    "sha256": "a576c8ced86b943f7ced6d1b1dde193954c4609a0027777bb6252b1a5bfbdb07",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/215_phoenix_central_needs_governed_correction_lifecycle.sql",
+    "git_blob": "5f1c6bbbb2c2be46c9d7a28642c01e12b76e4c29",
+    "sha256": "f56f8b10bd7195efe07946f4eed94c9c8c56d46629421515d0af3c539b60ff87",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/216_phoenix_central_needs_region_persistence.sql",
+    "git_blob": "e87e71effddfc88ede944d52312aca20dbdde391",
+    "sha256": "6084eabbe2113e20cd8d25c5e5dd8c4ba9023117044f02ac012b014ab2d88052",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/217_phoenix_central_needs_c5_safety_convergence.sql",
+    "git_blob": "cf26ee3cfd58b59bd5267ac8e05510fac0d334f8",
+    "sha256": "7ca1fa69aecd9cfefd19fe3fd9555de10eb5edf6fc7ea68d539404549ce5e53a",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/218_phoenix_central_needs_submission_integrity_fence.sql",
+    "git_blob": "0a82827f93a471d6e9a9716d4965b9e32bf3d38b",
+    "sha256": "d376ab68dc5a6553e000f21220f5c00040fa58348a60ad8472bc1302675dfa20",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/219_phoenix_auth_signup_authority_hardening.sql",
+    "git_blob": "12c809fe09bf7b07ec4b11585d7f42dd8883c32e",
+    "sha256": "a5314af4924932a850037adc3fcf921dcde837fc46414b68b82f799980149b8a",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/220_phoenix_central_needs_active_item_guard.sql",
+    "git_blob": "70ab8424a69503b7ebbbcafc1c5dfc103a079c28",
+    "sha256": "1e7636a23122572faed2f639d56cd5a09a8de67c4197ea88531b766de0d8e669",
+    "pass": true
+  },
+  {
+    "path": "supabase/migrations/221_phoenix_pharmacy_department_subpurchase_exclusion.sql",
+    "git_blob": "115bf812db35dc3eb3815397446662a93327f9bc",
+    "sha256": "76405b7540c327d069fe80782003ee3cfea2ecc38facba2b4f3e39c798cc37b2",
+    "pass": true
+  }
+]

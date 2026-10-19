@@ -22,6 +22,8 @@ import { errorResponse, failureResponse, jsonResponse, readJsonBody, requireMeth
 import { SOURCE_BUCKET, TRANSPORT_LIMITS } from '../_lib/env.ts';
 import { authenticate, callerIsAuthorized, serviceClient } from '../_lib/supabase.ts';
 import { objectKeyFromLocator } from '../_lib/storage-paths.ts';
+import { verifyPermanentObject } from '../_lib/object-integrity.ts';
+import { sha256Hex } from '../../src/features/central-needs/import/parser-core.ts';
 
 interface DownloadRequest {
   batchId?: unknown;
@@ -62,6 +64,18 @@ export default async function handler(req: Request): Promise<Response> {
     if (objectKey === null) return errorResponse(422, 'storage_locator_unrecognised');
 
     const service = serviceClient();
+
+    // R1 / ST-15: the batch row cannot see Storage. Prove the object exists and
+    // hashes to the recorded container SHA-256 BEFORE any signed URL is minted.
+    const integrity = await verifyPermanentObject(
+      service.storage.from(SOURCE_BUCKET),
+      objectKey,
+      data.container_sha256 as string,
+      TRANSPORT_LIMITS.maxSourceBytes,
+      sha256Hex,
+    );
+    if (!integrity.ok) return errorResponse(integrity.status, integrity.code);
+
     const signed = await service.storage
       .from(SOURCE_BUCKET)
       .createSignedUrl(objectKey, TRANSPORT_LIMITS.signedDownloadTtlSeconds, {

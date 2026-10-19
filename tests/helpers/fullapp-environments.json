@@ -1,0 +1,4 @@
+{
+  "_comment": "REVIEWED environment contract. Empty until the Director/Owner authorizes a specific NON-PRODUCTION environment by adding an entry {ref|origin, appOrigin (exact scheme+host+port), loopback?, approvedBy, approvedOn}. An environment variable alone can never authorize a run.",
+  "authorized": []
+}
