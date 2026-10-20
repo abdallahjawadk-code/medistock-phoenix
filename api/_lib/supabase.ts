@@ -65,24 +65,46 @@ export async function authenticate(req: Request): Promise<AuthenticatedCaller | 
 }
 
 /**
- * AUTHORIZE through the canonical model, as the caller.
+ * AUTHORIZE a Central Needs action through the R1 single authority predicate, as the caller (W0).
  *
- * This is `public.phoenix_status_center_authorized`, the same function every
- * Central Needs RLS policy and every CN-1B guard calls. Running it on the
- * user-scoped client means the answer is computed for the real `auth.uid()`,
- * with no organization identity supplied by the browser being trusted.
+ * This is `public.phoenix_central_needs_actor_authorized(org, key)` (M224), a thin INVOKER wrapper over
+ * `phoenix_cn_policy.actor_scope_org(key)`: active profile, an active pharmacy_department_authority HOME organization,
+ * the explicit key, and NO cross-organization or organization-less super_admin permit. The legacy helper
+ * `phoenix_status_center_authorized` (M092) returns true for ANY active super_admin and must never gate a Central Needs
+ * Storage path. It runs on the user-scoped client, so `auth.uid()` is the real caller. Any error - including PGRST202
+ * (the wrapper does not exist on a pre-R1-a database) - is a refusal: fail closed.
  */
-export async function callerIsAuthorized(
+export async function callerHasCentralNeedsAuthority(
   caller: AuthenticatedCaller,
   organizationId: string,
   permissionKey: string,
 ): Promise<boolean> {
-  const { data, error } = await caller.client.rpc('phoenix_status_center_authorized', {
+  const { data, error } = await caller.client.rpc('phoenix_central_needs_actor_authorized', {
     p_organization_id: organizationId,
     p_key: permissionKey,
   });
   if (error) return false;
   return data === true;
+}
+
+/**
+ * Is Excel quantity entry still open for this organization/revision (W0, ADR 10.2)? Read from the database state
+ * (`phoenix_central_needs_my_capabilities(...).excel_import_open`), as the caller. Only a literal `true` opens it;
+ * an error, an empty answer or a missing function (pre-R1-a) is CLOSED. After R1-b activation it is false, which
+ * makes upload-ticket and finalize-import refuse BEFORE any Storage object is created.
+ */
+export async function callerExcelImportOpen(
+  caller: AuthenticatedCaller,
+  organizationId: string,
+  planRevisionId: string,
+): Promise<boolean> {
+  const { data, error } = await caller.client.rpc('phoenix_central_needs_my_capabilities', {
+    p_organization_id: organizationId,
+    p_plan_revision_id: planRevisionId,
+  });
+  if (error) return false;
+  const row = (Array.isArray(data) ? data[0] : data) as { excel_import_open?: unknown } | null | undefined;
+  return row?.excel_import_open === true;
 }
 
 /**

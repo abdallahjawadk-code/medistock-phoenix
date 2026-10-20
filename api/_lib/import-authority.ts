@@ -23,6 +23,8 @@ export type AuthorityDecision =
 export interface AuthorityDeps {
   resolveRevision: (caller: AuthenticatedCaller, planRevisionId: string) => Promise<ResolvedRevision | null>;
   isAuthorized: (caller: AuthenticatedCaller, organizationId: string, permissionKey: string) => Promise<boolean>;
+  /** W0: Excel quantity entry must still be open (database state); false/unknown closes the import. */
+  isExcelImportOpen: (caller: AuthenticatedCaller, organizationId: string, planRevisionId: string) => Promise<boolean>;
 }
 
 export async function reassertImportAuthority(
@@ -52,6 +54,14 @@ export async function reassertImportAuthority(
     authorized = false;
   }
   if (!authorized) return { ok: false, status: 403, code: 'authority_lost_during_import' };
+
+  let open = false;
+  try {
+    open = await deps.isExcelImportOpen(caller, revision.organizationId, revision.id);
+  } catch {
+    open = false;
+  }
+  if (!open) return { ok: false, status: 409, code: 'excel_import_closed' };
 
   if (revision.status !== 'draft') {
     return { ok: false, status: 409, code: 'plan_revision_not_editable', detail: revision.status };

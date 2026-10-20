@@ -834,6 +834,11 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
       'supabase/candidates/R1a_06_material_registration_inert.sql',
       'supabase/candidates/R1b_01_manual_activation_NOT_APPLIED.sql',
       'supabase/candidates/R1b_02_material_registration_activation_NOT_APPLIED.sql',
+      // D18 (FF1 forward-fix candidate, unnumbered and unapplied) and W0 (database proof of the Excel-path authority), registered by EXACT filename.
+      'supabase/candidates/FF1-PLAN.md',
+      'supabase/candidates/FF1_r1_forward_fix_NOT_APPLIED.sql',
+      'supabase/candidates/__tests__/ff1-forward-fix.dynamic.test.ts',
+      'supabase/migrations/__tests__/w0-central-needs-excel-path-authority.dynamic.test.ts',
       'supabase/candidates/__tests__/functional-journey.dynamic.test.ts',
       'supabase/candidates/__tests__/hosted-adapter.dynamic.test.ts',
       'supabase/candidates/__tests__/m182-equivalence.dynamic.test.ts',

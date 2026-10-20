@@ -20,7 +20,7 @@
  */
 import { errorResponse, failureResponse, jsonResponse, readJsonBody, requireMethod } from '../_lib/http.ts';
 import { SOURCE_BUCKET, TRANSPORT_LIMITS } from '../_lib/env.ts';
-import { authenticate, callerIsAuthorized, serviceClient } from '../_lib/supabase.ts';
+import { authenticate, callerHasCentralNeedsAuthority, serviceClient } from '../_lib/supabase.ts';
 import { objectKeyFromLocator } from '../_lib/storage-paths.ts';
 import { verifyPermanentObject } from '../_lib/object-integrity.ts';
 import { sha256Hex } from '../../src/features/central-needs/import/parser-core.ts';
@@ -56,7 +56,7 @@ export default async function handler(req: Request): Promise<Response> {
     if (error || !data) return errorResponse(404, 'import_batch_not_found');
 
     const organizationId = data.organization_id as string;
-    if (!(await callerIsAuthorized(caller, organizationId, 'central_needs.view'))) {
+    if (!(await callerHasCentralNeedsAuthority(caller, organizationId, 'central_needs.view'))) {
       return errorResponse(403, 'forbidden');
     }
 
