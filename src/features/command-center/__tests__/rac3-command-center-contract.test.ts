@@ -484,6 +484,8 @@ describe('RAC-3 · I) no backend or migration change', () => {
     // chain, never applied outside a disposable database) are registered by EXACT filename, exactly as M200-M222 were; no wildcard and no
     // directory exemption, so every other supabase/ file still fails this guard closed. They touch no command-centre object.
     const R1_CANDIDATES = [
+      // D18: the unnumbered, unapplied R1 forward-fix candidate (exact filename).
+      'supabase/candidates/FF1_r1_forward_fix_NOT_APPLIED.sql',
       'supabase/candidates/R1a_01_manual_source_schema_inert.sql',
       'supabase/candidates/R1a_02_authorization_closure.sql',
       'supabase/candidates/R1a_03_lifecycle_relations_and_sod.sql',
@@ -518,6 +520,8 @@ describe('RAC-3 · I) no backend or migration change', () => {
       'supabase/candidates/staging-baseline/verify_085_preconditions.sql',
       'supabase/candidates/staging-baseline/verify_baseline_221.sql',
       // F3 (S3c functional acceptance): the shared journey, its Staging runner and the disposable-database suite, registered by exact filename.
+      'supabase/candidates/FF1-PLAN.md',
+      'supabase/candidates/__tests__/ff1-forward-fix.dynamic.test.ts',
       'supabase/candidates/__tests__/functional-journey.dynamic.test.ts',
       'supabase/candidates/staging-baseline/hosted-adapter/functional-acceptance.mjs',
       'supabase/candidates/staging-baseline/hosted-adapter/functional-journey.mjs',
