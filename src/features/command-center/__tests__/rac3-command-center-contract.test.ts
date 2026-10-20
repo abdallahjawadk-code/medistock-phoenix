@@ -492,6 +492,7 @@ describe('RAC-3 · I) no backend or migration change', () => {
       'supabase/candidates/R1a_06_material_registration_inert.sql',
       'supabase/candidates/R1b_01_manual_activation_NOT_APPLIED.sql',
       'supabase/candidates/R1b_02_material_registration_activation_NOT_APPLIED.sql',
+      'supabase/candidates/__tests__/hosted-adapter.dynamic.test.ts',
       'supabase/candidates/__tests__/m182-equivalence.dynamic.test.ts',
       'supabase/candidates/__tests__/r1-manual-lifecycle-canonical.dynamic.test.ts',
       'supabase/candidates/__tests__/r1a-01-manual-source-schema.dynamic.test.ts',
@@ -510,6 +511,7 @@ describe('RAC-3 · I) no backend or migration change', () => {
       'supabase/candidates/staging-baseline/182b_production_body_overlay.sql',
       'supabase/candidates/staging-baseline/M001-M221-freeze.json',
       'supabase/candidates/staging-baseline/audit-derivations.mjs',
+      'supabase/candidates/staging-baseline/hosted-adapter/hosted-adapter.mjs',
       'supabase/candidates/staging-baseline/rollback_phase1_disposable.sql',
       'supabase/candidates/staging-baseline/sql-tokens.mjs',
       'supabase/candidates/staging-baseline/staging-baseline.mjs',
@@ -526,6 +528,12 @@ describe('RAC-3 · I) no backend or migration change', () => {
       f.startsWith('supabase/')
       && !f.startsWith('supabase/migrations/__tests__/')
       && !ALLOWED_SQL.includes(f))).toEqual([]);
+    // P-HARDEN-01 negative controls on the REAL ALLOWED_SQL list: the two hosted-adapter files are registered by exact name; near-misses are flagged.
+    const flag = (files: string[]) => files.filter(f => f.startsWith('supabase/') && !f.startsWith('supabase/migrations/__tests__/') && !ALLOWED_SQL.includes(f));
+    expect(flag(['supabase/candidates/staging-baseline/hosted-adapter/hosted-adapter.mjs', 'supabase/candidates/__tests__/hosted-adapter.dynamic.test.ts'])).toEqual([]);
+    const unregistered = ['supabase/candidates/staging-baseline/hosted-adapter/hosted-adapter.mjs.bak', 'supabase/candidates/staging-baseline/hosted-adapter/other.mjs', 'supabase/candidates/staging-baseline/hosted-adapter.mjs',
+      'supabase/candidates/__tests__/hosted-adapter.dynamic.test.ts.orig', 'supabase/candidates/__tests__/hosted-adapter-extra.dynamic.test.ts', 'supabase/candidates/hosted-adapter/hosted-adapter.mjs'];
+    expect(flag(unregistered)).toEqual(unregistered);
   });
 
   /**

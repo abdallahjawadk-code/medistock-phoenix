@@ -106,7 +106,7 @@ export async function buildBaseline(o) {
 
 // A super_admin must exist before M062 (abort otherwise). On a real project this is an OWNER-provided identity (decision B5); here a synthetic one.
 export const SEED_SUPER_ADMIN_ID = '00000000-0000-0000-0000-0000000000a1';
-const SEED_AFTER_001 = `
+export const SEED_AFTER_001 = `
   INSERT INTO auth.users (id, email, raw_user_meta_data)
   VALUES ('${SEED_SUPER_ADMIN_ID}', 'root@rig.local', jsonb_build_object('full_name','Rig Root','role','super_admin')) ON CONFLICT (id) DO NOTHING;
   UPDATE public.profiles SET role='super_admin', status='active' WHERE id='${SEED_SUPER_ADMIN_ID}';

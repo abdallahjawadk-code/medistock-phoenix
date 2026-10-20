@@ -30,6 +30,7 @@ run('R1 staging baseline method (B1/B2) - disposable rig', { timeout: 900_000 },
     // same, but applying the on-disk (LF) bytes - isolates the pure line-ending effect
     Bdisk = await buildBaseline({ freeze: FREEZE, skip004: true, attestation: ATT, useDiskBytes: true });
     fpDisk = await fingerprint(Bdisk.client);
+    await Bdisk.client.end();                       // idle clients are killed when a later test recreates the shared database (unhandled 'terminating connection'); only the ledger is used afterwards
   }, 900_000);
   afterAll(async () => { await Bdisk?.client?.end().catch(() => undefined); });
 
@@ -66,6 +67,7 @@ run('R1 staging baseline method (B1/B2) - disposable rig', { timeout: 900_000 },
   it('VERIFY (read-only baseline checks) passes on the rebuilt baseline, and FAILS when a protection is tampered with', async () => {
     const sql = readFileSync(VERIFY_BASELINE, 'utf8');
     const own = await buildBaseline({ freeze: FREEZE, skip004: true, attestation: ATT, useDiskBytes: true });   // own database: later tests recreate the shared one
+    own.client.on('error', () => undefined);          // a later freshRigDb() terminates idle sessions; that is expected, not a failure
     Bdisk.client = own.client;
     const ok = (await Bdisk.client.query(sql)).rows;
     expect(ok.filter((r: any) => !r.ok).map((r: any) => r.check)).toEqual([]);
@@ -110,23 +112,28 @@ run('R1 staging baseline method (B1/B2) - disposable rig', { timeout: 900_000 },
     expect(b).toBe('7fb2f8b311ab181b0189fb3ec6e13f2b068bc3ec588343a56be8c4df672f5188');
   });
 
-  it('M085 P4 inspects the ACTUAL EXECUTE privileges: passes on the rebuilt pre-085 state, fails when anon or PUBLIC can execute a writer, and reports the grantees', async () => {
+  it('M085 P4 REQUIRES the current authenticated EXECUTE on BOTH writers (has_function_privilege) and no PUBLIC/anon grant: passes on the real pre-085 state, FAILS when either is withdrawn', async () => {
     const r = await buildBaseline({ freeze: FREEZE, skip004: true, attestation: ATT, upTo: 84, useDiskBytes: true });
     const sql = readFileSync(join(__dirname, '..', 'staging-baseline', 'verify_085_preconditions.sql'), 'utf8');
     const p4 = async () => (await r.client.query(sql)).rows.find((x: any) => /^P4 actual EXECUTE/.test(x.check));
+    const U = 'public.phoenix_upsert_availability(uuid, text, text, text, text, integer, text, date, text, text, text, numeric, text)';
+    const W = 'public.phoenix_apply_availability_movement(uuid, text, integer, text, text)';
     const base = await p4();
     expect(base.ok, base.detail).toBe(true);
-    expect(base.detail).not.toMatch(/PUBLIC|anon/);
-    const W = 'public.phoenix_apply_availability_movement(uuid, text, integer, text, text)';
+    expect(base.detail).toMatch(/upsert=true apply=true/); expect(base.detail).not.toMatch(/PUBLIC|anon/);
+    for (const [name, fn] of [['apply', W], ['upsert', U]] as const) {          // RED: withdraw ONE of the two (inside a rolled-back transaction)
+      await r.client.query('BEGIN'); await r.client.query(`REVOKE EXECUTE ON FUNCTION ${fn} FROM authenticated`);
+      const x = await p4(); await r.client.query('ROLLBACK');
+      expect(x.ok, `${name} revoked`).toBe(false);
+      expect(x.detail).toContain(name === 'apply' ? 'apply=false' : 'upsert=false');
+    }
     await r.client.query('BEGIN'); await r.client.query(`GRANT EXECUTE ON FUNCTION ${W} TO anon`);
     const a = await p4(); await r.client.query('ROLLBACK');
     expect(a.ok).toBe(false); expect(a.detail).toMatch(/phoenix_apply_availability_movement <- anon/);
     await r.client.query('BEGIN'); await r.client.query(`GRANT EXECUTE ON FUNCTION ${W} TO PUBLIC`);
     const pub = await p4(); await r.client.query('ROLLBACK');
     expect(pub.ok).toBe(false); expect(pub.detail).toMatch(/<- PUBLIC/);
-    await r.client.query('BEGIN'); await r.client.query(`REVOKE EXECUTE ON FUNCTION ${W} FROM authenticated`);
-    const noAuth = await p4(); await r.client.query('ROLLBACK');
-    expect(noAuth.ok).toBe(true); expect(noAuth.detail).not.toMatch(/phoenix_apply_availability_movement <- authenticated/);   // the detail reflects reality, not an assumption
+    expect((await p4()).ok).toBe(true);                                         // everything rolled back: GREEN again
     await r.client.end();
   });
 
@@ -141,6 +148,7 @@ run('R1 staging baseline method (B1/B2) - disposable rig', { timeout: 900_000 },
 
   it('ROLLBACK (rig only): the disposable rollback script returns the application schemas to the pre-baseline state', async () => {
     const own = await buildBaseline({ freeze: FREEZE, skip004: true, attestation: ATT, useDiskBytes: true });
+    own.client.on('error', () => undefined);
     const c = own.client;
     const count = async () => (await c.query(`SELECT
       (SELECT count(*) FROM pg_class cl JOIN pg_namespace n ON n.oid=cl.relnamespace WHERE n.nspname='public' AND cl.relkind IN ('r','p','v','m','S')) rels,
