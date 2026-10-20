@@ -78,7 +78,8 @@ const M220_BLOB = '70ab8424a69503b7ebbbcafc1c5dfc103a079c28';
  */
 const M221_SHA256 = '76405b7540c327d069fe80782003ee3cfea2ecc38facba2b4f3e39c798cc37b2';
 const M222_FILE = '222_phoenix_governed_warehouse_correction_security.sql';
-const M222_SHA256 = 'b2bb6640ed5b506ad09f48fa5744897925e85a3f900e174de5ea20ff3701554a';
+// M222-A-GLOCAL-01 candidate pin; M221 remains frozen and release is not authorized.
+const M222_SHA256 = '687922dbc0d1f5b5798233406e674de1fc0c0f38e0edb44de3f069e197dff87f';
 
 const GUARD = 'public._phoenix_pda_supplementary_procurement_guard_v1';
 const GUARD_HEAD = `CREATE FUNCTION ${GUARD}()`;
@@ -318,8 +319,9 @@ describe('PDA-PROC-1/M221 static — registration and hygiene', () => {
     expect(m222, `${M222_FILE} release status`).toContain('NOT APPROVED FOR APPLY');
   });
 
-  it('no tracked migration is modified against HEAD', () => {
-    expect(git('diff', '--name-only', 'HEAD', '--', 'supabase/migrations/*.sql').trim()).toBe('');
+  it('only the exact hash-pinned local M222 candidate may differ from HEAD', () => {
+    const changed = git('diff', '--name-only', 'HEAD', '--', 'supabase/migrations/*.sql').trim().split(/\r?\n/).filter(Boolean);
+    expect(changed.filter((file) => file !== `supabase/migrations/${M222_FILE}`)).toEqual([]);
   });
 });
 
