@@ -28,7 +28,7 @@
  */
 import { errorResponse, failureResponse, jsonResponse, readJsonBody, requireMethod, rpcErrorResponse } from '../_lib/http.ts';
 import { SOURCE_BUCKET, TRANSPORT_LIMITS } from '../_lib/env.ts';
-import { authenticate, callerIsAuthorized, resolveRevisionAsCaller, serviceClient } from '../_lib/supabase.ts';
+import { authenticate, callerExcelImportOpen, callerHasCentralNeedsAuthority, resolveRevisionAsCaller, serviceClient } from '../_lib/supabase.ts';
 import { entryLocator, permanentSourceKey, stagingPreviewKey, stagingSourceKey } from '../_lib/storage-paths.ts';
 import { reassertImportAuthority, type AuthorityDeps } from '../_lib/import-authority.ts';
 import { compareParsedResults } from '../_lib/parity.ts';
@@ -122,8 +122,12 @@ export default async function handler(req: Request): Promise<Response> {
     const revision = await resolveRevisionAsCaller(caller, planRevisionId);
     if (!revision) return errorResponse(404, 'plan_revision_not_found');
 
-    if (!(await callerIsAuthorized(caller, revision.organizationId, 'central_needs.import'))) {
+    if (!(await callerHasCentralNeedsAuthority(caller, revision.organizationId, 'central_needs.import'))) {
       return errorResponse(403, 'forbidden');
+    }
+    // W0: refuse BEFORE any Storage download/write once Excel quantity entry is closed for this organization (R1-b).
+    if (!(await callerExcelImportOpen(caller, revision.organizationId, revision.id))) {
+      return errorResponse(409, 'excel_import_closed');
     }
     if (revision.status !== 'draft') {
       return errorResponse(409, 'plan_revision_not_editable', revision.status);
@@ -247,7 +251,7 @@ export default async function handler(req: Request): Promise<Response> {
     // R1 / ST-15: re-assert the caller's authority IMMEDIATELY before the first
     // permanent write. Not an atomic revocation guarantee (a separate request);
     // it narrows the window in which a revoked caller can still create evidence.
-    const authorityDeps: AuthorityDeps = { resolveRevision: resolveRevisionAsCaller, isAuthorized: callerIsAuthorized };
+    const authorityDeps: AuthorityDeps = { resolveRevision: resolveRevisionAsCaller, isAuthorized: callerHasCentralNeedsAuthority, isExcelImportOpen: callerExcelImportOpen };
     const beforePermanent = await reassertImportAuthority(caller, revision.id, revision.organizationId, authorityDeps);
     if (beforePermanent.ok !== true) return errorResponse(beforePermanent.status, beforePermanent.code, beforePermanent.detail);
     const permanentKey = permanentSourceKey(revision.organizationId, revision.id, containerSha256);

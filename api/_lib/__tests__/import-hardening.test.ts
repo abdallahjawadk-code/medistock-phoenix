@@ -20,6 +20,7 @@ const rev = (over: Partial<ResolvedRevision> = {}): ResolvedRevision => ({
 const deps = (r: ResolvedRevision | null, authorized: boolean | 'throw'): AuthorityDeps => ({
   resolveRevision: async () => r,
   isAuthorized: async () => { if (authorized === 'throw') throw new Error('rpc'); return authorized; },
+  isExcelImportOpen: async () => true,
 });
 
 describe('reassertImportAuthority (fail closed)', () => {
@@ -54,7 +55,7 @@ describe('reassertImportAuthority (fail closed)', () => {
   });
 
   it('denies when the revision lookup throws', async () => {
-    const d: AuthorityDeps = { resolveRevision: async () => { throw new Error('x'); }, isAuthorized: async () => true };
+    const d: AuthorityDeps = { resolveRevision: async () => { throw new Error('x'); }, isAuthorized: async () => true, isExcelImportOpen: async () => true };
     expect(await reassertImportAuthority(caller, REV, ORG, d)).toMatchObject({ ok: false });
   });
 });

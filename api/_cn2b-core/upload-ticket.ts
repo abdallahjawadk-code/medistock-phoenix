@@ -7,13 +7,13 @@
  * workbook never travels through this function's request body.
  *
  * ORDER OF OPERATIONS, deliberately: authenticate → resolve the revision from
- * canonical database state → authorize that revision's real organization →
- * check the revision is still editable → only then mint a capability. The
+ * canonical database state → authorize that revision's real organization (R1 wrapper, no
+ * cross-organization super_admin) → require Excel entry to be open → check the revision is still editable → only then mint a capability. The
  * request body contributes no organization identity and no path segment.
  */
 import { errorResponse, failureResponse, jsonResponse, readJsonBody, requireMethod } from '../_lib/http.ts';
 import { SOURCE_BUCKET, TRANSPORT_LIMITS } from '../_lib/env.ts';
-import { authenticate, callerIsAuthorized, resolveRevisionAsCaller, serviceClient } from '../_lib/supabase.ts';
+import { authenticate, callerExcelImportOpen, callerHasCentralNeedsAuthority, resolveRevisionAsCaller, serviceClient } from '../_lib/supabase.ts';
 import { stagingPreviewKey, stagingSourceKey } from '../_lib/storage-paths.ts';
 
 interface UploadTicketRequest {
@@ -50,8 +50,12 @@ export default async function handler(req: Request): Promise<Response> {
     const revision = await resolveRevisionAsCaller(caller, planRevisionId);
     if (!revision) return errorResponse(404, 'plan_revision_not_found');
 
-    const authorized = await callerIsAuthorized(caller, revision.organizationId, 'central_needs.import');
+    const authorized = await callerHasCentralNeedsAuthority(caller, revision.organizationId, 'central_needs.import');
     if (!authorized) return errorResponse(403, 'forbidden');
+    // W0: the R1 cutover closes Excel quantity entry per organization; checked from database state BEFORE any capability is minted.
+    if (!(await callerExcelImportOpen(caller, revision.organizationId, revision.id))) {
+      return errorResponse(409, 'excel_import_closed');
+    }
 
     if (revision.status !== 'draft') {
       return errorResponse(409, 'plan_revision_not_editable', revision.status);

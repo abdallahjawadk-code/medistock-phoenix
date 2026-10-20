@@ -80,7 +80,7 @@ describe('call sites stay fail-closed and keep their error mapping (static)', ()
 describe('negative controls: every denial keeps ok:false with its exact status and code (so the `!== true` gate always fires)', () => {
   const caller = { userId: 'u', accessToken: 't' } as never;
   const rev = (o: Partial<{ organizationId: string; status: string }> = {}) => ({ id: 'r', organizationId: 'org-1', status: 'draft', ...o }) as never;
-  const deps = (o: Partial<AuthorityDeps> = {}): AuthorityDeps => ({ resolveRevision: async () => rev(), isAuthorized: async () => true, ...o });
+  const deps = (o: Partial<AuthorityDeps> = {}): AuthorityDeps => ({ resolveRevision: async () => rev(), isAuthorized: async () => true, isExcelImportOpen: async () => true, ...o });
   it('authority denials', async () => {
     expect(await reassertImportAuthority(caller, 'r', 'org-1', deps())).toEqual({ ok: true });
     expect(await reassertImportAuthority(caller, 'r', 'org-1', deps({ resolveRevision: async () => null }))).toEqual({ ok: false, status: 404, code: 'plan_revision_not_found' });
