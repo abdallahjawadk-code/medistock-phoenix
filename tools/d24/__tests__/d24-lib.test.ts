@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { OUTBOUND_PROBE_SQL, PRODUCTION_REF, STORAGE_MANIFEST_SQL, assertRestoreIsolation, verifyStorageRestore } from '../d24-lib.mjs';
+import { OUTBOUND_PROBE_SQL, PRODUCTION_REF, STORAGE_INVENTORY_SQL, STORAGE_MANIFEST_SQL, assertBackupCoversInventory, assertRestoreIsolation, planStorageBackup, verifyStorageRestore } from '../d24-lib.mjs';
 
 const ORG = '11111111-1111-4111-8111-111111111111', REV = '22222222-2222-4222-8222-222222222222';
 const sha = (b: string) => createHash('sha256').update(b).digest('hex');
@@ -58,6 +58,46 @@ describe('exported SQL', () => {
       // statements only: string literals may legitimately name function patterns such as net.http_delete
       expect(q.replace(/'[^']*'/g, "''")).not.toMatch(/\b(INSERT|UPDATE|DELETE|DROP|ALTER|TRUNCATE|CREATE|GRANT)\b/i);
     }
+  });
+});
+
+describe('backup list covers ALL Storage objects, not only those referenced by import batches', () => {
+  const addr = entry('referenced-workbook');
+  const inventory = [
+    { bucket: 'central-needs-source-files', key: addr.key, bytes: 20, referenced: true },
+    { bucket: 'central-needs-source-files', key: `permanent/${ORG}/${REV}/${sha('third-file')}`, bytes: 10, referenced: false },     // permanent object no batch row points at
+    { bucket: 'central-needs-source-files', key: 'staging/odd name.xlsx', bytes: 5, referenced: false },
+    { bucket: 'other-bucket', key: 'logo.png', bytes: 7, referenced: false },
+  ];
+  it('the plan copies every inventory object (referenced or not, any bucket) and lists the unreferenced ones for the Owner', () => {
+    const plan = planStorageBackup(inventory);
+    expect(plan.total).toBe(4); expect(plan.copyList).toHaveLength(4);
+    expect(plan.contentAddressed).toBe(2); expect(plan.observed).toEqual(['central-needs-source-files/staging/odd name.xlsx', 'other-bucket/logo.png']);
+    expect(plan.unreferenced).toHaveLength(3);
+  });
+  it('a copy list built from the import-batch references alone is detected as incomplete', () => {
+    const fromBatchesOnly = [`central-needs-source-files/${addr.key}`];
+    const r = assertBackupCoversInventory(inventory, fromBatchesOnly);
+    expect(r.ok).toBe(false); expect(r.missing).toHaveLength(3);
+    expect(assertBackupCoversInventory(inventory, planStorageBackup(inventory).copyList).ok).toBe(true);
+    expect(assertBackupCoversInventory([], []).ok).toBe(false);                           // an empty inventory is never a pass
+  });
+  it('the restore verifier proves observed objects against the hash recorded at copy time, and flags a corrupted one', async () => {
+    const dir = fixture({ 'other-bucket/logo.png': 'PNGBYTES', 'central-needs-source-files/staging/odd name.xlsx': 'xl' });
+    const ok = [{ kind: 'observed', bucket: 'other-bucket', key: 'logo.png', sha256: sha('PNGBYTES') }, { kind: 'observed', bucket: 'central-needs-source-files', key: 'staging/odd name.xlsx', sha256: sha('xl') }];
+    expect(await verifyStorageRestore({ manifest: ok, dir })).toMatchObject({ ok: true, checked: 2 });
+    const bad = [{ ...ok[0], sha256: sha('different') }, ok[1]];
+    expect((await verifyStorageRestore({ manifest: bad, dir })).mismatched).toEqual(['other-bucket/logo.png']);
+  });
+  it('an observed row cannot escape the restore folder', async () => {
+    const dir = fixture({});
+    const r = await verifyStorageRestore({ manifest: [{ kind: 'observed', bucket: 'b', key: '../../x', sha256: sha('x') }, { kind: 'observed', bucket: '', key: 'k', sha256: sha('k') }], dir });
+    expect(r.invalidManifest).toHaveLength(2); expect(r.ok).toBe(false);
+  });
+  it('the inventory SQL is read-only and spans every bucket', () => {
+    expect(STORAGE_INVENTORY_SQL).toMatch(/^\s*SELECT/i);
+    expect(STORAGE_INVENTORY_SQL.replace(/'[^']*'/g, "''")).not.toMatch(/\b(INSERT|UPDATE|DELETE|DROP|ALTER|TRUNCATE|CREATE|GRANT)\b/i);
+    expect(STORAGE_INVENTORY_SQL).not.toMatch(/WHERE\s+o\.bucket_id/i);
   });
 });
 

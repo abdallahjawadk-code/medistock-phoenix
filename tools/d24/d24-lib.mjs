@@ -21,6 +21,40 @@ const LOOPBACK = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
 export const STORAGE_MANIFEST_SQL = `SELECT DISTINCT split_part(storage_locator, '#', 1) AS key, container_sha256 AS sha256
   FROM public.central_needs_import_batches WHERE storage_locator LIKE 'permanent/%' ORDER BY 1`;
 
+/**
+ * Read-only inventory of EVERY Storage object in EVERY bucket (run by the operator on the SOURCE). The backup list is built from THIS, never from the import-batch
+ * references alone: an object that no batch row points at (e.g. an orphan or a manually added file) is still part of the Storage state that must be preserved and proven.
+ * `referenced` only classifies; it never decides what is copied.
+ */
+export const STORAGE_INVENTORY_SQL = `SELECT o.bucket_id AS bucket, o.name AS key, (o.metadata->>'size')::bigint AS bytes, o.created_at,
+  (o.bucket_id = 'central-needs-source-files' AND EXISTS (SELECT 1 FROM public.central_needs_import_batches b WHERE split_part(b.storage_locator, '#', 1) = o.name)) AS referenced
+  FROM storage.objects o ORDER BY 1, 2`;
+
+const isContentAddressed = (r) => r?.bucket === 'central-needs-source-files' && KEY_RE.test(String(r?.key ?? ''));
+
+/**
+ * Turns the inventory into the copy plan. EVERY inventory row is copied. Content-addressed permanent objects are later verified against the hash in their own
+ * key; every other object (unreferenced, other buckets, staging/) is "observed": its SHA-256 is computed from the SOURCE bytes at copy time and recorded in the
+ * manifest, and the restore must reproduce it. Unreferenced objects are listed for the Owner's attention, never dropped and never deleted.
+ */
+export function planStorageBackup(inventory) {
+  const rows = (inventory ?? []).map((r) => ({ bucket: String(r.bucket), key: String(r.key), bytes: Number(r.bytes ?? 0), referenced: r.referenced === true }));
+  return {
+    total: rows.length,
+    copyList: rows.map((r) => `${r.bucket}/${r.key}`),
+    contentAddressed: rows.filter(isContentAddressed).length,
+    observed: rows.filter((r) => !isContentAddressed(r)).map((r) => `${r.bucket}/${r.key}`),
+    unreferenced: rows.filter((r) => !r.referenced).map((r) => `${r.bucket}/${r.key}`),
+  };
+}
+
+/** The list of objects actually copied must equal the inventory: nothing missing, nothing invented. */
+export function assertBackupCoversInventory(inventory, copied) {
+  const want = new Set(planStorageBackup(inventory).copyList); const got = new Set(copied ?? []);
+  const missing = [...want].filter((k) => !got.has(k)).sort(); const unexpected = [...got].filter((k) => !want.has(k)).sort();
+  return { ok: missing.length === 0 && unexpected.length === 0 && want.size > 0, missing, unexpected };
+}
+
 /** Read-only probe for the RESTORED database: anything that could make it talk to the outside world. Every returned row is a finding. */
 export const OUTBOUND_PROBE_SQL = `
 SELECT 'extension' AS kind, extname AS detail FROM pg_extension WHERE extname IN ('pg_net', 'pg_cron', 'http', 'dblink', 'postgres_fdw', 'supabase_vault')
@@ -71,9 +105,17 @@ export async function verifyStorageRestore({ manifest, dir }) {
   const out = { ok: false, checked: 0, invalidManifest: [], missing: [], mismatched: [], extra: [] };
   const wanted = new Set();
   for (const row of manifest) {
-    const key = String(row?.key ?? ''); const sha = String(row?.sha256 ?? '');
-    // content-addressed: the last segment of the key IS the hash; a manifest that disagrees with its own key is itself evidence of damage
-    if (!KEY_RE.test(key) || !SHA256_RE.test(sha) || key.split('/')[3] !== sha) { out.invalidManifest.push(key || '(empty)'); continue; }
+    let key = String(row?.key ?? ''); const sha = String(row?.sha256 ?? '');
+    if (row?.kind === 'observed') {
+      // an object that is not content-addressed (unreferenced, another bucket, staging/): its hash was observed on the SOURCE bytes at copy time; stored as <bucket>/<key>
+      const bucket = String(row?.bucket ?? '');
+      const segs = `${bucket}/${key}`.split('/');
+      if (!bucket || !key || !SHA256_RE.test(sha) || segs.some((s) => s === '' || s === '.' || s === '..' || s.includes('\\'))) { out.invalidManifest.push(`${bucket}/${key}`); continue; }
+      key = `${bucket}/${key}`;
+    } else if (!KEY_RE.test(key) || !SHA256_RE.test(sha) || key.split('/')[3] !== sha) {
+      // content-addressed: the last segment of the key IS the hash; a manifest that disagrees with its own key is itself evidence of damage
+      out.invalidManifest.push(key || '(empty)'); continue;
+    }
     wanted.add(key);
     const target = resolve(root, ...key.split('/'));
     if (target !== root && !target.startsWith(root + sep)) { out.invalidManifest.push(key); continue; }
