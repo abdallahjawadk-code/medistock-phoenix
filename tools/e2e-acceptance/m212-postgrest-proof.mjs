@@ -405,12 +405,14 @@ if (!cn || !cn.columns) {
     //     local-only superuser connection.
     let foreignRevision = null;
     try {
-      const plan = (await dbQuery(
-        `INSERT INTO central_needs_plans (organization_id, plan_year) VALUES ($1, 2098) RETURNING id`,
-        [cn.beneficiaryOrganization]))?.rows?.[0]?.id;
-      foreignRevision = plan ? (await dbQuery(
-        `INSERT INTO central_needs_plan_revisions (plan_id, organization_id, revision_number, status)
-         VALUES ($1, $2, 1, 'draft') RETURNING id`, [plan, cn.beneficiaryOrganization]))?.rows?.[0]?.id ?? null : null;
+      // R1 (M224/M225): a revision insert needs an actor authorized for the OWNING organization; nobody here is authorized for the foreign one (that is the point of this proof),
+      // so the foreign fixture is created in one local-only transaction with the actor-bound triggers bypassed.
+      const planId = globalThis.crypto.randomUUID(); const revId = globalThis.crypto.randomUUID();
+      await dbQuery(`BEGIN; SET LOCAL session_replication_role = replica;
+        INSERT INTO central_needs_plans (id, organization_id, plan_year) VALUES ('${planId}', '${cn.beneficiaryOrganization}', 2098);
+        INSERT INTO central_needs_plan_revisions (id, plan_id, organization_id, revision_number, status) VALUES ('${revId}', '${planId}', '${cn.beneficiaryOrganization}', 1, 'draft');
+        COMMIT;`);
+      foreignRevision = (await dbQuery(`SELECT id FROM central_needs_plan_revisions WHERE id = $1`, [revId]))?.rows?.[0]?.id ?? null;
     } catch (e) {
       foreignRevision = null;
     }
