@@ -112,6 +112,11 @@ export async function verifyStorageRestore({ manifest, dir }) {
       const segs = `${bucket}/${key}`.split('/');
       if (!bucket || !key || !SHA256_RE.test(sha) || segs.some((s) => s === '' || s === '.' || s === '..' || s.includes('\\'))) { out.invalidManifest.push(`${bucket}/${key}`); continue; }
       key = `${bucket}/${key}`;
+    } else if (row?.kind === 'content_addressed') {
+      // a permanent evidence object copied with its bucket: stored as <bucket>/<key>; the hash in its own key must equal the recorded one
+      const bucket = String(row?.bucket ?? '');
+      if (!bucket || bucket.includes('/') || bucket === '.' || bucket === '..' || !KEY_RE.test(key) || !SHA256_RE.test(sha) || key.split('/')[3] !== sha) { out.invalidManifest.push(`${bucket}/${key}`); continue; }
+      key = `${bucket}/${key}`;
     } else if (!KEY_RE.test(key) || !SHA256_RE.test(sha) || key.split('/')[3] !== sha) {
       // content-addressed: the last segment of the key IS the hash; a manifest that disagrees with its own key is itself evidence of damage
       out.invalidManifest.push(key || '(empty)'); continue;
