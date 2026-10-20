@@ -1152,6 +1152,7 @@ export const T: Dict = {
   sb_source_unclassified:    { ar: 'غير مصنف (قديم)',                en: 'Unclassified (legacy)' },
   sb_reconciled:             { ar: 'مطابقة: الرصيد الفعلي = مجموع أرصدة المصادر', en: 'Reconciled: physical stock equals the sum of source balances' },
   sb_reconciliation_drift:   { ar: 'تحذير: انحراف بين الرصيد الفعلي ومجموع المصادر', en: 'Warning: drift between physical stock and source balances' },
+  sb_reconciliation_unknown: { ar: 'تعذّر التحقق: لا يتوفر رصيد فعلي مستقل للمقارنة', en: 'Cannot verify: no independent physical total is available for comparison' },
   sb_awaiting_migration:     { ar: 'ميزة أرصدة المصادر بانتظار تفعيل migration 088', en: 'Source balances await migration 088 activation' },
   st_origin_central:        { ar: 'مشتريات مركزية',                  en: 'Central purchases' },
   st_origin_supplementary:  { ar: 'مشتريات فرعية',                   en: 'Supplementary purchases' },
@@ -3137,6 +3138,10 @@ export const T: Dict = {
   inv_ledger_read_failed: {
     ar: 'تعذّر تحميل سجل الحركات. هذا لا يعني عدم وجود حركات — أعد المحاولة.',
     en: 'The movement ledger could not be loaded. This does not mean there are no movements — please retry.',
+  },
+  inv_stock_read_failed: {
+    ar: 'تعذّر تحميل أرصدة هذا المخزن. لا تُعرض أرصدة مخزن آخر ولا يعني ذلك أن المخزن فارغ — أعد المحاولة.',
+    en: 'The stock of this warehouse could not be loaded. No rows of any other warehouse are shown and this does not mean the warehouse is empty — please retry.',
   },
   inv_scope_read_failed: {
     ar: 'تعذّر تحميل المخازن والمنافذ المتاحة لك. هذا ليس قرار صلاحيات — أعد المحاولة.',

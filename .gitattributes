@@ -1,0 +1,8 @@
+# R1-RC: pinned SQL must be byte-stable on every checkout, whatever core.autocrlf says (M182 replay normalization pins the LF form).
+supabase/migrations/*.sql text eol=lf
+supabase/candidates/** text eol=lf
+# the four migrations whose committed blobs are CRLF (frozen M098/M140/M141/M142) are stored and checked out byte-for-byte: no conversion in either direction
+supabase/migrations/098_phoenix_second_person_correction_approval.sql -text
+supabase/migrations/140_phoenix_demo_dataset_manifest.sql -text
+supabase/migrations/141_phoenix_demo_immutable_exemption.sql -text
+supabase/migrations/142_phoenix_demo_profile_detach.sql -text

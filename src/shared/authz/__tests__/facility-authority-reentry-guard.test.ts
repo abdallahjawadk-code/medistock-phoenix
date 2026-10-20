@@ -76,6 +76,9 @@ const REVIEWED: readonly ReviewedTuple[] = [
   t(3, `${INV}/material-dispensing-suspension.service.ts`, 'getMaterialDispensingSuspensionBadges', 'phoenix_get_material_dispensing_suspension_status',
     'Read model (203, view_badge permission — broadly granted, coded-reason-only: returns only central_item_id/is_suspended/reason_code/effective_start, never reason_detail/reference_document/lift fields). Reached from InventoryCenterScreen via MaterialDispensingSuspensionPanel.'),
 
+  t(3, `src/features/central-needs/manual/manual-needs.service.ts`, 'getManualCapabilities', 'phoenix_central_needs_my_capabilities',
+    'R1-A4 (executor-added, PENDING independent review): READ-ONLY capability probe for the Screen-3 "Needs & allocation" tab. It is reached only after the build flag, a super_admin / central_warehouse_manager role, the HOME organization and a pharmacy_department_authority kind have all been proven client-side (manual-needs-gate.ts), so a facility-scoped role never issues it; the server re-authorizes and returns only the caller\'s OWN view/edit/approve/manual_set booleans. It writes nothing and is never the authority for any write (every R1 writer is owner-only and re-checks on the server).'),
+
   // ── screen 6 · QR ──────────────────────────────────────────────────────────
   t(6, `${SVC}/delegated-access.service.ts`, 'getMyOperationalResourceCatalog', 'phoenix_my_operational_resource_catalog',
     'Same own-resource read model, reached from the QR screen.'),

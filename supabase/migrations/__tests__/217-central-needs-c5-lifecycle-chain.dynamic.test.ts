@@ -346,7 +346,7 @@ run('C5/M217 lifecycle chain — 216 history, then M217 — dynamic', { timeout:
   // =========================================================================
   describe('on the 217 chain (M217 applied over the seeded history)', () => {
     beforeAll(async () => {
-      const rest = migrationFiles().filter((f: string) => Number(f.slice(0, 3)) > 216);
+      const rest = migrationFiles().filter((f: string) => Number(f.slice(0, 3)) > 216 && Number(f.slice(0, 3)) <= 222);   // the M217 chain proof; R1 (M223+) is out of its subject and refuses this fixture (R1a02: plans owned by a non-PDA organization)
       expect(rest[0]).toBe(M217);
       await rig.asAdmin(async (c: any) => {
         for (const f of rest) await applyMigrationSql(c, f, shimSql(f, readFileSync(join(MIGRATIONS_DIR, f), 'utf8')));

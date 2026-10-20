@@ -128,10 +128,10 @@ describe('M198 static — identity and placement', () => {
       // Route A proposed M222 (OPS2-F1 v2): its three SECURITY DEFINER functions (one new owner-only
       // applier, two re-bodied warehouse correction functions) all pin search_path = public, pg_temp,
       // and it alters none of the thirty functions this suite converges.
-      '222_phoenix_governed_warehouse_correction_security.sql',
+      '222_phoenix_governed_warehouse_correction_security.sql', '223_phoenix_central_needs_manual_source_schema_inert.sql', '224_phoenix_central_needs_authorization_closure.sql', '225_phoenix_central_needs_lifecycle_relations_and_sod.sql', '226_phoenix_central_needs_manual_routines_inert.sql', '227_phoenix_central_needs_blockers_digest_d27.sql', '228_phoenix_central_needs_material_registration_inert.sql', '229_phoenix_central_needs_manual_activation.sql', '230_phoenix_central_needs_material_registration_activation.sql',
     ]);
-    expect(files.filter((f) => Number(f.slice(0, 3)) > 222)).toEqual([]);
-    expect(files).toHaveLength(222);
+    expect(files.filter((f) => Number(f.slice(0, 3)) > 230)).toEqual([]);
+    expect(files).toHaveLength(230);
   });
 
   it('carries no MANUAL APPLY ONLY banner, so the pinned executor will accept it', () => {

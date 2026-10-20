@@ -136,6 +136,19 @@ run('CN-2B/212 operational need lines — dynamic', () => {
   const admin = <T = any>(sql: string, params: unknown[] = []): Promise<T[]> =>
     rig.asAdmin((c: any) => c.query(sql, params).then((r: any) => r.rows));
 
+  // R1-a: revision INSERTs are gated on an authorized actor (single authority predicate). The fixture
+  // therefore inserts them inside a transaction that carries the plan-owning editor's JWT subject.
+  const adminAsEditor = async <T = any>(sql: string, params: unknown[] = []): Promise<T[]> =>
+    rig.asAdmin(async (c: any) => {
+      await c.query('BEGIN');
+      try {
+        await c.query(`SELECT set_config('request.jwt.claim.sub', $1, true)`, [U_EDIT]);
+        const r = await c.query(sql, params);
+        await c.query('COMMIT');
+        return r.rows;
+      } catch (e) { await c.query('ROLLBACK').catch(() => undefined); throw e; }
+    });
+
   /**
    * One more completed import session in an existing revision. Each row carries
    * its own source records (cells) and its own canonical mapping decision, so
@@ -235,7 +248,7 @@ run('CN-2B/212 operational need lines — dynamic', () => {
       [ORG_OWNER, y]);
     // Always seeded as a DRAFT so its evidence (and, under 213, its column
     // confirmations) can be established; a non-draft status is applied after.
-    const [{ id: revId }] = await admin(
+    const [{ id: revId }] = await adminAsEditor(
       `INSERT INTO central_needs_plan_revisions (plan_id, organization_id, revision_number, status)
          VALUES ($1,$2,1,'draft') RETURNING id`,
       [planId, ORG_OWNER]);
@@ -381,7 +394,7 @@ run('CN-2B/212 operational need lines — dynamic', () => {
     C5 = c5;
     await rig.asAdmin(async (c: any) => {
       await c.query(`INSERT INTO organizations (id,name,name_ar,code,organization_kind,institution_class) VALUES
-        ('${ORG_OWNER}','CN212-OWNER','مالك','p212-owner','care_institution','hospital'),
+        ('${ORG_OWNER}','CN212-OWNER','مالك','p212-owner','pharmacy_department_authority',NULL),
         ('${ORG_BENE}','CN212-BENE','منتفع','p212-bene','care_institution','hospital'),
         ('${ORG_BENE2}','CN212-BENE2','منتفع٢','p212-bene2','care_institution','hospital'),
         ('${ORG_INACTIVE}','CN212-INACT','معطل','p212-inact','care_institution','hospital'),
@@ -458,6 +471,8 @@ run('CN-2B/212 operational need lines — dynamic', () => {
           WHERE p.polrelid IN ('public.central_needs_need_lines'::regclass,
                                'public.central_needs_need_line_sources'::regclass)
             AND NOT p.polpermissive
+            -- R1-a additive policies (candidates 02/05) are asserted in their own suites; the M211 one is still required exactly once per relation
+            AND p.polname NOT IN ('r1_actor_scope_restrictive', 'excel_history_read_restrictive')
           ORDER BY c.relname`);
       expect(rows.map((r: any) => r.relname)).toEqual(
         ['central_needs_need_line_sources', 'central_needs_need_lines']);
@@ -1244,8 +1259,12 @@ run('CN-2B/212 operational need lines — dynamic', () => {
   describe('J. review blockers', () => {
     it('preserves every pre-212 blocker branch', async () => {
       const [{ def }] = await admin(
-        `SELECT pg_get_functiondef(p.oid) AS def FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
-          WHERE n.nspname='public' AND p.proname='_phoenix_central_needs_review_blockers_v1'`);
+        // R1-a (candidate 05) moves the Excel body into phoenix_private; the branches must still all be present
+        // in the public definition together with its private Excel body.
+        `SELECT string_agg(pg_get_functiondef(p.oid), E'
+') AS def FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+          WHERE (n.nspname='public' AND p.proname='_phoenix_central_needs_review_blockers_v1')
+             OR (n.nspname='phoenix_private' AND p.proname='central_needs_excel_review_blockers_v1')`);
       for (const branch of [
         'no_finalized_import', 'import_session_still_open',
         'completed_session_not_in_trusted_batch', 'incomplete_trusted_batch',

@@ -324,6 +324,17 @@ export const REVIEWED_MIGRATION_FILES: readonly string[] = Object.freeze([
   '221_phoenix_pharmacy_department_subpurchase_exclusion.sql',
   // Route A proposed: OPS2-F1 v2 exact SQL, never an automatic apply.
   '222_phoenix_governed_warehouse_correction_security.sql',
+  // R1 (manual annual needs + governed material registration), D9 closed: the eight hash-pinned candidates R1a_01..06 / R1b_01..02 numbered M223-M230 with a
+  // comment prelude and NO SQL change (R1-NUMBERING-MANIFEST.json). Registration is repository review only; R1-b grants EXECUTE to authenticated but every writer
+  // stays refused until an organization carries its own owner-applied activation marker. It says nothing about Production.
+  '223_phoenix_central_needs_manual_source_schema_inert.sql',
+  '224_phoenix_central_needs_authorization_closure.sql',
+  '225_phoenix_central_needs_lifecycle_relations_and_sod.sql',
+  '226_phoenix_central_needs_manual_routines_inert.sql',
+  '227_phoenix_central_needs_blockers_digest_d27.sql',
+  '228_phoenix_central_needs_material_registration_inert.sql',
+  '229_phoenix_central_needs_manual_activation.sql',
+  '230_phoenix_central_needs_material_registration_activation.sql',
 ]);
 
 const REVIEWED_SET: ReadonlySet<string> = new Set(REVIEWED_MIGRATION_FILES);

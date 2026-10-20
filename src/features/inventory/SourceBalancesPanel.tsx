@@ -20,6 +20,7 @@ import { supabase, supabaseConfigured } from '@/shared/supabase/client';
 import { PhoenixCard } from '@/shared/ui/PhoenixCard';
 import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
 import { displaySupplyType } from '@/shared/lib/supply-types';
+import { reconcileSourceBalances } from './stock-load-state';
 
 interface SourceBalanceRow {
   supply_type: string | null;
@@ -68,7 +69,12 @@ export function sourceLabelKey(row: Pick<SourceBalanceRow, 'supply_type' | 'purc
   return 'sb_source_unclassified';
 }
 
-export function SourceBalancesPanel({ warehouseId }: { warehouseId: string }) {
+/**
+ * `physicalOnHand` (R1-A5 / S2) is the warehouse's physical on-hand total from
+ * the CANONICAL stock read — an independent source. Without it (null/undefined)
+ * the reconciliation line says "cannot verify" instead of "reconciled".
+ */
+export function SourceBalancesPanel({ warehouseId, physicalOnHand = null }: { warehouseId: string; physicalOnHand?: number | null }) {
   const { lang } = useApp();
   const balances = useAsync<BalancesResult>(() => readSourceBalances(warehouseId), [warehouseId]);
 
@@ -91,11 +97,11 @@ export function SourceBalancesPanel({ warehouseId }: { warehouseId: string }) {
 
   const rows = result.rows;
   const total = (k: 'on_hand' | 'reserved' | 'available') => rows.reduce((s, r) => s + r[k], 0);
-  // Reconciliation is BY CONSTRUCTION under 088 (each lot is single-source);
-  // stated explicitly so any future writer bypassing the discipline is seen.
-  const physical = total('on_hand');
+  // S2: the old check compared this panel's own sum with itself and could never
+  // report drift. The comparison is now against an independent physical total.
   const sourceSum = rows.reduce((s, r) => s + r.on_hand, 0);
-  const reconciled = physical === sourceSum;
+  const physical = sourceSum;
+  const reconciliation = reconcileSourceBalances(sourceSum, physicalOnHand);
 
   const supplied = rows.filter(r => sourceLabelKey(r) !== 'st_origin_supplementary');
   const supplementary = rows.filter(r => sourceLabelKey(r) === 'st_origin_supplementary');
@@ -126,10 +132,12 @@ export function SourceBalancesPanel({ warehouseId }: { warehouseId: string }) {
 
       <div
         data-testid="source-balances-reconciliation"
-        style={{ fontSize: '11px', color: reconciled ? 'var(--ok)' : 'var(--err)', fontWeight: 600 }}
+        style={{ fontSize: '11px', color: reconciliation === 'reconciled' ? 'var(--ok)' : reconciliation === 'drift' ? 'var(--err)' : 'var(--t2)', fontWeight: 600 }}
       >
-        {reconciled ? t('sb_reconciled', lang) : t('sb_reconciliation_drift', lang)}
-        {' '}({t('sb_total', lang)}: {physical})
+        {reconciliation === 'reconciled' ? t('sb_reconciled', lang)
+          : reconciliation === 'drift' ? t('sb_reconciliation_drift', lang)
+          : t('sb_reconciliation_unknown', lang)}
+        {' '}({t('sb_total', lang)}: {physical}{typeof physicalOnHand === 'number' ? ` / ${physicalOnHand}` : ''})
       </div>
     </PhoenixCard>
   );

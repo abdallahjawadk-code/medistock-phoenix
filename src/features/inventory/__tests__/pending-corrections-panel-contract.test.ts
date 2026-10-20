@@ -223,6 +223,9 @@ describe('G) No UI path mutates outlet_stock/warehouse_stock quantities outside 
       // outlet_stock/warehouse_stock row (M215 static domain-boundary test).
       // Allowed by exact name; every other *correction* name stays refused.
       'phoenix_central_needs_open_correction_revision',
+      // R1-A4: the MANUAL annual-plan correction revision (R1-a candidate 04) — same domain: it opens a
+      // draft plan revision and touches no outlet_stock/warehouse_stock row. Exact name only.
+      'phoenix_central_needs_open_manual_correction_revision',
     ]);
     const root = join(SRC);
     const offenders: string[] = [];
