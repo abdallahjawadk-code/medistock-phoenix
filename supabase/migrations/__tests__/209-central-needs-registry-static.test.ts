@@ -47,8 +47,8 @@ describe('CN-1A/209 static — registration and file hygiene', () => {
     const files = readdirSync(MIGRATIONS).filter((f) => /^\d{3}_.*\.sql$/.test(f)).sort();
     expect(files).toContain(FILENAME);
     expect(files.indexOf(FILENAME)).toBe(208);
-    expect(files.filter((f) => Number(f.slice(0, 3)) > 222)).toEqual([]);
-    expect(files).toHaveLength(222);
+    expect(files.filter((f) => Number(f.slice(0, 3)) > 230)).toEqual([]);
+    expect(files).toHaveLength(230);
     expect(isReviewedMigrationFile(FILENAME)).toBe(true);
     // 209 is no longer last: CN-1B/210 sits directly after it, and 210's own
     // static suite owns the ceiling assertions from here on. This immediate-
@@ -56,8 +56,8 @@ describe('CN-1A/209 static — registration and file hygiene', () => {
     // the ceiling below advances, now to PDA-PROC-1/M221.
     expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.indexOf(FILENAME) + 1])
       .toBe('210_phoenix_central_needs_workflow_rpcs.sql');
-    expect(getMaximumReviewedMigrationNumber()).toBe(222);
-    expect(getNextUnreviewedMigrationNumber()).toBe(223);
+    expect(getMaximumReviewedMigrationNumber()).toBe(230);
+    expect(getNextUnreviewedMigrationNumber()).toBe(231);
   });
 
   it('carries no CR bytes — LF only', () => {
@@ -84,7 +84,7 @@ describe('CN-1A/209 static — registration and file hygiene', () => {
     // central item guard and the PDA-PROC-1/M221 pharmacy department
     // supplementary procurement exclusion above it, and the Route A proposed
     // M222 (OPS2-F1 v2 governed warehouse correction).
-    expect(others).toHaveLength(221);
+    expect(others).toHaveLength(229);
   });
 });
 

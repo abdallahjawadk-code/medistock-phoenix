@@ -812,9 +812,19 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
       // M222-A-CI-GUARD-REG-01: exact-name registration of the independently
       // reviewed authorization-before-replay test; no wildcard exemption.
       'supabase/migrations/__tests__/m222a-authorization-before-replay.dynamic.test.ts',
+      // R1 numbering (D9 closed): the eight R1 migrations M223-M230, registered by EXACT filename. Each is the hash-pinned candidate of the same name with a 3-line
+      // comment prelude and no SQL change (see R1-NUMBERING-MANIFEST.json). No wildcard and no directory exemption.
+      'supabase/migrations/223_phoenix_central_needs_manual_source_schema_inert.sql',
+      'supabase/migrations/224_phoenix_central_needs_authorization_closure.sql',
+      'supabase/migrations/225_phoenix_central_needs_lifecycle_relations_and_sod.sql',
+      'supabase/migrations/226_phoenix_central_needs_manual_routines_inert.sql',
+      'supabase/migrations/227_phoenix_central_needs_blockers_digest_d27.sql',
+      'supabase/migrations/228_phoenix_central_needs_material_registration_inert.sql',
+      'supabase/migrations/229_phoenix_central_needs_manual_activation.sql',
+      'supabase/migrations/230_phoenix_central_needs_material_registration_activation.sql',
       // R1 (staging release candidate): exact-filename registration of the R1 files under the watched prefixes (the un-numbered SQL candidates and
       // their tests/tooling, the Screen-3 tab wiring, the shared i18n strings). No wildcard and no directory exemption: every other file under
-      // these prefixes still fails this guard closed. No migration is added to the numbered chain, no RPC/RLS/permission/dependency/branding/
+      // these prefixes still fails this guard closed. The numbered chain gains only M223-M230 (registered above by exact filename); no dependency/branding/
       // environment surface of A7.2.4's subject is touched.
       'supabase/candidates/R1a_01_manual_source_schema_inert.sql',
       'supabase/candidates/R1a_02_authorization_closure.sql',
@@ -824,6 +834,8 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
       'supabase/candidates/R1a_06_material_registration_inert.sql',
       'supabase/candidates/R1b_01_manual_activation_NOT_APPLIED.sql',
       'supabase/candidates/R1b_02_material_registration_activation_NOT_APPLIED.sql',
+      'supabase/candidates/__tests__/functional-journey.dynamic.test.ts',
+      'supabase/candidates/__tests__/hosted-adapter.dynamic.test.ts',
       'supabase/candidates/__tests__/m182-equivalence.dynamic.test.ts',
       'supabase/candidates/__tests__/r1-manual-lifecycle-canonical.dynamic.test.ts',
       'supabase/candidates/__tests__/r1a-01-manual-source-schema.dynamic.test.ts',
@@ -842,6 +854,9 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
       'supabase/candidates/staging-baseline/182b_production_body_overlay.sql',
       'supabase/candidates/staging-baseline/M001-M221-freeze.json',
       'supabase/candidates/staging-baseline/audit-derivations.mjs',
+      'supabase/candidates/staging-baseline/hosted-adapter/functional-acceptance.mjs',
+      'supabase/candidates/staging-baseline/hosted-adapter/functional-journey.mjs',
+      'supabase/candidates/staging-baseline/hosted-adapter/hosted-adapter.mjs',
       'supabase/candidates/staging-baseline/rollback_phase1_disposable.sql',
       'supabase/candidates/staging-baseline/sql-tokens.mjs',
       'supabase/candidates/staging-baseline/staging-baseline.mjs',
@@ -851,6 +866,12 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
     const changed=execSync(`git diff --name-only ${BASE}`,{cwd:ROOT,encoding:'utf8'}).split('\n').map(l=>l.trim()).filter(Boolean);
     const prohibited=changed.filter(f=>WATCHED.some(p=>f===p||f.startsWith(p+'/'))&&!EXCLUDED.includes(f));
     expect(prohibited).toEqual([]);
+    // P-HARDEN-01 negative controls on the REAL EXCLUDED list: the two hosted-adapter files are registered by exact name; near-misses and siblings are not.
+    const flag=(files:string[])=>files.filter(f=>WATCHED.some(p=>f===p||f.startsWith(p+'/'))&&!EXCLUDED.includes(f));
+    expect(flag(['supabase/candidates/staging-baseline/hosted-adapter/hosted-adapter.mjs','supabase/candidates/__tests__/hosted-adapter.dynamic.test.ts'])).toEqual([]);
+    const unregistered=['supabase/candidates/staging-baseline/hosted-adapter/hosted-adapter.mjs.bak','supabase/candidates/staging-baseline/hosted-adapter/other.mjs','supabase/candidates/staging-baseline/hosted-adapter.mjs',
+      'supabase/candidates/__tests__/hosted-adapter.dynamic.test.ts.orig','supabase/candidates/__tests__/hosted-adapter-extra.dynamic.test.ts','supabase/candidates/hosted-adapter/hosted-adapter.mjs'];
+    expect(flag(unregistered)).toEqual(unregistered);
   });
   it('guard mechanism still catches an unlisted file',()=>{
     const prefixes=['supabase','src/app']; const excluded=['supabase/migrations/170_real_and_authorized.sql']; const filter=(changed:string[])=>changed.filter(f=>prefixes.some(p=>f===p||f.startsWith(p+'/'))&&!excluded.includes(f));

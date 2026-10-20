@@ -969,6 +969,8 @@ run('C5/M217 Central Needs safety convergence — dynamic (PostgreSQL)', { timeo
         expect(direct).toMatchObject({ code: '23514', message: 'central_needs_submission_gate_missing', detail: `revision=${fx.rev}` });
         for (const status of ['rejected', 'superseded']) {
           const reason = await judge(R.amb, '25', null, async (c: any) => {
+            // R1 (M224/M225) forbids a direct draft -> rejected/superseded write for every role; this rolled-back fixture only needs a NON-DRAFT owner, so the transition guard is bypassed for the probe transaction only.
+            await c.query(`SET LOCAL session_replication_role = replica`);
             await c.query(`UPDATE central_needs_plan_revisions SET status = $2 WHERE id = $1`, [fx.rev, status]);
           });
           expect(reason, status).toBeNull();
@@ -1260,6 +1262,7 @@ run('C5/M217 Central Needs safety convergence — dynamic (PostgreSQL)', { timeo
         expect(direct).toMatchObject({ code: '23514', message: 'central_needs_submission_gate_missing', detail: `revision=${d.rev}` });
         // DRAFT only: the same link under a non-DRAFT (rejected) owner is not reported.
         const nonDraft = await probe(async (c: any) => {
+          await c.query(`SET LOCAL session_replication_role = replica`);   // R1 (M224/M225): see above; rolled-back fixture only
           await c.query(`UPDATE central_needs_plan_revisions SET status = 'rejected' WHERE id = $1`, [d.rev]);
           return (await c.query(`SELECT blocker FROM public._phoenix_central_needs_review_blockers_v1($1)`, [d.rev])).rows;
         });

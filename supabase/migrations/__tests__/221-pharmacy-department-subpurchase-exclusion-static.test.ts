@@ -231,13 +231,13 @@ describe('PDA-PROC-1/M221 static — the file exists under its canonical name', 
 describe('PDA-PROC-1/M221 static — registration and hygiene', () => {
   it('221 is the ONLY migration above 220 (no 222+), and the only 221_ file', () => {
     const files = readdirSync(MIGRATIONS).filter((f) => /^\d{3}_.*\.sql$/.test(f)).sort();
-    expect(files.filter((f) => Number(f.slice(0, 3)) > 220)).toEqual([FILENAME, '222_phoenix_governed_warehouse_correction_security.sql']);
+    expect(files.filter((f) => Number(f.slice(0, 3)) > 220)).toEqual([FILENAME, '222_phoenix_governed_warehouse_correction_security.sql', '223_phoenix_central_needs_manual_source_schema_inert.sql', '224_phoenix_central_needs_authorization_closure.sql', '225_phoenix_central_needs_lifecycle_relations_and_sod.sql', '226_phoenix_central_needs_manual_routines_inert.sql', '227_phoenix_central_needs_blockers_digest_d27.sql', '228_phoenix_central_needs_material_registration_inert.sql', '229_phoenix_central_needs_manual_activation.sql', '230_phoenix_central_needs_material_registration_activation.sql']);
     expect(files.filter((f) => f.startsWith('221_'))).toEqual([FILENAME]);
     // Route A proposed M222 is the one reviewed file above 221 (asserted exactly above); every
     // 223+ migration stays absent, and the raw directory scan still admits nothing in its 222-299
     // band except that exact M222 filename (no alternate 222 name, no other 222-299 entry).
-    expect(files.filter((f) => Number(f.slice(0, 3)) >= 223)).toEqual([]);
-    expect(readdirSync(MIGRATIONS).filter((f) => /^2(2[2-9]|[3-9]\d)/.test(f))).toEqual(['222_phoenix_governed_warehouse_correction_security.sql']);
+    expect(files.filter((f) => Number(f.slice(0, 3)) >= 231)).toEqual([]);
+    expect(readdirSync(MIGRATIONS).filter((f) => /^2(2[2-9]|[3-9]\d)/.test(f))).toEqual(['222_phoenix_governed_warehouse_correction_security.sql', '223_phoenix_central_needs_manual_source_schema_inert.sql', '224_phoenix_central_needs_authorization_closure.sql', '225_phoenix_central_needs_lifecycle_relations_and_sod.sql', '226_phoenix_central_needs_manual_routines_inert.sql', '227_phoenix_central_needs_blockers_digest_d27.sql', '228_phoenix_central_needs_material_registration_inert.sql', '229_phoenix_central_needs_manual_activation.sql', '230_phoenix_central_needs_material_registration_activation.sql']);
   });
 
   it('one BEGIN; and one COMMIT;, the file ends with COMMIT;, ASCII and LF only, never MANUAL APPLY ONLY', () => {

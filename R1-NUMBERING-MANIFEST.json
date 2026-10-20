@@ -1,0 +1,50 @@
+[
+ {
+  "migration": "223_phoenix_central_needs_manual_source_schema_inert.sql",
+  "candidate": "R1a_01_manual_source_schema_inert.sql",
+  "candidate_sha256": "c53a7d1cd022373e90d5ff49a01f5e9f21afbf517ae2f26428d1c311cb1f5f1e",
+  "migration_sha256": "5ea5bfca733de98eb466100e17cb6305a9e365b345f0eb33461e6260f4ffebf7"
+ },
+ {
+  "migration": "224_phoenix_central_needs_authorization_closure.sql",
+  "candidate": "R1a_02_authorization_closure.sql",
+  "candidate_sha256": "24d3a654007e98295bdf12a00c95fcb62208147e0633b6c0d8550578cf204462",
+  "migration_sha256": "8690c020f42a192462a3294fc7aab715300bb13c40f0b7a5f1ea21e2086b4690"
+ },
+ {
+  "migration": "225_phoenix_central_needs_lifecycle_relations_and_sod.sql",
+  "candidate": "R1a_03_lifecycle_relations_and_sod.sql",
+  "candidate_sha256": "2a422c9d7654d37c54bfb14f21082537b202e68f2843c4d38cbeb02de43ef7c7",
+  "migration_sha256": "22640eaa3397810de54c4f9ebc90c6358c0802773f205deae297d6b5e4f82964"
+ },
+ {
+  "migration": "226_phoenix_central_needs_manual_routines_inert.sql",
+  "candidate": "R1a_04_manual_routines_inert.sql",
+  "candidate_sha256": "8020f5c6845246395a5fb32a50117c69ed3eff1c3c29a05e06b0e6c764f7bb97",
+  "migration_sha256": "60b5ba2cedc435fd6caace3c4a3e432c10c6fe5321f71788c0745e85101d1e1c"
+ },
+ {
+  "migration": "227_phoenix_central_needs_blockers_digest_d27.sql",
+  "candidate": "R1a_05_blockers_digest_d27.sql",
+  "candidate_sha256": "fab489952b7405fe0f6902fdf0ef2b145f757cf9da111ae6fa395e55cfb65f69",
+  "migration_sha256": "dc02d58ea1f98818e8beaa97c60628b98ccce6ee573b8943f163af2abe79ae53"
+ },
+ {
+  "migration": "228_phoenix_central_needs_material_registration_inert.sql",
+  "candidate": "R1a_06_material_registration_inert.sql",
+  "candidate_sha256": "37ecc50769d00cbf153f828ff094a64088434f08d4e9e042aee404121b4d3fb1",
+  "migration_sha256": "9e88d36e9fe38922bbbb12e3d0cdf6cf28141604588b35ecf3db2e32f2d9477a"
+ },
+ {
+  "migration": "229_phoenix_central_needs_manual_activation.sql",
+  "candidate": "R1b_01_manual_activation_NOT_APPLIED.sql",
+  "candidate_sha256": "bc251ee3fcc5a2d06eaef4b7671b135bb0f0385a5b86cfec6ef070117e0e4392",
+  "migration_sha256": "190d907b870a072b01f6cb8e5580ae4f9a31dcbf6a6a5665c75a4fd8a215b02e"
+ },
+ {
+  "migration": "230_phoenix_central_needs_material_registration_activation.sql",
+  "candidate": "R1b_02_material_registration_activation_NOT_APPLIED.sql",
+  "candidate_sha256": "71e87396f8a254c96980b26165520cc8054154fe1f43db5c43ccf91143315786",
+  "migration_sha256": "b8f20831591e3945909b4c846194f5bc6f88adc1f8390673e809b03fa1a5e353"
+ }
+]
