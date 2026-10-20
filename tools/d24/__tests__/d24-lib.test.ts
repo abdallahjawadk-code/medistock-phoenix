@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -57,5 +58,18 @@ describe('exported SQL', () => {
       // statements only: string literals may legitimately name function patterns such as net.http_delete
       expect(q.replace(/'[^']*'/g, "''")).not.toMatch(/\b(INSERT|UPDATE|DELETE|DROP|ALTER|TRUNCATE|CREATE|GRANT)\b/i);
     }
+  });
+});
+
+describe('D24 status wording (a tool test is not a restore proof)', () => {
+  const doc = readFileSync(join(__dirname, '..', 'D24-PROCEDURE.md'), 'utf8').split(String.fromCharCode(13)).join('');
+  it('says PROCEDURE ONLY / not operational restore evidence, and treats a zero-object source as HOLD', () => {
+    expect(doc).toMatch(/PROCEDURE ONLY - NOT OPERATIONAL RESTORE EVIDENCE/);
+    expect(doc).toMatch(/do \*\*not\*\* prove that a PostgreSQL \+ Storage backup/);
+    expect(doc).toMatch(/zero-object source is HOLD/);
+  });
+  it('an empty manifest is never a pass', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'd24-empty-'));
+    expect((await verifyStorageRestore({ manifest: [], dir })).ok).toBe(false);
   });
 });

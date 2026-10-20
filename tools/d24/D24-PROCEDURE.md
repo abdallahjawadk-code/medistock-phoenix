@@ -1,5 +1,7 @@
 # D24 - backup and isolated restore (PostgreSQL + Storage) - procedure
 
+**STATUS: PROCEDURE ONLY - NOT OPERATIONAL RESTORE EVIDENCE.** The unit tests in `tools/d24/__tests__` prove that the guard and the verifier behave correctly on synthetic fixtures; they do **not** prove that a PostgreSQL + Storage backup of Production (or Staging) was taken and restored in isolation. D24 stays on HOLD until a real, owner-authorized, isolated restore has been executed and its evidence (section 4) independently accepted. Production's verified migration ceiling is **M221**; the procedure must be run against the real source, never a synthetic one.
+
 Status: PROCEDURE ONLY. Nothing here runs by itself; every step against Staging or Production needs the Owner's separate authorization (phoenix-owner-gates).
 The DB half reuses the method already proven three times on Staging (S2, S3a, S3b windows): `pg_dump -Fc` of `public` + every `phoenix_*` schema (+`pg_trgm`),
 restore with `--exit-on-error --no-owner -L <toc without "SCHEMA - public">` into a throw-away LOCAL database, and a content fingerprint (`S2-COUNTS.sql`) that must equal the source.
@@ -40,6 +42,10 @@ Do NOT use `ops/run-pg17-restore-rehearsal.ps1` for R1: it asserts the obsolete 
 
 ## 4. Evidence (no secrets)
 archive/manifest/fingerprint hashes, object counts, `storage-restore-verify` JSON line, probe result, STOP-gate outcomes, UTC dates. Stored next to the release matrix; the Director reviews it independently.
+
+## 4b. Zero-object Storage source
+`verifyStorageRestore` deliberately FAILS on an empty manifest: an empty inventory must never be turned into a pass silently, and never be replaced by synthetic objects.
+If the source really holds zero permanent objects, record an explicit source attestation (read-only inventory of bucket `central-needs-source-files`, prefix `permanent/`, plus the database count of `central_needs_import_batches` with `storage_locator LIKE 'permanent/%'` = 0, both with date and operator) and have an empty-manifest policy defined and reviewed in a **separate** local correction before the proof is accepted. Until then a zero-object source is HOLD, not success.
 
 ## 5. Not covered
 Point-in-time recovery, Auth user passwords/secrets (Auth is a platform service; only `auth.users` evidence rows are exported), Vercel configuration. Production recovery time objective is NOT proven by a Staging rehearsal alone.
