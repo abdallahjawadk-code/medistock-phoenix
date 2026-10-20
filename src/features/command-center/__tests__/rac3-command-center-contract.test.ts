@@ -517,8 +517,14 @@ describe('RAC-3 · I) no backend or migration change', () => {
       'supabase/candidates/staging-baseline/staging-baseline.mjs',
       'supabase/candidates/staging-baseline/verify_085_preconditions.sql',
       'supabase/candidates/staging-baseline/verify_baseline_221.sql',
+      // F3 (S3c functional acceptance): the shared journey, its Staging runner and the disposable-database suite, registered by exact filename.
+      'supabase/candidates/__tests__/functional-journey.dynamic.test.ts',
+      'supabase/candidates/staging-baseline/hosted-adapter/functional-acceptance.mjs',
+      'supabase/candidates/staging-baseline/hosted-adapter/functional-journey.mjs',
     ];
-    const ALLOWED_SQL = [...R1_CANDIDATES, M200, M201, M202, M203, M204, M205, M206, M207, M208, M209, M210, M211, M212, M213, M214, M215, M216, M217, M218, M219, M220, M221, M222];
+    const ALLOWED_SQL = [...R1_CANDIDATES, M200, M201, M202, M203, M204, M205, M206, M207, M208, M209, M210, M211, M212, M213, M214, M215, M216, M217, M218, M219, M220, M221, M222,
+      // R1 numbering (D9 closed): the eight R1 migrations M223-M230, registered by EXACT filename (candidate bytes unchanged, R1-NUMBERING-MANIFEST.json).
+      'supabase/migrations/223_phoenix_central_needs_manual_source_schema_inert.sql', 'supabase/migrations/224_phoenix_central_needs_authorization_closure.sql', 'supabase/migrations/225_phoenix_central_needs_lifecycle_relations_and_sod.sql', 'supabase/migrations/226_phoenix_central_needs_manual_routines_inert.sql', 'supabase/migrations/227_phoenix_central_needs_blockers_digest_d27.sql', 'supabase/migrations/228_phoenix_central_needs_material_registration_inert.sql', 'supabase/migrations/229_phoenix_central_needs_manual_activation.sql', 'supabase/migrations/230_phoenix_central_needs_material_registration_activation.sql'];
     const changed = execSync(
       'git diff --name-only b707f073d60b4cc61205c35003ab491f3aed7468',
       { cwd: process.cwd(), encoding: 'utf8' },

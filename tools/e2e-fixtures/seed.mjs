@@ -369,6 +369,9 @@ async function main() {
       );
     }
 
+    // R1 (M224/M225): plan revisions, lines and status transitions are written only by an authorized actor (auth.uid() must hold central_needs.edit in the plan's organization).
+    // This disposable-database fixture is a direct seed, so it acts as the Central Needs editor created above for this section only (claim reset right after).
+    await client.query(`SELECT set_config('request.jwt.claim.sub', $1, false)`, [cnUserId]);
     const cnPlan = (await client.query(
       `INSERT INTO central_needs_plans (organization_id, plan_year) VALUES ($1, 2099) RETURNING id`,
       [ORG_C_AUTHORITY],
@@ -474,6 +477,7 @@ async function main() {
         [cnSession, ORG_C_AUTHORITY, row.entity, CN_ITEM],
       );
     }
+    await client.query(`SELECT set_config('request.jwt.claim.sub', '', false)`);
     console.log(`  Central Needs: revision=${cnRevision} session=${cnSession} records=${cnOrdinal}`);
 
     const summary = {

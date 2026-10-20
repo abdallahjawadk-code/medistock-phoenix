@@ -13,6 +13,9 @@ import { acceptanceMain, hostedConfirmationS3C, stagingTransport } from '../stag
 import { PINNED, hostedConfirmationS3P } from '../staging-baseline/hosted-adapter/hosted-adapter.mjs';
 
 const FREEZE = JSON.parse(readFileSync(join(__dirname, '..', 'staging-baseline', 'M001-M221-freeze.json'), 'utf8'));
+// The executor refuses a 'disposable' target whose server address is not loopback (a label cannot turn a remote database into a test database). A CI service container sits on a bridge address,
+// so these executor suites run on a local loopback rig only (evidence recorded in the release plan); the pure/CLI/injected-client suites above still run in CI.
+const LOCAL_RIG_FN = () => rigAvailable() && has221() && process.env.GITHUB_ACTIONS !== 'true';
 const has221 = () => readdirSync(MIGRATIONS_DIR).some((f) => f.startsWith('221_'));
 const T = 'TEST-ONLY (synthetic, disposable rig)';
 const EVID = 'e'.repeat(64);
@@ -80,7 +83,7 @@ describe('functional-acceptance runner - refusals and secret hygiene (no network
   });
 });
 
-const run = rigAvailable() && has221() ? describe : describe.skip;
+const run = LOCAL_RIG_FN() ? describe : describe.skip;
 run('R1 functional-acceptance journey on a provisioned + activated disposable database', { timeout: 900_000 }, () => {
   let c: any; let exec: any; let result: any; const lines: string[] = [];
   beforeAll(async () => {
