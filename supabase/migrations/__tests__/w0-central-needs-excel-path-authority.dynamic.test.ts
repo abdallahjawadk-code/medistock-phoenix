@@ -92,6 +92,10 @@ run('W0 - Central Needs Excel-path authority on the numbered chain', { timeout: 
     expect((await caps(U.importerB, B, REV_B)).excel_import_open).toBe(true);
     await rig.asAdmin(async (c: any) => {
       await c.query(`DELETE FROM central_needs_plan_revisions WHERE id = $1`, [REV_A]).catch(() => undefined);   // no pending Excel draft may block activation
+      // M224-RBAC-ROOT-FIX: activation refuses a lockout, so A first gets a maker {view, edit, manual_need.set} and a DIFFERENT checker {view, approve}.
+      for (const [u, k] of [[U.importerA, 'central_needs.manual_need.set'], [U.viewerA, 'central_needs.approve']] as const) {
+        await c.query(`INSERT INTO profile_permission_overrides (profile_id,permission_key,allowed) VALUES ($1,$2,true) ON CONFLICT (profile_id,permission_key) DO UPDATE SET allowed=true`, [u, k]);
+      }
       await c.query(`SELECT phoenix_private.central_needs_activate_manual_cutover_v1($1::uuid)`, [A]);
     });
     expect((await caps(U.importerA, A, '00000000-0000-0000-0000-0000000c0aff')).excel_import_open).toBe(false);

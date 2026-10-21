@@ -62,7 +62,7 @@ const U_EDIT = '00000000-0000-0000-0000-000000217401';    // view/import/edit on
 const U_APPROVE = '00000000-0000-0000-0000-000000217402'; // view/approve on the owner
 const U_VIEW = '00000000-0000-0000-0000-000000217403';    // view only
 const U_NOPERM = '00000000-0000-0000-0000-000000217404';  // eligible role, no key
-const U_INST = '00000000-0000-0000-0000-000000217405';    // ineligible role, every key
+const U_INST = '00000000-0000-0000-0000-000000217405';    // NON-MEMBER (care-institution home), every key - refused by the membership boundary (M224-RBAC-ROOT-FIX: a role is no longer a gate)
 const U_OTHER = '00000000-0000-0000-0000-000000217406';   // every key, other organization
 
 const ITEM_A = '00000000-0000-0000-0000-000000217801';
@@ -507,7 +507,7 @@ run('C5/M217 Central Needs safety convergence — dynamic (PostgreSQL)', { timeo
       for (const [u, org, role] of [
         [U_EDIT, ORG_OWNER, 'central_warehouse_manager'], [U_APPROVE, ORG_OWNER, 'central_warehouse_manager'],
         [U_VIEW, ORG_OWNER, 'central_warehouse_manager'], [U_NOPERM, ORG_OWNER, 'central_warehouse_manager'],
-        [U_INST, ORG_OWNER, 'institution_admin'], [U_OTHER, ORG_OTHER, 'central_warehouse_manager'],
+        [U_INST, ORG_BENE_A, 'institution_admin'], [U_OTHER, ORG_OTHER, 'central_warehouse_manager'],
       ] as const) {
         await c.query(`UPDATE profiles SET role=$1, status='active', organization_id=$2 WHERE id=$3`, [role, org, u]);
       }

@@ -1,5 +1,5 @@
--- MIGRATION 228 (R1-a 06). D9 CLOSED: numbered from supabase/candidates/R1a_06_material_registration_inert.sql WITHOUT any change to the SQL below.
--- The bytes after this prelude are exactly the candidate (SHA-256 37ecc50769d00cbf153f828ff094a64088434f08d4e9e042aee404121b4d3fb1) that Staging already carries in its ledger;
+-- MIGRATION 228 (R1-a 06). D9 CLOSED: numbered from supabase/candidates/R1a_06_material_registration_inert_v2.sql WITHOUT any change to the SQL below.
+-- The bytes after this prelude are exactly that candidate (SHA-256 9273381f8150cb4665afedfafa50f7ff961e8c5712104cd06096945f86fc11a6, revision M224-RBAC-ROOT-FIX); Staging carries the earlier R1a_06_material_registration_inert.sql (SHA-256 37ecc50769d00cbf153f828ff094a64088434f08d4e9e042aee404121b4d3fb1) and converges separately;
 -- wording below that says "PLACEHOLDER", "NOT part of the numbered chain" or "D9 open" predates this numbering and is superseded by this prelude.
 -- ============================================================================
 -- R1-a CANDIDATE 06 — governed material registration (R1-A2), shipped INERT.
@@ -11,8 +11,8 @@
 --     never a quantity); no fabricated Excel session or source record.
 --  M2 a resolved material is linked to a manual DRAFT only through the explicit, separately authorized
 --     link_material_request_to_draft; no line of any submitted/approved revision is ever touched.
---  M3 the independent reviewer is an ACTIVE super_admin under the Pharmacy Department home-PDA, holding the explicit
---     reviewer key (placeholder, Q-K), and is never the requester (CHECK + routine). No implicit bypass.
+--  M3 the independent reviewer is an ACTIVE member of the Pharmacy Department home-PDA (any role: M224-RBAC-ROOT-FIX), holding
+--     the explicit reviewer key (placeholder, Q-K) and view, and is never the requester (CHECK + routine). No implicit bypass.
 --  M4' every new relation / writer / SECURITY DEFINER routine / policy is in the relation manifest, the ACL manifest and
 --     the writer census; the seal gains STRUCTURAL tripwires (not name-based): forced RLS + restrictive policy on every
 --     manifest relation, pinned search_path on every manifest SECURITY DEFINER routine, any FK-dependent relation of the
@@ -68,7 +68,6 @@ BEGIN
     FROM public.profiles p
    WHERE p.id = v_actor
      AND p.status = 'active'
-     AND p.role IN ('super_admin', 'central_warehouse_manager')
      AND p.organization_id IS NOT NULL;
   IF v_org IS NULL THEN RETURN NULL; END IF;
   IF NOT EXISTS (SELECT 1 FROM public.organizations o
@@ -84,7 +83,8 @@ BEGIN
 END;
 $$;
 
--- M3: active super_admin + home PDA + explicit key (+ view). Never a bypass: without the explicit key the answer is NULL.
+-- M3: active member of the home PDA + explicit reviewer key (+ view), no role class. Never a bypass: without the explicit key
+-- the answer is NULL; independence from the requester is enforced by the CHECK and every reviewer routine.
 CREATE FUNCTION phoenix_cn_policy.material_reviewer_org()
 RETURNS uuid
 LANGUAGE sql
@@ -92,8 +92,7 @@ STABLE
 SECURITY DEFINER
 SET search_path = pg_catalog, pg_temp
 AS $$
-  SELECT CASE WHEN EXISTS (SELECT 1 FROM public.profiles p WHERE p.id = auth.uid() AND p.role = 'super_admin' AND p.status = 'active')
-              THEN phoenix_cn_policy.actor_scope_org('central_needs.material_review') END
+  SELECT phoenix_cn_policy.actor_scope_org('central_needs.material_review')
 $$;
 REVOKE ALL ON FUNCTION phoenix_cn_policy.material_reviewer_org() FROM PUBLIC, anon, service_role;
 GRANT EXECUTE ON FUNCTION phoenix_cn_policy.material_reviewer_org() TO authenticated;
@@ -1167,6 +1166,13 @@ BEGIN
   IF EXISTS (SELECT 1 FROM phoenix_private.central_needs_capability_breaches_v1()) THEN
     RAISE EXCEPTION 'VERIFY FAILED (R1a06): capability seal reports breaches: %',
       (SELECT string_agg(b, '; ') FROM phoenix_private.central_needs_capability_breaches_v1() AS b);
+  END IF;
+  -- M224-RBAC-ROOT-FIX: the redefined predicate and the reviewer predicate name no role.
+  IF EXISTS (SELECT 1 FROM pg_catalog.pg_proc p
+              WHERE p.oid IN ('phoenix_cn_policy.actor_scope_org(text)'::regprocedure, 'phoenix_cn_policy.material_reviewer_org()'::regprocedure)
+                AND (p.prosrc ~ 'super_admin|central_warehouse_manager|institution_admin|warehouse_officer|outlet_officer|health_center_manager'
+                     OR p.prosrc ~* '\.role\M')) THEN
+    RAISE EXCEPTION 'VERIFY FAILED (R1a06): an eligibility predicate still names a role';
   END IF;
 END
 $verify$;
