@@ -557,7 +557,7 @@ describe('RAC-3 · I) no backend or migration change', () => {
    * replaces: it would also catch a dependency edit smuggled in beside a
    * version bump, which a filename check never could.
    */
-  it('changes no dependency — package.json keeps its reviewed 6ce98332 contract and the lockfile must equal the complete SEC-HOTFIX-1 graph (sharp 0.35.5, source-map-js 1.2.2) frozen by exact commit', () => {
+  it('changes no dependency — package.json keeps its reviewed 6ce98332 contract and the lockfile must equal the complete SEC-HOTFIX-2 graph (SEC-HOTFIX-1 sharp 0.35.5 / source-map-js 1.2.2 + vite 6.4.4) frozen by exact commit', () => {
     // CN-2A-SHEETJS: the audited dependency baseline advances from d70b24a9
     // to 6ce98332, the reviewed CN-2A commit that adds exactly one runtime
     // dependency — `xlsx` (SheetJS Community Edition 0.20.3, vendored
@@ -587,7 +587,8 @@ describe('RAC-3 · I) no backend or migration change', () => {
     //
     // Since SEC-HOTFIX-1, BASE anchors the package.json contract and the
     // historical lockfile derivation only; the lockfile itself is anchored by
-    // the separately reviewed graph frozen at SEC_HOTFIX_1_LOCK_BASE below.
+    // the separately reviewed graph frozen at SEC_HOTFIX_1_LOCK_BASE below,
+    // and since SEC-HOTFIX-2 by the graph frozen at SEC_HOTFIX_2_LOCK_BASE.
     const BASE = '6ce9833269536b5e5745d4139a648c6bf7d545ca';
     const jsonAt = (ref: string, file: string) => JSON.parse(
       execSync(`git show ${ref}:${file}`, { cwd: process.cwd(), encoding: 'utf8' }),
@@ -744,9 +745,51 @@ describe('RAC-3 · I) no backend or migration change', () => {
     expect(frozen[BRACE_EXPANSION].version).toBe('5.0.12');
     expect(frozen[SHARP].version).toBe('0.35.5');
     expect(frozen[SOURCE_MAP_JS].version).toBe('1.2.2');
-    // The authoritative assertion: HEAD's whole lockfile IS the frozen graph.
-    expect(normalise(jsonAt('HEAD', 'package-lock.json')))
+
+    // SEC-HOTFIX-2 / GHSA-587h-7wmj-h5pm (high), GHSA-698v-4r3x-3vcv and
+    // GHSA-r825-w8mm-5pxw (launch-editor, bundled by vite): npm audit reports
+    // vite <= 6.4.3 as high, and the advisories name 6.4.4 as the first
+    // patched 6.x release. vite is a dev-only root devDependency whose
+    // package.json range (^6.4.3) already admits 6.4.4, so package.json
+    // is not changed (asserted below). vite 6.4.4 declares the same
+    // dependencies, bin, engines, peer and optional dependencies as 6.4.3, so
+    // SEC-HOTFIX-2 contributes EXACTLY one lockfile transformation on top of the
+    // frozen SEC-HOTFIX-1 graph: the node_modules/vite entry takes the
+    // registry's 6.4.4 version/resolved/integrity and keeps every other field.
+    // Anything else — another entry, a dependency edge, root metadata, or a
+    // different vite version — still fails closed.
+    const VITE = 'node_modules/vite';
+    expect(frozen[VITE].version).toBe('6.4.3');
+    const expectedHotfix2Lock = {
+      ...frozenLock,
+      packages: {
+        ...frozen,
+        [VITE]: {
+          ...frozen[VITE],
+          version: '6.4.4',
+          resolved: 'https://registry.npmjs.org/vite/-/vite-6.4.4.tgz',
+          integrity: 'sha512-xGjU/SyjeNyb0E4KxXBvYz/1C+3JXuujvf2hXNOtnlcE+58o5ajd9N2/n2VhkiJvpCP2qQasnUpx5PXNeI+p1Q==',
+        },
+      },
+    };
+    // Like SEC_HOTFIX_1_LOCK_BASE, SEC_HOTFIX_2_LOCK_BASE must stay reachable in
+    // the CI checkout that runs this test: land the SEC-HOTFIX-2 PR as a merge
+    // commit, never squash or rebase, and never amend or rebase 703be166. If it
+    // cannot be read, `git show` throws and this test fails closed.
+    const SEC_HOTFIX_2_LOCK_BASE = '703be16676f4ad364fc4a901a869a0c13edf2b70';
+    const SEC_HOTFIX_2_PARENT = `${SEC_HOTFIX_2_LOCK_BASE}~1`;
+    // Historical: SEC-HOTFIX-2 started from the frozen SEC-HOTFIX-1 graph and
+    // left package.json as it was.
+    expect(normalise(jsonAt(SEC_HOTFIX_2_PARENT, 'package-lock.json')))
       .toBe(normalise(frozenLock));
+    expect(jsonAt(SEC_HOTFIX_2_LOCK_BASE, 'package.json'))
+      .toEqual(jsonAt(SEC_HOTFIX_2_PARENT, 'package.json'));
+    const frozenHotfix2Lock = jsonAt(SEC_HOTFIX_2_LOCK_BASE, 'package-lock.json');
+    // The frozen SEC-HOTFIX-2 graph is the SEC-HOTFIX-1 graph with EXACTLY the vite entry moved.
+    expect(normalise(frozenHotfix2Lock)).toBe(normalise(expectedHotfix2Lock));
+    // The authoritative assertion: HEAD's whole lockfile IS the frozen SEC-HOTFIX-2 graph.
+    expect(normalise(jsonAt('HEAD', 'package-lock.json')))
+      .toBe(normalise(frozenHotfix2Lock));
   });
 });
 
