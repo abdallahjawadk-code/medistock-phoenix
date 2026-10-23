@@ -93,6 +93,31 @@ function parse209SeededKeys(): SeededKey[] {
 
 const SEEDED = parse209SeededKeys();
 const SEEDED_KEYS = SEEDED.map(k => k.key);
+
+/**
+ * PERMISSION-SAVE-01: the Central Needs keys registered AFTER 209 — one by 224
+ * (manual_need.set) and one by 228 (material_review) — parsed from those applied
+ * migrations the same way. Their action may contain a dot (manual_need.set).
+ * 209's own four-key seed above stays the historical fact it always was; what
+ * grows is today's catalog, the union of the three registrations.
+ */
+const M224 = read('supabase/migrations/224_phoenix_central_needs_authorization_closure.sql');
+const M228 = read('supabase/migrations/228_phoenix_central_needs_material_registration_inert.sql');
+function parseRegisteredKeys(src: string): SeededKey[] {
+  const sql = sqlCode(src);
+  const start = sql.indexOf('INSERT INTO public.permission_keys');
+  expect(start).toBeGreaterThan(-1);
+  const stmt = sql.slice(start, sql.indexOf(';', start));
+  const tuple = /\(\s*'([a-z_.]+)'\s*,\s*'([a-z_]+)'\s*,\s*'([a-z_.]+)'\s*,\s*'([^']+)'\s*,\s*'([^']+)'\s*,\s*(true|false)\s*\)/g;
+  const out: SeededKey[] = [];
+  for (const m of stmt.matchAll(tuple)) {
+    out.push({ key: m[1], module: m[2], action: m[3], labelEn: m[4], labelAr: m[5], dangerous: m[6] === 'true' });
+  }
+  return out;
+}
+const LATER = [...parseRegisteredKeys(M224), ...parseRegisteredKeys(M228)];
+const REGISTERED = [...SEEDED, ...LATER];
+const REGISTERED_KEYS = REGISTERED.map(k => k.key);
 const CATALOG_CN = PERMISSION_KEYS.filter(p => p.key.startsWith('central_needs.'));
 const ARABIC = /[؀-ۿ]/;
 const LATIN = /[A-Za-z]/;
@@ -110,6 +135,15 @@ describe('0. migration 209 seed is parsed, not assumed', () => {
 
   it('every seeded key is named key = module.action', () => {
     for (const k of SEEDED) expect(k.key).toBe(`${k.module}.${k.action}`);
+  });
+
+  it('224 and 228 each register exactly one more Central Needs key, parsed from their own INSERT', () => {
+    expect(LATER.map(k => k.key)).toEqual(['central_needs.manual_need.set', 'central_needs.material_review']);
+    for (const k of LATER) {
+      expect(k.module).toBe('central_needs');
+      expect(k.key).toBe(`${k.module}.${k.action}`);
+    }
+    expect(LATER.map(k => k.dangerous)).toEqual([false, true]);
   });
 });
 
@@ -143,27 +177,38 @@ describe('A. the canonical frontend catalog contains all four migration-209 keys
     }
   });
 
-  it('the catalog is the whole prior catalog plus these four — 52 keys, nothing else moved', () => {
-    expect(PERMISSION_KEYS).toHaveLength(52);
-    expect(PERMISSION_KEY_SET.size).toBe(52);
-    // The four are appended after the last pre-existing module, in 209 order.
+  it('the catalog is the whole prior catalog plus the four 209 keys and the 224/228 keys — 54 keys, nothing else moved', () => {
+    expect(PERMISSION_KEYS).toHaveLength(54);
+    expect(PERMISSION_KEY_SET.size).toBe(54);
+    // They are appended after the last pre-existing module, in registration order.
     const keys = PERMISSION_KEYS.map(p => p.key);
-    expect(keys.slice(-4)).toEqual(SEEDED_KEYS);
+    expect(keys.slice(-6)).toEqual(REGISTERED_KEYS);
+  });
+
+  it('each key 224/228 registered is a catalog key mirroring module, action and dangerous', () => {
+    for (const later of LATER) {
+      const def = PERMISSION_KEYS.find(p => p.key === later.key);
+      expect(def, later.key).toBeDefined();
+      expect(def!.module).toBe(later.module);
+      expect(def!.action).toBe(later.action);
+      expect(def!.dangerous, `${later.key} dangerous`).toBe(later.dangerous);
+      expect(isDangerousPermission(later.key)).toBe(later.dangerous);
+    }
   });
 });
 
 // ============================================================================
 // B. Exactly those four central_needs.* keys — no fifth.
 // ============================================================================
-describe('B. the Central Needs frontend permission set is exactly the four seeded keys', () => {
-  it('the catalog holds no central_needs.* key that 209 did not seed', () => {
-    expect(CATALOG_CN.map(p => p.key).sort()).toEqual([...SEEDED_KEYS].sort());
-    expect(CATALOG_CN).toHaveLength(4);
+describe('B. the Central Needs frontend permission set is exactly the registered keys (209 + 224 + 228)', () => {
+  it('the catalog holds no central_needs.* key that 209, 224 or 228 did not register', () => {
+    expect(CATALOG_CN.map(p => p.key).sort()).toEqual([...REGISTERED_KEYS].sort());
+    expect(CATALOG_CN).toHaveLength(6);
   });
 
-  it('permissionsByModule().central_needs is exactly the four, in 209 order', () => {
+  it('permissionsByModule().central_needs is exactly those keys, in registration order', () => {
     const mods = permissionsByModule();
-    expect(mods.central_needs.map(p => p.key)).toEqual(SEEDED_KEYS);
+    expect(mods.central_needs.map(p => p.key)).toEqual(REGISTERED_KEYS);
   });
 
   it('no key outside module central_needs carries the central_needs prefix, and vice versa', () => {
@@ -270,8 +315,25 @@ describe('D. bilingual labels exist and mirror permission_keys.label_en / label_
     }
   });
 
-  it('labelKey follows the catalog convention perm_<module>_<action>', () => {
-    for (const def of CATALOG_CN) expect(def.labelKey).toBe(`perm_${def.module}_${def.action}`);
+  it('pins the display copy of the 224/228 keys and their own migration wording separately', () => {
+    const EXPECTED_DISPLAY: Record<string, { en: string; ar: string }> = {
+      'central_needs.manual_need.set': { en: 'Enter Annual Needs quantities manually',    ar: 'إدخال كميات الاحتياج السنوي يدويًا' },
+      'central_needs.material_review': { en: 'Review new material registration requests', ar: 'مراجعة طلبات تسجيل المواد الجديدة' },
+    };
+    for (const later of LATER) {
+      const def = PERMISSION_KEYS.find(p => p.key === later.key)!;
+      expect(T[def.labelKey].en, `${later.key} display en`).toBe(EXPECTED_DISPLAY[later.key].en);
+      expect(T[def.labelKey].ar, `${later.key} display ar`).toBe(EXPECTED_DISPLAY[later.key].ar);
+    }
+    // Database side: each migration's own registered wording, unchanged.
+    expect(LATER[0].labelEn).toBe('Enter manual annual needs');
+    expect(LATER[0].labelAr).toBe('إدخال الاحتياجات السنوية يدويًا');
+    expect(LATER[1].labelEn).toMatch(/^Review material registration requests/);
+    expect(LATER[1].labelAr).toMatch(/^مراجعة طلبات تسجيل المواد/);
+  });
+
+  it('labelKey follows the catalog convention perm_<module>_<action> (a dot in the action becomes _)', () => {
+    for (const def of CATALOG_CN) expect(def.labelKey).toBe(`perm_${def.module}_${def.action.replace(/\./g, '_')}`);
   });
 
   it('the module header the matrix renders (permmod_central_needs) exists bilingually and matches the nav entry', () => {
@@ -282,10 +344,10 @@ describe('D. bilingual labels exist and mirror permission_keys.label_en / label_
     expect(T.permmod_central_needs.en).toBe(T.cn2b_nav.en);
   });
 
-  it('the four labels are distinct from each other in both languages', () => {
+  it('the Central Needs labels are distinct from each other in both languages', () => {
     for (const lang of ['ar', 'en'] as const) {
       const labels = CATALOG_CN.map(def => T[def.labelKey][lang]);
-      expect(new Set(labels).size).toBe(4);
+      expect(new Set(labels).size).toBe(CATALOG_CN.length);
     }
   });
 });
@@ -306,9 +368,9 @@ describe('E. the existing permission-matrix engine handles the four keys unchang
 
   it('super_admin can grant each key to another profile in scope (not to itself)', () => {
     const ctx: GrantContext = { actorRole: 'super_admin', isSelf: false, sameScope: true };
-    for (const key of SEEDED_KEYS) expect(canActorSetPermission(ctx, key, true), key).toEqual({ ok: true });
+    for (const key of REGISTERED_KEYS) expect(canActorSetPermission(ctx, key, true), key).toEqual({ ok: true });
     const self: GrantContext = { actorRole: 'super_admin', isSelf: true, sameScope: true };
-    for (const key of SEEDED_KEYS) {
+    for (const key of REGISTERED_KEYS) {
       expect(canActorSetPermission(self, key, true), key).toEqual({ ok: false, error: 'SELF_ESCALATION' });
     }
   });
@@ -321,6 +383,8 @@ describe('E. the existing permission-matrix engine handles the four keys unchang
     expect(canActorSetPermission(ctx, 'central_needs.import', true)).toEqual({ ok: false, error: 'CANNOT_GRANT_UNHELD' });
     expect(canActorSetPermission(ctx, 'central_needs.edit', true)).toEqual({ ok: false, error: 'CANNOT_GRANT_UNHELD' });
     expect(canActorSetPermission(ctx, 'central_needs.approve', true)).toEqual({ ok: false, error: 'NEEDS_AUTHORITY_FOR_DANGEROUS' });
+    expect(canActorSetPermission(ctx, 'central_needs.manual_need.set', true)).toEqual({ ok: false, error: 'CANNOT_GRANT_UNHELD' });
+    expect(canActorSetPermission(ctx, 'central_needs.material_review', true)).toEqual({ ok: false, error: 'NEEDS_AUTHORITY_FOR_DANGEROUS' });
   });
 
   it('an actor granted a key by override can pass it on; denying or inheriting is always allowed in scope', () => {
@@ -395,9 +459,9 @@ describe('F. no explicit frontend role fallback grants any Central Needs key', (
     const afterCatalog = src.slice(catalogEnd);
     expect(afterCatalog.length).toBeGreaterThan(1000);
     expect(afterCatalog).not.toContain('central_needs');
-    // ...while the catalog block itself does name exactly the four.
+    // ...while the catalog block itself names exactly the registered keys.
     const catalog = src.slice(0, catalogEnd);
-    expect(catalog.match(/'central_needs\.[a-z]+'/g)).toEqual(SEEDED_KEYS.map(k => `'${k}'`));
+    expect(catalog.match(/'central_needs\.[a-z_.]+'/g)).toEqual(REGISTERED_KEYS.map(k => `'${k}'`));
   });
 
   it('super_admin holds them only through the pre-existing catalog-wide derivation, which mirrors the server bypass', () => {
@@ -405,7 +469,7 @@ describe('F. no explicit frontend role fallback grants any Central Needs key', (
     // user-permission-matrix.test.ts). That is not a grant made by this pass:
     // the server admits an active super_admin BEFORE any key is consulted.
     const d = roleDefaults('super_admin');
-    for (const key of SEEDED_KEYS) expect(d.has(key), key).toBe(true);
+    for (const key of REGISTERED_KEYS) expect(d.has(key), key).toBe(true);
     expect(d.size).toBe(PERMISSION_KEYS.length);
 
     const fn = sqlFunctionBody(M092, 'public.phoenix_status_center_authorized');

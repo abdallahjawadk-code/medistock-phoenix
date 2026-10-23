@@ -131,10 +131,14 @@ describe('Permission save/reload: persistent RPC round trip (unchanged, still co
     expect(onSaveBlock).toContain('eff.reload()');
   });
 
-  it('save computes a null override (inherit default) when the new value equals the role default — does not force-write redundant overrides', () => {
-    const onSaveBlock = screen.slice(screen.indexOf('async function onSave'), screen.indexOf('async function onReset'));
-    expect(onSaveBlock).toContain('cur === defaults.has(p.key) ? null : cur');
-  });
+  // PERMISSION-SAVE-01: a text pin of the old payload expression lived here
+  // ("null when the new value equals the role default"). That expression was
+  // the bug: it compared with the CLIENT fallback table, so a ticked grant the
+  // database did not default was sent as null (inherit) and lost on reload.
+  // The save payload is now proven by behaviour, not by its source text:
+  // src/features/users/__tests__/permission-save-roundtrip.runtime.test.tsx
+  // drives the real screen through save → reload → reopen against a model of
+  // the server contract (failing on the old expression, passing on the fix).
 
   it('assign_profile_permissions upserts overrides and never overwrites unrelated permission_keys (per-key upsert only)', () => {
     const fnBlock = migration010.slice(migration010.indexOf('function assign_profile_permissions'), migration010.indexOf('function reset_profile_permissions'));
