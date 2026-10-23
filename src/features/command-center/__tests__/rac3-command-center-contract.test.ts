@@ -557,7 +557,7 @@ describe('RAC-3 · I) no backend or migration change', () => {
    * replaces: it would also catch a dependency edit smuggled in beside a
    * version bump, which a filename check never could.
    */
-  it('changes no dependency — package.json keeps its reviewed 6ce98332 contract and the lockfile must equal the complete SEC-HOTFIX-1 graph (sharp 0.35.5, source-map-js 1.2.2) frozen by exact commit', () => {
+  it('changes no dependency — package.json keeps its reviewed 6ce98332 contract and the WORKING lockfile must equal the complete SEC-HOTFIX-3 graph (the SEC-HOTFIX-2 graph frozen by exact commit + the explicit Vitest family 4.1.12 delta)', () => {
     // CN-2A-SHEETJS: the audited dependency baseline advances from d70b24a9
     // to 6ce98332, the reviewed CN-2A commit that adds exactly one runtime
     // dependency — `xlsx` (SheetJS Community Edition 0.20.3, vendored
@@ -587,7 +587,10 @@ describe('RAC-3 · I) no backend or migration change', () => {
     //
     // Since SEC-HOTFIX-1, BASE anchors the package.json contract and the
     // historical lockfile derivation only; the lockfile itself is anchored by
-    // the separately reviewed graph frozen at SEC_HOTFIX_1_LOCK_BASE below.
+    // the separately reviewed graph frozen at SEC_HOTFIX_1_LOCK_BASE below,
+    // since SEC-HOTFIX-2 by the graph frozen at SEC_HOTFIX_2_LOCK_BASE, and
+    // since SEC-HOTFIX-3 by that graph plus the explicit Vitest 4.1.12 delta
+    // below, checked against the WORKING lockfile rather than HEAD.
     const BASE = '6ce9833269536b5e5745d4139a648c6bf7d545ca';
     const jsonAt = (ref: string, file: string) => JSON.parse(
       execSync(`git show ${ref}:${file}`, { cwd: process.cwd(), encoding: 'utf8' }),
@@ -744,9 +747,148 @@ describe('RAC-3 · I) no backend or migration change', () => {
     expect(frozen[BRACE_EXPANSION].version).toBe('5.0.12');
     expect(frozen[SHARP].version).toBe('0.35.5');
     expect(frozen[SOURCE_MAP_JS].version).toBe('1.2.2');
-    // The authoritative assertion: HEAD's whole lockfile IS the frozen graph.
-    expect(normalise(jsonAt('HEAD', 'package-lock.json')))
+
+    // SEC-HOTFIX-2 / GHSA-587h-7wmj-h5pm (high), GHSA-698v-4r3x-3vcv and
+    // GHSA-r825-w8mm-5pxw (launch-editor, bundled by vite): npm audit reports
+    // vite <= 6.4.3 as high, and the advisories name 6.4.4 as the first
+    // patched 6.x release. vite is a dev-only root devDependency whose
+    // package.json range (^6.4.3) already admits 6.4.4, so package.json
+    // is not changed (asserted below). vite 6.4.4 declares the same
+    // dependencies, bin, engines, peer and optional dependencies as 6.4.3, so
+    // SEC-HOTFIX-2 contributes EXACTLY one lockfile transformation on top of the
+    // frozen SEC-HOTFIX-1 graph: the node_modules/vite entry takes the
+    // registry's 6.4.4 version/resolved/integrity and keeps every other field.
+    // Anything else — another entry, a dependency edge, root metadata, or a
+    // different vite version — still fails closed.
+    const VITE = 'node_modules/vite';
+    expect(frozen[VITE].version).toBe('6.4.3');
+    const expectedHotfix2Lock = {
+      ...frozenLock,
+      packages: {
+        ...frozen,
+        [VITE]: {
+          ...frozen[VITE],
+          version: '6.4.4',
+          resolved: 'https://registry.npmjs.org/vite/-/vite-6.4.4.tgz',
+          integrity: 'sha512-xGjU/SyjeNyb0E4KxXBvYz/1C+3JXuujvf2hXNOtnlcE+58o5ajd9N2/n2VhkiJvpCP2qQasnUpx5PXNeI+p1Q==',
+        },
+      },
+    };
+    // Like SEC_HOTFIX_1_LOCK_BASE, SEC_HOTFIX_2_LOCK_BASE must stay reachable in
+    // the CI checkout that runs this test: land the SEC-HOTFIX-2 PR as a merge
+    // commit, never squash or rebase, and never amend or rebase 703be166. If it
+    // cannot be read, `git show` throws and this test fails closed.
+    const SEC_HOTFIX_2_LOCK_BASE = '703be16676f4ad364fc4a901a869a0c13edf2b70';
+    const SEC_HOTFIX_2_PARENT = `${SEC_HOTFIX_2_LOCK_BASE}~1`;
+    // Historical: SEC-HOTFIX-2 started from the frozen SEC-HOTFIX-1 graph and
+    // left package.json as it was.
+    expect(normalise(jsonAt(SEC_HOTFIX_2_PARENT, 'package-lock.json')))
       .toBe(normalise(frozenLock));
+    expect(jsonAt(SEC_HOTFIX_2_LOCK_BASE, 'package.json'))
+      .toEqual(jsonAt(SEC_HOTFIX_2_PARENT, 'package.json'));
+    const frozenHotfix2Lock = jsonAt(SEC_HOTFIX_2_LOCK_BASE, 'package-lock.json');
+    // The frozen SEC-HOTFIX-2 graph is the SEC-HOTFIX-1 graph with EXACTLY the vite entry moved.
+    expect(normalise(frozenHotfix2Lock)).toBe(normalise(expectedHotfix2Lock));
+
+    // SEC-HOTFIX-3 / GHSA-qxg6-89mg-rqv8 and GHSA-xp26-3454-mjgp: npm audit
+    // reports @vitest/mocker <= 4.1.11 as moderate (code injection through
+    // unauthenticated manual mock registration; a Windows backslash traversal
+    // of the redirect allowlist), reached through vitest. Both advisories name
+    // 4.1.12 as the patched 4.x release. The Vitest family is released in
+    // lockstep, so all eight entries move 4.1.11 -> 4.1.12 together, and
+    // package.json's "vitest": "^4.1.11" already admits 4.1.12 (it is not
+    // changed: asserted above, and against the working tree below). Every value
+    // is written out from the npm registry's 4.1.12 manifests (published
+    // 2026-10-15) — nothing is read from the registry at test time: each entry
+    // takes the 4.1.12 version/resolved/integrity, and the manifests change ONLY
+    // the family-internal edges listed per entry (vitest's dependencies and
+    // peerDependencies, the @vitest/* dependencies on each other), each of which
+    // was exactly "4.1.11" before. No key is added or removed, every other field
+    // and every other entry stays as frozen, and vite stays 6.4.4. Anything else
+    // — another entry, another edge, root metadata, a different integrity or
+    // resolved URL, or a family member left at 4.1.11 — fails closed.
+    const VITEST_FAMILY_4_1_12: Record<string, { resolved: string; integrity: string; edges: Record<string, Record<string, string>> }> = {
+      'vitest': {
+        resolved: 'https://registry.npmjs.org/vitest/-/vitest-4.1.12.tgz',
+        integrity: 'sha512-5eWdz2yb3ajxWF3C8C4TjkXl7FGm3n2E/VlazALrQHzK7nYMSGFnCZto0bbPNl77AwkOZVLk0YnBAejUu0NiWA==',
+        edges: {
+          dependencies: { '@vitest/expect': '4.1.12', '@vitest/mocker': '4.1.12', '@vitest/pretty-format': '4.1.12', '@vitest/runner': '4.1.12', '@vitest/snapshot': '4.1.12', '@vitest/spy': '4.1.12', '@vitest/utils': '4.1.12' },
+          peerDependencies: { '@vitest/browser-playwright': '4.1.12', '@vitest/browser-preview': '4.1.12', '@vitest/browser-webdriverio': '^4.1.11', '@vitest/coverage-istanbul': '4.1.12', '@vitest/coverage-v8': '4.1.12', '@vitest/ui': '4.1.12' },
+        },
+      },
+      '@vitest/expect': {
+        resolved: 'https://registry.npmjs.org/@vitest/expect/-/expect-4.1.12.tgz',
+        integrity: 'sha512-vFlTt+YEu9WBpNjdGayNmlMVzrWPi1+sv853/7t2FU7hpO5gAFBKHzQmkCq5Xjpr+evegF2994LQT3hF3mRlqQ==',
+        edges: {
+          dependencies: { '@vitest/spy': '4.1.12', '@vitest/utils': '4.1.12' },
+        },
+      },
+      '@vitest/mocker': {
+        resolved: 'https://registry.npmjs.org/@vitest/mocker/-/mocker-4.1.12.tgz',
+        integrity: 'sha512-fKShNpKZzupWZuY0z7egydvL0sqW4INEZBEExMBMAa6izlENEVHwoXgdaTCaBZ5fwlr4xf2o1wXC83n9RpO+NA==',
+        edges: {
+          dependencies: { '@vitest/spy': '4.1.12' },
+        },
+      },
+      '@vitest/pretty-format': {
+        resolved: 'https://registry.npmjs.org/@vitest/pretty-format/-/pretty-format-4.1.12.tgz',
+        integrity: 'sha512-XW9O8+Mxx4VpCtkYdMJLZQQwsVryP9wk7cPKDxtXFfwSak6yRh5+2fep/Y0XF/ElBvJHq8bcYdi6aeuai0opZA==',
+        edges: {},
+      },
+      '@vitest/runner': {
+        resolved: 'https://registry.npmjs.org/@vitest/runner/-/runner-4.1.12.tgz',
+        integrity: 'sha512-NKlVKCr5QnCe8jijdMnmkpHHU+WTqiLFR6G0pHji9uRjXK9xJl1k1nTw6F3pOOj2PDcsDt2GKQMI7wIsaT491w==',
+        edges: {
+          dependencies: { '@vitest/utils': '4.1.12' },
+        },
+      },
+      '@vitest/snapshot': {
+        resolved: 'https://registry.npmjs.org/@vitest/snapshot/-/snapshot-4.1.12.tgz',
+        integrity: 'sha512-ko1y1Qgb/slzQ9mr+b89Cuqud8WG1TKtsPD8r7ZUBdvVOGt85Af2HwCqHujrhwJq95hs/9RM7fcAPg57o1vlzw==',
+        edges: {
+          dependencies: { '@vitest/pretty-format': '4.1.12', '@vitest/utils': '4.1.12' },
+        },
+      },
+      '@vitest/spy': {
+        resolved: 'https://registry.npmjs.org/@vitest/spy/-/spy-4.1.12.tgz',
+        integrity: 'sha512-RGq9x4JNGNTZHEJxvN0oSiJjeSCExm0n2gZKKJZHY9cX5AVA6M7VJILBT3ZJ/tJ/0J9uWT7fETV9/btoi//vSg==',
+        edges: {},
+      },
+      '@vitest/utils': {
+        resolved: 'https://registry.npmjs.org/@vitest/utils/-/utils-4.1.12.tgz',
+        integrity: 'sha512-Q3awXrwOfEV+qc3WmO5ONyE0yO7Q1gQ9/oyHxGLZ/pl7N3NO/ZztqQwKLuwMkV+CA1JYSIeO3gkHnRDIo4AVaA==',
+        edges: {
+          dependencies: { '@vitest/pretty-format': '4.1.12' },
+        },
+      },
+    };
+    const frozenHotfix2 = frozenHotfix2Lock.packages as Record<string, Record<string, unknown>>;
+    const hotfix3Packages: Record<string, Record<string, unknown>> = { ...frozenHotfix2 };
+    for (const [name, next] of Object.entries(VITEST_FAMILY_4_1_12)) {
+      const key = `node_modules/${name}`;
+      const prev = frozenHotfix2[key];
+      // Provenance: the frozen SEC-HOTFIX-2 graph carries the reviewed 4.1.11 entry.
+      expect(prev.version, key).toBe('4.1.11');
+      const moved: Record<string, unknown> = { ...prev, version: '4.1.12', resolved: next.resolved, integrity: next.integrity };
+      for (const [field, edges] of Object.entries(next.edges)) {
+        const current = prev[field] as Record<string, string>;
+        // An edge is moved, never added: it exists and was exactly 4.1.11.
+        for (const dep of Object.keys(edges)) expect(current[dep], `${key} ${field}.${dep}`).toBe('4.1.11');
+        moved[field] = { ...current, ...edges };
+      }
+      hotfix3Packages[key] = moved;
+    }
+    const expectedHotfix3Lock = { ...frozenHotfix2Lock, packages: hotfix3Packages };
+    expect(hotfix3Packages[VITE].version).toBe('6.4.4');
+    // The authoritative assertion reads the WORKING lockfile. `git show HEAD`
+    // cannot see an uncommitted lockfile and would report a false GREEN for it;
+    // in CI the working tree is the checked-out commit, so the strictness is
+    // the same. The whole graph must be the SEC-HOTFIX-3 graph above, with only
+    // the pre-existing release-version normalisation.
+    const workingLock = JSON.parse(readFileSync(join(process.cwd(), 'package-lock.json'), 'utf8'));
+    expect(normalise(workingLock)).toBe(normalise(expectedHotfix3Lock));
+    // ... and the working package.json is the HEAD package.json whose contract is asserted above.
+    expect(JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8'))).toEqual(head);
   });
 });
 
