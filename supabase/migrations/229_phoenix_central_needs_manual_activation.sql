@@ -1,5 +1,5 @@
--- MIGRATION 229 (R1-b 01). D9 CLOSED: numbered from supabase/candidates/R1b_01_manual_activation_NOT_APPLIED.sql WITHOUT any change to the SQL below.
--- The bytes after this prelude are exactly the candidate (SHA-256 bc251ee3fcc5a2d06eaef4b7671b135bb0f0385a5b86cfec6ef070117e0e4392) that Staging already carries in its ledger;
+-- MIGRATION 229 (R1-b 01). D9 CLOSED: numbered from supabase/candidates/R1b_01_manual_activation_NOT_APPLIED_v2.sql WITHOUT any change to the SQL below.
+-- The bytes after this prelude are exactly that candidate (SHA-256 ba879ea1c2c79f2ba9fe4445a04dad998129ec2dfb1cc2fb8fd546cac7ea6744, revision M224-RBAC-ROOT-FIX); Staging carries the earlier R1b_01_manual_activation_NOT_APPLIED.sql (SHA-256 bc251ee3fcc5a2d06eaef4b7671b135bb0f0385a5b86cfec6ef070117e0e4392) and converges separately;
 -- wording below that says "PLACEHOLDER", "NOT part of the numbered chain" or "D9 open" predates this numbering and is superseded by this prelude.
 -- ============================================================================
 -- R1-b CANDIDATE 01 — manual activation (NOT APPLIED; PROPOSAL FOR OWNER DECISION)
@@ -20,6 +20,10 @@
 --  3. phoenix_private.central_needs_activate_manual_cutover_v1(org): owner-only (never exposed).
 --     Refuses while an Excel draft/submitted revision exists; inventories every revision of the
 --     organization (status, state digest, counts, actor sets) and then writes the marker.
+--     M224-RBAC-ROOT-FIX: this is where the lockout guard lives now. Activation refuses
+--     ('activation_blocked_lockout_risk') unless the organization has a maker {view, edit,
+--     manual_need.set} and a DIFFERENT checker {view, approve} among its ACTIVE members, by the same
+--     permission-based rule as the authority predicate (phoenix_private.central_needs_staffing_readiness_v1).
 --  4. my_capabilities gets its R1-b body (manual_set and excel_import_open become real).
 -- Writer census after this candidate: 24 (the owner-only activation routine is the 24th).
 -- ============================================================================
@@ -32,6 +36,9 @@ BEGIN
   END IF;
   IF to_regprocedure('phoenix_private.central_needs_activate_manual_cutover_v1(uuid)') IS NOT NULL THEN
     RAISE EXCEPTION 'R1b01_precondition_failed: already applied';
+  END IF;
+  IF to_regprocedure('phoenix_private.central_needs_staffing_readiness_v1(uuid)') IS NULL THEN
+    RAISE EXCEPTION 'R1b01_precondition_failed: the staffing readiness helper of R1a_02 (M224-RBAC-ROOT-FIX) is missing';
   END IF;
 END
 $pre$;
@@ -138,6 +145,7 @@ AS $$
 DECLARE
   v_pending integer;
   v_n integer := 0;
+  v_ready jsonb;
   r record;
 BEGIN
   IF current_setting('transaction_isolation') <> 'read committed' THEN
@@ -149,6 +157,14 @@ BEGIN
   PERFORM pg_advisory_xact_lock(hashtextextended(p_org::text, 210002));
   IF phoenix_cn_policy.excel_read_restriction_state(p_org) = 'active' THEN
     RETURN jsonb_build_object('ok', true, 'idempotent_replay', true, 'organization_id', p_org);
+  END IF;
+  -- Lockout guard (M224-RBAC-ROOT-FIX): Excel closes for this organization below, so a maker and a
+  -- DIFFERENT checker must already exist; otherwise nobody could enter or approve, or SoD could never be met.
+  v_ready := phoenix_private.central_needs_staffing_readiness_v1(p_org);
+  IF NOT COALESCE((v_ready ->> 'ready')::boolean, false) THEN
+    RAISE EXCEPTION 'activation_blocked_lockout_risk' USING ERRCODE = '23514',
+      DETAIL = format('organization=%s active_members=%s makers=%s checkers=%s; required: a maker {view, edit, manual_need.set} and a different checker {view, approve}',
+                      p_org, v_ready ->> 'active_members', v_ready ->> 'makers', v_ready ->> 'checkers');
   END IF;
   SELECT count(*) INTO v_pending FROM public.central_needs_plan_revisions
    WHERE organization_id = p_org AND source_mode = 'excel' AND status IN ('draft', 'submitted');
@@ -171,7 +187,8 @@ BEGIN
     v_n := v_n + 1;
   END LOOP;
   INSERT INTO public.central_needs_cutover_inventory (organization_id, entry_kind) VALUES (p_org, 'activation_marker');
-  RETURN jsonb_build_object('ok', true, 'idempotent_replay', false, 'organization_id', p_org, 'inventoried_revisions', v_n);
+  RETURN jsonb_build_object('ok', true, 'idempotent_replay', false, 'organization_id', p_org, 'inventoried_revisions', v_n,
+                            'staffing', v_ready);
 END;
 $$;
 REVOKE ALL ON FUNCTION phoenix_private.central_needs_activate_manual_cutover_v1(uuid) FROM PUBLIC, anon, authenticated, service_role;

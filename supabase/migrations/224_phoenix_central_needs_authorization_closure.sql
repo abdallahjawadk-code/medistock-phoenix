@@ -1,5 +1,5 @@
--- MIGRATION 224 (R1-a 02). D9 CLOSED: numbered from supabase/candidates/R1a_02_authorization_closure.sql WITHOUT any change to the SQL below.
--- The bytes after this prelude are exactly the candidate (SHA-256 24d3a654007e98295bdf12a00c95fcb62208147e0633b6c0d8550578cf204462) that Staging already carries in its ledger;
+-- MIGRATION 224 (R1-a 02). D9 CLOSED: numbered from supabase/candidates/R1a_02_authorization_closure_v2.sql WITHOUT any change to the SQL below.
+-- The bytes after this prelude are exactly that candidate (SHA-256 40dec7c8d2a32aacae99c0524efc5e449d9afcb7fa59329462ac5a8627bed5aa, revision M224-RBAC-ROOT-FIX); Staging carries the earlier R1a_02_authorization_closure.sql (SHA-256 24d3a654007e98295bdf12a00c95fcb62208147e0633b6c0d8550578cf204462) and converges separately;
 -- wording below that says "PLACEHOLDER", "NOT part of the numbered chain" or "D9 open" predates this numbering and is superseded by this prelude.
 -- ============================================================================
 -- R1-a CANDIDATE 02 — authorization closure (D7/D22). PLACEHOLDER (no migration
@@ -16,6 +16,18 @@
 --   * key central_needs.manual_need.set registered, NO defaults, NO grants
 --     (string / labels / is_dangerous are a [DEP-D3 / Q-K] record: OWNER-DEPENDENT)
 --
+-- M224-RBAC-ROOT-FIX (owner decision, 2026-10-21): eligibility is NOT a role class.
+-- A caller is eligible when they are an ACTIVE member (profiles.organization_id) of a
+-- live pharmacy_department_authority, hold the explicit key in the permission matrix
+-- (phoenix_profile_has_permission), act for that home organization only, and never
+-- approve their own work (SoD, candidate 03). Therefore:
+--   * actor_scope_org carries no role predicate;
+--   * _phoenix_central_needs_role_eligible_v1() (M211, used by every RESTRICTIVE
+--     policy) is re-based on PDA membership: same signature, strictly boolean;
+--   * the migration no longer refuses an organization that has no staffed maker and
+--     checker yet: it records the permission-based readiness (NOTICE + an owner-only
+--     helper) and the per-organization activation (R1-b 01) refuses while unstaffed.
+--
 -- Contract: R1-0 ADR rev4d §9.1–§9.8. Requires candidate 01 to be applied.
 -- Relations covered in this file: the 13 legacy + central_needs_manual_need_events
 -- (14). The remaining three (withdrawals, coverage acknowledgements, cutover
@@ -30,8 +42,6 @@ BEGIN;
 DO $pre$
 DECLARE
   r record;
-  v_makers  uuid[];
-  v_checkers uuid[];
 BEGIN
   IF current_setting('transaction_isolation') <> 'read committed' THEN
     RAISE EXCEPTION 'R1a02_requires_read_committed';
@@ -47,26 +57,16 @@ BEGIN
     RAISE EXCEPTION 'R1a02_precondition_failed: R1-a authorization objects already present';
   END IF;
 
-  -- Lockout prevention (ADR §9.5): every organization that owns a plan must be a
-  -- live pharmacy-department authority, with >=1 active maker {view,edit} and >=1
-  -- DIFFERENT active checker {view,approve}.
+  -- Structural ownership (ADR §9.5): every organization that owns a plan must be a
+  -- live pharmacy-department authority, otherwise its plans would have no eligible
+  -- scope at all. STAFFING is deliberately NOT a migration precondition any more: an
+  -- unstaffed organization is dormant (recoverable by a permission grant, which is
+  -- administered outside Central Needs), not locked out; the lockout guard moved to
+  -- the per-organization activation (R1-b 01), where Excel closes for that organization.
   FOR r IN SELECT DISTINCT p.organization_id AS org FROM public.central_needs_plans p LOOP
     IF NOT EXISTS (SELECT 1 FROM public.organizations o
                     WHERE o.id = r.org AND o.organization_kind = 'pharmacy_department_authority' AND o.archived_at IS NULL) THEN
       RAISE EXCEPTION 'R1a02_precondition_failed: plan-owning organization % is not a live pharmacy_department_authority', r.org;
-    END IF;
-    SELECT array_agg(pr.id ORDER BY pr.id) INTO v_makers
-      FROM public.profiles pr
-     WHERE pr.organization_id = r.org AND pr.status = 'active' AND pr.role IN ('super_admin', 'central_warehouse_manager')
-       AND public.phoenix_profile_has_permission(pr.id, 'central_needs.view')
-       AND public.phoenix_profile_has_permission(pr.id, 'central_needs.edit');
-    SELECT array_agg(pr.id ORDER BY pr.id) INTO v_checkers
-      FROM public.profiles pr
-     WHERE pr.organization_id = r.org AND pr.status = 'active' AND pr.role IN ('super_admin', 'central_warehouse_manager')
-       AND public.phoenix_profile_has_permission(pr.id, 'central_needs.view')
-       AND public.phoenix_profile_has_permission(pr.id, 'central_needs.approve');
-    IF v_makers IS NULL OR v_checkers IS NULL OR (cardinality(v_makers) = 1 AND v_makers = v_checkers) THEN
-      RAISE EXCEPTION 'R1a02_precondition_failed: organization % lacks a staffed maker and a different checker (lockout risk)', r.org;
     END IF;
   END LOOP;
 END
@@ -85,6 +85,8 @@ COMMENT ON SCHEMA phoenix_cn_policy IS
 -- 2. The single authority predicate (PF-2). Returns the caller's home PDA
 --    organization when ALL of §9.2 a–g hold, else NULL. Never raises on an
 --    authorization outcome; no super_admin exception; no auth.role()/auth.jwt().
+--    M224-RBAC-ROOT-FIX: no role predicate either. Membership (active profile of
+--    a live PDA) + the explicit key from the permission matrix are the authority.
 -- ---------------------------------------------------------------------------
 CREATE FUNCTION phoenix_cn_policy.actor_scope_org(p_key text)
 RETURNS uuid
@@ -106,7 +108,6 @@ BEGIN
     FROM public.profiles p
    WHERE p.id = v_actor
      AND p.status = 'active'
-     AND p.role IN ('super_admin', 'central_warehouse_manager')
      AND p.organization_id IS NOT NULL;
   IF v_org IS NULL THEN RETURN NULL; END IF;
   IF NOT EXISTS (SELECT 1 FROM public.organizations o
@@ -134,6 +135,75 @@ AS $$
 $$;
 REVOKE ALL ON FUNCTION public.phoenix_central_needs_actor_authorized(uuid, text) FROM PUBLIC, anon, service_role;
 GRANT EXECUTE ON FUNCTION public.phoenix_central_needs_actor_authorized(uuid, text) TO authenticated;
+
+-- ---------------------------------------------------------------------------
+-- 2b. M224-RBAC-ROOT-FIX: the M211 eligibility predicate, re-based on membership.
+--     Same signature, still STABLE SECURITY DEFINER and strictly boolean (never
+--     NULL, see M211), so every RESTRICTIVE *_role_eligible_restrictive policy and
+--     guard_v1 now mean "an ACTIVE member of a live pharmacy_department_authority",
+--     whatever the member's role. The name is historical. A care institution or
+--     outlet actor still never qualifies (its home is not a PDA), and a member
+--     still needs the explicit key: this predicate is a boundary, never a grant.
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public._phoenix_central_needs_role_eligible_v1()
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+  SELECT COALESCE((
+    SELECT true
+      FROM public.profiles p
+      JOIN public.organizations o ON o.id = p.organization_id
+     WHERE p.id = auth.uid()
+       AND p.status = 'active'
+       AND o.organization_kind = 'pharmacy_department_authority'
+       AND o.archived_at IS NULL), false);
+$$;
+REVOKE ALL ON FUNCTION public._phoenix_central_needs_role_eligible_v1() FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public._phoenix_central_needs_role_eligible_v1() TO authenticated;
+COMMENT ON FUNCTION public._phoenix_central_needs_role_eligible_v1() IS
+  'M224-RBAC-ROOT-FIX: true when the caller is an ACTIVE member of a live pharmacy_department_authority (no role class). Applied by every RESTRICTIVE *_role_eligible_restrictive policy and by guard_v1; the explicit key and the home-organization scope are still required by phoenix_cn_policy.actor_scope_org.';
+
+-- ---------------------------------------------------------------------------
+-- 2c. Staffing readiness (owner-only, read-only). The SAME membership + key rule
+--     as actor_scope_org, evaluated for every active member of one organization:
+--       maker   = view + edit + manual_need.set   (opens, enters, submits)
+--       checker = view + approve                  (approves / rejects)
+--     ready   = a maker and a DIFFERENT checker exist (SoD stays possible).
+--     Used by the per-organization activation (R1-b 01) to refuse a lockout; it
+--     never authorizes anything and returns counts only (no identities).
+-- ---------------------------------------------------------------------------
+CREATE FUNCTION phoenix_private.central_needs_staffing_readiness_v1(p_org uuid)
+RETURNS jsonb
+LANGUAGE sql
+STABLE
+SET search_path = pg_catalog, pg_temp
+AS $$
+  WITH members AS (
+    SELECT p.id,
+           COALESCE(public.phoenix_profile_has_permission(p.id, 'central_needs.view'), false)            AS v,
+           COALESCE(public.phoenix_profile_has_permission(p.id, 'central_needs.edit'), false)            AS e,
+           COALESCE(public.phoenix_profile_has_permission(p.id, 'central_needs.manual_need.set'), false) AS m,
+           COALESCE(public.phoenix_profile_has_permission(p.id, 'central_needs.approve'), false)         AS a
+      FROM public.profiles p
+      JOIN public.organizations o ON o.id = p.organization_id
+     WHERE p.organization_id = p_org
+       AND p.status = 'active'
+       AND o.organization_kind = 'pharmacy_department_authority'
+       AND o.archived_at IS NULL
+  ),
+  makers AS (SELECT id FROM members WHERE v AND e AND m),
+  checkers AS (SELECT id FROM members WHERE v AND a)
+  SELECT jsonb_build_object(
+           'organization_id', p_org,
+           'active_members', (SELECT count(*) FROM members),
+           'makers', (SELECT count(*) FROM makers),
+           'checkers', (SELECT count(*) FROM checkers),
+           'ready', EXISTS (SELECT 1 FROM makers mk JOIN checkers ck ON ck.id <> mk.id))
+$$;
+REVOKE ALL ON FUNCTION phoenix_private.central_needs_staffing_readiness_v1(uuid) FROM PUBLIC, anon, authenticated, service_role;
 
 -- ---------------------------------------------------------------------------
 -- 3. Key registration — inert (no role defaults, no grants). [DEP-D3 / Q-K]
@@ -167,10 +237,11 @@ BEGIN
     RAISE EXCEPTION 'organization_not_found' USING ERRCODE = 'P0002';
   END IF;
 
+  -- Membership boundary (2b). The code is kept so every existing client mapping keeps its meaning.
   IF NOT public._phoenix_central_needs_role_eligible_v1() THEN
     RAISE EXCEPTION 'forbidden_central_needs_role' USING ERRCODE = '42501',
-      DETAIL = format('role=%s is outside the Central Needs eligible class', public.phoenix_my_role()),
-      HINT = 'Central Needs is restricted to super_admin and central_warehouse_manager.';
+      DETAIL = 'the caller is not an active member of a live pharmacy_department_authority',
+      HINT = 'Central Needs is restricted to active members of a Pharmacy Department authority holding the explicit key.';
   END IF;
 
   -- R1-a (D7/D22): the single predicate; no super_admin exception, no cross-organization permit.
@@ -439,6 +510,22 @@ BEGIN
               AND (p.prosrc ~* 'auth\.role\s*\(' OR p.prosrc ~* 'auth\.jwt\s*\(' OR p.prosrc ~* 'super_admin''\s*THEN\s+RETURN')) THEN
     RAISE EXCEPTION 'VERIFY FAILED (R1a02): predicate must not use auth.role()/auth.jwt() or a super_admin early return';
   END IF;
+  -- M224-RBAC-ROOT-FIX: neither eligibility routine may name a role; the membership predicate stays strictly boolean.
+  IF EXISTS (SELECT 1 FROM pg_catalog.pg_proc p
+              WHERE p.oid IN ('phoenix_cn_policy.actor_scope_org(text)'::regprocedure,
+                              'public._phoenix_central_needs_role_eligible_v1()'::regprocedure,
+                              'phoenix_private.central_needs_staffing_readiness_v1(uuid)'::regprocedure)
+                AND (p.prosrc ~ 'super_admin|central_warehouse_manager|institution_admin|warehouse_officer|outlet_officer|health_center_manager'
+                     OR p.prosrc ~* '\.role\M')) THEN
+    RAISE EXCEPTION 'VERIFY FAILED (R1a02): an eligibility routine still names a role';
+  END IF;
+  IF public._phoenix_central_needs_role_eligible_v1() IS DISTINCT FROM false THEN
+    RAISE EXCEPTION 'VERIFY FAILED (R1a02): the membership predicate must be false (never NULL) without an identity';
+  END IF;
+  IF EXISTS (SELECT 1 FROM (VALUES ('anon'), ('authenticated'), ('service_role')) AS w(who)
+              WHERE pg_catalog.has_function_privilege(w.who, 'phoenix_private.central_needs_staffing_readiness_v1(uuid)', 'EXECUTE')) THEN
+    RAISE EXCEPTION 'VERIFY FAILED (R1a02): the staffing readiness helper is reachable by an API role';
+  END IF;
   IF EXISTS (SELECT 1 FROM phoenix_private.central_needs_capability_breaches_v1()) THEN
     RAISE EXCEPTION 'VERIFY FAILED (R1a02): capability seal reports breaches: %',
       (SELECT string_agg(b, '; ') FROM phoenix_private.central_needs_capability_breaches_v1() AS b);
@@ -449,5 +536,16 @@ BEGIN
   END IF;
 END
 $verify$;
+
+-- Readiness record (non-blocking): counts only, one NOTICE per plan-owning organization.
+DO $readiness$
+DECLARE
+  r record;
+BEGIN
+  FOR r IN SELECT DISTINCT p.organization_id AS org FROM public.central_needs_plans p ORDER BY 1 LOOP
+    RAISE NOTICE 'R1a02 staffing readiness: %', phoenix_private.central_needs_staffing_readiness_v1(r.org);
+  END LOOP;
+END
+$readiness$;
 
 COMMIT;

@@ -488,6 +488,10 @@ describe('RAC-3 · I) no backend or migration change', () => {
       'supabase/candidates/FF1_r1_forward_fix_NOT_APPLIED.sql',
       'supabase/candidates/R1a_01_manual_source_schema_inert.sql',
       'supabase/candidates/R1a_02_authorization_closure.sql',
+      // R1-RBAC-v2: exact reviewed #248 paths; every unlisted sibling remains refused.
+      'supabase/candidates/R1a_02_authorization_closure_v2.sql',
+      'supabase/candidates/R1a_06_material_registration_inert_v2.sql',
+      'supabase/candidates/R1b_01_manual_activation_NOT_APPLIED_v2.sql',
       'supabase/candidates/R1a_03_lifecycle_relations_and_sod.sql',
       'supabase/candidates/R1a_04_manual_routines_inert.sql',
       'supabase/candidates/R1a_05_blockers_digest_d27.sql',
@@ -544,6 +548,12 @@ describe('RAC-3 · I) no backend or migration change', () => {
     const unregistered = ['supabase/candidates/staging-baseline/hosted-adapter/hosted-adapter.mjs.bak', 'supabase/candidates/staging-baseline/hosted-adapter/other.mjs', 'supabase/candidates/staging-baseline/hosted-adapter.mjs',
       'supabase/candidates/__tests__/hosted-adapter.dynamic.test.ts.orig', 'supabase/candidates/__tests__/hosted-adapter-extra.dynamic.test.ts', 'supabase/candidates/hosted-adapter/hosted-adapter.mjs'];
     expect(flag(unregistered)).toEqual(unregistered);
+    const r1V2NearMisses = [
+      'supabase/candidates/R1a_02_authorization_closure_v2.sql.unreviewed',
+      'supabase/candidates/R1a_06_material_registration_inert_v2.sql.unreviewed',
+      'supabase/candidates/R1b_01_manual_activation_NOT_APPLIED_v2.sql.unreviewed',
+    ];
+    expect(flag(r1V2NearMisses)).toEqual(r1V2NearMisses);
   });
 
   /**

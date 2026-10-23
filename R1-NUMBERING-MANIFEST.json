@@ -7,9 +7,9 @@
  },
  {
   "migration": "224_phoenix_central_needs_authorization_closure.sql",
-  "candidate": "R1a_02_authorization_closure.sql",
-  "candidate_sha256": "24d3a654007e98295bdf12a00c95fcb62208147e0633b6c0d8550578cf204462",
-  "migration_sha256": "8690c020f42a192462a3294fc7aab715300bb13c40f0b7a5f1ea21e2086b4690"
+  "candidate": "R1a_02_authorization_closure_v2.sql",
+  "candidate_sha256": "40dec7c8d2a32aacae99c0524efc5e449d9afcb7fa59329462ac5a8627bed5aa",
+  "migration_sha256": "bb503b92ea772b0afefbb3f2e1e270a0cf908e840bf0c11ec7101ab0bd99a421"
  },
  {
   "migration": "225_phoenix_central_needs_lifecycle_relations_and_sod.sql",
@@ -31,15 +31,15 @@
  },
  {
   "migration": "228_phoenix_central_needs_material_registration_inert.sql",
-  "candidate": "R1a_06_material_registration_inert.sql",
-  "candidate_sha256": "37ecc50769d00cbf153f828ff094a64088434f08d4e9e042aee404121b4d3fb1",
-  "migration_sha256": "9e88d36e9fe38922bbbb12e3d0cdf6cf28141604588b35ecf3db2e32f2d9477a"
+  "candidate": "R1a_06_material_registration_inert_v2.sql",
+  "candidate_sha256": "9273381f8150cb4665afedfafa50f7ff961e8c5712104cd06096945f86fc11a6",
+  "migration_sha256": "559e561dc0d62e9cee34a9846247eba1030cefb6dadaf64976d66276af94d11f"
  },
  {
   "migration": "229_phoenix_central_needs_manual_activation.sql",
-  "candidate": "R1b_01_manual_activation_NOT_APPLIED.sql",
-  "candidate_sha256": "bc251ee3fcc5a2d06eaef4b7671b135bb0f0385a5b86cfec6ef070117e0e4392",
-  "migration_sha256": "190d907b870a072b01f6cb8e5580ae4f9a31dcbf6a6a5665c75a4fd8a215b02e"
+  "candidate": "R1b_01_manual_activation_NOT_APPLIED_v2.sql",
+  "candidate_sha256": "ba879ea1c2c79f2ba9fe4445a04dad998129ec2dfb1cc2fb8fd546cac7ea6744",
+  "migration_sha256": "4add82c7e68ac9e642606d1df4de160c8320d227169f8301e6e6a1a343c29818"
  },
  {
   "migration": "230_phoenix_central_needs_material_registration_activation.sql",
