@@ -33,7 +33,16 @@
   "migration": "228_phoenix_central_needs_material_registration_inert.sql",
   "candidate": "R1a_06_material_registration_inert_v2.sql",
   "candidate_sha256": "9273381f8150cb4665afedfafa50f7ff961e8c5712104cd06096945f86fc11a6",
-  "migration_sha256": "559e561dc0d62e9cee34a9846247eba1030cefb6dadaf64976d66276af94d11f"
+  "migration_sha256": "34678ed0d00df9839c3a44e8f72dbd9b4739d5d662f4dc1a7c6cffa9211d310e",
+  "m228_extension_schema_correction": {
+   "ticket": "M228-EXTENSION-SCHEMA",
+   "status": "LOCAL_CORRECTION_NOT_PUBLISHED_NOT_APPLIED",
+   "original_migration_sha256": "559e561dc0d62e9cee34a9846247eba1030cefb6dadaf64976d66276af94d11f",
+   "original_git_blob": "3ad86b61017a3197bbe91bf0b799b71c119974f8",
+   "candidate_relation": "The numbered file is no longer byte-identical to candidate_sha256; the historical candidate file is unchanged provenance.",
+   "reason": "similarity() is bound to the schema of the installed pg_trgm extension instead of the hard-coded public.similarity that failed on Production (run 39935101242, SQLSTATE 42883, pg_trgm 1.6 in schema extensions, FAILED_CLEAN).",
+   "production_history": "M228 is absent from Production migration history; this correction has not been applied anywhere hosted."
+  }
  },
  {
   "migration": "229_phoenix_central_needs_manual_activation.sql",

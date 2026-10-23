@@ -833,6 +833,8 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
       'supabase/candidates/R1a_06_material_registration_inert_v2.sql',
       'supabase/candidates/R1b_01_manual_activation_NOT_APPLIED_v2.sql',
       'supabase/migrations/__tests__/224-rbac-root-fix-pda-eligibility.dynamic.test.ts',
+      // M228-EXTENSION-SCHEMA: exact reviewed regression file; no directory exemption.
+      'supabase/migrations/__tests__/m228-extension-schema-parity.dynamic.test.ts',
       'supabase/candidates/R1a_03_lifecycle_relations_and_sod.sql',
       'supabase/candidates/R1a_04_manual_routines_inert.sql',
       'supabase/candidates/R1a_05_blockers_digest_d27.sql',

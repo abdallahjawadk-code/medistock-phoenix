@@ -1,5 +1,9 @@
--- MIGRATION 228 (R1-a 06). D9 CLOSED: numbered from supabase/candidates/R1a_06_material_registration_inert_v2.sql WITHOUT any change to the SQL below.
--- The bytes after this prelude are exactly that candidate (SHA-256 9273381f8150cb4665afedfafa50f7ff961e8c5712104cd06096945f86fc11a6, revision M224-RBAC-ROOT-FIX); Staging carries the earlier R1a_06_material_registration_inert.sql (SHA-256 37ecc50769d00cbf153f828ff094a64088434f08d4e9e042aee404121b4d3fb1) and converges separately;
+-- MIGRATION 228 (R1-a 06). D9 CLOSED: numbered from supabase/candidates/R1a_06_material_registration_inert_v2.sql (SHA-256 9273381f8150cb4665afedfafa50f7ff961e8c5712104cd06096945f86fc11a6, revision M224-RBAC-ROOT-FIX).
+-- M228-EXTENSION-SCHEMA (2026-10-23): this file is NO LONGER byte-identical to that candidate; the candidate files are unchanged provenance. Exactly one SQL change:
+-- phoenix_private.central_material_candidates_v1 calls similarity() in the schema of the installed pg_trgm extension (resolved at apply time, section 2) instead of the
+-- hard-coded public.similarity that failed on Production (run 39935101242: SQLSTATE 42883, pg_trgm 1.6 in schema extensions; FAILED_CLEAN). Frozen original numbered file:
+-- git blob 3ad86b61017a3197bbe91bf0b799b71c119974f8, SHA-256 559e561dc0d62e9cee34a9846247eba1030cefb6dadaf64976d66276af94d11f.
+-- Staging carries the earlier R1a_06_material_registration_inert.sql (SHA-256 37ecc50769d00cbf153f828ff094a64088434f08d4e9e042aee404121b4d3fb1) and converges separately;
 -- wording below that says "PLACEHOLDER", "NOT part of the numbered chain" or "D9 open" predates this numbering and is superseded by this prelude.
 -- ============================================================================
 -- R1-a CANDIDATE 06 — governed material registration (R1-A2), shipped INERT.
@@ -156,6 +160,45 @@ REVOKE ALL ON FUNCTION phoenix_private.central_material_lock_catalog_v1(text, te
 
 -- STRONG = an exact strong identifier (barcode) OR the exact normalized scientific identity (name + strength + form + unit).
 -- ADVISORY = trigram similarity (threshold 0.45, unchanged), never decisive, never auto-mapped, NEVER truncated. Read-only; reads central_items only.
+-- M228-EXTENSION-SCHEMA: similarity() is bound to the schema of the INSTALLED pg_trgm extension, read from pg_catalog when this
+-- migration runs (hosted Supabase: extensions; fresh baseline / disposable rig: public). It accepts only a similarity(text, text)
+-- returning real that is a registered member of pg_trgm (pg_depend deptype 'e') in pg_trgm's own schema; a missing extension or
+-- anything other than exactly one such member fails closed before the function exists, so a same-name function elsewhere cannot be
+-- bound. The resolved schema is quoted with %I into a schema-qualified call; the routine keeps search_path = pg_catalog, pg_temp
+-- (no caller-controlled search_path, no public shim, no helper, no extension move, no privilege change). With pg_trgm in public the
+-- created body is byte-identical to the original.
+DO $bind$
+DECLARE
+  v_ext    oid;
+  v_nsp    oid;
+  v_schema name;
+  v_found  integer;
+  v_src    text;
+  v_needle text;
+BEGIN
+  SELECT e.oid, e.extnamespace, n.nspname INTO v_ext, v_nsp, v_schema
+    FROM pg_catalog.pg_extension e
+    JOIN pg_catalog.pg_namespace n ON n.oid = e.extnamespace
+   WHERE e.extname = 'pg_trgm';
+  IF v_ext IS NULL THEN
+    RAISE EXCEPTION 'R1a06_precondition_failed: the pg_trgm extension is not installed';
+  END IF;
+  SELECT count(*)::integer INTO v_found
+    FROM pg_catalog.pg_proc p
+    JOIN pg_catalog.pg_depend d
+      ON d.classid = 'pg_catalog.pg_proc'::pg_catalog.regclass AND d.objid = p.oid
+     AND d.refclassid = 'pg_catalog.pg_extension'::pg_catalog.regclass AND d.refobjid = v_ext AND d.deptype = 'e'
+   WHERE p.proname = 'similarity'
+     AND p.pronamespace = v_nsp
+     AND p.pronargs = 2
+     AND p.proargtypes[0] = 'pg_catalog.text'::pg_catalog.regtype
+     AND p.proargtypes[1] = 'pg_catalog.text'::pg_catalog.regtype
+     AND p.prorettype = 'pg_catalog.float4'::pg_catalog.regtype;
+  IF v_found <> 1 THEN
+    RAISE EXCEPTION 'R1a06_precondition_failed: pg_trgm (schema %) must provide exactly one member similarity(text, text) returning real, found %', v_schema, v_found;
+  END IF;
+
+  EXECUTE pg_catalog.format($sql$
 CREATE FUNCTION phoenix_private.central_material_candidates_v1(p_scientific text, p_strength text, p_form text, p_unit text, p_barcode text)
 RETURNS TABLE (central_item_id uuid, grade text, score real)
 LANGUAGE sql
@@ -173,8 +216,8 @@ AS $$
             AND ci.unit = p_unit)
   ), advisory AS (
     SELECT ci.id,
-           greatest(public.similarity(phoenix_private.central_material_norm_v1(ci.name), phoenix_private.central_material_norm_v1(p_scientific)),
-                    public.similarity(phoenix_private.central_material_norm_v1(ci.name_ar), phoenix_private.central_material_norm_v1(p_scientific))) AS s
+           greatest(%1$I.similarity(phoenix_private.central_material_norm_v1(ci.name), phoenix_private.central_material_norm_v1(p_scientific)),
+                    %1$I.similarity(phoenix_private.central_material_norm_v1(ci.name_ar), phoenix_private.central_material_norm_v1(p_scientific))) AS s
       FROM public.central_items ci
      WHERE ci.id NOT IN (SELECT id FROM strong)
   )
@@ -182,7 +225,20 @@ AS $$
   UNION ALL
   -- EVERY advisory candidate at or above the (unchanged) 0.45 threshold is returned: nothing is hidden from the reviewer or from the server check
   (SELECT a.id, 'advisory'::text, a.s FROM advisory a WHERE a.s >= 0.45 ORDER BY a.s DESC, a.id)
-$$;
+$$
+$sql$, v_schema);
+
+  -- Fail closed unless the created body calls the resolved member exactly twice and no other similarity().
+  SELECT p.prosrc INTO v_src
+    FROM pg_catalog.pg_proc p
+   WHERE p.oid = 'phoenix_private.central_material_candidates_v1(text, text, text, text, text)'::pg_catalog.regprocedure;
+  v_needle := pg_catalog.quote_ident(v_schema) || '.similarity(';
+  IF (pg_catalog.length(v_src) - pg_catalog.length(pg_catalog.replace(v_src, 'similarity(', ''))) / pg_catalog.length('similarity(') <> 2
+     OR (pg_catalog.length(v_src) - pg_catalog.length(pg_catalog.replace(v_src, v_needle, ''))) / pg_catalog.length(v_needle) <> 2 THEN
+    RAISE EXCEPTION 'R1a06_precondition_failed: central_material_candidates_v1 is not bound to %.similarity', v_schema;
+  END IF;
+END
+$bind$;
 REVOKE ALL ON FUNCTION phoenix_private.central_material_candidates_v1(text, text, text, text, text) FROM PUBLIC, anon, authenticated, service_role;
 
 -- ---------------------------------------------------------------------------
