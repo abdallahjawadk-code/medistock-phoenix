@@ -89,7 +89,11 @@ jobs:
       - name: Set up Supabase CLI
         uses: supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520 # v3.0.0 (pinned by hash for supply-chain safety, matching this repo's other actions)
         with:
-          version: latest
+          # Pinned to the release whose image-registry fallback was verified at source
+          # (npm supabase@2.121.0 = git tag v2.121.0, supabase/cli 8a549dff, which contains
+          # PR #5660's ECR -> GHCR -> Docker Hub fallback); `latest` would resolve to an
+          # unverified release at run time. ci.yml's acceptance job pins its CLI the same way.
+          version: 2.121.0
 
       - name: Supply migration 085's historical cutover attestation (transaction-local, ephemeral checkout only)
         # M085-ATTESTED-EPHEMERAL-PREPARATION
@@ -346,7 +350,13 @@ jobs:
           SQL
 
       - name: Start local Supabase (applies supabase/migrations/001->latest automatically)
-        run: supabase start
+        # setup-cli exports SUPABASE_INTERNAL_IMAGE_REGISTRY=ghcr.io, which collapses the CLI's
+        # image candidates to that one registry; two runs failed on ghcr.io `toomanyrequests`.
+        # Unset it for this one process only, so the CLI falls back on its own across
+        # public.ecr.aws -> ghcr.io -> Docker Hub for the same official supabase/* images.
+        run: |
+          supabase --version
+          env -u SUPABASE_INTERNAL_IMAGE_REGISTRY supabase start
 
       - name: Capture local Supabase connection info
         id: sb
