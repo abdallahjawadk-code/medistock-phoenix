@@ -5,8 +5,18 @@
  * pharmacy_department_authority, (2) the explicit key from the permission matrix, (3) the home-organization scope of the
  * operation, (4) never approving one's own work. No role class.
  *
- * Order: canonical 001..223 -> seed (a plan-owning PDA whose staff are ORDINARY roles: the Production shape that made the
- * v1 M224 fail) -> the v1 M224 bytes are refused (negative control: the root cause) -> numbered 224..230 (revised) apply.
+ * Order: canonical 001..223 -> seed (SYNTHETIC data only, never Production's) -> the v1 M224 bytes are refused on two
+ * shapes (negative controls: the root cause) -> numbered 224..230 (revised) apply.
+ *
+ * The two refused shapes, and what each one is:
+ *   - ORG: a plan-owning PDA staffed by ORDINARY roles holding the keys. This is NOT Production's recorded shape; it is
+ *     the general case the role-class v1 precondition could never admit (no super_admin/central_warehouse_manager maker
+ *     and checker), which is the root cause the revision removes.
+ *   - ORG_SA_ONLY: a synthetic replica of the shape ERRATA-2 DOCUMENTS for the Production refusal of 2026-10-21 — a live
+ *     PDA whose ONLY member is a super_admin profile holding neither central_needs.view nor central_needs.edit. It is
+ *     modelled from that written description; no Production row, identity or export is used.
+ * Both fail the same v1 precondition ("lacks a staffed maker and a different checker"); the revised chain records both as
+ * not ready and defers the lockout guard to the per-organization activation.
  * Gated on PHOENIX_RIG_PG.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
@@ -30,11 +40,12 @@ const NUMBERED = [
   '230_phoenix_central_needs_material_registration_activation.sql',
 ];
 
-const ORG = '00000000-0000-0000-0000-0000000d4001';        // owner PDA (the Babylon shape)
+const ORG = '00000000-0000-0000-0000-0000000d4001';        // owner PDA staffed by ordinary roles (synthetic)
 const ORG_OTHER = '00000000-0000-0000-0000-0000000d4002';  // another PDA
 const ORG_CARE = '00000000-0000-0000-0000-0000000d4003';   // care institution (not a PDA)
 const ORG_BENE = '00000000-0000-0000-0000-0000000d4004';   // beneficiary hospital
 const ORG_SOLO = '00000000-0000-0000-0000-0000000d4005';   // a PDA staffed by ONE person only
+const ORG_SA_ONLY = '00000000-0000-0000-0000-0000000d4006'; // ERRATA-2's documented shape, synthetic: ONE super_admin, no view/edit
 
 const W = {
   entrant: '00000000-0000-0000-0000-0000000d4401',   // warehouse_officer, ORG: view, edit (+ manual_need.set after M224)
@@ -48,6 +59,7 @@ const W = {
   saNull: '00000000-0000-0000-0000-0000000d4409',    // super_admin, no home: every key
   susp: '00000000-0000-0000-0000-0000000d440a',      // warehouse_officer, ORG, suspended: every key
   solo: '00000000-0000-0000-0000-0000000d440b',      // warehouse_officer, ORG_SOLO: every key (the only member)
+  saOnly: '00000000-0000-0000-0000-0000000d440c',    // super_admin, ORG_SA_ONLY: no central_needs key (the only member)
 } as const;
 const ALL = ['view', 'import', 'edit', 'approve'];
 
@@ -66,6 +78,7 @@ run('M224-RBAC-ROOT-FIX — PDA membership + explicit key + scope + SoD, no role
   let year = 2040;
   const notices: string[] = [];
   let v1Refusal: Refusal | null = null;
+  let v1SaOnlyRefusal: Refusal | null = null;
 
   const admin = <T = any>(sql: string, params: unknown[] = []): Promise<T[]> =>
     rig.asAdmin((c: any) => c.query(sql, params).then((r: any) => r.rows));
@@ -98,7 +111,9 @@ run('M224-RBAC-ROOT-FIX — PDA membership + explicit key + scope + SoD, no role
         ($2,'RBAC Other PDA','دائرة أخرى','rbac-other','pharmacy_department_authority',NULL),
         ($3,'RBAC Care Home','مؤسسة','rbac-care','care_institution','hospital'),
         ($4,'RBAC Hospital','مستشفى','rbac-bene','care_institution','hospital'),
-        ($5,'RBAC Solo PDA','دائرة فرد','rbac-solo','pharmacy_department_authority',NULL)`, [ORG, ORG_OTHER, ORG_CARE, ORG_BENE, ORG_SOLO]);
+        ($5,'RBAC Solo PDA','دائرة فرد','rbac-solo','pharmacy_department_authority',NULL),
+        ($6,'RBAC SA-only PDA','دائرة مدير','rbac-sa-only','pharmacy_department_authority',NULL)`,
+        [ORG, ORG_OTHER, ORG_CARE, ORG_BENE, ORG_SOLO, ORG_SA_ONLY]);
       await c.query(`INSERT INTO auth.users (id, email) SELECT x, 'rbac-'||substr(x::text,35)||'@rig' FROM unnest($1::uuid[]) x`, [Object.values(W)]);
       const set = (u: string, role: string, org: string | null, st = 'active') =>
         c.query(`UPDATE profiles SET role=$2, status=$3, organization_id=$4 WHERE id=$1`, [u, role, st, org]);
@@ -107,6 +122,7 @@ run('M224-RBAC-ROOT-FIX — PDA membership + explicit key + scope + SoD, no role
       await set(W.otherOrg, 'warehouse_officer', ORG_OTHER); await set(W.care, 'warehouse_officer', ORG_CARE);
       await set(W.saOther, 'super_admin', ORG_OTHER); await set(W.saNull, 'super_admin', null);
       await set(W.susp, 'warehouse_officer', ORG, 'suspended'); await set(W.solo, 'warehouse_officer', ORG_SOLO);
+      await set(W.saOnly, 'super_admin', ORG_SA_ONLY);   // deliberately granted NO central_needs key below
       const grants: Array<[string, string[]]> = [
         [W.entrant, ['view', 'edit']], [W.approver, ['view', 'approve']], [W.approver2, ['view', 'approve']], [W.viewOnly, ['view']],
         [W.otherOrg, ALL], [W.care, ALL], [W.saOther, ALL], [W.saNull, ALL], [W.susp, ALL], [W.solo, ALL],
@@ -115,21 +131,36 @@ run('M224-RBAC-ROOT-FIX — PDA membership + explicit key + scope + SoD, no role
         await c.query(`INSERT INTO profile_permission_overrides (profile_id, permission_key, allowed) VALUES ($1,$2,true)
           ON CONFLICT (profile_id, permission_key) DO UPDATE SET allowed=true`, [u, `central_needs.${k}`]);
       }
-      // ORG owns a plan, so the M224 prelude inspects it (no revision: nothing blocks the later activation).
-      await c.query(`BEGIN`);
-      await c.query(`SET LOCAL session_replication_role = replica`);
-      await c.query(`INSERT INTO central_needs_plans (organization_id, plan_year) VALUES ($1, 2030)`, [ORG]);
-      await c.query(`COMMIT`);
     });
 
-    // Negative control: the v1 bytes (what Production refused on 2026-10-21) still refuse this data.
-    try {
-      await rig.asAdmin((c: any) => c.query(candidate('R1a_02_authorization_closure.sql')));
-    } catch (e) {
-      const err = e as { code?: string; message?: string };
-      v1Refusal = { code: String(err.code), message: String(err.message) };
-      await rig.asAdmin((c: any) => c.query('ROLLBACK')).catch(() => undefined);
-    }
+    // Plans are seeded under replica only so their owning organization is what the v1 prelude inspects.
+    const plan = (sql: string, args: unknown[]) => rig.asAdmin(async (c: any) => {
+      await c.query(`BEGIN`);
+      await c.query(`SET LOCAL session_replication_role = replica`);
+      await c.query(sql, args);
+      await c.query(`COMMIT`);
+    });
+    const v1Attempt = async (): Promise<Refusal | null> => {
+      try {
+        await rig.asAdmin((c: any) => c.query(candidate('R1a_02_authorization_closure.sql')));
+        return null;
+      } catch (e) {
+        const err = e as { code?: string; message?: string };
+        await rig.asAdmin((c: any) => c.query('ROLLBACK')).catch(() => undefined);
+        return { code: String(err.code), message: String(err.message) };
+      }
+    };
+
+    // Negative control 1 — the synthetic replica of ERRATA-2's documented shape, alone, so the v1 refusal can only
+    // name it. Its plan is removed afterwards: the revised chain inspects ORG's plan exactly as before.
+    await plan(`INSERT INTO central_needs_plans (organization_id, plan_year) VALUES ($1, 2030)`, [ORG_SA_ONLY]);
+    v1SaOnlyRefusal = await v1Attempt();
+    await plan(`DELETE FROM central_needs_plans WHERE organization_id = $1`, [ORG_SA_ONLY]);
+
+    // Negative control 2 — ORG owns a plan, so the M224 prelude inspects it (no revision: nothing blocks the later
+    // activation); the v1 bytes (the version Production refused on 2026-10-21) still refuse this synthetic data.
+    await plan(`INSERT INTO central_needs_plans (organization_id, plan_year) VALUES ($1, 2030)`, [ORG]);
+    v1Refusal = await v1Attempt();
 
     await rig.asAdmin(async (c: any) => {
       const onNotice = (n: { message?: string }) => notices.push(String(n.message));
@@ -147,9 +178,16 @@ run('M224-RBAC-ROOT-FIX — PDA membership + explicit key + scope + SoD, no role
   afterAll(async () => { await rig?.end(); });
 
   describe('root cause and the migration-time behaviour', () => {
-    it('NEGATIVE CONTROL: the v1 M224 refuses an organization whose staff are ordinary roles (the Production failure)', () => {
+    it('NEGATIVE CONTROL: the v1 M224 refuses a PDA staffed only by ordinary roles (synthetic; the root cause, not Production\'s recorded shape)', () => {
       expect(v1Refusal, 'the v1 bytes must refuse this data').not.toBeNull();
       expect(v1Refusal!.message).toMatch(/R1a02_precondition_failed: organization .* lacks a staffed maker and a different checker/);
+      expect(v1Refusal!.message).toContain(ORG);
+    });
+
+    it('NEGATIVE CONTROL: the v1 M224 refuses ERRATA-2\'s documented shape too — a PDA whose only member is a super_admin without view/edit (synthetic replica)', () => {
+      expect(v1SaOnlyRefusal, 'the v1 bytes must refuse this data').not.toBeNull();
+      expect(v1SaOnlyRefusal!.message)
+        .toBe(`R1a02_precondition_failed: organization ${ORG_SA_ONLY} lacks a staffed maker and a different checker (lockout risk)`);
     });
 
     it('the revised M224..M230 applied on the same data; M224 recorded the readiness (counts only) instead of refusing', async () => {
@@ -232,6 +270,13 @@ run('M224-RBAC-ROOT-FIX — PDA membership + explicit key + scope + SoD, no role
       // ...and a second, DIFFERENT checker makes it ready (one maker + one other checker in another PDA: ORG_OTHER).
       await grant(W.otherOrg, 'central_needs.manual_need.set');
       expect(await readiness(ORG_OTHER)).toMatchObject({ ready: true, makers: 1, checkers: 2 });   // otherOrg + saOther
+    });
+
+    it('ERRATA-2\'s documented shape (synthetic replica: one super_admin, no view/edit) is not ready, and activation refuses — no role shortcut', async () => {
+      expect(await readiness(ORG_SA_ONLY)).toMatchObject({ ready: false, active_members: 1, makers: 0, checkers: 0 });
+      const e = await refusal(admin(`SELECT phoenix_private.central_needs_activate_manual_cutover_v1($1)`, [ORG_SA_ONLY]));
+      expect(e.message).toBe('activation_blocked_lockout_risk');
+      expect(e.detail).toContain('makers=0');
     });
 
     it('a suspended member is never counted', async () => {

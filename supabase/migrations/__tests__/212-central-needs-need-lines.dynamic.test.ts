@@ -47,6 +47,22 @@
  * revision is reached only through the real submit/approve RPCs, because the
  * approval-gate fence refuses a direct UPDATE into 'approved' (§16/§18). Those
  * are the only C5-aware expectations; every other M212 assertion is unchanged.
+ *
+ * M224 (the authorization closure) is detected the same way, and it changes WHO may act. Before
+ * it, M211's eligibility is a ROLE CLASS (super_admin, central_warehouse_manager): the tests in D,
+ * K and N marked HISTORICAL are that era's contract, kept verbatim and run only on that chain.
+ * From M224 on, eligibility is MEMBERSHIP — an ACTIVE profile whose home is a LIVE
+ * pharmacy_department_authority — plus the explicit key, plus the home-organization scope, with no
+ * role class. On that chain the same job titles in the owning PDA are ordinary staff who succeed,
+ * and the tests marked FORWARD prove the refusals by their exact code, each fixture differing from
+ * an authorized member in one dimension only:
+ *   forbidden_central_needs_role — not an active member of a live PDA (care-institution home,
+ *     suspended or archived profile, no home, archived PDA); checked first;
+ *   forbidden_central_needs — a member without the key, or a member of ANOTHER PDA (scope),
+ *     a super_admin homed elsewhere included: there is no cross-organization bypass.
+ * Each mode skips the other mode's tests, so a skip is reported as a skip, never as a pass.
+ * CN212_HISTORICAL_UP_TO (local only; CI never sets it) replays the chain only through that
+ * migration, so the historical branch can be run directly, e.g. CN212_HISTORICAL_UP_TO=223.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { buildRig, migrationFiles, rigAvailable } from '../../../tools/pg-rig/rig.mjs';
@@ -58,13 +74,37 @@ const ORG_BENE = '00000000-0000-0000-0000-000000212002'; // beneficiary institut
 const ORG_BENE2 = '00000000-0000-0000-0000-000000212003'; // a second beneficiary
 const ORG_AUTHORITY = '00000000-0000-0000-0000-000000212004'; // not a care_institution
 const ORG_INACTIVE = '00000000-0000-0000-0000-000000212005'; // inactive institution
-const ORG_OTHER = '00000000-0000-0000-0000-000000212006'; // unrelated owner org
+const ORG_OTHER = '00000000-0000-0000-0000-000000212006'; // a CARE INSTITUTION (not another PDA)
+const ORG_PDA2 = '00000000-0000-0000-0000-000000212007'; // ANOTHER live pharmacy_department_authority
+const ORG_PDA_ARCHIVED = '00000000-0000-0000-0000-000000212008'; // a pharmacy_department_authority, archived
 
 const U_EDIT = '00000000-0000-0000-0000-000000212401'; // full central_needs on owner
 const U_NOPERM = '00000000-0000-0000-0000-000000212402'; // owner org, no keys
-const U_OTHER = '00000000-0000-0000-0000-000000212403'; // different owner org
-const U_INST = '00000000-0000-0000-0000-000000212404'; // institution_admin, all keys
-const U_OUTLET = '00000000-0000-0000-0000-000000212405'; // outlet_officer, all keys
+const U_OTHER = '00000000-0000-0000-0000-000000212403'; // central_warehouse_manager homed in a care institution, all keys
+const U_INST = '00000000-0000-0000-0000-000000212404'; // institution_admin job title, active in the owning PDA, all keys
+const U_OUTLET = '00000000-0000-0000-0000-000000212405'; // outlet_officer job title, active in the owning PDA, all keys
+// FORWARD (M224) membership matrix: each differs from an authorized member in ONE dimension.
+const U_PDA2 = '00000000-0000-0000-0000-000000212407'; // central_warehouse_manager of ANOTHER PDA, all keys
+const U_SA_PDA2 = '00000000-0000-0000-0000-000000212408'; // super_admin homed in ANOTHER PDA, all keys
+const U_SA_NOHOME = '00000000-0000-0000-0000-000000212409'; // super_admin with no home organization, all keys
+const U_SUSP = '00000000-0000-0000-0000-000000212410'; // owning PDA, SUSPENDED, all keys
+const U_ARCHIVED = '00000000-0000-0000-0000-000000212411'; // owning PDA, profile ARCHIVED, all keys
+const U_ARCH_PDA = '00000000-0000-0000-0000-000000212412'; // member of an ARCHIVED PDA, all keys
+const U_VIEW = '00000000-0000-0000-0000-000000212413'; // warehouse_officer, owning PDA: view only
+const U_APPROVE = '00000000-0000-0000-0000-000000212414'; // warehouse_officer, owning PDA: view + approve, no edit
+const U_CARE_ADMIN = '00000000-0000-0000-0000-000000212415'; // institution_admin homed in the beneficiary care institution, all keys
+const U_EDITOR = '00000000-0000-0000-0000-000000212416'; // warehouse_officer, owning PDA: view + edit, no approve
+
+const ALL_KEYS = ['view', 'import', 'edit', 'approve'];
+const ROLE_CODE = { code: '42501', message: 'forbidden_central_needs_role' } as const;
+const SCOPE_CODE = { code: '42501', message: 'forbidden_central_needs' } as const;
+
+/** Local, opt-in historical-boundary replay; unset (the canonical full chain) everywhere else. */
+const UP_TO = process.env.CN212_HISTORICAL_UP_TO === undefined
+  ? Infinity : Number(process.env.CN212_HISTORICAL_UP_TO);
+if (!(UP_TO === Infinity || Number.isInteger(UP_TO))) {
+  throw new Error(`CN212_HISTORICAL_UP_TO must be an integer, got ${process.env.CN212_HISTORICAL_UP_TO}`);
+}
 
 const ITEM_A = '00000000-0000-0000-0000-000000212801';
 const ITEM_B = '00000000-0000-0000-0000-000000212802';
@@ -113,7 +153,9 @@ async function refusal(p: Promise<unknown>): Promise<Refusal> {
 
 run('CN-2B/212 operational need lines — dynamic', () => {
   let rig: Awaited<ReturnType<typeof buildRig>>;
-  let year = 2010;
+  // One plan per scenario, unique per (organization, plan_year) and bounded by
+  // central_needs_plans_plan_year_check (2000..2100): start at the floor for capacity.
+  let year = 2000;
   let fileSeq = 0;
   /** True when the replayed chain carries 213's beneficiary-column contract (set in beforeAll). */
   let FORWARD = false;
@@ -121,6 +163,8 @@ run('CN-2B/212 operational need lines — dynamic', () => {
   let REGIONS = false;
   /** True when the replayed chain carries C5/217's frozen numeric classifier (set in beforeAll). */
   let C5 = false;
+  /** True when the replayed chain carries M224's membership authorization (set in beforeAll). */
+  let M224 = false;
 
   /**
    * C5 §10 (217): designatedQuantity is judged LEXICALLY before any cast, so a
@@ -239,6 +283,7 @@ run('CN-2B/212 operational need lines — dynamic', () => {
   /** A revision with one completed session. */
   async function scenario(opts: { status?: string; rows?: Row[] } = {}) {
     const y = year++;
+    if (y > 2100) throw new Error('fixture capacity: plan_year 2000..2100 exhausted (one plan per scenario)');
     const rows: Row[] = opts.rows ?? [{
       entity: 'sheet:0:row:5',
       fields: [{ name: 'requested', value: 100 }, { name: 'final', value: 120 }],
@@ -365,13 +410,13 @@ run('CN-2B/212 operational need lines — dynamic', () => {
   };
 
   beforeAll(async () => {
-    rig = await buildRig({});
+    rig = await buildRig({ upTo: UP_TO });
     // Which contract did the replay produce? Detected from the schema, then
     // cross-checked against the migration files the rig actually applied, so
     // the fixture mode can never silently disagree with the chain under test.
     const [{ present }] = await admin(
       `SELECT to_regprocedure('public.phoenix_central_needs_set_beneficiary_columns(uuid, jsonb, text)') IS NOT NULL AS present`);
-    const chainIncludes213 = migrationFiles().some((f: string) => f.startsWith('213_'));
+    const chainIncludes213 = migrationFiles(UP_TO).some((f: string) => f.startsWith('213_'));
     if (present !== chainIncludes213) {
       throw new Error(`fixture mode mismatch: 213 contract present=${present}, 213 applied=${chainIncludes213}`);
     }
@@ -379,7 +424,7 @@ run('CN-2B/212 operational need lines — dynamic', () => {
     // 216 attaches the same deferred assertion to its region relation (C4 T2).
     const [{ regions }] = await admin(
       `SELECT to_regclass('public.central_needs_beneficiary_regions') IS NOT NULL AS regions`);
-    const chainIncludes216 = migrationFiles().some((f: string) => f.startsWith('216_'));
+    const chainIncludes216 = migrationFiles(UP_TO).some((f: string) => f.startsWith('216_'));
     if (regions !== chainIncludes216) {
       throw new Error(`fixture mode mismatch: 216 relation present=${regions}, 216 applied=${chainIncludes216}`);
     }
@@ -387,11 +432,19 @@ run('CN-2B/212 operational need lines — dynamic', () => {
     // C5/217 carries the frozen numeric classifier; same cross-check.
     const [{ c5 }] = await admin(
       `SELECT to_regprocedure('public._phoenix_central_needs_review_numeric_class_v1(jsonb)') IS NOT NULL AS c5`);
-    const chainIncludes217 = migrationFiles().some((f: string) => f.startsWith('217_'));
+    const chainIncludes217 = migrationFiles(UP_TO).some((f: string) => f.startsWith('217_'));
     if (c5 !== chainIncludes217) {
       throw new Error(`fixture mode mismatch: 217 classifier present=${c5}, 217 applied=${chainIncludes217}`);
     }
     C5 = c5;
+    // M224 carries the single membership-based authority predicate; same cross-check.
+    const [{ m224 }] = await admin(
+      `SELECT to_regprocedure('phoenix_cn_policy.actor_scope_org(text)') IS NOT NULL AS m224`);
+    const chainIncludes224 = migrationFiles(UP_TO).some((f: string) => f.startsWith('224_'));
+    if (m224 !== chainIncludes224) {
+      throw new Error(`fixture mode mismatch: 224 predicate present=${m224}, 224 applied=${chainIncludes224}`);
+    }
+    M224 = m224;
     await rig.asAdmin(async (c: any) => {
       await c.query(`INSERT INTO organizations (id,name,name_ar,code,organization_kind,institution_class) VALUES
         ('${ORG_OWNER}','CN212-OWNER','مالك','p212-owner','pharmacy_department_authority',NULL),
@@ -399,34 +452,61 @@ run('CN-2B/212 operational need lines — dynamic', () => {
         ('${ORG_BENE2}','CN212-BENE2','منتفع٢','p212-bene2','care_institution','hospital'),
         ('${ORG_INACTIVE}','CN212-INACT','معطل','p212-inact','care_institution','hospital'),
         ('${ORG_OTHER}','CN212-OTHER','اخر','p212-other','care_institution','hospital'),
-        ('${ORG_AUTHORITY}','CN212-AUTH','سلطة','p212-auth','pharmacy_department_authority',NULL)
+        ('${ORG_AUTHORITY}','CN212-AUTH','سلطة','p212-auth','pharmacy_department_authority',NULL),
+        ('${ORG_PDA2}','CN212-PDA2','دائرة ثانية','p212-pda2','pharmacy_department_authority',NULL),
+        ('${ORG_PDA_ARCHIVED}','CN212-PDA-ARCH','دائرة مؤرشفة','p212-pda-arch','pharmacy_department_authority',NULL)
         ON CONFLICT (id) DO NOTHING;`);
 
       await c.query(`INSERT INTO auth.users (id,email) VALUES
         ('${U_EDIT}','p212-edit@rig'),('${U_NOPERM}','p212-noperm@rig'),
-        ('${U_OTHER}','p212-other@rig'),('${U_INST}','p212-inst@rig'),('${U_OUTLET}','p212-outlet@rig')
+        ('${U_OTHER}','p212-other@rig'),('${U_INST}','p212-inst@rig'),('${U_OUTLET}','p212-outlet@rig'),
+        ('${U_PDA2}','p212-pda2@rig'),('${U_SA_PDA2}','p212-sa-pda2@rig'),('${U_SA_NOHOME}','p212-sa-nohome@rig'),
+        ('${U_SUSP}','p212-susp@rig'),('${U_ARCHIVED}','p212-archived@rig'),('${U_ARCH_PDA}','p212-arch-pda@rig'),
+        ('${U_VIEW}','p212-view@rig'),('${U_APPROVE}','p212-approve@rig'),('${U_CARE_ADMIN}','p212-care-admin@rig'),
+        ('${U_EDITOR}','p212-editor@rig')
         ON CONFLICT (id) DO NOTHING;`);
 
-      for (const [u, org, role] of [
-        [U_EDIT, ORG_OWNER, 'central_warehouse_manager'],
-        [U_NOPERM, ORG_OWNER, 'central_warehouse_manager'],
-        [U_OTHER, ORG_OTHER, 'central_warehouse_manager'],
-        [U_INST, ORG_OWNER, 'institution_admin'],
-        [U_OUTLET, ORG_OWNER, 'outlet_officer'],
+      for (const [u, org, role, status] of [
+        [U_EDIT, ORG_OWNER, 'central_warehouse_manager', 'active'],
+        [U_NOPERM, ORG_OWNER, 'central_warehouse_manager', 'active'],
+        [U_OTHER, ORG_OTHER, 'central_warehouse_manager', 'active'],
+        [U_INST, ORG_OWNER, 'institution_admin', 'active'],
+        [U_OUTLET, ORG_OWNER, 'outlet_officer', 'active'],
+        [U_PDA2, ORG_PDA2, 'central_warehouse_manager', 'active'],
+        [U_SA_PDA2, ORG_PDA2, 'super_admin', 'active'],
+        [U_SA_NOHOME, null, 'super_admin', 'active'],
+        [U_SUSP, ORG_OWNER, 'central_warehouse_manager', 'suspended'],
+        [U_ARCHIVED, ORG_OWNER, 'central_warehouse_manager', 'archived'],
+        [U_ARCH_PDA, ORG_PDA_ARCHIVED, 'central_warehouse_manager', 'active'],
+        [U_VIEW, ORG_OWNER, 'warehouse_officer', 'active'],
+        [U_APPROVE, ORG_OWNER, 'warehouse_officer', 'active'],
+        [U_CARE_ADMIN, ORG_BENE, 'institution_admin', 'active'],
+        [U_EDITOR, ORG_OWNER, 'warehouse_officer', 'active'],
       ] as const) {
-        await c.query(`UPDATE profiles SET role=$1,status='active',organization_id=$2 WHERE id=$3`,
-          [role, org, u]);
+        await c.query(`UPDATE profiles SET role=$1,status=$4,organization_id=$2 WHERE id=$3`,
+          [role, org, u, status]);
       }
-      // Every user except U_NOPERM holds every key, so only the intended
-      // dimension (permission, organization or role class) can refuse them.
-      for (const u of [U_EDIT, U_OTHER, U_INST, U_OUTLET]) {
-        for (const k of ['view', 'import', 'edit', 'approve']) {
+      // Every user except U_NOPERM, U_VIEW, U_APPROVE and U_EDITOR holds every key, so
+      // only the intended dimension (key, organization, membership or role class) refuses them.
+      const keys: Array<[string, string[]]> = [
+        ...[U_EDIT, U_OTHER, U_INST, U_OUTLET, U_PDA2, U_SA_PDA2, U_SA_NOHOME, U_SUSP, U_ARCHIVED,
+          U_ARCH_PDA, U_CARE_ADMIN].map((u): [string, string[]] => [u, ALL_KEYS]),
+        [U_VIEW, ['view']], [U_APPROVE, ['view', 'approve']], [U_EDITOR, ['view', 'edit']],
+      ];
+      for (const [u, ks] of keys) {
+        for (const k of ks) {
           await c.query(
             `INSERT INTO profile_permission_overrides (profile_id, permission_key, allowed) VALUES ($1,$2,true)
                ON CONFLICT (profile_id, permission_key) DO UPDATE SET allowed = true`,
             [u, `central_needs.${k}`]);
         }
       }
+      // ORG_PDA_ARCHIVED is archived through the real transition (active -> inactive stamps
+      // archived_at, database-owned), after its member was assigned, never by writing archived_at.
+      await c.query(`UPDATE organizations SET status='inactive' WHERE id='${ORG_PDA_ARCHIVED}'`);
+      const [{ archived }] = (await c.query(
+        `SELECT archived_at IS NOT NULL AS archived FROM organizations WHERE id='${ORG_PDA_ARCHIVED}'`)).rows;
+      if (!archived) throw new Error('fixture: ORG_PDA_ARCHIVED was not archived by its status transition');
 
       await c.query(`INSERT INTO central_items (id,name,name_ar,unit) VALUES
         ('${ITEM_A}','Paracetamol 500mg','باراسيتامول','box'),
@@ -768,18 +848,82 @@ run('CN-2B/212 operational need lines — dynamic', () => {
       expect(await linesOf(s.revId)).toHaveLength(0);
     });
 
-    it('denies a user from a different organization — 42501 forbidden_central_needs', async () => {
+    it('HISTORICAL (pre-M224 role class): denies a user from a different organization — 42501 forbidden_central_needs', async (ctx) => {
+      if (M224) ctx.skip();
       const { s, id } = await one();
       expect(await refusal(setLine(U_OTHER, s.revId, { sources: sources([id, '100']) })))
         .toMatchObject({ code: '42501', message: 'forbidden_central_needs' });
     });
 
-    it('denies institution_admin and outlet_officer even holding every key — 42501 forbidden_central_needs_role', async () => {
+    it('HISTORICAL (pre-M224 role class): denies institution_admin and outlet_officer even holding every key — 42501 forbidden_central_needs_role', async (ctx) => {
+      if (M224) ctx.skip();
       const { s, id } = await one();
       expect(await refusal(setLine(U_INST, s.revId, { sources: sources([id, '100']) })))
         .toMatchObject({ code: '42501', message: 'forbidden_central_needs_role' });
       expect(await refusal(setLine(U_OUTLET, s.revId, { sources: sources([id, '100']) })))
         .toMatchObject({ code: '42501', message: 'forbidden_central_needs_role' });
+    });
+
+    it('FORWARD (M224): ordinary active staff of the owning PDA succeed whatever their job title — institution_admin and outlet_officer holding central_needs.edit', async (ctx) => {
+      if (!M224) ctx.skip();
+      // One revision, one row per member (two materials), so each line is that member's own write.
+      const s = await scenario({ rows: [
+        { entity: 'sheet:0:row:5', fields: [{ name: 'final', value: 100 }] },
+        { entity: 'sheet:0:row:6', item: ITEM_B, fields: [{ name: 'final', value: 100 }] },
+      ] });
+      const written: string[] = [];
+      for (const [u, entity, item, unit] of [
+        [U_INST, 'sheet:0:row:5', ITEM_A, 'box'], [U_OUTLET, 'sheet:0:row:6', ITEM_B, 'vial'],
+      ] as const) {
+        const r = await setLine(u, s.revId, { item, unit, sources: sources([s.records.get(`${entity}::final`)!, '100']) });
+        expect(r.ok, u).toBe(true);
+        written.push(r.need_line_id);
+        const [line] = await admin(`SELECT mapped_by, approved_quantity::text AS q FROM central_needs_need_lines WHERE id=$1`,
+          [r.need_line_id]);
+        expect(line, u).toEqual({ mapped_by: u, q: '100' });
+        const [log] = await admin(
+          `SELECT actor_id FROM audit_logs WHERE action='central_needs.need_line.set' AND entity_id=$1`, [r.need_line_id]);
+        expect(log.actor_id, u).toBe(u);
+      }
+      expect((await linesOf(s.revId)).map((l: any) => l.id).sort()).toEqual([...written].sort());
+    });
+
+    it('FORWARD (M224): a member of ANOTHER live PDA holding every key is refused by scope — forbidden_central_needs — and so is a super_admin homed there: no cross-organization bypass', async (ctx) => {
+      if (!M224) ctx.skip();
+      const { s, id } = await one();
+      for (const u of [U_PDA2, U_SA_PDA2]) {
+        expect(await refusal(setLine(u, s.revId, { sources: sources([id, '100']) })), u).toMatchObject(SCOPE_CODE);
+      }
+      expect(await linesOf(s.revId)).toHaveLength(0);
+    });
+
+    it('FORWARD (M224): a care-institution member holding every key is refused by membership first — forbidden_central_needs_role', async (ctx) => {
+      if (!M224) ctx.skip();
+      const { s, id } = await one();
+      for (const u of [U_OTHER, U_CARE_ADMIN]) {
+        const e = await refusal(setLine(u, s.revId, { sources: sources([id, '100']) }));
+        expect(e, u).toMatchObject(ROLE_CODE);
+        expect(e.detail, u).toContain('not an active member of a live pharmacy_department_authority');
+      }
+      expect(await linesOf(s.revId)).toHaveLength(0);
+    });
+
+    it('FORWARD (M224): suspended, archived, home-less and archived-PDA members holding every key are refused by membership — forbidden_central_needs_role — writing nothing', async (ctx) => {
+      if (!M224) ctx.skip();
+      const { s, id } = await one();
+      for (const u of [U_SUSP, U_ARCHIVED, U_SA_NOHOME, U_ARCH_PDA]) {
+        expect(await refusal(setLine(u, s.revId, { sources: sources([id, '100']) })), u).toMatchObject(ROLE_CODE);
+      }
+      expect(await linesOf(s.revId)).toHaveLength(0);
+    });
+
+    it('FORWARD (M224): keys are independent — view-only and approve-without-edit members of the owning PDA cannot write a line (forbidden_central_needs)', async (ctx) => {
+      if (!M224) ctx.skip();
+      const { s, id } = await one();
+      for (const u of [U_VIEW, U_APPROVE]) {
+        expect(await refusal(setLine(u, s.revId, { sources: sources([id, '100']) })), u).toMatchObject(SCOPE_CODE);
+      }
+      expect(await linesOf(s.revId)).toHaveLength(0);
     });
 
     it('keeps the internal helpers off the client surface', async () => {
@@ -904,6 +1048,35 @@ run('CN-2B/212 operational need lines — dynamic', () => {
       // rewritten in place either.
       expect(await refusal(setLine(U_EDIT, s.revId, { sources: sources([id, '100']) })))
         .toMatchObject({ code: '23514', message: 'plan_revision_not_editable' });
+    });
+
+    it('FORWARD (M224): approving needs central_needs.approve — an ordinary editor without it is refused, an ordinary member holding it approves', async (ctx) => {
+      if (!M224) ctx.skip();
+      const s = await scenario({ rows: [{ entity: 'sheet:0:row:5', fields: [{ name: 'final', value: 100 }] }] });
+      const id = s.records.get('sheet:0:row:5::final')!;
+      await setLine(U_EDITOR, s.revId, { sources: sources([id, '100']) });
+      await submitCanonically(s);
+      const approve = (u: string) => call(u, `SELECT public.phoenix_central_needs_approve_revision($1) AS result`, [s.revId]);
+      expect(await refusal(approve(U_EDITOR))).toMatchObject(SCOPE_CODE);
+      const [{ status: still }] = await admin(`SELECT status FROM central_needs_plan_revisions WHERE id=$1`, [s.revId]);
+      expect(still).toBe('submitted');
+      expect(await approve(U_APPROVE)).toMatchObject({ ok: true, status: 'approved' });
+      const [{ approved_by }] = await admin(`SELECT approved_by FROM central_needs_plan_revisions WHERE id=$1`, [s.revId]);
+      expect(approved_by).toBe(U_APPROVE);
+    });
+
+    it('FORWARD (M224): Excel-revision separation of duties is disabled by Q-E — no current migration enables it; the manual path refuses self-approval (suite 224)', async (ctx) => {
+      if (!M224) ctx.skip();
+      // M225 (SOD-8 / Q-E) ships Excel SoD DISABLED on this full chain, including M229: the approve path above admits a
+      // submitter who also holds approve. Pinning the switch and its single use makes a silent flip,
+      // or a silent loss of the manual-path refusal, fail here instead of passing unnoticed.
+      const [{ enabled }] = await admin(`SELECT phoenix_cn_policy.excel_sod_enabled() AS enabled`);
+      expect(enabled).toBe(false);
+      const defs = await admin(
+        `SELECT p.proname FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+          WHERE p.prokind='f' AND pg_get_functiondef(p.oid) LIKE '%OLD.source_mode = ''manual'' OR phoenix_cn_policy.excel_sod_enabled()%'
+            AND pg_get_functiondef(p.oid) LIKE '%central_needs_separation_of_duties_violation%'`);
+      expect(defs.length).toBeGreaterThan(0);
     });
   });
 
@@ -1423,7 +1596,22 @@ run('CN-2B/212 operational need lines — dynamic', () => {
       expect(other).toBe(0);
     });
 
-    it('gives an INELIGIBLE role in the owning org zero rows, whatever keys it holds', async () => {
+    it('does not expose a need line to a member of ANOTHER pharmacy department holding every key', async () => {
+      // Mode-independent: ORG_PDA2's central_warehouse_manager is role-eligible before M224 and an
+      // active member of a live PDA after it, so ONLY the organization scope can hide the row.
+      const s = await scenario();
+      const id = s.records.get('sheet:0:row:5::final')!;
+      const r = await setLine(U_EDIT, s.revId, { sources: sources([id, '100']) });
+      expect(await call(U_PDA2,
+        `SELECT count(*)::int AS result FROM central_needs_need_lines WHERE plan_revision_id=$1`, [s.revId])).toBe(0);
+      expect(await call(U_PDA2,
+        `SELECT count(*)::int AS result FROM central_needs_need_line_sources WHERE need_line_id=$1`,
+        [r.need_line_id])).toBe(0);
+      expect(await listAsClient(U_PDA2, s.revId)).toEqual([]);
+    });
+
+    it('HISTORICAL (pre-M224 role class): gives an INELIGIBLE role in the owning org zero rows, whatever keys it holds', async (ctx) => {
+      if (M224) ctx.skip();
       const s = await scenario();
       const id = s.records.get('sheet:0:row:5::final')!;
       const r = await setLine(U_EDIT, s.revId, { sources: sources([id, '100']) });
@@ -1435,6 +1623,41 @@ run('CN-2B/212 operational need lines — dynamic', () => {
           [r.need_line_id])).toBe(0);
         expect(await listAsClient(u, s.revId)).toEqual([]);
       }
+    });
+
+    it('FORWARD (M224): ordinary PDA staff holding view READ their organization\'s lines, provenance and the list RPC — exactly what the editor sees', async (ctx) => {
+      if (!M224) ctx.skip();
+      const s = await scenario();
+      const id = s.records.get('sheet:0:row:5::final')!;
+      const r = await setLine(U_EDIT, s.revId, { sources: sources([id, '100']) });
+      const editorView = await listAsClient(U_EDIT, s.revId);
+      expect(editorView).toHaveLength(1);
+      for (const u of [U_INST, U_OUTLET, U_VIEW, U_APPROVE]) {
+        expect(await call(u,
+          `SELECT count(*)::int AS result FROM central_needs_need_lines WHERE plan_revision_id=$1`, [s.revId]), u).toBe(1);
+        expect(await call(u,
+          `SELECT count(*)::int AS result FROM central_needs_need_line_sources WHERE need_line_id=$1`,
+          [r.need_line_id]), u).toBe(1);
+        expect(await listAsClient(u, s.revId), u).toEqual(editorView);
+      }
+    });
+
+    it('FORWARD (M224): zero leakage — no view key, care home, another PDA, a super_admin elsewhere, suspended/archived/home-less/archived-PDA members read no line, no source and nothing through the RPC', async (ctx) => {
+      if (!M224) ctx.skip();
+      const s = await scenario();
+      const id = s.records.get('sheet:0:row:5::final')!;
+      const r = await setLine(U_EDIT, s.revId, { sources: sources([id, '100']) });
+      for (const u of [U_NOPERM, U_OTHER, U_CARE_ADMIN, U_PDA2, U_SA_PDA2, U_SA_NOHOME, U_SUSP, U_ARCHIVED, U_ARCH_PDA]) {
+        expect(await call(u,
+          `SELECT count(*)::int AS result FROM central_needs_need_lines WHERE plan_revision_id=$1`, [s.revId]), u).toBe(0);
+        expect(await call(u,
+          `SELECT count(*)::int AS result FROM central_needs_need_line_sources WHERE need_line_id=$1`,
+          [r.need_line_id]), u).toBe(0);
+        expect(await listAsClient(u, s.revId), u).toEqual([]);
+      }
+      // The refusals were reads only: the line and its provenance are unchanged.
+      expect(await linesOf(s.revId)).toHaveLength(1);
+      expect(await linksOf(r.need_line_id)).toHaveLength(1);
     });
   });
 
@@ -1706,7 +1929,8 @@ run('CN-2B/212 operational need lines — dynamic', () => {
       expect(await linesOf(s.revId)).toHaveLength(1);
     });
 
-    it('requires authorization, with exact codes, and deletes nothing when refused', async () => {
+    it('HISTORICAL (pre-M224 role class): requires authorization, with exact codes, and deletes nothing when refused', async (ctx) => {
+      if (M224) ctx.skip();
       const s = await scenario();
       const id = s.records.get('sheet:0:row:5::final')!;
       const line = await setLine(U_EDIT, s.revId, { sources: sources([id, '100']) });
@@ -1723,6 +1947,57 @@ run('CN-2B/212 operational need lines — dynamic', () => {
       expect(await refusal(deleteLine(null, line.need_line_id, 'r', [id], 'anon')))
         .toMatchObject({ code: '42501', message: 'permission denied for function phoenix_central_needs_delete_need_line' });
       expect(await linksOf(line.need_line_id)).toHaveLength(1);
+    });
+
+    it('FORWARD (M224): delete requires authorization with exact codes, and every refusal leaves the line, its links and the audit trail untouched', async (ctx) => {
+      if (!M224) ctx.skip();
+      const s = await scenario();
+      const id = s.records.get('sheet:0:row:5::final')!;
+      const line = await setLine(U_EDIT, s.revId, { sources: sources([id, '100']) });
+      const deletions = async () => (await admin(
+        `SELECT count(*)::int AS n FROM audit_logs WHERE action='central_needs.need_line.delete' AND entity_id=$1`,
+        [line.need_line_id]))[0].n;
+      expect(await refusal(deleteLine(null, line.need_line_id, 'r', [id])))
+        .toMatchObject({ code: '28000', message: 'not_authenticated' });
+      // a member without edit, or of another PDA (a super_admin homed there included): scope
+      for (const u of [U_NOPERM, U_VIEW, U_APPROVE, U_PDA2, U_SA_PDA2]) {
+        expect(await refusal(deleteLine(u, line.need_line_id, 'r', [id])), u).toMatchObject(SCOPE_CODE);
+      }
+      // not an active member of a live PDA: membership, checked first
+      for (const u of [U_OTHER, U_CARE_ADMIN, U_SUSP, U_ARCHIVED, U_SA_NOHOME, U_ARCH_PDA]) {
+        expect(await refusal(deleteLine(u, line.need_line_id, 'r', [id])), u).toMatchObject(ROLE_CODE);
+      }
+      expect(await refusal(deleteLine(null, line.need_line_id, 'r', [id], 'anon')))
+        .toMatchObject({ code: '42501', message: 'permission denied for function phoenix_central_needs_delete_need_line' });
+      expect(await linesOf(s.revId)).toEqual([expect.objectContaining({ id: line.need_line_id, q: '100' })]);
+      expect(await linksOf(line.need_line_id)).toEqual([expect.objectContaining({ source_record_id: id, q: '100' })]);
+      expect(await deletions()).toBe(0);
+    });
+
+    it('FORWARD (M224): an ordinary PDA member holding edit deletes with a reason; the audit names that member; evidence and lineage are kept', async (ctx) => {
+      if (!M224) ctx.skip();
+      const s = await scenario();
+      const id = s.records.get('sheet:0:row:5::final')!;
+      const line = await setLine(U_INST, s.revId, { sources: sources([id, '100']) });
+      const evidenceBefore = await admin(
+        `SELECT id, source_values::text AS v FROM central_needs_source_records WHERE import_session_id=$1 ORDER BY id`,
+        [s.sessionId]);
+      const out = await deleteLine(U_OUTLET, line.need_line_id, 'line mapped to the wrong item', [id]);
+      expect(out).toMatchObject({ ok: true, need_line_id: line.need_line_id, deleted_source_count: 1 });
+      expect(await linesOf(s.revId)).toHaveLength(0);
+      expect(await linksOf(line.need_line_id)).toHaveLength(0);
+      const [log] = await admin(
+        `SELECT actor_id, payload FROM audit_logs WHERE action='central_needs.need_line.delete' AND entity_id=$1`,
+        [line.need_line_id]);
+      expect(log.actor_id).toBe(U_OUTLET);
+      expect(log.payload).toMatchObject({
+        plan_revision_id: s.revId, organization_id: ORG_OWNER, deletion_reason: 'line mapped to the wrong item',
+        deleted_source_count: 1,
+      });
+      expect(log.payload.deleted_sources).toEqual([expect.objectContaining({ source_record_id: id, designated_quantity: '100' })]);
+      expect(await admin(
+        `SELECT id, source_values::text AS v FROM central_needs_source_records WHERE import_session_id=$1 ORDER BY id`,
+        [s.sessionId])).toEqual(evidenceBefore);
     });
 
     it('refuses a stale delete that did not see a link added since', async () => {
