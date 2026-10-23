@@ -204,13 +204,23 @@ describe('C) historical roles keep their exact previous menus', () => {
      * role loses a menu item it previously had.
      */
     if (screen === 22) return perms.has('dashboard.view');
-    // Annual Needs: platform admin, or an explicitly granted central manager.
-    // Other roles remain excluded even with the key (operational UI policy).
-    if (screen === 23) {
-      if (role === 'super_admin') return true;
-      if (role !== 'central_warehouse_manager') return false;
-      return perms.has('central_needs.view');
-    }
+    /**
+     * M224-RBAC-ROOT-FIX restated screen 23, as R1.3 and RAC-3 restated theirs:
+     * Annual Needs is CAPABILITY-gated, mirroring the server since M224 (an
+     * active member of the home PDA holding the explicit key, within scope; no
+     * role class and no super_admin branch). It opens on the effective
+     * `central_needs.view` for every signed-in, non-facility role, and on
+     * nothing else. Every HISTORICAL role below is signed in and non-facility,
+     * so the key is the whole rule here; PERM_SETS below holds the key alone and
+     * combined, so both states are exercised for every role.
+     *
+     * Against the previous oracle this narrows super_admin (no key: no screen 23)
+     * and widens the ordinary roles (key: screen 23), exactly as the server now
+     * decides. In the running app AppContext still tops a super_admin up with
+     * every catalog key, so a super_admin keeps the screen through that key,
+     * not through its role.
+     */
+    if (screen === 23) return perms.has('central_needs.view');
     return true;
   };
 

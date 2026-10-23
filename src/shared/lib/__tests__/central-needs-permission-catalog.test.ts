@@ -486,32 +486,28 @@ describe('G. the server stays the boundary and the client fails closed', () => {
    * decision the route guard, nav surfaces and command palette all share —
    * so this cannot be satisfied by a structural rewrite that leaves the real
    * decision wrong.
+   *
+   * M224-RBAC-ROOT-FIX supersedes that parity: M224 removes the super_admin
+   * bypass and the role class server-side (eligibility = active member of the
+   * home PDA + explicit key + scope + SoD), so the branch is capability-only
+   * again and the parity now holds in the other direction. This UI change must
+   * ship only once that M224 revision is applied.
    */
-  it('screen-23 access matches the canonical role/permission matrix', () => {
+  it('M224-RBAC-ROOT-FIX: screen-23 access is the effective key alone, for every non-facility role (no role class, no super_admin branch)', () => {
     const perms = (...keys: string[]) => new Set(keys);
 
-    // super_admin: admitted by role alone, exactly like
-    // phoenix_status_center_authorized — with or without the key.
-    expect(isScreenAuthorized(CENTRAL_NEEDS_SCREEN, 'super_admin', perms())).toBe(true);
-    expect(isScreenAuthorized(CENTRAL_NEEDS_SCREEN, 'super_admin', perms('central_needs.view'))).toBe(true);
-
-    // central_warehouse_manager: gated on the effective permission, exactly
-    // like the server's per-key phoenix_profile_has_permission lookup for
-    // every non-super_admin actor.
-    expect(isScreenAuthorized(CENTRAL_NEEDS_SCREEN, 'central_warehouse_manager', perms())).toBe(false);
-    expect(isScreenAuthorized(CENTRAL_NEEDS_SCREEN, 'central_warehouse_manager', perms('central_needs.view'))).toBe(true);
-
-    // Every other operational role stays refused even holding the key:
-    // eligibility here is role-first, mirroring 211's
-    // _phoenix_central_needs_role_eligible_v1() allow-list (section F above).
-    // health_center_manager is additionally facility-scoped and never even
-    // reaches this branch (refused earlier by the allow-list).
-    for (const role of ['institution_admin', 'warehouse_officer', 'outlet_officer', 'health_center_manager']) {
-      expect(isScreenAuthorized(CENTRAL_NEEDS_SCREEN, role, perms('central_needs.view')), role).toBe(false);
+    // The server (M224 rev M224-RBAC-ROOT-FIX) decides membership of the home PDA,
+    // the explicit key and the scope for every actor alike; the screen mirrors
+    // only the key, exactly like phoenix_profile_has_permission.
+    for (const role of ['super_admin', 'central_warehouse_manager', 'institution_admin', 'warehouse_officer', 'outlet_officer']) {
+      expect(isScreenAuthorized(CENTRAL_NEEDS_SCREEN, role, perms()), role).toBe(false);
+      expect(isScreenAuthorized(CENTRAL_NEEDS_SCREEN, role, perms('central_needs.view')), role).toBe(true);
     }
+    // health_center_manager is facility-scoped and never reaches this branch.
+    expect(isScreenAuthorized(CENTRAL_NEEDS_SCREEN, 'health_center_manager', perms('central_needs.view'))).toBe(false);
   });
 
-  it('the screen-23 branch source names both eligible roles, found without an arbitrary fixed-length slice', () => {
+  it('the screen-23 branch source names no role and reads the key, found without an arbitrary fixed-length slice', () => {
     // A source-structure check kept as defense in depth alongside the
     // behavioral assertions above — bounded by the NEXT branch in the
     // function rather than a fixed character count, so a longer or
@@ -522,8 +518,8 @@ describe('G. the server stays the boundary and the client fails closed', () => {
     const nextBranch = access.indexOf('if (screen === 17)', start);
     expect(nextBranch, 'the next branch after screen 23').toBeGreaterThan(start);
     const branch = access.slice(start, nextBranch);
-    expect(branch).toContain("'super_admin'");
-    expect(branch).toContain("'central_warehouse_manager'");
+    expect(branch).not.toContain("'super_admin'");
+    expect(branch).not.toContain("'central_warehouse_manager'");
     expect(branch).toContain('permissions.has(CENTRAL_NEEDS_VIEW_PERMISSION)');
   });
 
@@ -544,12 +540,10 @@ describe('G. the server stays the boundary and the client fails closed', () => {
     // And for every non-super_admin role that fallback carries no Central Needs key (F above).
   });
 
-  it('an empty effective set is refused by the screen gate for every role EXCEPT super_admin, which the server also admits unconditionally', () => {
+  it('M224-RBAC-ROOT-FIX: an empty effective set is refused by the screen gate for EVERY role, super_admin included', () => {
     for (const role of [...OFFICIAL_ROLES, ...LEGACY_AUTHORIZATION_ROLES, 'hospital_admin']) {
-      if (role === 'super_admin') continue;
       expect(isScreenAuthorized(CENTRAL_NEEDS_SCREEN, role, new Set()), role).toBe(false);
     }
-    expect(isScreenAuthorized(CENTRAL_NEEDS_SCREEN, 'super_admin', new Set())).toBe(true);
   });
 });
 
