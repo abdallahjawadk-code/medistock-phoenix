@@ -22,9 +22,9 @@ describe('gate decision (pure) - entrant vs independent approver', () => {
     expect(computeManualNeedsTabState({ ...base, capabilities: { view: true, manualSet: false, approve: undefined } as never })).toBe('off');
     expect(computeManualNeedsTabState({ ...base, capabilities: { view: true, manualSet: 'true', approve: 1 } as never })).toBe('off');
   });
-  it('the approver path keeps every OTHER condition: flag, role, home organization, PDA kind, and the server answer', () => {
+  it('the approver path keeps every OTHER condition: flag, a signed-in role, home organization, PDA kind, and the server answer', () => {
     const approver = { view: true, manualSet: false, approve: true };
-    for (const patch of [{ flag: false }, { role: 'institution_admin' }, { activeOrgId: 'org-2' }, { orgKind: 'care_institution' }, { capabilities: null }] as const) {
+    for (const patch of [{ flag: false }, { role: null }, { activeOrgId: 'org-2' }, { orgKind: 'care_institution' }, { capabilities: null }] as const) {
       expect(computeManualNeedsTabState({ ...base, capabilities: approver, ...patch } as never), JSON.stringify(patch)).toBe('off');
     }
     expect(computeManualNeedsTabState({ ...base, capabilities: undefined })).toBe('checking');
@@ -42,11 +42,12 @@ describe('gate decision (pure) - the view right is REQUIRED', () => {
     expect(computeManualNeedsTabState({ ...base, capabilities: { view: true, manualSet: false, approve: true } })).toBe('on');
     expect(computeManualNeedsTabState({ ...base, capabilities: { view: true, manualSet: true, approve: false } })).toBe('on');
   });
-  it('the independent reviewer with view + approve and NO manualSet gets the tab (and only that: role, home PDA organization and flag still apply)', () => {
+  it('the independent reviewer with view + approve and NO manualSet gets the tab (and only that: sign-in, home PDA organization and flag still apply)', () => {
     const reviewer = { view: true, manualSet: false, approve: true };
     expect(computeManualNeedsTabState({ ...base, capabilities: reviewer })).toBe('on');
     expect(computeManualNeedsTabState({ ...base, capabilities: reviewer, role: 'super_admin' })).toBe('on');
-    for (const patch of [{ flag: false }, { role: 'institution_admin' }, { activeOrgId: 'org-2' }, { orgKind: 'care_institution' }]) {
+    expect(computeManualNeedsTabState({ ...base, capabilities: reviewer, role: 'warehouse_officer' })).toBe('on');
+    for (const patch of [{ flag: false }, { role: null }, { activeOrgId: 'org-2' }, { orgKind: 'care_institution' }]) {
       expect(computeManualNeedsTabState({ ...base, capabilities: reviewer, ...patch } as never), JSON.stringify(patch)).toBe('off');
     }
   });
@@ -57,9 +58,16 @@ describe('gate decision (pure)', () => {
     expect(computeManualNeedsTabState(base)).toBe('on');
     expect(computeManualNeedsTabState({ ...base, role: 'super_admin' })).toBe('on');
   });
+  it('M224-RBAC-ROOT-FIX: the role is not a gate - an ordinary member the SERVER confirms reaches the tab', () => {
+    for (const role of ['warehouse_officer', 'institution_admin', 'central_warehouse_manager', 'super_admin']) {
+      expect(computeManualNeedsTabState({ ...base, role }), role).toBe('on');
+      expect(computeManualNeedsTabState({ ...base, role, capabilities: { view: true, manualSet: false, approve: false } }), role).toBe('off');
+      expect(computeManualNeedsTabState({ ...base, role, orgKind: 'care_institution' }), role).toBe('off');
+    }
+  });
   it('is OFF by default and for every missing condition', () => {
     for (const patch of [
-      { flag: false }, { role: null }, { role: 'institution_admin' }, { role: 'outlet_officer' }, { role: 'public' },
+      { flag: false }, { role: null }, { role: '' },
       { activeOrgId: null }, { homeOrgId: null }, { activeOrgId: 'org-2' },
       { orgKind: 'care_institution' }, { orgKind: null }, { capabilities: null }, { capabilities: { view: true, manualSet: false, approve: false } },
     ] as const) {
@@ -70,7 +78,8 @@ describe('gate decision (pure)', () => {
     expect(computeManualNeedsTabState({ ...base, orgKindLoaded: false, orgKind: null })).toBe('checking');
     expect(computeManualNeedsTabState({ ...base, capabilities: undefined })).toBe('checking');
     expect(computeManualNeedsTabState({ ...base, flag: false, orgKindLoaded: false, orgKind: null })).toBe('off');
-    expect(computeManualNeedsTabState({ ...base, role: 'institution_admin', capabilities: undefined })).toBe('off');
+    expect(computeManualNeedsTabState({ ...base, role: null, capabilities: undefined })).toBe('off');
+    expect(computeManualNeedsTabState({ ...base, role: 'institution_admin', capabilities: undefined })).toBe('checking');
   });
   it('the build flag is OFF in the default build', () => {
     expect(manualNeedsTabFlag()).toBe(false);
@@ -102,8 +111,8 @@ describe('gate hook', () => {
     expect(m.getOrganizations).not.toHaveBeenCalled();
     expect(m.getManualCapabilities).not.toHaveBeenCalled();
   });
-  it('non-authoring role or other acting organization: off and no request', async () => {
-    for (const patch of [() => { appState.role = 'institution_admin'; }, () => { appState.activeOrgId = 'org-2'; }, () => { appState.profile = null; }]) {
+  it('no signed-in role or other acting organization: off and no request', async () => {
+    for (const patch of [() => { appState.role = null; }, () => { appState.activeOrgId = 'org-2'; }, () => { appState.profile = null; }]) {
       cleanup(); patch();
       const m = mkDeps();
       render(<Probe deps={m.deps} />);
@@ -112,6 +121,13 @@ describe('gate hook', () => {
       expect(m.getOrganizations).not.toHaveBeenCalled();
       appState.role = 'central_warehouse_manager'; appState.activeOrgId = 'org-1'; appState.profile = { id: 'u1', organization_id: 'org-1' };
     }
+  });
+  it('M224-RBAC-ROOT-FIX: an ordinary PDA member (warehouse_officer) asks the server and is ON when it confirms the keys', async () => {
+    appState.role = 'warehouse_officer';
+    const m = mkDeps();
+    render(<Probe deps={m.deps} />);
+    await waitFor(() => expect(screen.getByTestId('gate')).toHaveTextContent('on'));
+    expect(m.getManualCapabilities).toHaveBeenCalledWith('org-1', null);
   });
   it('PDA + server says manualSet: on, after asking exactly once', async () => {
     const m = mkDeps();

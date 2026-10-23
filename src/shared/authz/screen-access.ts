@@ -167,18 +167,20 @@ export function isScreenAuthorized(
   if (screen === COMMAND_CENTER_SCREEN) return permissions.has(DASHBOARD_VIEW_PERMISSION);
 
   /**
-   * Annual Needs admits platform administrators without an explicit grant,
-   * matching the server's super_admin branch. Central warehouse managers
-   * additionally need the effective central_needs.view permission.
+   * M224-RBAC-ROOT-FIX - Annual Needs is CAPABILITY-gated, not role-gated.
    *
-   * The operational screen is restricted to these two roles even if another
-   * role holds the key. This is a navigation policy, not a replacement for
-   * server-side organization, active-profile and permission checks.
-   * Facility-scoped roles have already been refused by the allow-list above.
+   * Eligibility is the owner's rule, enforced by the server since M224: an
+   * ACTIVE member of a Pharmacy Department authority holding the explicit key,
+   * acting for that home organization, never approving their own work. No role
+   * class and no super_admin branch remain server-side, so none remains here:
+   * the screen opens on the EFFECTIVE central_needs.view (a per-profile grant
+   * counts exactly as the database counts it) for any signed-in role. The raw
+   * role is checked, not `n`, because normalizeRole maps a missing role to a
+   * real one. Membership and scope are re-proved by RLS and every RPC; this is a
+   * navigation policy only. Facility-scoped roles were refused by the allow-list above.
    */
   if (screen === CENTRAL_NEEDS_SCREEN) {
-    return n === 'super_admin'
-      || (n === 'central_warehouse_manager' && permissions.has(CENTRAL_NEEDS_VIEW_PERMISSION));
+    return Boolean(role) && permissions.has(CENTRAL_NEEDS_VIEW_PERMISSION);
   }
 
   /**

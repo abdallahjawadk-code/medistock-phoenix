@@ -201,6 +201,8 @@ describe('PHASE B2 — copy and preserved navigation contracts', () => {
 
 // MOBILE_DRAWER_ANNUAL_NEEDS_NAVIGATION: Screen 23 (Annual Needs) must be reachable from the phone drawer through the SAME
 // candidate list + projectNavigation policy as the desktop sidebar — no drawer-local permission or role check.
+// M224-RBAC-ROOT-FIX: that shared policy is now the effective central_needs.view key for every signed-in, non-facility
+// role (no role class, no super_admin branch), so these cases pin the key, not the role, on both surfaces.
 describe('MOBILE DRAWER — Screen 23 (Annual Needs) navigation parity', () => {
   const annualNeeds = () => t('cn2b_nav', 'en');
 
@@ -220,10 +222,15 @@ describe('MOBILE DRAWER — Screen 23 (Annual Needs) navigation parity', () => {
     return present;
   }
 
-  it('shows Annual Needs in the drawer for super_admin (same decision as the desktop sidebar)', () => {
-    setActor('super_admin');
+  it('M224-RBAC-ROOT-FIX: super_admin follows the key like every role — shown with central_needs.view, hidden without it (same decision as the desktop sidebar)', () => {
+    // In the running app AppContext tops a super_admin up with every catalog key, so it holds this key there;
+    // the case without it pins that no role branch remains in the navigation policy itself.
+    setActor('super_admin', ['central_needs.view']);
     expect(drawerHasAnnualNeeds()).toBe(true);
     expect(sidebarHasAnnualNeeds()).toBe(true);
+    setActor('super_admin');
+    expect(drawerHasAnnualNeeds()).toBe(false);
+    expect(sidebarHasAnnualNeeds()).toBe(false);
   });
 
   it('shows Annual Needs in the drawer for central_warehouse_manager holding central_needs.view', () => {
@@ -238,14 +245,25 @@ describe('MOBILE DRAWER — Screen 23 (Annual Needs) navigation parity', () => {
     expect(sidebarHasAnnualNeeds()).toBe(false);
   });
 
-  it('hides Annual Needs in the drawer for an unrelated role even when it holds central_needs.view', () => {
-    setActor('institution_admin', ['central_needs.view']);
+  it('M224-RBAC-ROOT-FIX: an ordinary role holding central_needs.view sees Annual Needs; without the key it does not', () => {
+    for (const role of ['institution_admin', 'warehouse_officer', 'outlet_officer']) {
+      setActor(role, ['central_needs.view']);
+      expect(drawerHasAnnualNeeds(), role).toBe(true);
+      expect(sidebarHasAnnualNeeds(), role).toBe(true);
+      setActor(role);
+      expect(drawerHasAnnualNeeds(), role).toBe(false);
+      expect(sidebarHasAnnualNeeds(), role).toBe(false);
+    }
+  });
+
+  it('hides Annual Needs for the facility-scoped health_center_manager even when it holds central_needs.view', () => {
+    setActor('health_center_manager', ['central_needs.view']);
     expect(drawerHasAnnualNeeds()).toBe(false);
     expect(sidebarHasAnnualNeeds()).toBe(false);
   });
 
   it('navigates to exactly Screen 23 when the drawer entry is clicked', () => {
-    setActor('super_admin');
+    setActor('super_admin', ['central_needs.view']);
     const onNavigate = vi.fn();
     const onClose = vi.fn();
     render(<PhoenixMobileDrawer currentScreen={21} onNavigate={onNavigate} onClose={onClose} onLogout={noop} />);

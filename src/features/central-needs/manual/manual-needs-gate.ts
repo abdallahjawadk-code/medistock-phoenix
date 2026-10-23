@@ -4,7 +4,8 @@
  * INACTIVE BY DEFAULT and FAIL-CLOSED. The tab exists only when ALL of these hold, and every unknown means "off":
  *   1. the build carries the explicit activation flag (`VITE_R1_MANUAL_NEEDS_TAB === 'enabled'`); without it NOTHING
  *      below runs — in particular no network call is made;
- *   2. the signed-in role is one of the two Central Needs authoring roles (super_admin, central_warehouse_manager);
+ *   2. the actor is signed in with a resolved role; the role itself is NOT a gate (M224-RBAC-ROOT-FIX: eligibility is membership of
+ *      the home PDA + the explicit keys + scope + SoD, all proved by the server in 4);
  *   3. the actor is acting for HOME organization, and that organization is a Pharmacy Department authority
  *      (org-level scope: no warehouse involved, a care institution never qualifies);
  *   4. the SERVER says the actor holds the manual-entry key (`manual_set`) OR the approve key (`approve`) for that organization: AND the view right (`view`): an independent
@@ -33,12 +34,10 @@ export interface ManualNeedsGateInputs {
   capabilities: Pick<ManualCapabilities, 'view' | 'manualSet' | 'approve'> | null | undefined;
 }
 
-const AUTHORING_ROLES = new Set(['super_admin', 'central_warehouse_manager']);
-
 /** Pure decision. Anything not positively proven is `off`; `checking` only while a still-possible `on` awaits an answer. */
 export function computeManualNeedsTabState(i: ManualNeedsGateInputs): ManualNeedsTabState {
   if (i.flag !== true) return 'off';
-  if (!i.role || !AUTHORING_ROLES.has(i.role)) return 'off';
+  if (!i.role) return 'off';
   if (!i.activeOrgId || !i.homeOrgId || i.activeOrgId !== i.homeOrgId) return 'off';
   if (!i.orgKindLoaded) return 'checking';
   if (i.orgKind !== 'pharmacy_department_authority') return 'off';
@@ -79,7 +78,7 @@ export function useManualNeedsTabGate(deps: ManualNeedsGateDeps = realDeps): Man
   const [caps, setCaps] = useState<{ id: string; value: ManualCapabilities | null } | null>(null);
   const epoch = useRef(0);
 
-  const precondition = flag && !!role && AUTHORING_ROLES.has(role) && !!activeOrgId && activeOrgId === homeOrgId;
+  const precondition = flag && !!role && !!activeOrgId && activeOrgId === homeOrgId;
 
   useEffect(() => {
     epoch.current += 1;

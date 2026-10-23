@@ -414,12 +414,12 @@ describe('CN-2B — corrective-pass invariants in the trusted finalizer', () => 
 describe('CN-2B — navigation authorization', () => {
   const perms = (...keys: string[]) => new Set(keys);
 
-  it('platform admin needs no grant; central warehouse manager needs central_needs.view', () => {
+  it('M224-RBAC-ROOT-FIX: every role needs the effective central_needs.view, super_admin included (no role branch)', () => {
     expect(CENTRAL_NEEDS_SCREEN).toBe(23);
     expect(CENTRAL_NEEDS_VIEW_PERMISSION).toBe('central_needs.view');
     expect(isScreenAuthorized(23, 'central_warehouse_manager', perms('central_needs.view'))).toBe(true);
     expect(isScreenAuthorized(23, 'central_warehouse_manager', perms())).toBe(false);
-    expect(isScreenAuthorized(23, 'super_admin', perms())).toBe(true);
+    expect(isScreenAuthorized(23, 'super_admin', perms())).toBe(false);
     expect(isScreenAuthorized(23, 'super_admin', perms('central_needs.view'))).toBe(true);
   });
 
@@ -430,13 +430,16 @@ describe('CN-2B — navigation authorization', () => {
     expect(isScreenAuthorized(23, 'health_center_manager', perms())).toBe(false);
   });
 
-  it.each([
-    'institution_admin', 'warehouse_officer', 'outlet_officer',
-    'health_center_manager', 'hospital_admin', 'viewer', 'unknown', '', null, undefined,
-  ])('refuses non-central role %s even with an explicit grant', (role) => {
+  it.each(['institution_admin', 'warehouse_officer', 'outlet_officer', 'hospital_admin', 'viewer'])(
+    'M224-RBAC-ROOT-FIX: an ordinary role %s opens the screen only with the effective key (the server proves membership and scope)', (role) => {
+      expect(isScreenAuthorized(23, role, perms())).toBe(false);
+      expect(isScreenAuthorized(23, role, perms('dashboard.view', 'users.view'))).toBe(false);
+      expect(isScreenAuthorized(23, role, perms('central_needs.view'))).toBe(true);
+    });
+
+  it.each(['', null, undefined])('no signed-in role (%s) never opens the screen, even with the key', (role) => {
     expect(isScreenAuthorized(23, role, perms())).toBe(false);
     expect(isScreenAuthorized(23, role, perms('central_needs.view'))).toBe(false);
-    expect(isScreenAuthorized(23, role, perms('central_needs.view', 'dashboard.view', 'users.view'))).toBe(false);
   });
 
   it('the screen is not added to the facility-safe allow-list', () => {
