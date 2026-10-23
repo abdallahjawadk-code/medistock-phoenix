@@ -53,11 +53,15 @@ describe('Annual Needs display terminology', () => {
   it('keeps the technical permission keys and module id untouched', () => {
     // The rename is display-only: the keys the database, RLS and every RPC use
     // are unchanged, so a renamed label can never silently regrant anything.
+    // manual_need.set (migration 224) and material_review (migration 228) are
+    // registered by their own migrations, not by the rename (PERMISSION-SAVE-01).
     const keys = PERMISSION_KEYS.filter((p) => p.module === 'central_needs').map((p) => p.key).sort();
     expect(keys).toEqual([
       'central_needs.approve',
       'central_needs.edit',
       'central_needs.import',
+      'central_needs.manual_need.set',
+      'central_needs.material_review',
       'central_needs.view',
     ]);
   });

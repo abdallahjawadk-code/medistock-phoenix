@@ -1561,6 +1561,8 @@ export const T: Dict = {
   perm_central_needs_import:              { ar: 'استيراد بيانات الاحتياج السنوي',      en: 'Import Annual Needs data' },
   perm_central_needs_edit:                { ar: 'تعديل بيانات الاحتياج السنوي',        en: 'Edit Annual Needs data' },
   perm_central_needs_approve:             { ar: 'اعتماد مراجعة خطة الاحتياج السنوي',  en: 'Approve Annual Needs plan revision' },
+  perm_central_needs_manual_need_set:     { ar: 'إدخال كميات الاحتياج السنوي يدويًا',  en: 'Enter Annual Needs quantities manually' },
+  perm_central_needs_material_review:     { ar: 'مراجعة طلبات تسجيل المواد الجديدة',   en: 'Review new material registration requests' },
 
   /* ── Deletion Wizard ── */
   dw_title:           { ar: 'معالج الحذف الآمن',                 en: 'Safe Deletion Wizard' },

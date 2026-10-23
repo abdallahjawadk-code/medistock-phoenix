@@ -645,7 +645,7 @@ function PermissionMatrix({ user, lang, actorRole, isSuper, actorId, actorPermis
       const cur  = current[p.key] ?? false;
       const init = initialEff[p.key] ?? false;
       if (cur === init) continue;
-      overrides[p.key] = cur === defaults.has(p.key) ? null : cur;
+      overrides[p.key] = cur;
     }
     if (Object.keys(overrides).length === 0) { onToast(t('um_saved', lang)); return; }
 

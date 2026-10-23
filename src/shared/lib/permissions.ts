@@ -90,6 +90,13 @@ export const PERMISSION_KEYS: readonly PermissionKeyDef[] = [
   { key: 'central_needs.import',                 module: 'central_needs',      action: 'import',            labelKey: 'perm_central_needs_import',      dangerous: false },
   { key: 'central_needs.edit',                   module: 'central_needs',      action: 'edit',              labelKey: 'perm_central_needs_edit',        dangerous: false },
   { key: 'central_needs.approve',                module: 'central_needs',      action: 'approve',           labelKey: 'perm_central_needs_approve',     dangerous: true  },
+  // PERMISSION-SAVE-01: the two keys registered later, by migration 224
+  // (manual_need.set) and migration 228 (material_review), with the same
+  // contract: registered with NO role defaults and no grants, dangerous flags
+  // mirroring their permission_keys rows. Listing them only lets the matrix
+  // assign them per profile; the server predicate stays the authority.
+  { key: 'central_needs.manual_need.set',        module: 'central_needs',      action: 'manual_need.set',   labelKey: 'perm_central_needs_manual_need_set', dangerous: false },
+  { key: 'central_needs.material_review',        module: 'central_needs',      action: 'material_review',   labelKey: 'perm_central_needs_material_review', dangerous: true  },
 ];
 
 export const PERMISSION_KEY_SET: ReadonlySet<string> = new Set(PERMISSION_KEYS.map(p => p.key));
