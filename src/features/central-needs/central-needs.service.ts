@@ -131,7 +131,7 @@ export interface FieldOverride {
 
 /** The canonical unit vocabulary, mirroring `central_items.unit`'s own CHECK. */
 export const NEED_LINE_UNITS = [
-  'box', 'vial', 'ampoule', 'tablet', 'bottle', 'tube', 'sachet', 'other',
+  'box', 'vial', 'ampoule', 'tablet', 'bottle', 'tube', 'sachet', 'other', 'test',
 ] as const;
 export type NeedLineUnit = (typeof NEED_LINE_UNITS)[number];
 

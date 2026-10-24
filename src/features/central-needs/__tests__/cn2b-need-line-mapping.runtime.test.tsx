@@ -965,12 +965,20 @@ describe('M212 — the client never becomes the authority', () => {
     expect(PANEL).not.toMatch(/aria-label=\{t\('cn2b_nl_beneficiary'/);
   });
 
-  it('keeps the canonical unit vocabulary identical to the migration', () => {
-    const sql = readFileSync(
+  it('keeps the canonical unit vocabulary identical to the migrations (M212 eight + M231 test)', () => {
+    // R1-UNIT-TEST-01: the vocabulary grew append-only — M212 defined the historical
+    // eight, M231 added 'test' for dosed reagents (owner 2026 acceptance draft).
+    const m212 = readFileSync(
       join(__dirname, '../../../../supabase/migrations/212_phoenix_central_needs_need_lines.sql'), 'utf8');
+    const m231 = readFileSync(
+      join(__dirname, '../../../../supabase/migrations/231_phoenix_unit_test_vocabulary.sql'), 'utf8');
     for (const u of ['box', 'vial', 'ampoule', 'tablet', 'bottle', 'tube', 'sachet', 'other']) {
       expect(SERVICE, u).toContain(`'${u}'`);
-      expect(sql, u).toContain(`'${u}'`);
+      expect(m212, u).toContain(`'${u}'`);
+    }
+    for (const u of ['test']) {
+      expect(SERVICE, u).toContain(`'${u}'`);
+      expect(m231, u).toContain(`'${u}'`);
     }
   });
 });

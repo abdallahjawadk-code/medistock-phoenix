@@ -36,8 +36,8 @@ describe('M214 static — registration and exact scope', () => {
     // advances, now to PDA-PROC-1/M221 (pharmacy department supplementary
     // procurement exclusion).
     expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.indexOf(FILENAME) + 1]).toBe('215_phoenix_central_needs_governed_correction_lifecycle.sql');
-    expect(getMaximumReviewedMigrationNumber()).toBe(230);
-    expect(getNextUnreviewedMigrationNumber()).toBe(231);
+    expect(getMaximumReviewedMigrationNumber()).toBe(231);
+    expect(getNextUnreviewedMigrationNumber()).toBe(232);
   });
 
   it('changes exactly the readiness RPC volatility to VOLATILE', () => {

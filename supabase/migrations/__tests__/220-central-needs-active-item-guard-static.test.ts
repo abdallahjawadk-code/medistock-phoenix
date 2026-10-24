@@ -116,7 +116,7 @@ describe.runIf(PRESENT)('M220 static — active central item guard', () => {
     // the ceiling assertions. The 219 -> 220 -> 221 order is exact.
     expect(files.filter((f) => Number(f.slice(0, 3)) > 219)).toEqual([FILENAME,
       '221_phoenix_pharmacy_department_subpurchase_exclusion.sql',
-      '222_phoenix_governed_warehouse_correction_security.sql', '223_phoenix_central_needs_manual_source_schema_inert.sql', '224_phoenix_central_needs_authorization_closure.sql', '225_phoenix_central_needs_lifecycle_relations_and_sod.sql', '226_phoenix_central_needs_manual_routines_inert.sql', '227_phoenix_central_needs_blockers_digest_d27.sql', '228_phoenix_central_needs_material_registration_inert.sql', '229_phoenix_central_needs_manual_activation.sql', '230_phoenix_central_needs_material_registration_activation.sql']);
+      '222_phoenix_governed_warehouse_correction_security.sql', '223_phoenix_central_needs_manual_source_schema_inert.sql', '224_phoenix_central_needs_authorization_closure.sql', '225_phoenix_central_needs_lifecycle_relations_and_sod.sql', '226_phoenix_central_needs_manual_routines_inert.sql', '227_phoenix_central_needs_blockers_digest_d27.sql', '228_phoenix_central_needs_material_registration_inert.sql', '229_phoenix_central_needs_manual_activation.sql', '230_phoenix_central_needs_material_registration_activation.sql', '231_phoenix_unit_test_vocabulary.sql']);
     expect(files.filter((f) => f.startsWith('220_'))).toEqual([FILENAME]);
     expect(SQL.includes('\r')).toBe(false);
     expect(EXEC.match(/^\s*BEGIN\s*;/gim)).toHaveLength(1);

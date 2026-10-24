@@ -69,8 +69,8 @@ describe('193 · registration and file hygiene', () => {
   });
 
   it('is immediately followed by 194 through 210, the new ceiling, and 211 stays absent', () => {
-    expect(getMaximumReviewedMigrationNumber()).toBe(230);
-    expect(getNextUnreviewedMigrationNumber()).toBe(231);
+    expect(getMaximumReviewedMigrationNumber()).toBe(231);
+    expect(getNextUnreviewedMigrationNumber()).toBe(232);
     const NEXT = '194_phoenix_authorization_surface_reproducibility_convergence.sql';
     const NEXT_2 = '195_phoenix_auth_helper_profile_schema_qualification.sql';
     const NEXT_3 = '196_phoenix_secdef_relation_schema_qualification.sql';
@@ -106,12 +106,12 @@ describe('193 · registration and file hygiene', () => {
     // replaced) and adds no alert-command SQL, so what 193 asserts is
     // unaffected.
     expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1])
-      .toBe('230_phoenix_central_needs_material_registration_activation.sql');
+      .toBe('231_phoenix_unit_test_vocabulary.sql');
     // The ceiling is now 221; `[2-9]\d\d` would match it, so this asserts
     // numerically that nothing sits ABOVE the ceiling.
-    expect(REVIEWED_MIGRATION_FILES.filter(f => Number(f.slice(0, 3)) > 230)).toHaveLength(0);
+    expect(REVIEWED_MIGRATION_FILES.filter(f => Number(f.slice(0, 3)) > 231)).toHaveLength(0);
     expect(readdirSync(MIGRATIONS_DIR)
-      .filter(f => /^\d{3}_.*\.sql$/.test(f) && Number(f.slice(0, 3)) > 230)).toEqual([]);
+      .filter(f => /^\d{3}_.*\.sql$/.test(f) && Number(f.slice(0, 3)) > 231)).toEqual([]);
     expect(isReviewedMigrationFile('211_unreviewed_test_migration.sql')).toBe(false);
   });
 
@@ -134,7 +134,7 @@ describe('193 · registration and file hygiene', () => {
     // chain members; they edit nothing here, so this count moves by exactly
     // seventeen more.
     const others = readdirSync(MIGRATIONS_DIR).filter(f => f.endsWith('.sql') && f !== NAME);
-    expect(others).toHaveLength(229);
+    expect(others).toHaveLength(230);
   });
 });
 

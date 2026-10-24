@@ -197,7 +197,7 @@ guard('C5/M217 static — registration, hygiene and frozen predecessors', () => 
         '219_phoenix_auth_signup_authority_hardening.sql',
         '220_phoenix_central_needs_active_item_guard.sql',
         '221_phoenix_pharmacy_department_subpurchase_exclusion.sql',
-        '222_phoenix_governed_warehouse_correction_security.sql', '223_phoenix_central_needs_manual_source_schema_inert.sql', '224_phoenix_central_needs_authorization_closure.sql', '225_phoenix_central_needs_lifecycle_relations_and_sod.sql', '226_phoenix_central_needs_manual_routines_inert.sql', '227_phoenix_central_needs_blockers_digest_d27.sql', '228_phoenix_central_needs_material_registration_inert.sql', '229_phoenix_central_needs_manual_activation.sql', '230_phoenix_central_needs_material_registration_activation.sql']);
+        '222_phoenix_governed_warehouse_correction_security.sql', '223_phoenix_central_needs_manual_source_schema_inert.sql', '224_phoenix_central_needs_authorization_closure.sql', '225_phoenix_central_needs_lifecycle_relations_and_sod.sql', '226_phoenix_central_needs_manual_routines_inert.sql', '227_phoenix_central_needs_blockers_digest_d27.sql', '228_phoenix_central_needs_material_registration_inert.sql', '229_phoenix_central_needs_manual_activation.sql', '230_phoenix_central_needs_material_registration_activation.sql', '231_phoenix_unit_test_vocabulary.sql']);
     expect(files[files.indexOf(FILENAME) - 1]).toBe('216_phoenix_central_needs_region_persistence.sql');
   });
 
