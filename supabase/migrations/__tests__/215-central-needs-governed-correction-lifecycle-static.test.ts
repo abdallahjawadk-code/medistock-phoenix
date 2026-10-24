@@ -65,8 +65,8 @@ describe('C2/M215 static — registration and file hygiene', () => {
     const M222 = '222_phoenix_governed_warehouse_correction_security.sql';
     const files = readdirSync(MIGRATIONS).filter((f) => /^\d{3}_.*\.sql$/.test(f)).sort();
     expect(files).toContain(FILENAME);
-    expect(files).toHaveLength(230);
-    expect(files.filter((f) => Number(f.slice(0, 3)) > 214)).toEqual([FILENAME, M216, M217, M218, M219, M220, M221, M222, '223_phoenix_central_needs_manual_source_schema_inert.sql', '224_phoenix_central_needs_authorization_closure.sql', '225_phoenix_central_needs_lifecycle_relations_and_sod.sql', '226_phoenix_central_needs_manual_routines_inert.sql', '227_phoenix_central_needs_blockers_digest_d27.sql', '228_phoenix_central_needs_material_registration_inert.sql', '229_phoenix_central_needs_manual_activation.sql', '230_phoenix_central_needs_material_registration_activation.sql']);
+    expect(files).toHaveLength(231);
+    expect(files.filter((f) => Number(f.slice(0, 3)) > 214)).toEqual([FILENAME, M216, M217, M218, M219, M220, M221, M222, '223_phoenix_central_needs_manual_source_schema_inert.sql', '224_phoenix_central_needs_authorization_closure.sql', '225_phoenix_central_needs_lifecycle_relations_and_sod.sql', '226_phoenix_central_needs_manual_routines_inert.sql', '227_phoenix_central_needs_blockers_digest_d27.sql', '228_phoenix_central_needs_material_registration_inert.sql', '229_phoenix_central_needs_manual_activation.sql', '230_phoenix_central_needs_material_registration_activation.sql', '231_phoenix_unit_test_vocabulary.sql']);
     expect(isReviewedMigrationFile(FILENAME)).toBe(true);
     // C4/M216 (Central Needs beneficiary-region persistence) sits directly after
     // 215 — that relationship is HISTORICAL and never moves. C5/M217 (Central
@@ -81,9 +81,9 @@ describe('C2/M215 static — registration and file hygiene', () => {
     expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.indexOf(FILENAME) + 4]).toBe(M219);
     expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.indexOf(FILENAME) + 5]).toBe(M220);
     expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.indexOf(FILENAME) + 6]).toBe(M221);
-    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1]).toBe('230_phoenix_central_needs_material_registration_activation.sql');
-    expect(getMaximumReviewedMigrationNumber()).toBe(230);
-    expect(getNextUnreviewedMigrationNumber()).toBe(231);
+    expect(REVIEWED_MIGRATION_FILES[REVIEWED_MIGRATION_FILES.length - 1]).toBe('231_phoenix_unit_test_vocabulary.sql');
+    expect(getMaximumReviewedMigrationNumber()).toBe(231);
+    expect(getNextUnreviewedMigrationNumber()).toBe(232);
   });
 
   it('carries no CR bytes, is one transaction, never rolls itself back, has no MANUAL APPLY ONLY banner', () => {

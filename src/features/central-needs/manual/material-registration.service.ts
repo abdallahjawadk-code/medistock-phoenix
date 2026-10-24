@@ -9,8 +9,8 @@ import { centralNeedsErrorFromPostgrest } from '../central-needs.service';
 export type MaterialRequestStatus =
   | 'draft' | 'submitted' | 'under_review' | 'needs_info' | 'resolved_existing' | 'approved_new' | 'rejected' | 'cancelled';
 export type MaterialProvenanceKind = 'manual_typed' | 'excel_assist';
-export type MaterialUnit = 'box' | 'vial' | 'ampoule' | 'tablet' | 'bottle' | 'tube' | 'sachet' | 'other';
-export const MATERIAL_UNITS: readonly MaterialUnit[] = ['box', 'vial', 'ampoule', 'tablet', 'bottle', 'tube', 'sachet', 'other'];
+export type MaterialUnit = 'box' | 'vial' | 'ampoule' | 'tablet' | 'bottle' | 'tube' | 'sachet' | 'other' | 'test';
+export const MATERIAL_UNITS: readonly MaterialUnit[] = ['box', 'vial', 'ampoule', 'tablet', 'bottle', 'tube', 'sachet', 'other', 'test'];
 
 export interface MaterialDescriptor {
   scientificName: string;
