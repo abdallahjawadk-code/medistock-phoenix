@@ -52,7 +52,7 @@ describe('no client-side document-number sequence exists',()=>{
     const text=readFileSync(proposal,'utf8');
     expect(text).toMatch(/PROPOSAL ONLY/i); expect(text).toMatch(/not applied/i);
   });
-  it('179–202 introduce no numbering and no 203+ migration exists',()=>{
+  it('reviewed migrations through M231 introduce no client-side document numbering and unreviewed migrations stay refused',()=>{
     const migrations=readdirSync(join(ROOT,'supabase','migrations')).filter(f=>f.endsWith('.sql'));
     // P0 HOTFIX 178: adds SECURITY DEFINER to Migration 171's outlet
     // owner-kind guard so its FOR SHARE row lock stops failing with 42501 for
@@ -279,9 +279,14 @@ describe('no client-side document-number sequence exists',()=>{
     // the caller-supplied source_document_number through unchanged and
     // introduces no sequence, counter, max()+1, generated numeric identity or
     // document number. Registered by exact number; boundary moves to 222. R1 numbering (D9 closed): 223-230 are the eight R1 migrations (candidate bytes unchanged, see R1-NUMBERING-MANIFEST.json); boundary moves to 230.
-    const beyond=migrations.filter(f=>/^(1[89]\d|[2-9]\d\d)_/.test(f)&&!/^(179|180|181|182|183|184|185|186|187|188|189|190|191|192|193|194|195|196|197|198|199|200|201|202|203|204|205|206|207|208|209|210|211|212|213|214|215|216|217|218|219|220|221|222|223|224|225|226|227|228|229|230)_/.test(f));
+    // M231 only widens three unit CHECK constraints after exact catalog
+    // preconditions and verifies the existing capability seal. It adds no
+    // sequence, counter, generated numeric identity or document-number logic.
+    // Admit this reviewed filename only; alternate M231 names and M232 stay refused.
+    const beyond=migrations.filter(f=>/^(1[89]\d|[2-9]\d\d)_/.test(f)&&!/^(179|180|181|182|183|184|185|186|187|188|189|190|191|192|193|194|195|196|197|198|199|200|201|202|203|204|205|206|207|208|209|210|211|212|213|214|215|216|217|218|219|220|221|222|223|224|225|226|227|228|229|230)_/.test(f)&&f!=='231_phoenix_unit_test_vocabulary.sql');
     expect(beyond).toEqual([]);
     for(const f of [
+      '231_phoenix_unit_test_vocabulary.sql',
       '211_phoenix_central_needs_batch_and_disposition.sql',
       '212_phoenix_central_needs_need_lines.sql',
       '213_phoenix_central_needs_beneficiary_column_mapping.sql',

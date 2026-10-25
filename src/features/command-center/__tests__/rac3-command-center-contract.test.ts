@@ -532,7 +532,7 @@ describe('RAC-3 · I) no backend or migration change', () => {
     ];
     const ALLOWED_SQL = [...R1_CANDIDATES, M200, M201, M202, M203, M204, M205, M206, M207, M208, M209, M210, M211, M212, M213, M214, M215, M216, M217, M218, M219, M220, M221, M222,
       // R1 numbering (D9 closed): the eight R1 migrations M223-M230, registered by EXACT filename (candidate bytes unchanged, R1-NUMBERING-MANIFEST.json).
-      'supabase/migrations/223_phoenix_central_needs_manual_source_schema_inert.sql', 'supabase/migrations/224_phoenix_central_needs_authorization_closure.sql', 'supabase/migrations/225_phoenix_central_needs_lifecycle_relations_and_sod.sql', 'supabase/migrations/226_phoenix_central_needs_manual_routines_inert.sql', 'supabase/migrations/227_phoenix_central_needs_blockers_digest_d27.sql', 'supabase/migrations/228_phoenix_central_needs_material_registration_inert.sql', 'supabase/migrations/229_phoenix_central_needs_manual_activation.sql', 'supabase/migrations/230_phoenix_central_needs_material_registration_activation.sql'];
+      'supabase/migrations/223_phoenix_central_needs_manual_source_schema_inert.sql', 'supabase/migrations/224_phoenix_central_needs_authorization_closure.sql', 'supabase/migrations/225_phoenix_central_needs_lifecycle_relations_and_sod.sql', 'supabase/migrations/226_phoenix_central_needs_manual_routines_inert.sql', 'supabase/migrations/227_phoenix_central_needs_blockers_digest_d27.sql', 'supabase/migrations/228_phoenix_central_needs_material_registration_inert.sql', 'supabase/migrations/229_phoenix_central_needs_manual_activation.sql', 'supabase/migrations/230_phoenix_central_needs_material_registration_activation.sql', 'supabase/migrations/231_phoenix_unit_test_vocabulary.sql'];
     const changed = execSync(
       'git diff --name-only b707f073d60b4cc61205c35003ab491f3aed7468',
       { cwd: process.cwd(), encoding: 'utf8' },
@@ -567,7 +567,7 @@ describe('RAC-3 · I) no backend or migration change', () => {
    * replaces: it would also catch a dependency edit smuggled in beside a
    * version bump, which a filename check never could.
    */
-  it('changes no dependency — package.json keeps its reviewed 6ce98332 contract and the WORKING lockfile must equal the complete SEC-HOTFIX-3 graph (the SEC-HOTFIX-2 graph frozen by exact commit + the explicit Vitest family 4.1.12 delta)', () => {
+  it('changes no dependency — package.json keeps its reviewed 6ce98332 contract and the WORKING lockfile must equal the complete SEC-HOTFIX-3 graph (the SEC-HOTFIX-2 graph frozen by exact commit + the explicit Vitest family 4.1.12 delta) plus exactly the CI-HOTFIX-4 undici 7.30.1 transformation', () => {
     // CN-2A-SHEETJS: the audited dependency baseline advances from d70b24a9
     // to 6ce98332, the reviewed CN-2A commit that adds exactly one runtime
     // dependency — `xlsx` (SheetJS Community Edition 0.20.3, vendored
@@ -890,13 +890,41 @@ describe('RAC-3 · I) no backend or migration change', () => {
     }
     const expectedHotfix3Lock = { ...frozenHotfix2Lock, packages: hotfix3Packages };
     expect(hotfix3Packages[VITE].version).toBe('6.4.4');
+    // CI-HOTFIX-4 / GHSA-4qv8-2p9j-2685, GHSA-f72v-6w45-q472 and
+    // GHSA-xjj6-f33q-929c: npm audit reports undici 7.30.0 as high (EventSource
+    // parser unbounded memory, Subresource Integrity bypass via non-lowercase
+    // algorithm tokens, unhandled error on excessive content-encodings), with
+    // 7.30.1 as the patched release. undici stays a dev-only transitive
+    // dependency (jsdom@29.1.1 -> undici@^7.25.0), so package.json is not
+    // changed, and the 7.30.1 manifest declares the same dependencies, peer,
+    // optional, bin and engines fields as 7.30.0 — no edge moves. CI-HOTFIX-4
+    // therefore contributes EXACTLY one lockfile transformation on top of the
+    // SEC-HOTFIX-3 graph: the node_modules/undici entry takes the registry's
+    // 7.30.1 version/resolved/integrity (tarball SHA-512 verified against the
+    // registry metadata) and keeps every other field. The historical pins above
+    // are untouched: the frozen SEC-HOTFIX-1 graph still carries undici 7.30.0,
+    // and any other entry, edge, root metadata or a different undici version
+    // still fails closed.
+    const prevUndici = hotfix3Packages[UNDICI];
+    expect(prevUndici.version).toBe('7.30.0');
+    const hotfix4Packages: Record<string, Record<string, unknown>> = {
+      ...hotfix3Packages,
+      [UNDICI]: {
+        ...prevUndici,
+        version: '7.30.1',
+        resolved: 'https://registry.npmjs.org/undici/-/undici-7.30.1.tgz',
+        integrity: 'sha512-03KrMbjIFDWQR5RNPrSw3bd1r12JpyFQl9/yxjUbJtqkjmllqC5lFjZh6ujeuJCKr8EOQvRW872Oy/az+nLYxg==',
+      },
+    };
+    const expectedHotfix4Lock = { ...expectedHotfix3Lock, packages: hotfix4Packages };
     // The authoritative assertion reads the WORKING lockfile. `git show HEAD`
     // cannot see an uncommitted lockfile and would report a false GREEN for it;
     // in CI the working tree is the checked-out commit, so the strictness is
-    // the same. The whole graph must be the SEC-HOTFIX-3 graph above, with only
-    // the pre-existing release-version normalisation.
+    // the same. The whole graph must be the SEC-HOTFIX-3 graph above plus
+    // exactly the CI-HOTFIX-4 undici 7.30.1 transformation, with only the
+    // pre-existing release-version normalisation.
     const workingLock = JSON.parse(readFileSync(join(process.cwd(), 'package-lock.json'), 'utf8'));
-    expect(normalise(workingLock)).toBe(normalise(expectedHotfix3Lock));
+    expect(normalise(workingLock)).toBe(normalise(expectedHotfix4Lock));
     // ... and the working package.json is the HEAD package.json whose contract is asserted above.
     expect(JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8'))).toEqual(head);
   });
