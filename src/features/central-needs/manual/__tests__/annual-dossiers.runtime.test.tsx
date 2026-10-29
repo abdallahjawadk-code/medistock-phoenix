@@ -7,7 +7,7 @@ vi.mock('../../CentralNeedsRevisionHistory', () => ({ CentralNeedsRevisionHistor
 vi.mock('../MaterialPicker', () => ({ MaterialPicker: () => null }));
 vi.mock('../IdentityAssistPanel', () => ({ IdentityAssistPanel: () => null }));
 vi.mock('../DossierWorkbookIntake', () => ({ DossierWorkbookIntake: () => null }));
-vi.mock('../ManualNeedsWorkspace', () => ({ ManualNeedsWorkspace: ({planRevisionId}: {planRevisionId:string}) => <p data-testid="revision-workspace">{planRevisionId}</p> }));
+vi.mock('../ManualNeedsWorkspace', () => ({ ManualNeedsWorkspace: ({planRevisionId}: {planRevisionId:string}) => <div><p data-testid="revision-workspace">{planRevisionId}</p><button>Workspace mutation</button></div> }));
 import { ManualNeedsJourney } from '../ManualNeedsJourney';
 import type { JourneyApi } from '../manual-journey.service';
 import type { NeedsDossier } from '../dossier.service';
@@ -76,4 +76,15 @@ describe('annual workspace retains independent dossiers',()=>{
     expect(screen.queryByRole('button',{name:'Start a new plan'})).toBeNull();
     expect(api.listYearRevisions).not.toHaveBeenCalled();
   });
+  it('blocks previous-workspace controls while a new dossier is being created',async()=>{
+    const {api,dossiers}=fixture();await open();fireEvent.change(screen.getByLabelText('Dossier / classification'),{target:{value:'b'}});
+    await waitFor(()=>expect(screen.getByTestId('revision-workspace')).toHaveTextContent('br'));
+    let complete!:(r:{planId:string;planRevisionId:string})=>void;
+    vi.mocked(api.openDossier!).mockImplementation(()=>new Promise(resolve=>{complete=resolve;}));
+    fireEvent.change(screen.getByLabelText('New dossier / classification name'),{target:{value:'Supplies'}});fireEvent.click(screen.getByRole('button',{name:'Add needs dossier'}));
+    expect(screen.getByRole('button',{name:'Workspace mutation'})).toBeDisabled();
+    dossiers.push({id:'c',key:'new',name:'Supplies',latestRevisionId:'cr',latestStatus:'draft',latestNumber:1,approvedRevisionId:null,approvedNumber:null});complete({planId:'c',planRevisionId:'cr'});
+    await waitFor(()=>expect(screen.getByTestId('revision-workspace')).toHaveTextContent('cr'));expect(screen.getByRole('button',{name:'Workspace mutation'})).toBeEnabled();
+  });
+
 });

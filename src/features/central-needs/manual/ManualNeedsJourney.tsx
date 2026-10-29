@@ -279,6 +279,7 @@ export function ManualNeedsJourney({ lang, organizationId, actorId, api = realJo
 
       {year !== null && latest && latest.sourceMode === 'manual' && caps && (
         <>
+          <fieldset disabled={busy} style={{border:0,padding:0,margin:0,minWidth:0}} aria-label={lang==='ar'?'مساحة الاحتياج المفتوحة':'Opened needs workspace'}>
           <section aria-labelledby="step-lines">
             <h3 id="step-lines">{jt('step_lines', lang)}</h3>
             {isManualDraft && caps.manualSet && (
@@ -296,12 +297,14 @@ export function ManualNeedsJourney({ lang, organizationId, actorId, api = realJo
             )}
             <ManualNeedsWorkspace key={`${latest.id}:${workspaceVersion}`} lang={lang} organizationId={organizationId} planRevisionId={latest.id} revisionStatus={latest.status}
               sourceMode={latest.sourceMode} beneficiaries={beneficiaryOptions} items={itemOptions} api={workspaceApi} onIdentityReady={setIdentitiesReady} />
+            {features?.dossiers && !features.workbookIntake && namedDossier && <p role="note">{lang==='ar'?'رفع ملفات الاحتياج غير متاح حاليًا لهذه البيئة. يمكنك متابعة الإدخال اليدوي.':'Workbook intake is currently unavailable in this environment. Manual entry remains available.'}</p>}
             {features?.workbookIntake && !namedDossier && <p role="note">{lang==='ar'?'لرفع ملفات حسب التصنيف، أضف حزمة باسم التصنيف من أعلى الصفحة.':'To upload classification workbooks, add a named dossier above.'}</p>}
             {features?.workbookIntake && selectedDossier && namedDossier &&
-              <DossierWorkbookIntake key={`${organizationId}:${latest.id}`} lang={lang} planId={selectedDossier} revisionId={latest.id}
-                editable={isManualDraft && caps.manualSet} beneficiaries={beneficiaries ?? []} search={api.searchCatalog}
+              <DossierWorkbookIntake key={`${organizationId}:${latest.id}`} lang={lang} year={Number(year)} planId={selectedDossier} revisionId={latest.id}
+                editable={isManualDraft && caps.manualSet && !busy} beneficiaries={beneficiaries ?? []} search={api.searchCatalog}
                 onSaved={()=>{setWorkspaceVersion((v)=>v+1);setReadiness(null);}} />}
           </section>
+          </fieldset>
 
           {isManualDraft && caps.edit && (
             <section aria-labelledby="step-review">

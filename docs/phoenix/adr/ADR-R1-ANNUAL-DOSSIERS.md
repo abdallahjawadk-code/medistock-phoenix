@@ -41,16 +41,60 @@ the Excel freeze globally (reactivates a retired path).
   remains identity; barcode is separate. No inferred barcode backfill or live
   data correction. Public QR projection is unchanged.
 
-## Workbook intake
+## Workbook intake — matrix follow-up (owner continuation, 2026-10-29)
 
-The new intake belongs to manual dossiers and is an explicit owner-approved
-extension: local preview, human confirmation of columns/material/beneficiary/unit,
-then an atomic batch through the existing manual writer. It does not reopen the
-historical Excel source/revision API or treat fuzzy suggestions as decisions.
-Original workbook bytes/hash, physical sheet/row/column pointers and the confirmed
-write plan are immutable evidence. Re-uploading the same file to the same dossier
-is refused/reconciled, never counted twice. Duplicate scopes are blocked; this
-first release deliberately has no automatic sum or overwrite.
+The initial PR256 candidate is insufficient for the supplied corpus: 57 real XLS
+workbooks (8 Office lock files excluded), 75 sheets, multiple institution columns,
+comparison blocks and heterogeneous source units. Neither a blind multi-file
+write nor raising a row limit alone resolves that shape.
+
+The revised, still-unapplied M235 separates immutable original documents from
+immutable captured selection plans and append-only batch receipts. A capture is
+bounded at 10000 selected quantity cells; each application transaction handles at
+most 100 rows. Submission/approval is fenced until every capture in that revision
+has a complete contiguous receipt sequence. The old <=100-row RPC remains atomic
+by invoking capture and batch within its single transaction.
+
+The quantity-cell identity is (document, sheet, row, quantity column), not just
+(sheet,row). Another institution column of the same original may be selected
+without storing the source twice. Captures reserve physical cells and business
+scopes under the canonical plan lock. An exact operation ID replays only an
+identical intent by the same actor; changed intent, overlapping cells or duplicate
+beneficiary/material scopes are refused, never summed. Canonical manual events,
+quantities, provenance, approvals, correction history and warehouse SoD remain
+authoritative. A source filename/header is never permission or institutional
+identity.
+
+Users confirm each sheet/region and beneficiary-column mapping, the target year,
+material IDs, national codes and units. Exclusions need retained coordinates and
+reasons. Header labels are retained as evidence, not automatic assignments. Only
+ASCII-space/case unit spelling equivalence is permitted; kit/test, pack/piece and
+concentration conversions remain unresolved until separately governed. Exact
+quantity TEXT, blank/zero distinction and leading national-code zeros remain.
+
+The UI parses at most five files sequentially, excludes Office locks before the
+Worker, paginates the preview and offers at most 100 match suggestions per action.
+A source capture precedes writes. Unknown outcomes stop application-level writes;
+readback reconciles the operation ID before explicit resume. Parent-context transitions disable the old workspace controls; leaving a scope aborts continuation before the next batch (an already in-flight transaction still needs readback). Confirmed batches
+are not relabelled failed when history refresh fails. SQL writer calls and their
+append-only receipts are atomic. A catalog SHARE lock binds each batch's unit,
+active status and national code to the write transaction. Actor permissions and
+organization activation are rechecked on each mutation. There is no automatic
+retry after an uncertain response and no unauthenticated upload path.
+
+A pending capture whose actor/catalog eligibility changes may require governed
+resolution or withdrawing the draft; there is no silent discard of committed
+batches. HTTP/Supabase Auth/native independent-session behavior still requires
+the native CI gates. PGlite tests are real PostgreSQL execution but are not native
+transport/concurrency parity. The real virology source has been exercised locally
+for J4=11520 and K4=10000 using synthetic fixture institutions, not live mappings.
+This does not declare all 57 workbooks business-compatible.
+
+FF2 is a new unnumbered emergency candidate, never automatically applied. It
+pins the current RPC census and exact writer bodies and closes all 27 designated
+manual/material/intake entry points, including the six missed by historical FF1.
+The historical FF1 file is immutable; its original full-chain test now explicitly
+replays through M230, and the new FF2 suite covers the current dossier chain.
 
 ## Deployment compatibility and boundaries
 

@@ -28,7 +28,7 @@ export async function getNeedsFeatures(): Promise<NeedsFeatures> {
     throw new Error('invalid_needs_feature_contract');
   }
   return { nationalCode: data.national_code === true, sameActorManual: data.same_actor_manual === true,
-    dossiers: data.dossiers === true, workbookIntake: data.workbook_intake === true };
+    dossiers: data.dossiers === true, workbookIntake: data.workbook_intake === true && data.workbook_matrix_v2 === true };
 }
 
 export async function listNeedsDossiers(organizationId: string, year: number): Promise<NeedsDossier[]> {

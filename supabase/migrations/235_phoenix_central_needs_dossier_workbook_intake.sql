@@ -1,149 +1,212 @@
--- LOCAL CANDIDATE ONLY. Owner-approved extension of manual entry, not the old
--- verified Excel pipeline. Parsed selections are HUMAN CONFIRMED assertions;
--- original bytes/hash and the complete captured write plan are kept verbatim.
+-- LOCAL CANDIDATE ONLY. M235 has not been applied to Production.
+-- Human-confirmed manual intake, never a reopening of the frozen Excel pipeline.
 BEGIN;
-
--- Bind every replaced authority routine to the exact predecessor body. A drift
--- refuses the whole transaction; no live function is silently overwritten.
 DO $authority_pre$
 DECLARE r record; actual text; matches integer;
 BEGIN
  FOR r IN SELECT * FROM (VALUES
-      ('public.phoenix_central_needs_feature_contract','b7478934ded2998f78a12c31c4de051a'),
-      ('phoenix_private.central_needs_capability_breaches_v1','fe56867edf8c15e7c47778b159e9dc42')
+ ('public.phoenix_central_needs_feature_contract','b7478934ded2998f78a12c31c4de051a'),
+ ('phoenix_private.central_needs_capability_breaches_v1','fe56867edf8c15e7c47778b159e9dc42')
  ) expected(name,body_md5) LOOP
-   SELECT count(*), min(md5(p.prosrc)) INTO matches,actual
-   FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace
+  SELECT count(*),min(md5(p.prosrc)) INTO matches,actual FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
    WHERE n.nspname=split_part(r.name,'.',1) AND p.proname=split_part(r.name,'.',2);
-   IF matches<>1 OR actual IS DISTINCT FROM r.body_md5 THEN
-     RAISE EXCEPTION 'M235_authority_precondition_failed: %',r.name;
-   END IF;
+  IF matches<>1 OR actual IS DISTINCT FROM r.body_md5 THEN RAISE EXCEPTION 'M235_authority_precondition_failed: %',r.name; END IF;
  END LOOP;
+ IF to_regprocedure('public.phoenix_central_needs_open_dossier(uuid,integer,text,text)') IS NULL
+ OR to_regclass('public.central_needs_dossier_intakes') IS NOT NULL THEN RAISE EXCEPTION 'M235_precondition_failed'; END IF;
 END $authority_pre$;
 
-DO $pre$ BEGIN
- IF to_regprocedure('public.phoenix_central_needs_open_dossier(uuid,integer,text,text)') IS NULL
-    OR to_regclass('public.central_needs_dossier_intakes') IS NOT NULL THEN
-   RAISE EXCEPTION 'M235_precondition_failed';
- END IF;
-END $pre$;
-
-ALTER TABLE public.central_needs_plan_revisions ADD CONSTRAINT central_needs_revision_plan_org_key UNIQUE (id,plan_id,organization_id);
-CREATE TABLE public.central_needs_dossier_intakes (
- id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
- organization_id uuid NOT NULL,
- plan_id uuid NOT NULL,
- plan_revision_id uuid NOT NULL,
- filename text NOT NULL CHECK (char_length(filename) BETWEEN 1 AND 255 AND filename !~ '[/\\[:cntrl:]]'),
- file_hash text NOT NULL CHECK (file_hash ~ '^[0-9a-f]{64}$'),
- original_bytes bytea NOT NULL CHECK (octet_length(original_bytes) BETWEEN 1 AND 3145728),
- write_plan jsonb NOT NULL CHECK (jsonb_typeof(write_plan)='array' AND jsonb_array_length(write_plan) BETWEEN 1 AND 100),
- intent_hash text NOT NULL,
- event_ids uuid[] NOT NULL,
- actor_id uuid NOT NULL REFERENCES auth.users(id),
+ALTER TABLE public.central_needs_plan_revisions ADD CONSTRAINT central_needs_revision_plan_org_key UNIQUE(id,plan_id,organization_id);
+CREATE TABLE public.central_needs_dossier_documents (
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(), organization_id uuid NOT NULL, plan_id uuid NOT NULL,
+ file_hash text NOT NULL CHECK(file_hash ~ '^[0-9a-f]{64}$'),
+ original_bytes bytea NOT NULL CHECK(octet_length(original_bytes) BETWEEN 1 AND 3145728),
  created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
- UNIQUE (plan_id, file_hash),
- FOREIGN KEY (plan_id, organization_id) REFERENCES public.central_needs_plans(id, organization_id),
- FOREIGN KEY (plan_revision_id,plan_id,organization_id) REFERENCES public.central_needs_plan_revisions(id,plan_id,organization_id),
- CHECK (encode(sha256(original_bytes), 'hex') = file_hash),
- CHECK (cardinality(event_ids)=jsonb_array_length(write_plan))
+ UNIQUE(plan_id,file_hash), UNIQUE(id,plan_id,organization_id),
+ FOREIGN KEY(plan_id,organization_id) REFERENCES public.central_needs_plans(id,organization_id),
+ CHECK(encode(sha256(original_bytes),'hex')=file_hash)
 );
-ALTER TABLE public.central_needs_dossier_intakes ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.central_needs_dossier_intakes FORCE ROW LEVEL SECURITY;
-REVOKE ALL ON public.central_needs_dossier_intakes FROM PUBLIC, anon, authenticated, service_role;
-CREATE POLICY r1_actor_scope_restrictive ON public.central_needs_dossier_intakes AS RESTRICTIVE FOR SELECT TO authenticated
- USING (phoenix_cn_policy.actor_scope_org('central_needs.view')=organization_id);
-CREATE TRIGGER dossier_intakes_immutable BEFORE UPDATE OR DELETE ON public.central_needs_dossier_intakes
- FOR EACH ROW EXECUTE FUNCTION phoenix_private.central_needs_append_only_v1();
-CREATE TRIGGER dossier_intakes_no_truncate BEFORE TRUNCATE ON public.central_needs_dossier_intakes
- FOR EACH STATEMENT EXECUTE FUNCTION phoenix_private.central_needs_append_only_v1();
-
-CREATE FUNCTION public.phoenix_central_needs_import_dossier_workbook(
- p_revision_id uuid, p_filename text, p_file_hash text, p_original_base64 text, p_rows jsonb)
-RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
-DECLARE
- r public.central_needs_plan_revisions%ROWTYPE;
- p public.central_needs_plans%ROWTYPE;
- old public.central_needs_dossier_intakes%ROWTYPE;
- source_bytes bytea;
- intent text;
- entry jsonb;
- result jsonb;
- ids uuid[] := ARRAY[]::uuid[];
- intake_id uuid;
- item_unit text;
+CREATE TABLE public.central_needs_dossier_intakes (
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(), organization_id uuid NOT NULL, plan_id uuid NOT NULL,
+ plan_revision_id uuid NOT NULL, document_id uuid NOT NULL, operation_id uuid NOT NULL,
+ filename text NOT NULL CHECK(char_length(filename) BETWEEN 1 AND 255 AND filename !~ '[/\\[:cntrl:]]' AND filename NOT LIKE '~$%'),
+ write_plan jsonb NOT NULL CHECK(jsonb_typeof(write_plan)='array' AND jsonb_array_length(write_plan) BETWEEN 1 AND 10000),
+ exclusions jsonb NOT NULL CHECK(jsonb_typeof(exclusions)='array' AND jsonb_array_length(exclusions)<=20000),
+ confirmation jsonb NOT NULL CHECK(jsonb_typeof(confirmation)='object'), intent_hash text NOT NULL,
+ actor_id uuid NOT NULL REFERENCES auth.users(id), created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+ UNIQUE(plan_id,operation_id), UNIQUE(id,organization_id),
+ FOREIGN KEY(plan_revision_id,plan_id,organization_id) REFERENCES public.central_needs_plan_revisions(id,plan_id,organization_id),
+ FOREIGN KEY(document_id,plan_id,organization_id) REFERENCES public.central_needs_dossier_documents(id,plan_id,organization_id)
+);
+CREATE TABLE public.central_needs_dossier_receipts (
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(), organization_id uuid NOT NULL, intake_id uuid NOT NULL,
+ batch_index integer NOT NULL CHECK(batch_index>=0 AND batch_index<100),
+ event_ids uuid[] NOT NULL CHECK(cardinality(event_ids) BETWEEN 1 AND 100),
+ actor_id uuid NOT NULL REFERENCES auth.users(id), created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+ UNIQUE(intake_id,batch_index),
+ FOREIGN KEY(intake_id,organization_id) REFERENCES public.central_needs_dossier_intakes(id,organization_id)
+);
+DO $tables$
+DECLARE n text;
 BEGIN
- IF current_setting('transaction_isolation') <> 'read committed' THEN
-   RAISE EXCEPTION 'manual_requires_read_committed' USING ERRCODE='25000';
- END IF;
- SELECT * INTO r FROM public.central_needs_plan_revisions WHERE id=p_revision_id;
- IF NOT FOUND THEN RAISE EXCEPTION 'plan_revision_not_found' USING ERRCODE='P0002'; END IF;
- PERFORM public._phoenix_central_needs_guard_v1(r.organization_id, 'central_needs.view');
- PERFORM public._phoenix_central_needs_guard_v1(r.organization_id, 'central_needs.manual_need.set');
- p := phoenix_private.central_needs_lock_plan_id_v1(r.plan_id);
+ FOREACH n IN ARRAY ARRAY['central_needs_dossier_documents','central_needs_dossier_intakes','central_needs_dossier_receipts'] LOOP
+  EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY',n);
+  EXECUTE format('ALTER TABLE public.%I FORCE ROW LEVEL SECURITY',n);
+  EXECUTE format('REVOKE ALL ON public.%I FROM PUBLIC,anon,authenticated,service_role',n);
+  EXECUTE format('CREATE POLICY r1_actor_scope_restrictive ON public.%I AS RESTRICTIVE FOR SELECT TO authenticated USING (phoenix_cn_policy.actor_scope_org(''central_needs.view'')=organization_id)',n);
+  EXECUTE format('CREATE TRIGGER dossier_evidence_immutable BEFORE UPDATE OR DELETE ON public.%I FOR EACH ROW EXECUTE FUNCTION phoenix_private.central_needs_append_only_v1()',n);
+  EXECUTE format('CREATE TRIGGER dossier_evidence_no_truncate BEFORE TRUNCATE ON public.%I FOR EACH STATEMENT EXECUTE FUNCTION phoenix_private.central_needs_append_only_v1()',n);
+ END LOOP;
+END $tables$;
+
+CREATE FUNCTION public.phoenix_central_needs_begin_dossier_workbook(
+ p_revision_id uuid,p_filename text,p_file_hash text,p_original_base64 text,p_rows jsonb,p_exclusions jsonb,p_confirmation jsonb,p_operation_id uuid)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,pg_temp AS $$
+DECLARE r public.central_needs_plan_revisions%ROWTYPE; p public.central_needs_plans%ROWTYPE;
+ old public.central_needs_dossier_intakes%ROWTYPE; doc uuid; source_bytes bytea; intent text; v_entry jsonb; x jsonb; intake uuid;
+BEGIN
+ IF current_setting('transaction_isolation')<>'read committed' THEN RAISE EXCEPTION 'manual_requires_read_committed' USING ERRCODE='25000'; END IF;
+ IF auth.uid() IS NULL THEN RAISE EXCEPTION 'not_authenticated' USING ERRCODE='28000'; END IF;
+ SELECT * INTO r FROM public.central_needs_plan_revisions WHERE id=p_revision_id
+  AND organization_id=phoenix_cn_policy.actor_scope_org('central_needs.manual_need.set');
+ IF NOT FOUND THEN RAISE EXCEPTION 'forbidden_central_needs' USING ERRCODE='42501'; END IF;
+ PERFORM public._phoenix_central_needs_guard_v1(r.organization_id,'central_needs.view');
+ PERFORM public._phoenix_central_needs_guard_v1(r.organization_id,'central_needs.manual_need.set');
+ IF phoenix_cn_policy.excel_read_restriction_state(r.organization_id) IS DISTINCT FROM 'active' THEN RAISE EXCEPTION 'manual_intake_not_activated' USING ERRCODE='23514'; END IF;
+ p:=phoenix_private.central_needs_lock_plan_id_v1(r.plan_id);
  SELECT * INTO r FROM public.central_needs_plan_revisions WHERE id=p_revision_id;
  IF p.dossier_key='' THEN RAISE EXCEPTION 'named_dossier_required' USING ERRCODE='23514'; END IF;
- IF p_filename IS NULL OR char_length(p_filename) NOT BETWEEN 1 AND 255 OR p_filename ~ '[/\\[:cntrl:]]'
-    OR p_file_hash IS NULL OR p_file_hash !~ '^[0-9a-f]{64}$'
-    OR p_original_base64 IS NULL OR char_length(p_original_base64)>4194304
-    OR p_rows IS NULL OR jsonb_typeof(p_rows)<>'array'
-    OR jsonb_array_length(p_rows) NOT BETWEEN 1 AND 100 THEN
-   RAISE EXCEPTION 'dossier_intake_invalid' USING ERRCODE='23514';
+ IF p_filename IS NULL OR char_length(p_filename) NOT BETWEEN 1 AND 255 OR p_filename ~ '[/\\[:cntrl:]]' OR p_filename LIKE '~$%' OR p_filename !~* '\.(xlsx|xls|csv)$'
+ OR p_file_hash IS NULL OR p_file_hash !~ '^[0-9a-f]{64}$' OR p_original_base64 IS NULL OR char_length(p_original_base64)>4194304
+ OR p_operation_id IS NULL OR jsonb_typeof(p_rows) IS DISTINCT FROM 'array' OR jsonb_array_length(p_rows) NOT BETWEEN 1 AND 10000
+ OR jsonb_typeof(p_exclusions) IS DISTINCT FROM 'array' OR jsonb_array_length(p_exclusions)>20000 OR octet_length(p_exclusions::text)>2000000
+ OR jsonb_typeof(p_confirmation) IS DISTINCT FROM 'object' OR octet_length(p_rows::text)>8000000 OR octet_length(p_confirmation::text)>100000
+ OR COALESCE(p_confirmation->>'format','') NOT IN('matrix-v2','legacy-v1') OR p_confirmation->'year_confirmed' IS DISTINCT FROM 'true'::jsonb OR jsonb_typeof(p_confirmation->'plan_year') IS DISTINCT FROM 'number' OR p_confirmation->>'plan_year' IS DISTINCT FROM p.plan_year::text THEN
+  RAISE EXCEPTION 'dossier_intake_invalid' USING ERRCODE='23514';
  END IF;
- source_bytes := decode(p_original_base64, 'base64');
- IF octet_length(source_bytes) NOT BETWEEN 1 AND 3145728 OR encode(sha256(source_bytes),'hex')<>p_file_hash THEN
-   RAISE EXCEPTION 'dossier_intake_hash_mismatch' USING ERRCODE='23514';
- END IF;
- intent := encode(sha256(convert_to(jsonb_build_array(p_revision_id,p_filename,p_file_hash,p_rows)::text,'UTF8')),'hex');
- SELECT * INTO old FROM public.central_needs_dossier_intakes WHERE plan_id=r.plan_id AND file_hash=p_file_hash;
+ source_bytes:=decode(p_original_base64,'base64');
+ IF octet_length(source_bytes) NOT BETWEEN 1 AND 3145728 OR encode(sha256(source_bytes),'hex')<>p_file_hash THEN RAISE EXCEPTION 'dossier_intake_hash_mismatch' USING ERRCODE='23514'; END IF;
+ intent:=encode(sha256(convert_to(jsonb_build_array(p_revision_id,p_filename,p_file_hash,p_rows,p_exclusions,p_confirmation)::text,'UTF8')),'hex');
+ SELECT * INTO old FROM public.central_needs_dossier_intakes WHERE plan_id=r.plan_id AND operation_id=p_operation_id;
  IF FOUND THEN
-   IF old.intent_hash<>intent OR old.actor_id IS DISTINCT FROM auth.uid() THEN
-     RAISE EXCEPTION 'dossier_file_already_imported' USING ERRCODE='23505';
-   END IF;
-   RETURN jsonb_build_object('ok',true,'idempotent_replay',true,'intake_id',old.id,'rows',cardinality(old.event_ids));
+  IF old.intent_hash<>intent OR old.actor_id IS DISTINCT FROM auth.uid() THEN RAISE EXCEPTION 'dossier_intake_operation_conflict' USING ERRCODE='23505'; END IF;
+  RETURN jsonb_build_object('ok',true,'idempotent_replay',true,'intake_id',old.id,'rows',jsonb_array_length(old.write_plan));
  END IF;
  PERFORM public._phoenix_central_needs_assert_draft_v1(r.id,r.status);
  IF r.source_mode<>'manual' THEN RAISE EXCEPTION 'manual_revision_required' USING ERRCODE='23514'; END IF;
- -- A physical row is selected once, and a business scope is never auto-summed.
- IF EXISTS (SELECT 1 FROM jsonb_array_elements(p_rows) e GROUP BY e->>'sheet',e->>'row' HAVING count(*)>1)
-    OR EXISTS (SELECT 1 FROM jsonb_array_elements(p_rows) e GROUP BY e->>'beneficiary_id',e->>'item_id' HAVING count(*)>1) THEN
-   RAISE EXCEPTION 'dossier_duplicate_selection' USING ERRCODE='23505';
- END IF;
- FOR entry IN SELECT value FROM jsonb_array_elements(p_rows) LOOP
-   IF jsonb_typeof(entry)<>'object' OR (entry - ARRAY['sheet','row','quantity_column','name_column','code_column','unit_column','item_id','beneficiary_id','quantity_text','unit','source_name','source_code'])<>'{}'::jsonb
-      OR jsonb_typeof(entry->'quantity_text') IS DISTINCT FROM 'string'
-      OR COALESCE(entry->>'sheet','') !~ '^[0-9]{1,3}$'
-      OR COALESCE(entry->>'row','') !~ '^[1-9][0-9]{0,6}$'
-      OR COALESCE(entry->>'quantity_column','') !~ '^[0-9]{1,5}$'
-      OR (entry->>'sheet')::integer>199 OR (entry->>'row')::integer>1048576
-      OR (entry->>'quantity_column')::integer>16383
-      OR COALESCE(entry->>'name_column','') !~ '^[0-9]{1,5}$' OR COALESCE(entry->>'unit_column','') !~ '^[0-9]{1,5}$'
-      OR (entry->>'name_column')::integer>16383 OR (entry->>'unit_column')::integer>16383
-      OR (entry->>'code_column' IS NOT NULL AND (entry->>'code_column' !~ '^[0-9]{1,5}$' OR (entry->>'code_column')::integer>16383)) THEN
-     RAISE EXCEPTION 'dossier_intake_row_invalid' USING ERRCODE='23514';
-   END IF;
-   SELECT unit INTO item_unit FROM public.central_items WHERE id=(entry->>'item_id')::uuid AND status='active';
-   IF NOT FOUND OR item_unit IS DISTINCT FROM entry->>'unit' THEN
-     RAISE EXCEPTION 'manual_line_unit_mismatch' USING ERRCODE='23514';
-   END IF;
-   IF entry->>'source_code' IS NOT NULL AND NOT EXISTS (
-     SELECT 1 FROM public.central_items WHERE id=(entry->>'item_id')::uuid AND national_code=entry->>'source_code') THEN
-     RAISE EXCEPTION 'national_code_assignment_conflict' USING ERRCODE='23514';
-   END IF;
-   result := public.phoenix_central_needs_add_manual_need_line(r.id,(entry->>'beneficiary_id')::uuid,
-     (entry->>'item_id')::uuid,NULL,entry->>'quantity_text',
-     'Human-confirmed workbook selection', 'intake:' || intent || ':' || cardinality(ids)::text,
-     NULL, 'workbook:' || p_file_hash);
-   ids := array_append(ids,(result->>'event_id')::uuid);
+ -- The physical quantity CELL and business scope are distinct immutable claims.
+ FOR v_entry IN SELECT value FROM jsonb_array_elements(p_rows) LOOP
+  IF jsonb_typeof(v_entry)<>'object' OR (v_entry-ARRAY['sheet','row','quantity_column','name_column','code_column','unit_column','item_id','beneficiary_id','quantity_text','unit','source_unit','source_name','source_code'])<>'{}'::jsonb
+   OR jsonb_typeof(v_entry->'quantity_text') IS DISTINCT FROM 'string' OR jsonb_typeof(v_entry->'source_name') IS DISTINCT FROM 'string'
+   OR length(v_entry->>'source_name') NOT BETWEEN 1 AND 4000 OR jsonb_typeof(v_entry->'unit') IS DISTINCT FROM 'string'
+   OR jsonb_typeof(v_entry->'sheet') IS DISTINCT FROM 'number' OR jsonb_typeof(v_entry->'row') IS DISTINCT FROM 'number' OR COALESCE(v_entry->>'sheet','') !~ '^[0-9]{1,3}$' OR (v_entry->>'sheet')::integer>199
+   OR COALESCE(v_entry->>'row','') !~ '^[1-9][0-9]{0,6}$' OR (v_entry->>'row')::integer>1048576 THEN
+    RAISE EXCEPTION 'dossier_intake_row_invalid' USING ERRCODE='23514';
+  END IF;
+  FOREACH x IN ARRAY ARRAY[v_entry->'quantity_column',v_entry->'name_column',v_entry->'unit_column'] LOOP
+   IF x IS NULL OR x::text !~ '^[0-9]{1,5}$' OR x::text::integer>16383 THEN RAISE EXCEPTION 'dossier_intake_row_invalid' USING ERRCODE='23514'; END IF;
+  END LOOP;
+  IF v_entry->>'code_column' IS NOT NULL AND (jsonb_typeof(v_entry->'code_column')<>'number' OR v_entry->>'code_column' !~ '^[0-9]{1,5}$' OR (v_entry->>'code_column')::integer>16383) THEN RAISE EXCEPTION 'dossier_intake_row_invalid' USING ERRCODE='23514'; END IF;
+  IF v_entry->>'quantity_column' IN(v_entry->>'name_column',v_entry->>'unit_column',v_entry->>'code_column') OR v_entry->>'name_column'=v_entry->>'unit_column'
+   OR (v_entry->>'code_column' IS NOT NULL AND v_entry->>'code_column' IN(v_entry->>'name_column',v_entry->>'unit_column')) THEN RAISE EXCEPTION 'dossier_intake_row_invalid' USING ERRCODE='23514'; END IF;
+  IF v_entry->>'source_code' IS NOT NULL AND (jsonb_typeof(v_entry->'source_code')<>'string' OR char_length(v_entry->>'source_code') NOT BETWEEN 1 AND 128 OR v_entry->>'source_code'<>btrim(v_entry->>'source_code')) THEN RAISE EXCEPTION 'national_code_requires_text' USING ERRCODE='23514'; END IF;
+  IF lower(btrim(COALESCE(v_entry->>'source_unit',v_entry->>'unit'))) IS DISTINCT FROM lower(v_entry->>'unit') THEN RAISE EXCEPTION 'manual_line_unit_mismatch' USING ERRCODE='23514'; END IF;
+  PERFORM phoenix_private.central_needs_manual_quantity_v1(v_entry->>'quantity_text');
+  PERFORM phoenix_private.central_needs_manual_scope_v1((v_entry->>'beneficiary_id')::uuid,(v_entry->>'item_id')::uuid,NULL);
+  IF NOT EXISTS(SELECT 1 FROM public.central_items WHERE id=(v_entry->>'item_id')::uuid AND status='active' AND unit=v_entry->>'unit') THEN RAISE EXCEPTION 'manual_line_unit_mismatch' USING ERRCODE='23514'; END IF;
+  IF v_entry->>'source_code' IS NOT NULL AND NOT EXISTS(SELECT 1 FROM public.central_items WHERE id=(v_entry->>'item_id')::uuid AND national_code=v_entry->>'source_code') THEN RAISE EXCEPTION 'national_code_assignment_conflict' USING ERRCODE='23514'; END IF;
  END LOOP;
- INSERT INTO public.central_needs_dossier_intakes(organization_id,plan_id,plan_revision_id,filename,file_hash,
-   original_bytes,write_plan,intent_hash,event_ids,actor_id)
- VALUES(r.organization_id,r.plan_id,r.id,p_filename,p_file_hash,source_bytes,p_rows,intent,ids,auth.uid()) RETURNING id INTO intake_id;
+ IF EXISTS(SELECT 1 FROM jsonb_array_elements(p_rows)e GROUP BY e->>'sheet',e->>'row',e->>'quantity_column' HAVING count(*)>1)
+ OR EXISTS(SELECT 1 FROM jsonb_array_elements(p_rows)e GROUP BY e->>'beneficiary_id',e->>'item_id' HAVING count(*)>1) THEN RAISE EXCEPTION 'dossier_duplicate_selection' USING ERRCODE='23505'; END IF;
+ FOR v_entry IN SELECT value FROM jsonb_array_elements(p_exclusions) LOOP
+  IF jsonb_typeof(v_entry)<>'object' OR (v_entry-ARRAY['sheet','row','quantity_column','reason'])<>'{}'::jsonb
+   OR jsonb_typeof(v_entry->'sheet') IS DISTINCT FROM 'number' OR jsonb_typeof(v_entry->'row') IS DISTINCT FROM 'number' OR COALESCE(v_entry->>'sheet','') !~ '^[0-9]{1,3}$' OR (v_entry->>'sheet')::integer>199
+   OR COALESCE(v_entry->>'row','') !~ '^[1-9][0-9]{0,6}$' OR (v_entry->>'row')::integer>1048576
+   OR jsonb_typeof(v_entry->'quantity_column') IS DISTINCT FROM 'number' OR COALESCE(v_entry->>'quantity_column','') !~ '^[0-9]{1,5}$' OR (v_entry->>'quantity_column')::integer>16383
+   OR jsonb_typeof(v_entry->'reason') IS DISTINCT FROM 'string' OR length(btrim(v_entry->>'reason')) NOT BETWEEN 3 AND 500 THEN RAISE EXCEPTION 'dossier_exclusion_invalid' USING ERRCODE='23514'; END IF;
+ END LOOP;
+ IF EXISTS(SELECT 1 FROM (SELECT value e FROM jsonb_array_elements(p_rows) UNION ALL SELECT value FROM jsonb_array_elements(p_exclusions))cells
+ GROUP BY e->>'sheet',e->>'row',e->>'quantity_column' HAVING count(*)>1) THEN RAISE EXCEPTION 'dossier_duplicate_selection' USING ERRCODE='23505'; END IF;
+ SELECT id INTO doc FROM public.central_needs_dossier_documents WHERE plan_id=r.plan_id AND file_hash=p_file_hash;
+ -- The plan lock serializes reservations against all simultaneous captures.
+ IF EXISTS(SELECT 1 FROM public.central_needs_dossier_intakes oldi CROSS JOIN LATERAL jsonb_array_elements(oldi.write_plan)o
+ CROSS JOIN jsonb_array_elements(p_rows)n WHERE oldi.plan_revision_id=r.id AND
+ ((oldi.document_id=doc AND o->>'sheet'=n->>'sheet' AND o->>'row'=n->>'row' AND o->>'quantity_column'=n->>'quantity_column')
+ OR (o->>'beneficiary_id'=n->>'beneficiary_id' AND o->>'item_id'=n->>'item_id'))) THEN RAISE EXCEPTION 'dossier_duplicate_selection' USING ERRCODE='23505'; END IF;
+ -- Refuse an already-entered/carried scope before creating a pending capture.
+ -- Import never silently corrects or revives an existing canonical event chain.
+ IF EXISTS(SELECT 1 FROM public.central_needs_manual_need_events m CROSS JOIN jsonb_array_elements(p_rows)n
+  WHERE m.plan_revision_id=r.id AND m.target_warehouse_id IS NULL
+   AND m.beneficiary_organization_id=(n->>'beneficiary_id')::uuid AND m.central_item_id=(n->>'item_id')::uuid) THEN
+  RAISE EXCEPTION 'dossier_existing_manual_scope' USING ERRCODE='23505';
+ END IF;
+ IF doc IS NULL THEN INSERT INTO public.central_needs_dossier_documents(organization_id,plan_id,file_hash,original_bytes)
+  VALUES(r.organization_id,r.plan_id,p_file_hash,source_bytes) RETURNING id INTO doc; END IF;
+ INSERT INTO public.central_needs_dossier_intakes(organization_id,plan_id,plan_revision_id,document_id,operation_id,filename,write_plan,exclusions,confirmation,intent_hash,actor_id)
+ VALUES(r.organization_id,r.plan_id,r.id,doc,p_operation_id,p_filename,p_rows,p_exclusions,p_confirmation,intent,auth.uid()) RETURNING id INTO intake;
  INSERT INTO public.audit_logs(organization_id,actor_id,actor_role,action,entity_type,entity_id,payload)
  VALUES(r.organization_id,auth.uid(),public._phoenix_central_needs_guard_v1(r.organization_id,'central_needs.manual_need.set'),
-   'central_needs.dossier.workbook_intake','central_needs_dossier_intake',intake_id,
-   jsonb_build_object('plan_revision_id',r.id,'file_hash',p_file_hash,'rows',cardinality(ids),'source_authority','human_confirmed'));
- RETURN jsonb_build_object('ok',true,'idempotent_replay',false,'intake_id',intake_id,'rows',cardinality(ids));
+ 'central_needs.dossier.workbook_capture','central_needs_dossier_intake',intake,jsonb_build_object('rows',jsonb_array_length(p_rows),'file_hash',p_file_hash,'source_authority','human_confirmed'));
+ RETURN jsonb_build_object('ok',true,'idempotent_replay',false,'intake_id',intake,'rows',jsonb_array_length(p_rows));
+END $$;
+REVOKE ALL ON FUNCTION public.phoenix_central_needs_begin_dossier_workbook(uuid,text,text,text,jsonb,jsonb,jsonb,uuid) FROM PUBLIC,anon,service_role;
+GRANT EXECUTE ON FUNCTION public.phoenix_central_needs_begin_dossier_workbook(uuid,text,text,text,jsonb,jsonb,jsonb,uuid) TO authenticated;
+
+CREATE FUNCTION public.phoenix_central_needs_apply_dossier_workbook_batch(p_intake_id uuid,p_offset integer)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,pg_temp AS $$
+DECLARE s public.central_needs_dossier_intakes%ROWTYPE; r public.central_needs_plan_revisions%ROWTYPE; e jsonb; result jsonb;
+ ids uuid[]:=ARRAY[]::uuid[]; old_ids uuid[]; done integer; total integer; i integer;
+BEGIN
+ IF current_setting('transaction_isolation')<>'read committed' THEN RAISE EXCEPTION 'manual_requires_read_committed' USING ERRCODE='25000'; END IF;
+ IF auth.uid() IS NULL THEN RAISE EXCEPTION 'not_authenticated' USING ERRCODE='28000'; END IF;
+ SELECT * INTO s FROM public.central_needs_dossier_intakes WHERE id=p_intake_id
+  AND organization_id=phoenix_cn_policy.actor_scope_org('central_needs.manual_need.set');
+ IF NOT FOUND THEN RAISE EXCEPTION 'forbidden_central_needs' USING ERRCODE='42501'; END IF;
+ PERFORM public._phoenix_central_needs_guard_v1(s.organization_id,'central_needs.view');
+ PERFORM public._phoenix_central_needs_guard_v1(s.organization_id,'central_needs.manual_need.set');
+ IF phoenix_cn_policy.excel_read_restriction_state(s.organization_id) IS DISTINCT FROM 'active' THEN RAISE EXCEPTION 'manual_intake_not_activated' USING ERRCODE='23514'; END IF;
+ IF auth.uid() IS DISTINCT FROM s.actor_id THEN RAISE EXCEPTION 'forbidden_central_needs' USING ERRCODE='42501'; END IF;
+ PERFORM phoenix_private.central_needs_lock_plan_id_v1(s.plan_id);
+ total:=jsonb_array_length(s.write_plan);
+ IF p_offset IS NULL OR p_offset<0 OR p_offset>=total OR p_offset%100<>0 THEN RAISE EXCEPTION 'dossier_batch_offset_invalid' USING ERRCODE='23514'; END IF;
+ SELECT event_ids INTO old_ids FROM public.central_needs_dossier_receipts WHERE intake_id=s.id AND batch_index=p_offset/100;
+ IF FOUND THEN RETURN jsonb_build_object('ok',true,'idempotent_replay',true,'intake_id',s.id,'offset',p_offset,'rows',cardinality(old_ids),'complete',
+  (SELECT coalesce(sum(cardinality(event_ids)),0) FROM public.central_needs_dossier_receipts WHERE intake_id=s.id)=total); END IF;
+ SELECT coalesce(sum(cardinality(event_ids)),0)::integer INTO done FROM public.central_needs_dossier_receipts WHERE intake_id=s.id;
+ IF p_offset<>done THEN RAISE EXCEPTION 'dossier_batch_out_of_order' USING ERRCODE='23514'; END IF;
+ SELECT * INTO r FROM public.central_needs_plan_revisions WHERE id=s.plan_revision_id;
+ PERFORM public._phoenix_central_needs_assert_draft_v1(r.id,r.status);
+ FOR i IN p_offset..LEAST(p_offset+99,total-1) LOOP
+  e:=s.write_plan->i;
+  PERFORM 1 FROM public.central_items WHERE id=(e->>'item_id')::uuid FOR SHARE;
+  IF NOT EXISTS(SELECT 1 FROM public.central_items WHERE id=(e->>'item_id')::uuid AND status='active' AND unit=e->>'unit'
+   AND (e->>'source_code' IS NULL OR national_code=e->>'source_code')) THEN RAISE EXCEPTION 'manual_line_unit_or_code_mismatch' USING ERRCODE='23514'; END IF;
+  result:=public.phoenix_central_needs_add_manual_need_line(r.id,(e->>'beneficiary_id')::uuid,(e->>'item_id')::uuid,NULL,e->>'quantity_text',
+   'Human-confirmed workbook cell','intake:'||s.id::text||':'||i::text,NULL,'workbook:'||(SELECT file_hash FROM public.central_needs_dossier_documents WHERE id=s.document_id));
+  IF result->>'event_id' IS NULL THEN RAISE EXCEPTION 'dossier_event_not_confirmed' USING ERRCODE='23514'; END IF;
+  ids:=array_append(ids,(result->>'event_id')::uuid);
+ END LOOP;
+ INSERT INTO public.central_needs_dossier_receipts(organization_id,intake_id,batch_index,event_ids,actor_id)
+ VALUES(s.organization_id,s.id,p_offset/100,ids,auth.uid());
+ INSERT INTO public.audit_logs(organization_id,actor_id,actor_role,action,entity_type,entity_id,payload)
+ VALUES(s.organization_id,auth.uid(),public._phoenix_central_needs_guard_v1(s.organization_id,'central_needs.manual_need.set'),
+ 'central_needs.dossier.workbook_batch','central_needs_dossier_intake',s.id,jsonb_build_object('offset',p_offset,'rows',cardinality(ids)));
+ RETURN jsonb_build_object('ok',true,'idempotent_replay',false,'intake_id',s.id,'offset',p_offset,'rows',cardinality(ids),'complete',done+cardinality(ids)=total);
+END $$;
+REVOKE ALL ON FUNCTION public.phoenix_central_needs_apply_dossier_workbook_batch(uuid,integer) FROM PUBLIC,anon,service_role;
+GRANT EXECUTE ON FUNCTION public.phoenix_central_needs_apply_dossier_workbook_batch(uuid,integer) TO authenticated;
+
+-- Old <=100-row clients remain atomic and preserve their exact captured plan.
+CREATE FUNCTION public.phoenix_central_needs_import_dossier_workbook(p_revision_id uuid,p_filename text,p_file_hash text,p_original_base64 text,p_rows jsonb)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,pg_temp AS $$
+DECLARE capture jsonb; batch jsonb; y integer; op uuid;
+BEGIN
+ IF jsonb_typeof(p_rows) IS DISTINCT FROM 'array' OR jsonb_array_length(p_rows) NOT BETWEEN 1 AND 100 THEN RAISE EXCEPTION 'dossier_intake_invalid' USING ERRCODE='23514'; END IF;
+ SELECT p.plan_year INTO y FROM public.central_needs_plans p JOIN public.central_needs_plan_revisions r ON r.plan_id=p.id WHERE r.id=p_revision_id;
+ op:=md5(jsonb_build_array(p_revision_id,p_filename,p_file_hash,p_rows,auth.uid())::text)::uuid;
+ capture:=public.phoenix_central_needs_begin_dossier_workbook(p_revision_id,p_filename,p_file_hash,p_original_base64,p_rows,'[]'::jsonb,jsonb_build_object('format','legacy-v1','plan_year',y,'year_confirmed',true),op);
+ batch:=public.phoenix_central_needs_apply_dossier_workbook_batch((capture->>'intake_id')::uuid,0);
+ RETURN capture||jsonb_build_object('complete',true,'idempotent_replay',(capture->>'idempotent_replay')::boolean AND (batch->>'idempotent_replay')::boolean);
 END $$;
 REVOKE ALL ON FUNCTION public.phoenix_central_needs_import_dossier_workbook(uuid,text,text,text,jsonb) FROM PUBLIC,anon,service_role;
 GRANT EXECUTE ON FUNCTION public.phoenix_central_needs_import_dossier_workbook(uuid,text,text,text,jsonb) TO authenticated;
@@ -152,40 +215,48 @@ CREATE FUNCTION public.phoenix_central_needs_dossier_sources(p_plan_id uuid)
 RETURNS SETOF jsonb LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path=pg_catalog,pg_temp AS $$
 DECLARE org uuid;
 BEGIN
- IF auth.uid() IS NULL THEN RAISE EXCEPTION 'not_authenticated' USING ERRCODE='28000'; END IF;
- SELECT organization_id INTO org FROM public.central_needs_plans WHERE id=p_plan_id
-   AND organization_id=phoenix_cn_policy.actor_scope_org('central_needs.view');
+ SELECT organization_id INTO org FROM public.central_needs_plans WHERE id=p_plan_id AND organization_id=phoenix_cn_policy.actor_scope_org('central_needs.view');
  IF NOT FOUND THEN RAISE EXCEPTION 'forbidden_central_needs' USING ERRCODE='42501'; END IF;
  PERFORM public._phoenix_central_needs_guard_v1(org,'central_needs.view');
- RETURN QUERY SELECT jsonb_build_object('id',id,'filename',filename,'file_hash',file_hash,'revision_id',plan_revision_id,
-   'rows',cardinality(event_ids),'actor_id',actor_id,'created_at',created_at)
- FROM public.central_needs_dossier_intakes WHERE plan_id=p_plan_id ORDER BY created_at,id;
+ RETURN QUERY SELECT jsonb_build_object('id',s.id,'filename',s.filename,'file_hash',d.file_hash,'revision_id',s.plan_revision_id,'operation_id',s.operation_id,
+ 'rows',jsonb_array_length(s.write_plan),'applied_rows',coalesce((SELECT sum(cardinality(b.event_ids)) FROM public.central_needs_dossier_receipts b WHERE b.intake_id=s.id),0),
+ 'actor_id',s.actor_id,'can_resume',s.actor_id=auth.uid(),'created_at',s.created_at)
+ FROM public.central_needs_dossier_intakes s JOIN public.central_needs_dossier_documents d ON d.id=s.document_id WHERE s.plan_id=p_plan_id ORDER BY s.created_at,s.id;
 END $$;
 REVOKE ALL ON FUNCTION public.phoenix_central_needs_dossier_sources(uuid) FROM PUBLIC,anon,service_role;
 GRANT EXECUTE ON FUNCTION public.phoenix_central_needs_dossier_sources(uuid) TO authenticated;
 
 CREATE FUNCTION public.phoenix_central_needs_download_dossier_source(p_intake_id uuid)
 RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path=pg_catalog,pg_temp AS $$
-DECLARE s public.central_needs_dossier_intakes%ROWTYPE;
+DECLARE s public.central_needs_dossier_intakes%ROWTYPE; d public.central_needs_dossier_documents%ROWTYPE;
 BEGIN
- IF auth.uid() IS NULL THEN RAISE EXCEPTION 'not_authenticated' USING ERRCODE='28000'; END IF;
- SELECT * INTO s FROM public.central_needs_dossier_intakes WHERE id=p_intake_id
-   AND organization_id=phoenix_cn_policy.actor_scope_org('central_needs.view');
+ SELECT * INTO s FROM public.central_needs_dossier_intakes WHERE id=p_intake_id AND organization_id=phoenix_cn_policy.actor_scope_org('central_needs.view');
  IF NOT FOUND THEN RAISE EXCEPTION 'forbidden_central_needs' USING ERRCODE='42501'; END IF;
  PERFORM public._phoenix_central_needs_guard_v1(s.organization_id,'central_needs.view');
- RETURN jsonb_build_object('filename',s.filename,'file_hash',s.file_hash,'base64',encode(s.original_bytes,'base64'),
-                          'write_plan',s.write_plan,'event_ids',s.event_ids,'source_authority','human_confirmed');
+ SELECT * INTO d FROM public.central_needs_dossier_documents WHERE id=s.document_id;
+ RETURN jsonb_build_object('filename',s.filename,'file_hash',d.file_hash,'base64',encode(d.original_bytes,'base64'),'write_plan',s.write_plan,
+ 'exclusions',s.exclusions,'confirmation',s.confirmation,'event_ids',COALESCE((SELECT jsonb_agg(e ORDER BY b.batch_index,n) FROM public.central_needs_dossier_receipts b CROSS JOIN LATERAL unnest(b.event_ids) WITH ORDINALITY es(e,n) WHERE b.intake_id=s.id),'[]'::jsonb),'source_authority','human_confirmed');
 END $$;
 REVOKE ALL ON FUNCTION public.phoenix_central_needs_download_dossier_source(uuid) FROM PUBLIC,anon,service_role;
 GRANT EXECUTE ON FUNCTION public.phoenix_central_needs_download_dossier_source(uuid) TO authenticated;
 
+CREATE FUNCTION phoenix_private.central_needs_dossier_intake_fence_v1()
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,pg_temp AS $$
+BEGIN
+ IF NEW.status IN('submitted','approved') AND NEW.status IS DISTINCT FROM OLD.status AND EXISTS(
+  SELECT 1 FROM public.central_needs_dossier_intakes s WHERE s.plan_revision_id=NEW.id AND jsonb_array_length(s.write_plan)<>
+  (SELECT coalesce(sum(cardinality(b.event_ids)),0) FROM public.central_needs_dossier_receipts b WHERE b.intake_id=s.id)) THEN
+  RAISE EXCEPTION 'dossier_intake_incomplete' USING ERRCODE='23514';
+ END IF;
+ RETURN NEW;
+END $$;
+REVOKE ALL ON FUNCTION phoenix_private.central_needs_dossier_intake_fence_v1() FROM PUBLIC,anon,authenticated,service_role;
+CREATE TRIGGER r1_dossier_intake_completion BEFORE UPDATE OF status ON public.central_needs_plan_revisions FOR EACH ROW
+ EXECUTE FUNCTION phoenix_private.central_needs_dossier_intake_fence_v1();
 CREATE OR REPLACE FUNCTION public.phoenix_central_needs_feature_contract() RETURNS jsonb
 LANGUAGE sql STABLE SET search_path=pg_catalog,pg_temp AS $$
- SELECT jsonb_build_object('national_code',true,'same_actor_manual',true,'dossiers',true,'workbook_intake',true)
+ SELECT jsonb_build_object('national_code',true,'same_actor_manual',true,'dossiers',true,'workbook_intake',true,'workbook_matrix_v2',true)
 $$;
-
--- The complete seal is restated below by the candidate assembly, with exactly
--- this relation and these three RPCs added. No old manifest member is removed.
 
 CREATE OR REPLACE FUNCTION phoenix_private.central_needs_capability_breaches_v1()
 RETURNS SETOF text
@@ -213,7 +284,7 @@ AS $$
            ('central_needs_beneficiary_column_mappings'), ('central_needs_beneficiary_regions'),
            ('central_needs_need_lines'), ('central_needs_need_line_sources'), ('central_needs_manual_need_events'),
            ('central_needs_revision_withdrawals'), ('central_needs_manual_coverage_acknowledgements'), ('central_needs_cutover_inventory'),
-           ('central_needs_material_requests'), ('central_needs_material_request_events'), ('central_needs_material_request_links'), ('central_needs_dossier_intakes')
+           ('central_needs_material_requests'), ('central_needs_material_request_events'), ('central_needs_material_request_links'), ('central_needs_dossier_intakes'), ('central_needs_dossier_documents'), ('central_needs_dossier_receipts')
   ),
   cn AS (
     SELECT c.oid, c.relowner, n.nspname, c.relname
@@ -223,7 +294,10 @@ AS $$
         OR (n.nspname = 'phoenix_private' AND c.relname = 'central_needs_lifecycle_attestations')
   ),
   acl_manifest(sig) AS (
-    VALUES ('public.phoenix_central_needs_import_dossier_workbook(uuid,text,text,text,jsonb)'),
+    VALUES
+           ('public.phoenix_central_needs_begin_dossier_workbook(uuid,text,text,text,jsonb,jsonb,jsonb,uuid)'),
+           ('public.phoenix_central_needs_apply_dossier_workbook_batch(uuid,integer)'),
+           ('phoenix_private.central_needs_dossier_intake_fence_v1()'), ('public.phoenix_central_needs_import_dossier_workbook(uuid,text,text,text,jsonb)'),
            ('public.phoenix_central_needs_dossier_sources(uuid)'),
            ('public.phoenix_central_needs_download_dossier_source(uuid)'),
            ('public.phoenix_central_needs_open_dossier_correction(uuid,integer,uuid,text)'),

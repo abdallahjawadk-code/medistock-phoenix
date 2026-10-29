@@ -847,6 +847,9 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
       // D18 (FF1 forward-fix candidate, unnumbered and unapplied) and W0 (database proof of the Excel-path authority), registered by EXACT filename.
       'supabase/candidates/FF1-PLAN.md',
       'supabase/candidates/FF1_r1_forward_fix_NOT_APPLIED.sql',
+      // Current dossier kill switch, exact names only; historical FF1 remains immutable.
+      'supabase/candidates/FF2_r1_dossiers_forward_fix_NOT_APPLIED.sql',
+      'supabase/candidates/__tests__/ff2-dossiers-forward-fix.dynamic.test.ts',
       'supabase/candidates/__tests__/ff1-forward-fix.dynamic.test.ts',
       'supabase/migrations/__tests__/w0-central-needs-excel-path-authority.dynamic.test.ts',
       'supabase/candidates/__tests__/functional-journey.dynamic.test.ts',

@@ -1,7 +1,7 @@
 /**
  * D18 - FF1 forward-fix candidate (KILL-SWITCH ONLY), FF-01..FF-04 plus a normal-sequence regression for FF-05. Rig only; nothing is applied elsewhere.
  *
- *  FF-01 dual base      applies cleanly on a 221-shaped TEST SHAPE (001-221 + M223-M230, no M222) and on the full chain. The 221 shape is a rig shape,
+ *  FF-01 dual base      applies cleanly on a 221-shaped TEST SHAPE (001-221 + M223-M230, no M222) and on the historical full chain through M230. FF2 covers the current dossier chain. The 221 shape is a rig shape,
  *                       never approval to skip M222 in Production. A second apply is refused.
  *  FF-02 no regrant     actor_scope_org (final M228 body) byte-identical; no administrator branch; foreign / organization-less super_admin still denied (AUTH-02).
  *  FF-03 lockout        recovery only through public.assign_profile_permissions; the fix grants nothing and has no DML on staffing.
@@ -54,10 +54,10 @@ run('FF1 on the rig', { timeout: 900_000 }, () => {
   const rigs: any[] = [];
   afterEach(async () => { while (rigs.length) await rigs.pop().end().catch(() => undefined); });
 
-  async function base(shape: '221-shaped test shape' | 'full-chain') {
-    const rig = shape === 'full-chain' ? await buildRig() : await buildRig({ upTo: 221 });
+  async function base(shape: '221-shaped test shape' | 'historical full chain through M230') {
+    const rig = shape === 'historical full chain through M230' ? await buildRig({ upTo: 230 }) : await buildRig({ upTo: 221 });
     rigs.push(rig);
-    if (shape !== 'full-chain') {
+    if (shape !== 'historical full chain through M230') {
       await rig.asAdmin(async (c: any) => { for (const f of R1_FILES) await c.query(readFileSync(join(MIGRATIONS_DIR, f), 'utf8').replace(/\r\n/g, '\n')); });
     }
     return rig;
@@ -93,7 +93,7 @@ run('FF1 on the rig', { timeout: 900_000 }, () => {
     });
   }
 
-  for (const shape of ['221-shaped test shape', 'full-chain'] as const) {
+  for (const shape of ['221-shaped test shape', 'historical full chain through M230'] as const) {
     it(`FF-01 (${shape}): applies cleanly, the seal stays clean, the writers are owner-only again, the Excel freeze remains, a second apply is refused`, async () => {
       const rig = await base(shape);
       const before = await stateOf(rig);
@@ -106,7 +106,7 @@ run('FF1 on the rig', { timeout: 900_000 }, () => {
   }
 
   it('FF-02: actor_scope_org is byte-identical, and AUTH-02 still denies a foreign / organization-less super_admin', async () => {
-    const rig = await base('full-chain'); await seed(rig, { activate: true });
+    const rig = await base('historical full chain through M230'); await seed(rig, { activate: true });
     const before = await stateOf(rig);
     await applyFF(rig);
     expect((await stateOf(rig)).actor_scope).toBe(before.actor_scope);
@@ -119,7 +119,7 @@ run('FF1 on the rig', { timeout: 900_000 }, () => {
   });
 
   it('FF-03: with no staffed checker the recovery is the governed assign_profile_permissions route (no SQL shortcut in the fix)', async () => {
-    const rig = await base('full-chain'); await seed(rig, { activate: true });
+    const rig = await base('historical full chain through M230'); await seed(rig, { activate: true });
     await rig.asAdmin((c: any) => c.query(`DELETE FROM profile_permission_overrides WHERE profile_id = $1`, [U.checker]));      // lockout: nobody can approve
     const approvers = () => rig.asAdmin(async (c: any) => (await c.query(`SELECT count(*)::int n FROM profile_permission_overrides WHERE permission_key='central_needs.approve' AND allowed`)).rows[0].n);
     expect(await approvers()).toBe(0);
@@ -133,7 +133,7 @@ run('FF1 on the rig', { timeout: 900_000 }, () => {
   });
 
   it('FF-04: activation markers, inventory, events, withdrawals and acknowledgements are digest-identical before and after; the activation guards remain', async () => {
-    const rig = await base('full-chain'); await seed(rig, { activate: true });
+    const rig = await base('historical full chain through M230'); await seed(rig, { activate: true });
     const before = await digests(rig);
     expect(before.markers).toBe(1);
     await applyFF(rig);
@@ -143,7 +143,7 @@ run('FF1 on the rig', { timeout: 900_000 }, () => {
   });
 
   it('FF-05 (revised, normal sequence, NO trigger bypass): an existing Excel draft blocks activation; after governed withdrawal activation succeeds; Excel intake stays refused, with and without FF1', async () => {
-    const rig = await base('full-chain'); await seed(rig, { activate: false });
+    const rig = await base('historical full chain through M230'); await seed(rig, { activate: false });
     const as = (u: string, fn: (c: any) => Promise<any>) => rig.asUser(u, fn, { commit: true });
     // 1. a legitimate legacy Excel draft exists (opened through the real RPC as an authorized importer)
     const opened = await as(U.importer, async (c) => (await c.query(`SELECT public.phoenix_central_needs_open_plan_revision($1::uuid, 2094, false) AS r`, [ORG])).rows[0].r);

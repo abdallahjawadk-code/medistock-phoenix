@@ -349,6 +349,11 @@ run('E7-2 · Stage-E application wiring (dynamic)',()=>{
       // Listed so this guard stays exhaustive and fails closed on any unlisted
       // new file.
       '222_phoenix_governed_warehouse_correction_security.sql', '223_phoenix_central_needs_manual_source_schema_inert.sql', '224_phoenix_central_needs_authorization_closure.sql', '225_phoenix_central_needs_lifecycle_relations_and_sod.sql', '226_phoenix_central_needs_manual_routines_inert.sql', '227_phoenix_central_needs_blockers_digest_d27.sql', '228_phoenix_central_needs_material_registration_inert.sql', '229_phoenix_central_needs_manual_activation.sql', '230_phoenix_central_needs_material_registration_activation.sql', '231_phoenix_unit_test_vocabulary.sql',
+      // The reviewed forward-only annual dossier scope; Stage E and stock stay unchanged.
+      '232_phoenix_central_needs_same_actor_approval.sql',
+      '233_phoenix_central_needs_distinct_national_code.sql',
+      '234_phoenix_central_needs_annual_dossiers.sql',
+      '235_phoenix_central_needs_dossier_workbook_intake.sql',
     ];
     it('Stage E still ends at 171 — E7-2 introduced no new SQL',()=>{
       const files=readdirSync(join(__dirname,'..')).filter(f=>/^\d{3}_.*\.sql$/.test(f));

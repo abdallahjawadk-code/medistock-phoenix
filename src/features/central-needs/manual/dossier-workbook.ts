@@ -6,13 +6,16 @@ import { centralNeedsErrorFromPostgrest } from '../central-needs.service';
 export interface WorkbookColumns { headerRow: number; name: number; code: number | null; quantity: number; unit: number }
 export interface WorkbookSelection {
   sheet: number; row: number; quantity_column: number; name_column: number; code_column: number | null; unit_column: number; source_name: string; source_code: string | null;
-  quantity_text: string; unit: string; item_id: string; beneficiary_id: string;
+  quantity_text: string; unit: string; source_unit?: string; item_id: string; beneficiary_id: string;
 }
 export interface WorkbookPreviewRow {
   sheet: number; row: number; quantityColumn: number; name: string; code: string | null;
   quantityText: string; unit: string; error: string | null;
 }
-export interface DossierSource { id: string; filename: string; file_hash: string; rows: number; revision_id: string }
+export interface DossierSource {
+  id: string; filename: string; file_hash: string; rows: number; revision_id: string;
+  operation_id?: string; applied_rows?: number; can_resume?: boolean;
+}
 
 export function quantityCellText(cell: CellEvidence | undefined): string | null {
   if (!cell || cell.presence !== 'value' || cell.isFormula) return null;
@@ -27,12 +30,13 @@ export function quantityCellText(cell: CellEvidence | undefined): string | null 
   return null;
 }
 
-export function previewWorkbookRows(sheet: SheetEvidence, columns: WorkbookColumns): WorkbookPreviewRow[] {
+export function previewWorkbookRows(sheet: SheetEvidence, columns: WorkbookColumns, region?: { firstRow: number; lastRow: number }): WorkbookPreviewRow[] {
   const required = [columns.name, columns.quantity, columns.unit, ...(columns.code === null ? [] : [columns.code])];
   if (!Number.isInteger(columns.headerRow) || columns.headerRow < 0 || required.some((i) => !Number.isInteger(i) || i < 0)
       || new Set(required).size !== required.length) throw new Error('workbook_columns_invalid');
+  if (region && (!Number.isInteger(region.firstRow) || !Number.isInteger(region.lastRow) || region.firstRow <= columns.headerRow + 1 || region.lastRow < region.firstRow || region.lastRow > 1048576)) throw new Error('workbook_region_invalid');
   const cells = new Map(sheet.cells.map((c) => [`${c.coordinate.row}:${c.coordinate.col}`, c]));
-  const rowIds = [...new Set(sheet.cells.map((c) => c.coordinate.row))].filter((r) => r > columns.headerRow).sort((a,b) => a-b);
+  const rowIds = [...new Set(sheet.cells.map((c) => c.coordinate.row))].filter((r) => r > columns.headerRow && (!region || r + 1 >= region.firstRow && r + 1 <= region.lastRow)).sort((a,b) => a-b);
   const text = (c: CellEvidence | undefined) => c?.presence === 'value' && c.valueType === 'string' && !c.isFormula ? String(c.rawValue) : '';
   const out: WorkbookPreviewRow[] = [];
   for (const row of rowIds) {
@@ -45,13 +49,14 @@ export function previewWorkbookRows(sheet: SheetEvidence, columns: WorkbookColum
     const badCode = codeCell?.presence === 'value' && (!code || code !== code.trim());
     out.push({ sheet: sheet.index, row: row + 1, quantityColumn: columns.quantity, name, code, quantityText: quantity ?? '', unit,
       error: quantity === null ? 'quantity_requires_canonical_text_or_safe_integer' : badCode ? 'national_code_requires_text' : !name.trim() || !unit.trim() ? 'name_and_unit_required' : null });
-    if (out.length > 100) throw new Error('workbook_row_limit_100');
+    if (out.length > (region ? 10000 : 100)) throw new Error(region ? 'workbook_row_limit_10000' : 'workbook_row_limit_100');
   }
   if (out.length === 0) throw new Error('workbook_no_rows');
   return out;
 }
 
 export async function parseDossierWorkbook(file: File): Promise<{ parsed: FileParseResult; bytes: Uint8Array }> {
+  if (file.name.startsWith('~$')) throw new Error('workbook_office_lock_file');
   if (file.size === 0 || file.size > 3 * 1024 * 1024 || !/\.(xlsx|xls|csv)$/i.test(file.name)) throw new Error('workbook_file_limit_3mb');
   const bytes = new Uint8Array(await file.arrayBuffer());
   const parsed = await new Promise<FileParseResult>((resolve, reject) => {

@@ -131,7 +131,7 @@ export function annualDossierCases(driver) {
   {name:'the same file and intent reconcile idempotently; changed intent never doubles quantities',run:async()=>{
    const repeat=await intake(state.laboratory.plan_revision_id,'laboratory.csv',state.content,state.intakeRows);
    assert.equal(repeat.idempotent_replay,true); assert.equal(repeat.intake_id,state.intake.intake_id);
-   await refused(()=>intake(state.laboratory.plan_revision_id,'laboratory.csv',state.content,[row(state.labItem,'test','1')]),/dossier_file_already_imported/);
+   await refused(()=>intake(state.laboratory.plan_revision_id,'laboratory.csv',state.content,[row(state.labItem,'test','1')]),/dossier_duplicate_selection/);
    assert.equal(await value('SELECT count(*)::int AS n FROM public.central_needs_manual_need_events WHERE plan_revision_id=$1',[state.laboratory.plan_revision_id]),1);
   }},
   {name:'a failed second row rolls back the first row, intake record and its audit effects',run:async()=>{
