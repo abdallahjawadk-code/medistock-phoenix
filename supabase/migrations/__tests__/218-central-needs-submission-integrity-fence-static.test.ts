@@ -191,8 +191,8 @@ guard('C6-F1/M218 static — registration, hygiene and frozen predecessors', () 
       .toEqual([FILENAME, '219_phoenix_auth_signup_authority_hardening.sql',
         '220_phoenix_central_needs_active_item_guard.sql',
         '221_phoenix_pharmacy_department_subpurchase_exclusion.sql',
-        '222_phoenix_governed_warehouse_correction_security.sql', '223_phoenix_central_needs_manual_source_schema_inert.sql', '224_phoenix_central_needs_authorization_closure.sql', '225_phoenix_central_needs_lifecycle_relations_and_sod.sql', '226_phoenix_central_needs_manual_routines_inert.sql', '227_phoenix_central_needs_blockers_digest_d27.sql', '228_phoenix_central_needs_material_registration_inert.sql', '229_phoenix_central_needs_manual_activation.sql', '230_phoenix_central_needs_material_registration_activation.sql', '231_phoenix_unit_test_vocabulary.sql']);
-    expect(Math.max(...files.map((f) => Number(f.slice(0, 3))))).toBe(231);
+        '222_phoenix_governed_warehouse_correction_security.sql', '223_phoenix_central_needs_manual_source_schema_inert.sql', '224_phoenix_central_needs_authorization_closure.sql', '225_phoenix_central_needs_lifecycle_relations_and_sod.sql', '226_phoenix_central_needs_manual_routines_inert.sql', '227_phoenix_central_needs_blockers_digest_d27.sql', '228_phoenix_central_needs_material_registration_inert.sql', '229_phoenix_central_needs_manual_activation.sql', '230_phoenix_central_needs_material_registration_activation.sql', '231_phoenix_unit_test_vocabulary.sql', '232_phoenix_central_needs_same_actor_approval.sql', '233_phoenix_central_needs_distinct_national_code.sql', '234_phoenix_central_needs_annual_dossiers.sql', '235_phoenix_central_needs_dossier_workbook_intake.sql']);
+    expect(Math.max(...files.map((f) => Number(f.slice(0, 3))))).toBe(235);
     expect(files[files.indexOf(FILENAME) - 1]).toBe('217_phoenix_central_needs_c5_safety_convergence.sql');
     expect(all.filter((f) => /^\d{14}_/.test(f))).toEqual([]);
     expect(all.filter((f) => f.includes('submission_integrity_fence'))).toEqual([FILENAME]);

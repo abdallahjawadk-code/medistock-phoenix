@@ -1416,8 +1416,9 @@ export interface RevisionLifecycle {
  * corrected, which successor was created, by whom, when and why. Authorized by
  * `central_needs.view` server-side; it is not a generic audit reader.
  */
-export async function fetchRevisionLifecycle(organizationId: string, planYear: number): Promise<RevisionLifecycle> {
-  const { data, error } = await supabase.rpc('phoenix_central_needs_revision_lifecycle', {
+export async function fetchRevisionLifecycle(organizationId: string, planYear: number, planId?: string): Promise<RevisionLifecycle> {
+  const { data, error } = await supabase.rpc(planId ? 'phoenix_central_needs_dossier_lifecycle' : 'phoenix_central_needs_revision_lifecycle', {
+    ...(planId ? { p_plan_id: planId } : {}),
     p_organization_id: organizationId,
     p_plan_year: planYear,
   });
@@ -2177,7 +2178,7 @@ export interface CentralItemOption {
   tradeName?: string | null;
   concentration?: string | null;
   dosageForm?: string | null;
-  /** The catalog's national-code semantic, `central_items.barcode` (M114 / G3.2 Decision A). */
+  /** Distinct national code after M233; the resolver handles the pre-M233 contract explicitly. */
   nationalCode?: string | null;
   /** How strongly the query matched — a ranking, never an authorization to map. */
   grade?: MatchGrade;

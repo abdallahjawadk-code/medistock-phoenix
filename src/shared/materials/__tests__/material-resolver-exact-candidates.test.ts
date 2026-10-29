@@ -334,20 +334,20 @@ describe('SUPERSET — the planned terms select every row the client rule calls 
 });
 
 describe('COMPLETENESS — the requests and what counts as proven', () => {
-  it('asks four ACTIVE-only, exact-counted, capped requests: one per name column and one for the national code', async () => {
+  it('asks five ACTIVE-only, exact-counted, capped requests: names, barcode and distinct national code', async () => {
     db.central_items = [item('ci-para', { name: 'Paracetamol', barcode: '6291000000028' })];
     const res = await resolveExactCatalogCandidates('Paracetamol');
     expect(res.complete).toBe(true);
-    expect(recorded).toHaveLength(4);
+    expect(recorded).toHaveLength(5);
     for (const q of recorded) {
       expect(q.table).toBe('central_items');
-      expect(q.ops[0]).toEqual(['select', 'id, name, name_ar, barcode, unit, status, trade_name, concentration, dosage_form', 'exact']);
+      expect(q.ops[0]).toEqual(['select', 'id, name, name_ar, barcode, unit, status, trade_name, concentration, dosage_form, national_code', 'exact']);
       expect(q.ops).toContainEqual(['eq', 'status', 'active']);
       expect(q.ops).toContainEqual(['limit', EXACT_CANDIDATE_CAP + 1]);
       expect(q.ops.filter((o) => o[0] === 'order').map((o) => o[1])).toEqual(['name', 'id']);
     }
     const targets = recorded.map((q) => (q.ops.find((o) => o[0] === 'or')?.[1] as string).match(/^([a-z_]+)\.match\./)?.[1]);
-    expect(targets).toEqual(['name', 'name_ar', 'trade_name', 'barcode']);
+    expect(targets).toEqual(['name', 'name_ar', 'trade_name', 'barcode', 'national_code']);
     for (const q of recorded.slice(0, 3)) {
       const or = q.ops.find((o) => o[0] === 'or')?.[1] as string;
       expect(splitOr(or)).toHaveLength(3); // R(q), STRAY, UNMIR

@@ -56,6 +56,7 @@
  *   - The public audience still never reaches lot-level stock.
  */
 import { supabase, supabaseConfigured } from '@/shared/supabase/client';
+import { catalogNationalCode, isMissingNationalCodeColumn } from './catalog-national-code';
 import { normalizeSearchText } from '@/shared/lib/search-normalize';
 import { escapePostgrestIlikeValue } from '@/shared/supabase/services/availability.service';
 import { displaySupplyType, type CanonicalSupplyType } from '@/shared/lib/supply-types';
@@ -129,7 +130,7 @@ export interface ResolveOptions {
 const GRADE_ORDER: Record<MatchGrade, number> = { confirmed: 0, strong: 1, probable: 2 };
 
 interface CatalogRow {
-  id: string; name: string; name_ar: string | null; barcode: string | null;
+  id: string; name: string; name_ar: string | null; barcode: string | null; national_code?: string | null;
   unit: string | null; status?: string | null;
   /** 114 — catalog identity detail. Nullable; super_admin-maintained. */
   trade_name?: string | null; concentration?: string | null; dosage_form?: string | null;
@@ -185,6 +186,7 @@ const UNKNOWN_WAREHOUSE_CONTEXT: ResolvedWarehouseContext = {
 
 function gradeCatalog(row: CatalogRow, raw: string, norm: string):
   { grade: MatchGrade; reasonKey: string } {
+  if (row.national_code && row.national_code.trim() === raw) return { grade: 'confirmed', reasonKey: 'mr_reason_national_exact' };
   if (row.barcode && row.barcode.trim() === raw) return { grade: 'confirmed', reasonKey: 'mr_reason_barcode_exact' };
   const nameN = normalizeSearchText(row.name ?? '');
   const nameArN = normalizeSearchText(row.name_ar ?? '');
@@ -272,12 +274,8 @@ function isExpiredDate(expiryDate: string | null, today: string): boolean {
 function catalogResult(row: CatalogRow, raw: string, norm: string): ResolvedMaterial {
   const { grade, reasonKey } = gradeCatalog(row, raw, norm);
 
-  // DECISION A: for a catalog row the national-code semantic IS `barcode`.
-  // Migration 114 states this contract explicitly and declines to add a
-  // duplicate column; the owner reaffirmed it for G3.2. The database column
-  // keeps its historical name — only this semantic field unifies catalog and
-  // lot. Do not silently reinterpret `barcode` as a bare GTIN here.
-  const catalogNationalCode = textOrNull(row.barcode);
+  // Owner amendment M233: a separate column, with explicit pre-M233 compatibility.
+  const nationalCode = catalogNationalCode(row);
   // 114's real trade_name wins. `name_ar` remains a fallback ALTERNATE NAME
   // for rows that predate 114 and have none — it is not "the trade name".
   const tradeName = textOrNull(row.trade_name) ?? textOrNull(row.name_ar);
@@ -297,7 +295,7 @@ function catalogResult(row: CatalogRow, raw: string, norm: string): ResolvedMate
     source: 'catalog', centralItemId: row.id, warehouseStockId: null,
     scientificName: row.name, nameAr: textOrNull(row.name_ar), tradeName,
     concentration, dosageForm, unit,
-    nationalCode: catalogNationalCode, barcode: textOrNull(row.barcode),
+    nationalCode, barcode: textOrNull(row.barcode),
     batchNumber: null, expiryDate: null,
     onHand: null, reserved: null, available: null,
     supplyType: null, grade, reasonKey,
@@ -317,7 +315,7 @@ function catalogResult(row: CatalogRow, raw: string, norm: string): ResolvedMate
         concentration,
         dosageForm,
         unit,
-        nationalCode: catalogNationalCode,
+        nationalCode,
         batchNumber: null,
         expiryDate: null,
       },
@@ -334,6 +332,21 @@ function catalogResult(row: CatalogRow, raw: string, norm: string): ResolvedMate
 
 /** The catalog columns every resolver read selects. */
 const CATALOG_SELECT = 'id, name, name_ar, barcode, unit, status, trade_name, concentration, dosage_form';
+const CATALOG_CODE_SELECT = CATALOG_SELECT + ', national_code';
+
+async function readCatalog(terms: string[], limit: number, signal?: AbortSignal, publicAudience = false, count = false) {
+  const run = (modern: boolean) => {
+    const selectedTerms = modern ? terms : terms.filter((term) => !term.startsWith('national_code.'));
+    if (selectedTerms.length === 0) return Promise.resolve({ data: [], error: null, count: 0 });
+    let query = supabase.from('central_items').select(modern ? CATALOG_CODE_SELECT : CATALOG_SELECT, count ? { count: 'exact' } : undefined)
+      .eq('status', 'active').or(selectedTerms.join(',')).order('name', { ascending: true }).order('id', { ascending: true }).limit(limit);
+    if (signal) query = query.abortSignal(signal);
+    return query;
+  };
+  const response = await run(!publicAudience);
+  if (!publicAudience && isMissingNationalCodeColumn(response.error)) return run(false);
+  return response;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PRE3-A — ARABIC SPELLING VARIANTS MATCH IN BOTH DIRECTIONS
@@ -621,7 +634,7 @@ export function exactCodePattern(raw: string): string | null {
   return `^${trimRun}${Array.from(raw).map(regexLiteral).join('')}${trimRun}$`;
 }
 
-export type ExactCandidateTarget = 'name' | 'name_ar' | 'trade_name' | 'barcode';
+export type ExactCandidateTarget = 'name' | 'name_ar' | 'trade_name' | 'barcode' | 'national_code';
 
 export interface ExactCandidateRequest {
   target: ExactCandidateTarget;
@@ -658,7 +671,10 @@ export function planExactCatalogCandidates(rawText: string): ExactCandidatePlan 
     { target: 'name', terms: nameTerms('name') },
     { target: 'name_ar', terms: nameTerms('name_ar') },
     { target: 'trade_name', terms: nameTerms('trade_name') },
-    ...(codePattern === null ? [] : [{ target: 'barcode' as const, terms: [`barcode.match.${quoteLogicTreeValue(codePattern)}`] }]),
+    ...(codePattern === null ? [] : [
+      { target: 'barcode' as const, terms: [`barcode.match.${quoteLogicTreeValue(codePattern)}`] },
+      { target: 'national_code' as const, terms: [`national_code.match.${quoteLogicTreeValue(codePattern)}`] },
+    ]),
   ];
   const requests = drafts.map((d) => ({
     ...d,
@@ -724,16 +740,8 @@ export async function resolveMaterials(rawQuery: string, opts: ResolveOptions = 
   if (imatchVariant) {
     catalogOr.push(`name.imatch.${imatchVariant}`, `name_ar.imatch.${imatchVariant}`, `trade_name.imatch.${imatchVariant}`);
   }
-  if (!isPublic) catalogOr.unshift(`barcode.eq.${JSON.stringify(raw)}`);
-  let catalogQuery = supabase
-    .from('central_items')
-    .select(CATALOG_SELECT)
-    .eq('status', 'active')
-    .or(catalogOr.join(','))
-    .order('name', { ascending: true })
-    .order('id', { ascending: true })
-    .limit(limit);
-  if (opts.signal) catalogQuery = catalogQuery.abortSignal(opts.signal);
+  if (!isPublic) catalogOr.unshift(`barcode.eq.${JSON.stringify(raw)}`, `national_code.eq.${JSON.stringify(raw)}`);
+  const catalogQuery = readCatalog(catalogOr, limit, opts.signal, isPublic);
 
   // 3 — canonical stock lots inside the given warehouse scope (RLS re-scopes).
   // Never for a public audience: lot-level batch/on-hand is not public data,
@@ -859,18 +867,8 @@ export async function resolveExactCatalogCandidates(
   const plan = planExactCatalogCandidates(rawText);
   if (plan.unprovable) return { items: [], complete: false, incompleteReason: plan.unprovable };
 
-  const responses = await Promise.all(plan.requests.map((request) => {
-    let query = supabase
-      .from('central_items')
-      .select(CATALOG_SELECT, { count: 'exact' })
-      .eq('status', 'active')
-      .or(request.terms.join(','))
-      .order('name', { ascending: true })
-      .order('id', { ascending: true })
-      .limit(EXACT_CANDIDATE_CAP + 1);
-    if (opts.signal) query = query.abortSignal(opts.signal);
-    return query;
-  }));
+  const responses = await Promise.all(plan.requests.map((request) =>
+    readCatalog(request.terms, EXACT_CANDIDATE_CAP + 1, opts.signal, false, true)));
 
   let incompleteReason: ExactCatalogCandidates['incompleteReason'] = null;
   const byId = new Map<string, CatalogRow>();

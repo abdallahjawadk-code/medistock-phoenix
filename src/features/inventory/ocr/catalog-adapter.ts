@@ -1,3 +1,4 @@
+import { catalogNationalCode } from '@/shared/materials/catalog-national-code';
 import type { CentralItem } from '@/shared/supabase/services/registry.service';
 import type { CatalogMaterial } from './match/catalog-match';
 
@@ -20,18 +21,9 @@ import type { CatalogMaterial } from './match/catalog-match';
  * operator resolved by hand — on data the database could already have answered
  * with. The discriminators are now passed through.
  *
- * NATIONAL CODE (owner DECISION A, G3.2).
- * `central_items` has no `national_code` column and is not getting one:
- * Migration 114 states the contract explicitly — "`barcode` (already unique,
- * already indexed) continues to serve as the catalog's national-code identity
- * — no duplicate column" — and the owner reaffirmed it for G3.2. `barcode` is
- * therefore mapped to the catalog-level `nationalCode` semantic here, which
- * activates tier 1 (exact national code) against the real catalog for the first
- * time. This is a deliberate, documented mapping of ONE column to ONE semantic,
- * not a claim that a GTIN and a national registration code are interchangeable
- * in general. Should Phoenix ever need to carry BOTH identifiers separately,
- * that is new schema plus a fresh owner decision — and this comment exists so
- * that future change is made knowingly rather than by silent reinterpretation.
+ * NATIONAL CODE: M233 adds a distinct column under the owner's amendment.
+ * Legacy rows without that column keep the historical M114 interpretation;
+ * an explicit NULL in the new column is never replaced with a barcode.
  *
  * WHAT DID NOT CHANGE, AND MUST NOT:
  *   OCR ASSISTS DISCOVERY. IT NEVER CREATES CANONICAL IDENTITY.
@@ -60,7 +52,7 @@ export function toCatalogMaterials(items: readonly CentralItem[]): CatalogMateri
       dosageForm: blankToNull(item.dosage_form),
       unit: blankToNull(item.unit),
       // DECISION A — the catalog's national-code identity is `barcode`.
-      nationalCode: blankToNull(item.barcode),
+      nationalCode: catalogNationalCode(item),
     }));
 }
 

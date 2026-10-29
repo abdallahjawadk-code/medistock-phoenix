@@ -52,7 +52,7 @@ describe('no client-side document-number sequence exists',()=>{
     const text=readFileSync(proposal,'utf8');
     expect(text).toMatch(/PROPOSAL ONLY/i); expect(text).toMatch(/not applied/i);
   });
-  it('reviewed migrations through M231 introduce no client-side document numbering and unreviewed migrations stay refused',()=>{
+  it('reviewed migrations through M235 introduce no client-side document numbering and unreviewed migrations stay refused',()=>{
     const migrations=readdirSync(join(ROOT,'supabase','migrations')).filter(f=>f.endsWith('.sql'));
     // P0 HOTFIX 178: adds SECURITY DEFINER to Migration 171's outlet
     // owner-kind guard so its FOR SHARE row lock stops failing with 42501 for
@@ -282,11 +282,12 @@ describe('no client-side document-number sequence exists',()=>{
     // M231 only widens three unit CHECK constraints after exact catalog
     // preconditions and verifies the existing capability seal. It adds no
     // sequence, counter, generated numeric identity or document-number logic.
-    // Admit this reviewed filename only; alternate M231 names and M232 stay refused.
-    const beyond=migrations.filter(f=>/^(1[89]\d|[2-9]\d\d)_/.test(f)&&!/^(179|180|181|182|183|184|185|186|187|188|189|190|191|192|193|194|195|196|197|198|199|200|201|202|203|204|205|206|207|208|209|210|211|212|213|214|215|216|217|218|219|220|221|222|223|224|225|226|227|228|229|230)_/.test(f)&&f!=='231_phoenix_unit_test_vocabulary.sql');
+    // Admit this reviewed filename only; alternate names and M236 stay refused.
+    const beyond=migrations.filter(f=>/^(1[89]\d|[2-9]\d\d)_/.test(f)&&!/^(179|180|181|182|183|184|185|186|187|188|189|190|191|192|193|194|195|196|197|198|199|200|201|202|203|204|205|206|207|208|209|210|211|212|213|214|215|216|217|218|219|220|221|222|223|224|225|226|227|228|229|230)_/.test(f)&&!['231_phoenix_unit_test_vocabulary.sql', '232_phoenix_central_needs_same_actor_approval.sql', '233_phoenix_central_needs_distinct_national_code.sql', '234_phoenix_central_needs_annual_dossiers.sql', '235_phoenix_central_needs_dossier_workbook_intake.sql'].includes(f));
     expect(beyond).toEqual([]);
     for(const f of [
       '231_phoenix_unit_test_vocabulary.sql',
+      '232_phoenix_central_needs_same_actor_approval.sql', '233_phoenix_central_needs_distinct_national_code.sql', '234_phoenix_central_needs_annual_dossiers.sql', '235_phoenix_central_needs_dossier_workbook_intake.sql',
       '211_phoenix_central_needs_batch_and_disposition.sql',
       '212_phoenix_central_needs_need_lines.sql',
       '213_phoenix_central_needs_beneficiary_column_mapping.sql',

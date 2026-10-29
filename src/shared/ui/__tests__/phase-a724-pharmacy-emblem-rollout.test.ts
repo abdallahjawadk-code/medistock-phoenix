@@ -823,8 +823,8 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
       'supabase/migrations/229_phoenix_central_needs_manual_activation.sql',
       'supabase/migrations/230_phoenix_central_needs_material_registration_activation.sql',
       // R1-UNIT-TEST-01: exact filenames; every unlisted sibling stays refused.
-      'supabase/migrations/231_phoenix_unit_test_vocabulary.sql',
-      'supabase/migrations/__tests__/231-unit-test-vocabulary.dynamic.test.ts',
+      'supabase/migrations/231_phoenix_unit_test_vocabulary.sql', 'supabase/migrations/232_phoenix_central_needs_same_actor_approval.sql', 'supabase/migrations/233_phoenix_central_needs_distinct_national_code.sql', 'supabase/migrations/234_phoenix_central_needs_annual_dossiers.sql', 'supabase/migrations/235_phoenix_central_needs_dossier_workbook_intake.sql',
+      'supabase/migrations/__tests__/231-unit-test-vocabulary.dynamic.test.ts', 'supabase/migrations/__tests__/235-annual-dossiers.dynamic.test.ts', 'src/shared/supabase/services/registry.service.ts',
       // R1 (staging release candidate): exact-filename registration of the R1 files under the watched prefixes (the un-numbered SQL candidates and
       // their tests/tooling, the Screen-3 tab wiring, the shared i18n strings). No wildcard and no directory exemption: every other file under
       // these prefixes still fails this guard closed. The numbered chain gains only M223-M230 (registered above by exact filename); no dependency/branding/

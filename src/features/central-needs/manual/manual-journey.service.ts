@@ -12,6 +12,8 @@ import {
   getManualCapabilities, openManualCorrectionRevision, openManualPlanRevision, type ManualCapabilities,
 } from './manual-needs.service';
 import type { ResolverHit } from '../excel-identity';
+import { getNeedsFeatures, listNeedsDossiers, openNeedsDossier, openNeedsDossierCorrection, readAnnualNeeds } from './dossier.service';
+import { getManualCatalogLabels } from './manual-catalog.service';
 
 export interface YearRevision {
   id: string;
@@ -21,9 +23,16 @@ export interface YearRevision {
   createdBy: string | null;
 }
 export interface BeneficiaryOption { id: string; name: string; nameAr: string }
-export interface CatalogOption { id: string; name: string; nameAr: string | null; concentration: string | null; dosageForm: string | null; unit: string }
+export interface CatalogOption { id: string; name: string; nameAr: string | null; concentration: string | null; dosageForm: string | null; unit: string; nationalCode?: string | null }
 
 export interface JourneyApi {
+  readCatalogItems?: typeof getManualCatalogLabels;
+  features?: typeof getNeedsFeatures;
+  listDossiers?: typeof listNeedsDossiers;
+  openDossier?: typeof openNeedsDossier;
+  openDossierCorrection?: typeof openNeedsDossierCorrection;
+  annualSummary?: typeof readAnnualNeeds;
+  listDossierRevisions?: (planId: string) => Promise<YearRevision[]>;
   listYearRevisions(organizationId: string, year: number): Promise<YearRevision[]>;
   listBeneficiaries(): Promise<BeneficiaryOption[]>;
   searchCatalog(query: string): Promise<CatalogOption[]>;
@@ -41,8 +50,12 @@ async function listYearRevisions(organizationId: string, year: number): Promise<
   const plan = await supabase.from('central_needs_plans').select('id').eq('organization_id', organizationId).eq('plan_year', year).maybeSingle();
   if (plan.error) throw centralNeedsErrorFromPostgrest(plan.error);
   if (!plan.data) return [];
+  return listPlanRevisions((plan.data as { id: string }).id);
+}
+
+async function listPlanRevisions(planId: string): Promise<YearRevision[]> {
   const revs = await supabase.from('central_needs_plan_revisions')
-    .select('id, revision_number, status, source_mode, created_by').eq('plan_id', (plan.data as { id: string }).id).order('revision_number', { ascending: false });
+    .select('id, revision_number, status, source_mode, created_by').eq('plan_id', planId).order('revision_number', { ascending: false });
   if (revs.error) throw centralNeedsErrorFromPostgrest(revs.error);
   return ((revs.data ?? []) as Array<Record<string, unknown>>).map((r) => ({
     id: r.id as string, revisionNumber: r.revision_number as number, status: r.status as string,
@@ -50,7 +63,21 @@ async function listYearRevisions(organizationId: string, year: number): Promise<
   }));
 }
 
+async function listDossierRevisions(planId: string): Promise<YearRevision[]> {
+  const { data, error } = await supabase.rpc('phoenix_central_needs_dossier_revisions', { p_plan_id: planId });
+  if (error) throw centralNeedsErrorFromPostgrest(error);
+  return ((data ?? []) as Array<Record<string, unknown>>).map((r) => ({ id:r.id as string, revisionNumber:r.revision_number as number,
+    status:r.status as string, sourceMode:r.source_mode as 'manual'|'excel', createdBy:r.created_by as string|null }));
+}
+
 export const realJourneyApi: JourneyApi = {
+  readCatalogItems: getManualCatalogLabels,
+  features: getNeedsFeatures,
+  listDossiers: listNeedsDossiers,
+  openDossier: openNeedsDossier,
+  openDossierCorrection: openNeedsDossierCorrection,
+  annualSummary: readAnnualNeeds,
+  listDossierRevisions,
   listYearRevisions,
   async listBeneficiaries() {
     const rows = await getOrganizations();
@@ -63,7 +90,7 @@ export const realJourneyApi: JourneyApi = {
     for (const h of hits) {
       if (h.source !== 'catalog' || !h.centralItemId || seen.has(h.centralItemId) || !h.unit) continue;
       seen.add(h.centralItemId);
-      out.push({ id: h.centralItemId, name: h.scientificName, nameAr: h.nameAr ?? null, concentration: h.concentration, dosageForm: h.dosageForm, unit: h.unit });
+      out.push({ id: h.centralItemId, name: h.scientificName, nameAr: h.nameAr ?? null, concentration: h.concentration, dosageForm: h.dosageForm, unit: h.unit, nationalCode: h.nationalCode });
     }
     return out;
   },

@@ -48,6 +48,7 @@ export interface ManualWriteResult {
   eventSeq: number | null;
 }
 
+
 function fail(error: { message?: unknown; code?: unknown; details?: unknown; hint?: unknown } | null): never {
   throw centralNeedsErrorFromPostgrest(error);
 }
