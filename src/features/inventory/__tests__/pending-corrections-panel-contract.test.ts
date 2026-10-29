@@ -226,6 +226,9 @@ describe('G) No UI path mutates outlet_stock/warehouse_stock quantities outside 
       // R1-A4: the MANUAL annual-plan correction revision (R1-a candidate 04) — same domain: it opens a
       // draft plan revision and touches no outlet_stock/warehouse_stock row. Exact name only.
       'phoenix_central_needs_open_manual_correction_revision',
+      // M234: named-dossier draft revision only; canonical Central Needs history,
+      // with no outlet_stock/warehouse_stock mutation. Exact name only.
+      'phoenix_central_needs_open_dossier_correction',
     ]);
     const root = join(SRC);
     const offenders: string[] = [];
