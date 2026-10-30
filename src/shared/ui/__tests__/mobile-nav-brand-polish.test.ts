@@ -99,9 +99,10 @@ describe('Drawer access is preserved via the topbar menu button', () => {
     expect(appShell).toContain('PhoenixMobileDrawer');
   });
 
-  it('AppShell no longer passes onMoreClick to the bottom nav', () => {
-    const bottomNavUsage = appShell.slice(appShell.indexOf('<PhoenixMobileBottomNav'), appShell.indexOf('<PhoenixMobileBottomNav') + 200);
-    expect(bottomNavUsage).not.toContain('onMoreClick');
+  it('AppShell uses drawer-only phone navigation after the owner retires the bottom bar', () => {
+    expect(appShell).not.toContain('<PhoenixMobileBottomNav');
+    expect(appShell).toContain('<PhoenixMobileDrawer');
+    expect(appShell).toContain('onMenuClick={toggleSidebar}');
   });
 
   it('the drawer itself has its own explicit close button (additional access parity)', () => {

@@ -184,6 +184,7 @@ export function ManualNeedsWorkspace({ lang, organizationId, planRevisionId, rev
       <div role="status" aria-live="polite">{notice}</div>
       {errorText && <p role="alert">{errorText}</p>}
 
+      <div className="pharma-table-scroll" role="region" aria-label={mt('title', lang)} tabIndex={0}>
       <table>
         <caption>{mt('title', lang)}</caption>
         <thead>
@@ -217,6 +218,7 @@ export function ManualNeedsWorkspace({ lang, organizationId, planRevisionId, rev
           ))}
         </tbody>
       </table>
+      </div>
 
       {editable && (
         <form

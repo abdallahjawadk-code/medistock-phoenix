@@ -5,6 +5,7 @@ import { resolveLoginIdentifier } from '@/shared/lib/username';
 import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import { MediStockMark } from '@/shared/ui/MediStockMark';
 import { AuthSupplyHero } from '@/shared/ui/AuthSupplyHero';
+import { PharmaSculpture } from '@/shared/ui/PharmaSculpture';
 
 export function LoginScreen() {
   const { lang, theme, toggleLang, toggleTheme, signIn, requestPasswordReset, configured } = useApp();
@@ -111,6 +112,7 @@ export function LoginScreen() {
 
   return (
     <div className="premium-login nexus-login">
+      <PharmaSculpture className="pharma-login-sculpture" />
       <div className="nexus-login__controls">
         <button
           onClick={toggleLang}

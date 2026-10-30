@@ -52,7 +52,7 @@ describe('application copyright seal removal', () => {
     );
 
     expectSealAbsent(result.container);
-    if (width < 768) expect(result.getByTestId('mobile-bottom-nav')).toBeInTheDocument();
+    if (width < 768) expect(result.queryByTestId('mobile-bottom-nav')).toBeNull();
     else expect(result.getByTestId('desktop-sidebar')).toBeInTheDocument();
   });
 

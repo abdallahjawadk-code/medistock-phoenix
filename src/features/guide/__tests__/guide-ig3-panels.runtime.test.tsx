@@ -153,7 +153,9 @@ vi.mock('@/shared/ui/PhoenixIcon', () => ({
   PhoenixIcon: ({ name }: { name: string }) => <span aria-hidden="true" data-icon={name} />,
 }));
 
-import { PhoenixAppShell } from '@/shared/ui/PhoenixAppShell';
+import { GuideSurfaceProvider } from '../guide.surface';
+import { useGuideHost } from '../GuideHost';
+import { GuideEntryButton } from '../GuideEntryButton';
 import { InventoryCenterScreen } from '@/features/inventory/InventoryCenterScreen';
 
 const WH_A = 'wh-A';
@@ -165,23 +167,20 @@ const topologyRow = (over: Row = {}): Row => ({
   facility_id: null, distribution_point_id: null, in_effective_scope: true, ...over,
 });
 
-/**
- * IG-3-CORRECTION §2 — a REAL open/close lifecycle, not an always-mounted
- * engine. `PhoenixAppShell` is the same shell component the real app (and
- * the QA harness) wraps every authenticated screen in: it owns `useGuideHost`
- * internally and renders the actual "Guide & Help" topbar entry, so opening
- * the guide here means a real click on the real control that ships to
- * production — not a harness shortcut that skips `useGuideHost` entirely.
- * The guide is CLOSED (nothing of it mounted) until that entry is clicked,
- * and clicking the Help Center's own close control genuinely unmounts it —
- * see `openGuideCenter`/`closeGuideCenter` below.
- */
+/** Retained engine regression only. The owner retired all production guide
+ * entry points on 2026-10-30. This explicit test-only host preserves lifecycle,
+ * scope, mutation-freedom and real-panel regressions without claiming that the
+ * production shell still opens a guide. Nothing imports this harness in app code. */
+function EnginePanelHarness() {
+  const { controller, host } = useGuideHost({
+    currentScreen: 3,
+    onNavigate: () => undefined,
+    drawer: { isAvailable: false, isOpen: false, open: () => undefined, close: () => undefined },
+  });
+  return <><GuideEntryButton onOpen={controller.open} variant="topbar" /><InventoryCenterScreen />{host}</>;
+}
 function Harness() {
-  return (
-    <PhoenixAppShell currentScreen={3} onNavigate={() => undefined} onLogout={() => undefined}>
-      <InventoryCenterScreen />
-    </PhoenixAppShell>
-  );
+  return <GuideSurfaceProvider><EnginePanelHarness /></GuideSurfaceProvider>;
 }
 
 const originalRect = Element.prototype.getBoundingClientRect;
@@ -342,16 +341,11 @@ function clickTab(labelAr: string) {
   fireEvent.click(tab);
 }
 
-/**
- * IG-3-CORRECTION §2 — the REAL entry action: a click on the topbar's own
- * "Guide & Help" control (`GuideHost`'s `controller.open`, wired by
- * `PhoenixAppShell`), not a harness shortcut. Nothing of the guide is
- * mounted before this click — `React.lazy` means the engine's chunk resolves
- * asynchronously even in this same-process test, hence the `waitFor`.
- */
+/** Exercise the retained engine's real lazy open/close lifecycle through
+ * this file's explicit test-only entry, not through the retired product UI. */
 async function openGuideCenter() {
   const openButton = document.querySelector('[data-guide-id="guide.shell.topbar.help"]') as HTMLElement | null;
-  if (!openButton) throw new Error('the real "Guide & Help" topbar entry was not found — is the viewport desktop-width?');
+  if (!openButton) throw new Error('the test-only retained-engine entry was not found');
   fireEvent.click(openButton);
   await waitFor(() => expect(document.querySelector('[aria-labelledby="guide-center-title"]')).not.toBeNull());
 }

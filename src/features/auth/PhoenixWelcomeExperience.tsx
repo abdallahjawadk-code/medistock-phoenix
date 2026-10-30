@@ -3,6 +3,7 @@ import { useApp } from '@/app/AppContext';
 import { prefersReducedMotion } from '@/shared/webgl';
 import { MediStockMark } from '@/shared/ui/MediStockMark';
 import { AuthSupplyHero } from '@/shared/ui/AuthSupplyHero';
+import { PharmaSculpture } from '@/shared/ui/PharmaSculpture';
 
 interface Props {
   onComplete: () => void;
@@ -62,6 +63,7 @@ export function PhoenixWelcomeExperience({ onComplete }: Props) {
           identity. The scrim is what makes the live text over it legible in
           both themes without baking any text into the artwork. */}
       <div className="nexus-welcome__stage" aria-hidden="true">
+        <PharmaSculpture className="pharma-welcome-sculpture" />
         <AuthSupplyHero className="nexus-welcome__hero" />
         <div className="nexus-welcome__scrim" />
       </div>

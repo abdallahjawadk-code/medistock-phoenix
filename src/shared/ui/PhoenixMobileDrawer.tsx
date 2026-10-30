@@ -4,7 +4,6 @@ import { projectNavigation } from '@/shared/authz/nav-projection';
 import { t } from '@/shared/i18n/strings';
 import { PhoenixIcon, type PhoenixIconName } from './PhoenixIcon';
 import { PhoenixMark } from './PhoenixMark';
-import { GuideEntryButton } from '@/features/guide/GuideEntryButton';
 import { GUIDE_ANCHORS, guideAnchor } from '@/features/guide/guide.anchors';
 
 // UI-LEGACY-PAGES-NAV-HIDE-A: nav_reg and nav_qr_audit are intentionally NOT
@@ -63,12 +62,9 @@ interface Props {
   onNavigate: (screen: number) => void;
   onClose: () => void;
   onLogout: () => void;
-  /** INTERACTIVE-GUIDE-IG1 — opens Guide & Help; the phone's entry point,
-   *  since the topbar has no room for a fifth control at 375px. */
-  onOpenGuide?: () => void;
 }
 
-export function PhoenixMobileDrawer({ currentScreen, onNavigate, onClose, onLogout, onOpenGuide }: Props) {
+export function PhoenixMobileDrawer({ currentScreen, onNavigate, onClose, onLogout }: Props) {
   const { lang, dir, role, myPermissions, activeOrganizationKind } = useApp();
   const overlayRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLElement>(null);
@@ -264,12 +260,6 @@ export function PhoenixMobileDrawer({ currentScreen, onNavigate, onClose, onLogo
             );
           })}
 
-          {/* INTERACTIVE-GUIDE-IG1: the phone's Guide & Help entry, in the
-              same secondary block as My Account. The drawer closes with it so
-              the guide is not opened behind a modal drawer that owns focus. */}
-          {onOpenGuide && (
-            <GuideEntryButton onOpen={() => { onClose(); onOpenGuide(); }} variant="full" />
-          )}
         </nav>
 
         <button
