@@ -23,6 +23,8 @@ import '@/shared/lib/central-needs.css';
 import '@/shared/lib/phase-a-inventory-transfers.css';
 import '@/shared/lib/phase-a-institutions-outlets.css';
 import '@/shared/lib/phase-a-alerts-admin-qr.css';
+// Opt-in pharmacy selectors are more specific; keep the historical final imports intact.
+import '@/shared/lib/pharma-molecular.css';
 import '@/shared/lib/phase-a-visual-convergence.css';
 import '@/shared/lib/phase-a-auth-welcome-signature.css';
 import { App } from '@/app/App';
@@ -55,6 +57,9 @@ document.documentElement.dataset.phoenixUiPhase = 'a';
 // of data-theme; this marker only says which STRUCTURAL design language the
 // phase uses, in both themes.
 document.documentElement.dataset.phoenixVisual = 'daylight';
+
+// No routes, permissions, feature flags, or persisted data depend on this marker.
+document.documentElement.dataset.pharmaDesign = 'molecular';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

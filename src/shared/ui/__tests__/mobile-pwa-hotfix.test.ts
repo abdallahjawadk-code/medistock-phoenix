@@ -59,10 +59,11 @@ describe('the app shell has exactly one scroll owner and the final control is re
     expect(appShell).toContain("overflowY: 'auto'");
   });
 
-  it('mobile bottom padding clears nav + safe area, so the last card scrolls into view', () => {
+  it('drawer-only phone padding preserves the safe area without reserving the retired bottom bar', () => {
     expect(appShell).toContain(
-      "'calc(var(--bnh) + 14px + env(safe-area-inset-bottom, 0px))'",
+      "'calc(24px + env(safe-area-inset-bottom, 0px))'",
     );
+    expect(appShell).not.toContain('<PhoenixMobileBottomNav');
   });
 
   it('the shell ends with page content and no copyright footer or reserved block', () => {
