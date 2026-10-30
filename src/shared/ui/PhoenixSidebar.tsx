@@ -1,3 +1,5 @@
+import { groupPharmaNavigation } from './pharmaNavigationGroups';
+import '@/shared/lib/pharma-navigation.css';
 import { useApp } from '@/app/AppContext';
 import { projectNavigation } from '@/shared/authz/nav-projection';
 import { t } from '@/shared/i18n/strings';
@@ -97,146 +99,55 @@ export function PhoenixSidebar({ currentScreen, onNavigate, onLogout }: Props) {
     role, permissions: myPermissions, organizationKind: activeOrganizationKind,
   });
 
-  /* PHASE-A7-VISUAL-CONVERGENCE: active/inactive fill and colour now live in
-     phase-a-visual-convergence.css, keyed off the data-active attribute
-     already rendered below (and already read by aria-current for the
-     non-visual equivalent). The active state is a solid gold fill — a
-     shape+colour change together, so selection never depends on hue alone
-     (WCAG 1.4.1). Only weight stays here since nothing else needs to fight
-     it via !important. */
   const ns = (n: number) => ({ fontWeight: currentScreen === n ? 700 : 500 });
 
   return (
-    <aside className="premium-sidebar" style={{
-      width: 'var(--sw)',
-      flexShrink: 0,
-      background: 'var(--surface)',
-      borderInlineEnd: '1px solid var(--line)',
-      display: 'flex',
-      flexDirection: 'column',
-      position: 'sticky',
-      top: 0,
-      height: '100dvh',
-      overflowY: 'auto',
-      zIndex: 'var(--z-sidebar)',
+    <aside className="premium-sidebar" data-pharma-nav="rail" style={{
+      width: 'var(--sw)', flexShrink: 0, background: 'var(--surface)',
+      borderInlineEnd: '1px solid var(--line)', display: 'flex', flexDirection: 'column',
+      position: 'sticky', top: 0, height: '100dvh', overflowY: 'hidden', zIndex: 'var(--z-sidebar)',
     }}>
-      {/* Brand */}
-      <div className="premium-sidebar-brand">
-        <div className="nexus-brand-lockup">
-          <div className="nexus-brand-mark nexus-brand-mark--phoenix">
-            <PhoenixMark size={40} title="" />
-          </div>
-          <div style={{ minWidth: 0 }}>
-            <div className="nexus-brand-title">MediStock-Babil Phoenix</div>
-            <div className="nexus-brand-subtitle">{t('shell_brand_department', lang)}</div>
-          </div>
-        </div>
-      </div>
-
-      {/* Nav */}
-      <nav {...guideAnchor(GUIDE_ANCHORS.shellNavigationRail)} style={{ flex: 1, padding: '12px 10px', display: 'flex', flexDirection: 'column', gap: '2px' }} aria-label={t('shell_primary_nav', lang)}>
-        {primaryItems.map(item => {
-          const s = ns(item.screen);
-          return (
-            <button
-              className="premium-nav-item"
-              data-active={currentScreen === item.screen}
-              key={item.screen}
-              onClick={() => onNavigate(item.screen)}
-              aria-current={currentScreen === item.screen ? 'page' : undefined}
-              style={{
-                display: 'flex', alignItems: 'center', gap: '12px',
-                minHeight: 'var(--touch-target)', padding: '0 12px',
-                borderRadius: 'var(--r2)', borderBlock: 'none', borderInlineEnd: 'none',
-                width: '100%', textAlign: 'start',
-                transition: 'background-color var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard)',
-                fontSize: '13.5px',
-                ...s,
-              }}
-            >
+      <div className="premium-sidebar-brand pharma-nav__masthead"><div className="nexus-brand-lockup">
+            <div className="nexus-brand-mark nexus-brand-mark--phoenix"><PhoenixMark size={40} title="" /></div>
+            <div className="pharma-nav__brand-copy">
+              <span  className="pharma-nav__sr">MediStock-Babil Phoenix</span>
+              <div className="nexus-brand-title" aria-hidden="true"><bdi>MediStock</bdi><small>Babil · Phoenix</small></div>
+              <div className="nexus-brand-subtitle">{t('shell_brand_department', lang)}</div>
+            </div>
+          </div></div>
+      <div className="pharma-nav__workspace"><PhoenixIcon name="medical" size={16} /><span>{lang === 'ar' ? 'مساحة العمل الصيدلانية' : 'Pharmacy workspace'}</span><span className="pharma-nav__workspace-dot" aria-hidden="true" /></div>
+      <nav {...guideAnchor(GUIDE_ANCHORS.shellNavigationRail)} className="pharma-nav__body" aria-label={t('shell_primary_nav', lang)}>
+        {groupPharmaNavigation(primaryItems, lang).map(group => (
+          <section className="pharma-nav__section" key={group.key} aria-labelledby={`pharma-rail-${group.key}`}>
+            <h2 id={`pharma-rail-${group.key}`} className="pharma-nav__section-title"><span>{group.label}</span><i aria-hidden="true" /></h2>
+            {group.items.map(item => (
+              <button type="button" className="premium-nav-item" data-active={currentScreen === item.screen} key={item.screen}
+                onClick={() => onNavigate(item.screen)} aria-current={currentScreen === item.screen ? 'page' : undefined} style={ns(item.screen)}>
+                <span className="nexus-nav-icon"><PhoenixIcon name={item.icon} size={19} /></span>
+                <span className="pharma-nav__label">{t(item.labelKey, lang)}</span>
+                {currentScreen === item.screen && <span className="pharma-nav__current" aria-hidden="true"><PhoenixIcon name="check" size={14} /></span>}
+              </button>
+            ))}
+          </section>
+        ))}
+        <section className="pharma-nav__section pharma-nav__personal" aria-labelledby="pharma-rail-personal">
+          <h2 id="pharma-rail-personal" className="pharma-nav__section-title"><span>{lang === 'ar' ? 'حسابك' : 'Your account'}</span><i aria-hidden="true" /></h2>
+          {secondaryItems.map(item => (
+            <button type="button" className="premium-nav-item" data-active={currentScreen === item.screen} key={item.screen}
+              onClick={() => onNavigate(item.screen)} aria-current={currentScreen === item.screen ? 'page' : undefined} style={ns(item.screen)}>
               <span className="nexus-nav-icon"><PhoenixIcon name={item.icon} size={19} /></span>
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {t(item.labelKey, lang)}
-              </span>
+              <span className="pharma-nav__label">{t(item.labelKey, lang)}</span>
+              {currentScreen === item.screen && <span className="pharma-nav__current" aria-hidden="true"><PhoenixIcon name="check" size={14} /></span>}
             </button>
-          );
-        })}
-
-        <div style={{ height: '1px', background: 'var(--line)', margin: '10px 4px 6px' }} />
-
-        {secondaryItems.map(item => {
-          const s = ns(item.screen);
-          return (
-            <button
-              className="premium-nav-item"
-              data-active={currentScreen === item.screen}
-              key={item.screen}
-              onClick={() => onNavigate(item.screen)}
-              aria-current={currentScreen === item.screen ? 'page' : undefined}
-              style={{
-                display: 'flex', alignItems: 'center', gap: '12px',
-                minHeight: 'var(--touch-target)', padding: '0 12px',
-                borderRadius: 'var(--r2)', borderBlock: 'none', borderInlineEnd: 'none',
-                width: '100%', textAlign: 'start',
-                transition: 'background-color var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard)',
-                fontSize: '13.5px',
-                opacity: item.frozen ? 0.7 : 1,
-                ...s,
-              }}
-            >
-              <span className="nexus-nav-icon"><PhoenixIcon name={item.icon} size={19} /></span>
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
-                {t(item.labelKey, lang)}
-              </span>
-              {item.frozen && (
-                <span style={{
-                  padding: '2px 6px', borderRadius: 'var(--rpill)',
-                  background: 'var(--chipW)', color: 'var(--warn)',
-                  border: '1px solid color-mix(in srgb, var(--warn) 40%, transparent)',
-                  fontSize: '9px', fontWeight: 700, flexShrink: 0,
-                }}>
-                  {t('frozen', lang)}
-                </span>
-              )}
-            </button>
-          );
-        })}
+          ))}
+        </section>
       </nav>
-
-      {/* User row */}
-      <div className="premium-sidebar-user" style={{ padding: '12px 14px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <div className="nexus-role-orb">
-            <PhoenixIcon name={ri.icon} size={17} />
-          </div>
-          <div style={{ minWidth: 0, flex: 1 }}>
-            {/* R1.1-P (P1-D): the user row is a user-facing surface, so it shows
-                the canonical translated role label. It used to print the raw DB
-                value, which reads as "health_center_manager" to an operator and
-                leaks the authorization identity as if it were a job title.
-                roleLabelKey also marks a retained legacy role AS legacy, which a
-                raw value silently hid. Authorization identity is unchanged. */}
-            <div style={{ fontSize: '11.5px', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--phoenix-sidebar-text-strong)' }}>{profile?.full_name ?? t(roleLabelKey(role), lang)}</div>
-            <div style={{ fontSize: '10px', color: 'var(--phoenix-sidebar-text)' }}>{t(roleLabelKey(role), lang)}</div>
-          </div>
-          <button
-            onClick={onLogout}
-            style={{
-              padding: '4px 8px', borderRadius: 'var(--r1)',
-              border: '1px solid var(--phoenix-sidebar-border)', background: 'transparent',
-              color: 'var(--phoenix-sidebar-text)', fontSize: '10.5px', flexShrink: 0,
-              cursor: 'pointer', transition: 'all 120ms',
-              // Sign-out is a real touch target on tablet, where the sidebar is
-              // rendered but the pointer is a finger. It measured 86×26.
-              minHeight: '44px', minWidth: '44px',
-            }}
-          >
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
-              <PhoenixIcon name="logout" size={13} />
-              {t('logout', lang)}
-            </span>
-          </button>
+      <div className="premium-sidebar-user pharma-nav__footer">
+        <div className="pharma-nav__identity">
+          <div className="nexus-role-orb"><PhoenixIcon name={ri.icon} size={18} /></div>
+          <div className="pharma-nav__identity-copy"><bdi>{profile?.full_name ?? t(roleLabelKey(role), lang)}</bdi><small>{t(roleLabelKey(role), lang)}</small></div>
         </div>
+        <button type="button" onClick={onLogout} className="pharma-nav__logout premium-focus-ring"><PhoenixIcon name="logout" size={17} /><span>{t('logout', lang)}</span></button>
       </div>
     </aside>
   );
