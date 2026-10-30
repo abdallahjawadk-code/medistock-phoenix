@@ -152,7 +152,9 @@ export function PhoenixMobileDrawer({ currentScreen, onNavigate, onClose, onLogo
       <aside ref={panelRef} tabIndex={-1} className="premium-sidebar premium-dialog-panel premium-mobile-drawer" data-pharma-nav="drawer" style={{
         position: 'relative', width: 'min(var(--sw), 88vw)', background: 'var(--surface)',
         height: '100dvh', maxHeight: '100dvh', overflowY: 'hidden', overscrollBehavior: 'contain',
-        display: 'flex', flexDirection: 'column', gap: '2px', boxShadow: 'var(--sh-xl)',
+        display: 'flex', flexDirection: 'column', gap: '2px',
+        padding: 'calc(env(safe-area-inset-top, 0px) + 10px) calc(env(safe-area-inset-right, 0px) + 8px) calc(env(safe-area-inset-bottom, 0px) + 14px) calc(env(safe-area-inset-left, 0px) + 8px)',
+        boxShadow: 'var(--sh-xl)',
         animation: `${dir === 'rtl' ? 'si-rtl' : 'si'} .2s ease`,
       }}>
         <header className="pharma-nav__masthead">
@@ -173,7 +175,7 @@ export function PhoenixMobileDrawer({ currentScreen, onNavigate, onClose, onLogo
             <h2 id={`pharma-drawer-${group.key}`} className="pharma-nav__section-title"><span>{group.label}</span><i aria-hidden="true" /></h2>
             {group.items.map(item => (
               <button type="button" className="premium-nav-item" data-active={currentScreen === item.screen} key={item.screen}
-                onClick={() => { onNavigate(item.screen); onClose(); }} aria-current={currentScreen === item.screen ? 'page' : undefined} style={ns(item.screen)}>
+                onClick={() => { onNavigate(item.screen); onClose(); }} aria-current={currentScreen === item.screen ? 'page' : undefined} style={{ ...ns(item.screen), minHeight: '44px', textAlign: 'start' }}>
                 <span className="nexus-nav-icon"><PhoenixIcon name={item.icon} size={19} /></span>
                 <span className="pharma-nav__label">{t(item.labelKey, lang)}</span>
                 {currentScreen === item.screen && <span className="pharma-nav__current" aria-hidden="true"><PhoenixIcon name="check" size={14} /></span>}
@@ -185,7 +187,7 @@ export function PhoenixMobileDrawer({ currentScreen, onNavigate, onClose, onLogo
           <h2 id="pharma-drawer-personal" className="pharma-nav__section-title"><span>{lang === 'ar' ? 'حسابك' : 'Your account'}</span><i aria-hidden="true" /></h2>
           {secondaryItems.map(item => (
             <button type="button" className="premium-nav-item" data-active={currentScreen === item.screen} key={item.screen}
-              onClick={() => { onNavigate(item.screen); onClose(); }} aria-current={currentScreen === item.screen ? 'page' : undefined} style={ns(item.screen)}>
+              onClick={() => { onNavigate(item.screen); onClose(); }} aria-current={currentScreen === item.screen ? 'page' : undefined} style={{ ...ns(item.screen), minHeight: '44px', textAlign: 'start' }}>
               <span className="nexus-nav-icon"><PhoenixIcon name={item.icon} size={19} /></span>
               <span className="pharma-nav__label">{t(item.labelKey, lang)}</span>
               {currentScreen === item.screen && <span className="pharma-nav__current" aria-hidden="true"><PhoenixIcon name="check" size={14} /></span>}
@@ -198,7 +200,7 @@ export function PhoenixMobileDrawer({ currentScreen, onNavigate, onClose, onLogo
             <div className="nexus-role-orb"><PhoenixIcon name="account" size={18} /></div>
             <div className="pharma-nav__identity-copy"><bdi>{profile?.full_name ?? t(roleLabelKey(role), lang)}</bdi><small>{t(roleLabelKey(role), lang)}</small></div>
           </div>
-          <button type="button" className="premium-drawer-logout pharma-nav__logout premium-focus-ring" onClick={() => { onLogout(); onClose(); }}><PhoenixIcon name="logout" size={17} /><span>{t('auth_sign_out', lang)}</span></button>
+          <button type="button" className="premium-drawer-logout pharma-nav__logout premium-focus-ring" style={{ minHeight: '44px' }} onClick={() => { onLogout(); onClose(); }}><PhoenixIcon name="logout" size={17} /><span>{t('auth_sign_out', lang)}</span></button>
         </div>
       </aside>
     </div>
