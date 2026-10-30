@@ -1,0 +1,180 @@
+/* AUTH-ENTRY-02: presentation isolated to the real Login and Welcome roots.
+   One contrast layer spans the image. The field wrapper owns the sole border;
+   native inputs retain autocomplete, selection, password and focus behavior. */
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login, html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-arrival.nexus-welcome {
+  --entry-paper: #f7f7ef; --entry-surface: #fffef9; --entry-ink: #173c30;
+  --entry-muted: #52695e; --entry-line: #bdc9bb; --entry-field-line: #708574; --entry-field: #f5f7f0;
+  --entry-pine: #1b5240; --entry-gold: #b99a56; --entry-ring: #2c785d;
+  --entry-shadow: 0 20px 64px #102d2010;
+  color: var(--entry-ink); font-family: 'IBM Plex Sans Arabic', 'Inter Variable', sans-serif;
+}
+html[data-theme='dark'][data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login, html[data-theme='dark'][data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-arrival.nexus-welcome {
+  --entry-paper: #0b201a; --entry-surface: #102c23; --entry-ink: #f1f5e9;
+  --entry-muted: #b3c6b6; --entry-line: #526e5c; --entry-field-line: #8b9f8a; --entry-field: #15372b;
+  --entry-pine: #b4d6ad; --entry-gold: #d6bd7d; --entry-ring: #b4d6ad;
+  --entry-shadow: 0 20px 64px #0003;
+}
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login {
+  display: grid; grid-template-columns: minmax(0, 1.08fr) minmax(400px, .92fr);
+  grid-template-areas: 'art form'; direction: ltr;
+  inline-size: min(1560px, calc(100% - 40px)); min-block-size: calc(100svh - 40px);
+  margin: 20px auto; padding: 0; gap: 0; border: 1px solid var(--entry-line);
+  border-radius: 30px; overflow: hidden; isolation: isolate;
+  background: var(--entry-surface) !important; box-shadow: var(--entry-shadow);
+}
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login::before, html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login::after, html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .nexus-login__auth::before, html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .nexus-login__card::before { content: none; }
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .nexus-login__art {
+  grid-area: art; position: relative; isolation: isolate; min-block-size: 660px;
+  border: 0 !important; border-radius: 0; margin: 0; padding: 0; overflow: hidden;
+  background: #143b2d !important; box-shadow: none !important;
+}
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .nexus-login__hero { position: absolute; inset: 0; inline-size: 100%; block-size: 100%; }
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .nexus-login__hero img { inline-size: 100%; block-size: 100%; object-fit: cover; object-position: 53% 45%; }
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .pharma-auth__wash {
+  position: absolute; inset: 0; z-index: 1; pointer-events: none;
+  background: linear-gradient(180deg, #0b2b2340 0%, #12362935 25%, #123629a8 52%, #102f26fa 100%);
+}
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .pharma-auth__edition {
+  position: absolute; inset-inline: 38px; top: 36px; z-index: 3;
+  display: flex; align-items: center; gap: 10px; color: #f7f8ec;
+  font-size: 12px; font-weight: 500; letter-spacing: .01em;
+  inline-size: fit-content; inset-inline-end: auto; max-inline-size: calc(100% - 76px); padding: 9px 13px; border-radius: 8px; background: #123b2ee8; border: 1px solid #f1f5e933;
+}
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .pharma-auth__edition span { inline-size: 7px; block-size: 7px; border-radius: 50%; background: #c7d7ab; box-shadow: 0 0 0 5px #fff1; }
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .nexus-login__art-caption {
+  position: absolute; z-index: 3; inset-inline: 0; inset-block-start: auto; inset-block-end: 0;
+  padding: 40px 42px 44px; max-inline-size: none; background: transparent; pointer-events: none;
+}
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .nexus-login__art-caption .nexus-login__kicker { color: #e0c98d; font-size: 10px; letter-spacing: .24em; font-weight: 700; }
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .nexus-login__art-caption h1 {
+  color: #fffef2 !important; max-inline-size: 21ch; margin: 16px 0 18px;
+  font-size: clamp(28px, 2.65vw, 43px); line-height: 1.45; letter-spacing: -.025em;
+  font-weight: 600; text-wrap: balance; text-shadow: none;
+}
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .nexus-login__art-caption .nexus-login__art-lede { color: #e1eadd !important; font-size: 14px; line-height: 1.95; max-inline-size: 45ch; margin: 0; }
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .nexus-login__trust-row { display: flex; flex-wrap: wrap; gap: 8px; margin-block-start: 28px; }
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .nexus-login__trust-row > span {
+  display: inline-flex; align-items: center; gap: 7px; padding: 7px 10px;
+  font-size: 11px; color: #f2f5e7; background: #ffffff0a; border: 1px solid #cad6bd4d;
+  border-radius: 8px; box-shadow: none; backdrop-filter: none;
+}
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .pharma-login-sculpture { position: absolute; inset: auto 20px 100px auto; inline-size: 220px; block-size: 220px; z-index: 2; opacity: .12; pointer-events: none; transform: rotate(-16deg); }
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .nexus-login__auth {
+  grid-area: form; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  position: relative; padding: 100px clamp(30px, 4.1vw, 72px) 62px; min-inline-size: 0;
+  background: var(--entry-surface) !important; border: 0 !important; border-radius: 0;
+  box-shadow: none !important; gap: 42px;
+}
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .nexus-login__controls { position: absolute; z-index: 5; top: 24px; right: 28px; left: auto; display: flex; gap: 8px; padding: 0; }
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .nexus-control { display: inline-flex; align-items: center; justify-content: center; min-inline-size: 44px; min-block-size: 44px; color: var(--entry-ink); background: var(--entry-field); border: 1px solid var(--entry-line); border-radius: 12px; box-shadow: none; backdrop-filter: none; }
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .nexus-login__brand { inline-size: min(100%, 396px); display: flex; align-items: center; gap: 14px; margin: 0; }
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .nexus-login__brand-emblem { inline-size: 64px; block-size: 64px; flex: 0 0 64px; border: 1px solid var(--entry-line); border-radius: 18px; background: var(--entry-field); display: grid; place-items: center; }
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .nexus-login__brand-emblem::before, html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-arrival.nexus-welcome .nexus-welcome__brand::before { content: none; }
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .nexus-login__emblem { inline-size: 50px; block-size: 50px; filter: none; animation: none; }
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .nexus-login__brand-name { color: var(--entry-ink) !important; font-size: clamp(17px, 1.45vw, 22px); line-height: 1.45; font-weight: 700; max-inline-size: 23ch; }
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .nexus-login__brand-department { color: var(--entry-muted) !important; font-size: 12px; margin-block-start: 5px; line-height: 1.7; }
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .nexus-login__card { inline-size: min(100%, 396px); max-inline-size: none; padding: 0; background: transparent !important; box-shadow: none !important; border: 0 !important; border-radius: 0; }
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .nexus-login__card-heading { display: flex; align-items: flex-start; gap: 12px; margin-block-end: 34px; }
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .nexus-login__secure-icon { display: none; }
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .nexus-login__card-heading h2 { margin: 0 0 10px; color: var(--entry-ink); font-size: 29px; font-weight: 600; line-height: 1.4; }
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .nexus-login__card-heading p { color: var(--entry-muted); font-size: 13px; line-height: 1.8; margin: 0; }
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .nexus-login__label { display: block; color: var(--entry-ink); font-size: 12px; font-weight: 600; margin: 22px 0 9px; }
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .nexus-login__field-wrap {
+  display: flex; align-items: center; gap: 10px; min-block-size: 58px; padding: 0 14px;
+  border: 1px solid var(--entry-field-line) !important; border-radius: 12px;
+  background: var(--entry-field) !important; box-shadow: none; transition: border-color 160ms, box-shadow 160ms;
+}
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .nexus-login__field-wrap > svg { color: var(--entry-muted); flex: 0 0 auto; }
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .nexus-login__field-wrap input.nexus-login__field {
+  display: block; flex: 1 1 0; inline-size: 0; min-inline-size: 0; block-size: 56px;
+  padding: 0 !important; margin: 0 !important; border: 0 !important; border-radius: 0 !important;
+  background: transparent !important; box-shadow: none !important; outline: none !important;
+  color: var(--entry-ink) !important; -webkit-text-fill-color: var(--entry-ink); font: inherit; font-size: 15px;
+}
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .nexus-login__field-wrap input.nexus-login__field:is(:autofill, :-webkit-autofill) { box-shadow: 0 0 0 1000px var(--entry-field) inset !important; caret-color: var(--entry-ink); }
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .nexus-login__field-wrap:focus-within { outline: 2px solid var(--entry-ring); outline-offset: 3px; border-color: var(--entry-ring) !important; box-shadow: none; }
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .nexus-login__field-wrap[data-invalid='true'] { border-color: var(--danger) !important; }
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .nexus-login__password-toggle { min-inline-size: 44px; min-block-size: 44px; inline-size: 44px; block-size: 44px; padding: 0; border-radius: 8px; flex: 0 0 44px; color: var(--entry-muted); background: transparent; border: 0; }
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .nexus-login__password-toggle:hover { color: var(--entry-ink); background: color-mix(in srgb, var(--entry-ink) 7%, transparent); }
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .nexus-login__forgot { margin: 15px 0 26px; }
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .nexus-login__forgot button, html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .nexus-login__back { color: var(--entry-ink); font-size: 12px; font-weight: 600; min-block-size: 36px; }
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .nexus-login__submit { inline-size: 100%; min-block-size: 56px; border: 1px solid var(--entry-pine); border-radius: 12px; background: var(--entry-pine) !important; color: var(--entry-surface) !important; box-shadow: 0 8px 18px #123c2414; font-size: 15px; font-weight: 600; gap: 10px; }
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .nexus-login__submit:hover:not(:disabled) { transform: translateY(-1px); filter: brightness(1.06); }
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .nexus-login__submit:disabled { opacity: .55; cursor: wait; }
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login :is(button,a):focus-visible, html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-arrival.nexus-welcome button:focus-visible { outline: 2px solid var(--entry-ring); outline-offset: 4px; }
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .nexus-login__notice { font-size: 13px; line-height: 1.8; border-radius: 10px; }
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .nexus-login__state { color: var(--entry-ink); padding: 20px 0; }
+/* Welcome: readable copy on an opaque column, photography in its own frame.
+   Sequence, skip and once-per-session behavior remain in the component. */
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-arrival.nexus-welcome { inline-size: 100%; block-size: auto; margin: 0; border: 0; border-radius: 0; position: relative; display: grid; grid-template-columns: 1fr 1fr; direction: ltr; min-block-size: 100svh; padding: 32px; gap: 32px; background: var(--entry-paper) !important; overflow: hidden; isolation: isolate; }
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-arrival.nexus-welcome::before, html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-arrival.nexus-welcome::after { content: none; }
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-arrival.nexus-welcome .nexus-welcome__stage { position: relative; grid-column: 2; grid-row: 1; inset: auto; inline-size: 100%; block-size: 100%; min-block-size: 640px; max-block-size: none; margin: 0; border-radius: 28px; overflow: hidden; border: 1px solid var(--entry-line); background: #173c30; box-shadow: none; }
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-arrival.nexus-welcome .nexus-welcome__hero { position: absolute; inset: 0; inline-size: 100%; block-size: 100%; }
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-arrival.nexus-welcome .nexus-welcome__hero img { inline-size: 100%; block-size: 100%; object-fit: cover; object-position: 55% 50%; }
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-arrival.nexus-welcome .nexus-welcome__scrim { position: absolute; inset: 0; z-index: 1; background: linear-gradient(155deg,#10352908,#103529a8); }
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-arrival.nexus-welcome .pharma-welcome-sculpture { position: absolute; z-index: 2; inset: auto 10% 5% auto; inline-size: 65%; block-size: auto; opacity: .26; pointer-events: none; transform: rotate(-12deg); }
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-arrival.nexus-welcome .nexus-welcome__content { position: relative; grid-column: 1; grid-row: 1; inline-size: min(100%, 640px); align-self: center; justify-self: center; display: flex; flex-direction: column; align-items: center; gap: 30px; padding: 56px 24px; margin: 0; text-align: center; }
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-arrival.nexus-welcome .nexus-welcome__masthead { display: flex; flex-direction: column; align-items: center; gap: 22px; margin: 0; padding: 0; position: static; }
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-arrival.nexus-welcome .nexus-welcome__brand { position: relative; display: flex; flex-direction: column; gap: 20px; padding: 0; }
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-arrival.nexus-welcome .nexus-welcome__emblem { inline-size: 88px; block-size: 88px; filter: none; animation: entry-seal 900ms ease-out both; }
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-arrival.nexus-welcome .nexus-welcome__kicker { color: var(--entry-muted); font-size: 10px; letter-spacing: .23em; }
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-arrival.nexus-welcome .nexus-welcome__title { color: var(--entry-ink) !important; font-size: clamp(27px,2.8vw,44px); line-height: 1.55; font-weight: 600; margin: 0; text-shadow: none; max-inline-size: 22ch; }
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-arrival.nexus-welcome .nexus-welcome__lede { color: var(--entry-muted) !important; max-inline-size: 39ch; font-size: 14px; line-height: 1.95; margin: 0; }
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-arrival.nexus-welcome .nexus-welcome__progress { inline-size: min(240px,80%); block-size: 3px; margin: 0; background: color-mix(in srgb,var(--entry-ink) 12%,transparent); border-radius: 10px; }
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-arrival.nexus-welcome .nexus-welcome__progress-fill { background: var(--entry-pine); }
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-arrival.nexus-welcome .nexus-welcome__credits { position: static; inline-size: 100%; margin: 0; padding: 22px 0 0; border: 0; border-block-start: 1px solid var(--entry-line); border-radius: 0; background: transparent; box-shadow: none; }
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-arrival.nexus-welcome .nexus-welcome__credits-name { color: var(--entry-ink); font-size: 13px; line-height: 1.9; font-weight: 500; }
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-arrival.nexus-welcome .nexus-welcome__credits-sup { color: var(--entry-muted); font-size: 12px; line-height: 1.9; }
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-arrival.nexus-welcome .nexus-welcome__credits-rule { inline-size: 28px; margin: 10px auto; background: var(--entry-gold); }
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-arrival.nexus-welcome .nexus-welcome__skip { position: absolute; z-index: 5; top: 20px; left: 24px; right: auto; min-inline-size: 64px; min-block-size: 44px; color: var(--entry-ink); background: var(--entry-surface); border: 1px solid var(--entry-line); border-radius: 12px; }
+@keyframes entry-seal { from { opacity: 0; transform: translateY(8px) scale(.96); } to { opacity: 1; transform: none; } }
+@media (max-width:999px) {
+  html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login { grid-template-columns: 1fr; grid-template-areas: 'art' 'form'; inline-size: 100%; min-block-size: 100svh; margin: 0; border: 0; border-radius: 0; }
+  html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .nexus-login__art { min-block-size: 290px; block-size: 290px; }
+  html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .nexus-login__hero img { object-position: 50% 40%; }
+  html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .nexus-login__art-caption { padding: 72px 36px 28px; }
+  html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .nexus-login__art-caption h1 { font-size: 26px; max-inline-size: 30ch; margin-block: 10px; }
+  html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .nexus-login__art-lede { display: none; }
+  html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .nexus-login__trust-row { margin-block-start: 14px; }
+  html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .pharma-auth__edition { display: none; }
+  html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .nexus-login__controls { top: 14px; right: 16px; }
+  html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .nexus-login__controls .nexus-control { color: #f4f7eb; background: #163d30e8; border-color: #b4c9b254; }
+  html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .nexus-login__auth { padding: 36px 40px 48px; gap: 30px; }
+  html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .nexus-login__brand, html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .nexus-login__card { inline-size: min(100%,460px); }
+  html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-arrival.nexus-welcome { grid-template-columns: 1fr; padding: 20px; gap: 0; }
+  html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-arrival.nexus-welcome .nexus-welcome__stage { grid-column: 1; grid-row: 1; min-block-size: 240px; block-size: 28svh; max-block-size: 320px; }
+  html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-arrival.nexus-welcome .nexus-welcome__content { grid-column: 1; grid-row: 2; padding: 32px 24px; gap: 24px; }
+  html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-arrival.nexus-welcome .nexus-welcome__masthead { gap: 14px; }
+  html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-arrival.nexus-welcome .nexus-welcome__title { font-size: 30px; }
+  html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-arrival.nexus-welcome .nexus-welcome__emblem { inline-size: 70px; block-size: 70px; }
+}
+@media (max-width:599px) {
+  html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .nexus-login__art { min-block-size: 228px; block-size: 228px; }
+  html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .nexus-login__art-caption { padding: 66px 22px 22px; }
+  html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .nexus-login__art-caption h1 { font-size: 20px; line-height: 1.65; max-inline-size: 29ch; margin-block: 7px; }
+  html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .nexus-login__kicker { font-size: 8px !important; }
+  html[lang='en'][data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth .nexus-login__art-caption h1 { font-size: 18px; line-height: 1.55; }
+  html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .nexus-login__trust-row { display: none; }
+  html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .nexus-login__auth { padding: 28px 22px 40px; gap: 26px; }
+  html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .nexus-login__brand-emblem { inline-size: 52px; block-size: 52px; flex-basis: 52px; border-radius: 14px; }
+  html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .nexus-login__emblem { inline-size: 42px; block-size: 42px; }
+  html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .nexus-login__brand-name { font-size: 17px; }
+  html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .nexus-login__brand-department { font-size: 11px; }
+  html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .nexus-login__card-heading { margin-block-end: 20px; }
+  html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .nexus-login__card-heading h2 { font-size: 25px; }
+  html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login .nexus-login__label { margin-block-start: 18px; }
+  html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-arrival.nexus-welcome { padding: 12px; }
+  html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-arrival.nexus-welcome .nexus-welcome__stage { min-block-size: 180px; block-size: 24svh; border-radius: 20px; }
+  html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-arrival.nexus-welcome .nexus-welcome__content { padding: 24px 12px; gap: 20px; }
+  html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-arrival.nexus-welcome .nexus-welcome__title { font-size: 25px; }
+  html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-arrival.nexus-welcome .nexus-welcome__lede { font-size: 12px; }
+  html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-arrival.nexus-welcome .nexus-welcome__credits-name { font-size: 12px; }
+  html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-arrival.nexus-welcome .nexus-welcome__credits-sup { font-size: 11px; }
+  html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-arrival.nexus-welcome .nexus-welcome__emblem { inline-size: 60px; block-size: 60px; }
+  html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-arrival.nexus-welcome .nexus-welcome__brand { gap: 12px; }
+  html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-arrival.nexus-welcome .nexus-welcome__masthead { gap: 10px; }
+  html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-arrival.nexus-welcome .nexus-welcome__skip { top: 22px; left: 22px; }
+}
+@media (prefers-reduced-motion:reduce) {
+  html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-auth.nexus-login *, html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] .pharma-arrival.nexus-welcome * { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}
