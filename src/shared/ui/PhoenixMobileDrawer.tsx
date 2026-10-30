@@ -1,3 +1,6 @@
+import { groupPharmaNavigation } from './pharmaNavigationGroups';
+import { roleLabelKey } from '@/shared/lib/roles';
+import '@/shared/lib/pharma-navigation.css';
 import { useEffect, useRef } from 'react';
 import { useApp } from '@/app/AppContext';
 import { projectNavigation } from '@/shared/authz/nav-projection';
@@ -65,7 +68,7 @@ interface Props {
 }
 
 export function PhoenixMobileDrawer({ currentScreen, onNavigate, onClose, onLogout }: Props) {
-  const { lang, dir, role, myPermissions, activeOrganizationKind } = useApp();
+  const { lang, dir, role, profile, myPermissions, activeOrganizationKind } = useApp();
   const overlayRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLElement>(null);
   const previouslyFocused = useRef<HTMLElement | null>(null);
@@ -78,10 +81,6 @@ export function PhoenixMobileDrawer({ currentScreen, onNavigate, onClose, onLogo
     role, permissions: myPermissions, organizationKind: activeOrganizationKind,
   });
 
-  /* PHASE-A7-VISUAL-CONVERGENCE: same data-active contract as PhoenixSidebar —
-     fill/colour live in phase-a-visual-convergence.css so the drawer and the
-     desktop rail agree on what "active" looks like without either fighting
-     an inline style. */
   const ns = (n: number) => ({ fontWeight: currentScreen === n ? 700 : 500 });
 
   useEffect(() => {
@@ -146,137 +145,61 @@ export function PhoenixMobileDrawer({ currentScreen, onNavigate, onClose, onLogo
   }, [onClose]);
 
   return (
-    <div
-      ref={overlayRef}
-      id="phoenix-mobile-drawer"
-      dir={dir}
+    <div ref={overlayRef} id="phoenix-mobile-drawer" data-pharma-navigation="open" dir={dir}
       style={{ position: 'fixed', inset: 0, zIndex: 'var(--z-drawer)', display: 'flex' }}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="phoenix-mobile-drawer-title"
-    >
+      role="dialog" aria-modal="true" aria-labelledby="phoenix-mobile-drawer-title">
       <div aria-hidden="true" onClick={onClose} className="premium-drawer-backdrop" style={{ position: 'absolute', inset: 0 }} />
-      <aside ref={panelRef} tabIndex={-1} className="premium-sidebar premium-dialog-panel premium-mobile-drawer" style={{
-        position: 'relative',
-        width: 'min(var(--sw), 88vw)',
-        background: 'var(--surface)',
-        height: '100dvh',
-        maxHeight: '100dvh',
-        overflowY: 'hidden',
-        overscrollBehavior: 'contain',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '2px',
-        padding: 'calc(env(safe-area-inset-top, 0px) + 10px) calc(env(safe-area-inset-right, 0px) + 8px) calc(env(safe-area-inset-bottom, 0px) + 14px) calc(env(safe-area-inset-left, 0px) + 8px)',
-        boxShadow: 'var(--sh-xl)',
+      <aside ref={panelRef} tabIndex={-1} className="premium-sidebar premium-dialog-panel premium-mobile-drawer" data-pharma-nav="drawer" style={{
+        position: 'relative', width: 'min(var(--sw), 88vw)', background: 'var(--surface)',
+        height: '100dvh', maxHeight: '100dvh', overflowY: 'hidden', overscrollBehavior: 'contain',
+        display: 'flex', flexDirection: 'column', gap: '2px', boxShadow: 'var(--sh-xl)',
         animation: `${dir === 'rtl' ? 'si-rtl' : 'si'} .2s ease`,
       }}>
-        {/* The close button gets its own row so the brand lockup below keeps the
-            full drawer width. Sharing one row with a 44px button left the text
-            about 100px wide, which wrapped the title and the department line
-            into a five-line stack. */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', paddingInline: '8px' }}>
-          <button
-            onClick={onClose}
-            className="premium-drawer-close premium-focus-ring"
-            aria-label={t('close', lang)}
-            style={{
-              minInlineSize: 'var(--touch-target)', minBlockSize: 'var(--touch-target)',
-              flexShrink: 0, borderRadius: 'var(--r2)',
-              border: '1px solid var(--line)', background: 'var(--field)', color: 'var(--text)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              cursor: 'pointer', transition: 'all 120ms',
-            }}
-          >
-            <PhoenixIcon name="close" size={18} />
-          </button>
-        </div>
-
-        <div className="premium-sidebar-brand premium-drawer-brand" style={{ marginBottom: '8px' }}>
-          <div className="nexus-brand-lockup">
-            <div className="nexus-brand-mark nexus-brand-mark--phoenix">
-              <PhoenixMark size={44} title="" />
-            </div>
-            <div style={{ minWidth: 0, flex: 1 }}>
-              <div id="phoenix-mobile-drawer-title" className="nexus-brand-title">MediStock-Babil Phoenix</div>
+        <header className="pharma-nav__masthead">
+          <button type="button" onClick={onClose} className="premium-drawer-close premium-focus-ring" style={{ minInlineSize: 'var(--touch-target)', minBlockSize: 'var(--touch-target)' }} aria-label={t('close', lang)}><PhoenixIcon name="close" size={20} /></button>
+          <div className="premium-sidebar-brand premium-drawer-brand"><div className="nexus-brand-lockup">
+            <div className="nexus-brand-mark nexus-brand-mark--phoenix"><PhoenixMark size={44} title="" /></div>
+            <div className="pharma-nav__brand-copy">
+              <span id="phoenix-mobile-drawer-title" className="pharma-nav__sr">MediStock-Babil Phoenix</span>
+              <div className="nexus-brand-title" aria-hidden="true"><bdi>MediStock</bdi><small>Babil · Phoenix</small></div>
               <div className="nexus-brand-subtitle">{t('shell_brand_department', lang)}</div>
             </div>
-          </div>
-        </div>
-
-        <nav {...guideAnchor(GUIDE_ANCHORS.shellNavigationDrawer)} className="premium-drawer-nav" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: '2px', overflowY: 'auto' }} aria-label={t('shell_primary_nav', lang)}>
-          {primaryItems.map(item => {
-            const s = ns(item.screen);
-            return (
-              <button
-                className="premium-nav-item"
-                data-active={currentScreen === item.screen}
-                key={item.screen}
-                onClick={() => { onNavigate(item.screen); onClose(); }}
-                aria-current={currentScreen === item.screen ? 'page' : undefined}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: '12px',
-                  padding: '0 12px', borderRadius: 'var(--r2)',
-                  borderBlock: 'none', borderInlineEnd: 'none', width: '100%', textAlign: 'start',
-                  fontSize: '14px',
-                  transition: 'background-color var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard)',
-                  minHeight: 'var(--touch-target)',
-                  opacity: item.frozen ? 0.7 : 1,
-                  cursor: 'pointer',
-                  ...s,
-                }}
-              >
+          </div></div>
+        </header>
+        <div className="pharma-nav__workspace"><PhoenixIcon name="medical" size={16} /><span>{lang === 'ar' ? 'مساحة العمل الصيدلانية' : 'Pharmacy workspace'}</span><span className="pharma-nav__workspace-dot" aria-hidden="true" /></div>
+        <nav {...guideAnchor(GUIDE_ANCHORS.shellNavigationDrawer)} className="premium-drawer-nav" style={{ flex: 1, minHeight: 0, overflowY: 'auto' }} aria-label={t('shell_primary_nav', lang)}>
+          {groupPharmaNavigation(primaryItems, lang).map(group => (
+          <section className="pharma-nav__section" key={group.key} aria-labelledby={`pharma-drawer-${group.key}`}>
+            <h2 id={`pharma-drawer-${group.key}`} className="pharma-nav__section-title"><span>{group.label}</span><i aria-hidden="true" /></h2>
+            {group.items.map(item => (
+              <button type="button" className="premium-nav-item" data-active={currentScreen === item.screen} key={item.screen}
+                onClick={() => { onNavigate(item.screen); onClose(); }} aria-current={currentScreen === item.screen ? 'page' : undefined} style={ns(item.screen)}>
                 <span className="nexus-nav-icon"><PhoenixIcon name={item.icon} size={19} /></span>
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t(item.labelKey, lang)}</span>
+                <span className="pharma-nav__label">{t(item.labelKey, lang)}</span>
+                {currentScreen === item.screen && <span className="pharma-nav__current" aria-hidden="true"><PhoenixIcon name="check" size={14} /></span>}
               </button>
-            );
-          })}
-
-          <div style={{ height: '1px', background: 'var(--line)', margin: '10px 4px 6px' }} />
-
-          {secondaryItems.map(item => {
-            const s = ns(item.screen);
-            return (
-              <button
-                className="premium-nav-item"
-                data-active={currentScreen === item.screen}
-                key={item.screen}
-                onClick={() => { onNavigate(item.screen); onClose(); }}
-                aria-current={currentScreen === item.screen ? 'page' : undefined}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: '12px',
-                  padding: '0 12px', borderRadius: 'var(--r2)',
-                  borderBlock: 'none', borderInlineEnd: 'none', width: '100%', textAlign: 'start',
-                  fontSize: '14px',
-                  transition: 'background-color var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard)',
-                  minHeight: 'var(--touch-target)',
-                  cursor: 'pointer',
-                  ...s,
-                }}
-              >
-                <span className="nexus-nav-icon"><PhoenixIcon name={item.icon} size={19} /></span>
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t(item.labelKey, lang)}</span>
-              </button>
-            );
-          })}
-
+            ))}
+          </section>
+        ))}
+        <section className="pharma-nav__section pharma-nav__personal" aria-labelledby="pharma-drawer-personal">
+          <h2 id="pharma-drawer-personal" className="pharma-nav__section-title"><span>{lang === 'ar' ? 'حسابك' : 'Your account'}</span><i aria-hidden="true" /></h2>
+          {secondaryItems.map(item => (
+            <button type="button" className="premium-nav-item" data-active={currentScreen === item.screen} key={item.screen}
+              onClick={() => { onNavigate(item.screen); onClose(); }} aria-current={currentScreen === item.screen ? 'page' : undefined} style={ns(item.screen)}>
+              <span className="nexus-nav-icon"><PhoenixIcon name={item.icon} size={19} /></span>
+              <span className="pharma-nav__label">{t(item.labelKey, lang)}</span>
+              {currentScreen === item.screen && <span className="pharma-nav__current" aria-hidden="true"><PhoenixIcon name="check" size={14} /></span>}
+            </button>
+          ))}
+        </section>
         </nav>
-
-        <button
-          type="button"
-          className="premium-drawer-logout premium-focus-ring"
-          onClick={() => { onLogout(); onClose(); }}
-          style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-            width: '100%', minHeight: '44px', marginTop: '8px', padding: '12px 10px',
-            borderRadius: 'var(--r2)', border: '1px solid color-mix(in srgb, var(--danger) 45%, var(--line))',
-            background: 'var(--chipD)', color: 'var(--danger)', fontSize: '14px', fontWeight: 700,
-            cursor: 'pointer', flexShrink: 0,
-          }}
-        >
-          <PhoenixIcon name="logout" size={18} />
-          <span>{t('auth_sign_out', lang)}</span>
-        </button>
+        <div className="pharma-nav__footer">
+          <div className="pharma-nav__identity">
+            <div className="nexus-role-orb"><PhoenixIcon name="account" size={18} /></div>
+            <div className="pharma-nav__identity-copy"><bdi>{profile?.full_name ?? t(roleLabelKey(role), lang)}</bdi><small>{t(roleLabelKey(role), lang)}</small></div>
+          </div>
+          <button type="button" className="premium-drawer-logout pharma-nav__logout premium-focus-ring" onClick={() => { onLogout(); onClose(); }}><PhoenixIcon name="logout" size={17} /><span>{t('auth_sign_out', lang)}</span></button>
+        </div>
       </aside>
     </div>
   );
