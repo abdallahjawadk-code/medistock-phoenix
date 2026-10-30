@@ -6,6 +6,7 @@ import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import { MediStockMark } from '@/shared/ui/MediStockMark';
 import { AuthSupplyHero } from '@/shared/ui/AuthSupplyHero';
 import { PharmaSculpture } from '@/shared/ui/PharmaSculpture';
+import '@/shared/lib/pharma-auth.css';
 
 export function LoginScreen() {
   const { lang, theme, toggleLang, toggleTheme, signIn, requestPasswordReset, configured } = useApp();
@@ -111,8 +112,7 @@ export function LoginScreen() {
   };
 
   return (
-    <div className="premium-login nexus-login">
-      <PharmaSculpture className="pharma-login-sculpture" />
+    <div className="premium-login nexus-login pharma-auth">
       <div className="nexus-login__controls">
         <button
           onClick={toggleLang}
@@ -130,14 +130,13 @@ export function LoginScreen() {
         </button>
       </div>
 
-      {/* Two-column layout: the form panel stays on the LEFT; a light,
-          institutional supply-network illustration (original SVG, no image
-          asset, no Phoenix bird) dominates the RIGHT art panel — the "Premium
-          Living Pharmaceutical Supply" identity from the approved reference
-          board. Being the first in-flow child, this panel resolves to the
-          inline-start (physical right) column under RTL. */}
-      <section className="nexus-login__art" aria-label={lang === 'ar' ? 'شبكة الإمداد الدوائي المؤسسية' : 'Institutional medicine supply network'}>
+      {/* Presentation only: one image frame, one continuous contrast layer,
+          and an independent form column. Authentication handlers are unchanged. */}
+      <section className="nexus-login__art" dir={lang === 'ar' ? 'rtl' : 'ltr'} aria-label={lang === 'ar' ? 'شبكة الإمداد الدوائي المؤسسية' : 'Institutional medicine supply network'}>
         <AuthSupplyHero className="nexus-login__hero" priority />
+        <div className="pharma-auth__wash" aria-hidden="true" />
+        <PharmaSculpture className="pharma-login-sculpture" />
+        <div className="pharma-auth__edition"><span aria-hidden="true" />{lang === 'ar' ? 'دائرة صحة بابل · قسم الصيدلة' : 'Babil Health Directorate · Pharmacy Department'}</div>
         <div className="nexus-login__art-caption">
           <div className="nexus-login__kicker">MEDISTOCK PHOENIX</div>
           <h1>
@@ -158,7 +157,7 @@ export function LoginScreen() {
         </div>
       </section>
 
-      <main className="nexus-login__auth">
+      <main className="nexus-login__auth" dir={lang === 'ar' ? 'rtl' : 'ltr'}>
         <div className="nexus-login__brand">
           <div className="nexus-login__brand-emblem">
             <MediStockMark size={80} className="nexus-login__emblem" title="" />
