@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 import { mt, manualUnitText, type ManualKey, type ManualLang } from '../manual/manual-needs.i18n';
 import { MATERIAL_UNITS } from '../manual/material-registration.service';
@@ -18,6 +18,7 @@ interface Props {
   contextKey: string;
   item: AnnualCatalogItemResult;
   changes: readonly AnnualCatalogChange[];
+  sourcePanel?: ReactNode;
   canEdit: boolean;
   busy?: boolean;
   outcomeUnknown?: boolean;
@@ -49,7 +50,7 @@ function timestamp(value: string, lang: ManualLang): string {
 
 /** Form and attributed evidence only. The caller owns the command, idempotency key and authoritative refresh. */
 export function AnnualCatalogEditor({ lang, contextKey, item, changes, canEdit, busy = false, outcomeUnknown = false,
-  notice, errorText, historyBusy = false, historyFailed = false, hasMoreHistory = false, canonicalPreview,
+  notice, errorText, historyBusy = false, historyFailed = false, hasMoreHistory = false, canonicalPreview, sourcePanel,
   onSave, onLoadHistory, onPreviewCanonical, onRefreshCanonical, onRequestRegistration, onClose, onReloadCurrent }: Props) {
   const [before, setBefore] = useState(() => editableAnnualFields(item.fieldVersion.fields));
   const [fields, setFields] = useState(() => editableAnnualFields(item.fieldVersion.fields));
@@ -157,6 +158,7 @@ export function AnnualCatalogEditor({ lang, contextKey, item, changes, canEdit, 
       <dl>{ANNUAL_IDENTITY_FIELDS.map((field) => <div key={field}><dt>{mt(FIELD_LABELS[field], lang)}</dt><dd><bdi>{field === 'unit' ? manualUnitText(canonicalPreview.canonicalSnapshot[field], lang) : canonicalPreview.canonicalSnapshot[field] ?? '—'}</bdi></dd></div>)}</dl>
       {canEdit && onRefreshCanonical && <button type="button" disabled={busy || submitting || stale || !reason.trim()} onClick={() => void refresh()}>{mt('annualConfirmCanonicalRefresh', lang)}</button>}
     </section>}
+    {sourcePanel}
     <section className="prism-annual-history" aria-label={mt('annualChangeHistory', lang)}>
       <div className="prism-annual-editor__header"><h4>{mt('annualChangeHistory', lang)}</h4>
         {onLoadHistory && <button type="button" disabled={historyBusy || locked} onClick={() => onLoadHistory(false)}>{mt('annualReloadHistory', lang)}</button>}

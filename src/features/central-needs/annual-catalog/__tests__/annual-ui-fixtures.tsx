@@ -1,7 +1,7 @@
 import { vi } from 'vitest';
 import type { ManualCapabilities } from '../../manual/manual-needs.service';
 import type { MaterialRequest } from '../../manual/material-registration.service';
-import type { AnnualFieldState } from '../annual-catalog.contract';
+import { SOURCE_IDENTITY_FIELDS, type AnnualFieldState, type AnnualSourceOccurrence } from '../annual-catalog.contract';
 import type { AnnualCatalogItemResult } from '../annual-catalog-server.contract';
 import { editableAnnualFields, type AnnualCatalogChange, type AnnualNeedBinding, type AnnualNeedEvent, type AnnualNeedWriteInput, type EditAnnualCatalogItemInput } from '../annual-needs.contract';
 import { realAnnualNeedsUiApi, type AnnualNeedsUiApi } from '../AnnualNeedsWorkspace';
@@ -32,6 +32,20 @@ export const binding = (item = annualItem()): AnnualNeedBinding => ({ ...item.fi
 export const change = (): AnnualCatalogChange => ({ changeId: ID.change, fromFieldVersionId: ID.version, toFieldVersionId: ID.nextVersion,
   actorId: ID.actor, actorName: 'Employee recorded by server', fromTrustedProfile: true, createdAt: '2026-10-31T09:15:00Z', reason: 'Corrected the annual display name',
   beforeFields: editableAnnualFields(annualItem().fieldVersion.fields), afterFields: { ...editableAnnualFields(annualItem().fieldVersion.fields), nameAr: 'اسم مصحح' }, requiresLegalReview: [] });
+
+export function sourceOccurrence(index = 1): AnnualSourceOccurrence {
+  const text: Record<string, string> = { scientificName: 'Amoxicillin', nationalCode: '00012-A', currentNationalCode: '00012-A', previousNationalCode: '00007-A' };
+  const fields = Object.fromEntries(SOURCE_IDENTITY_FIELDS.map((field, column) => [field, text[field] === undefined
+    ? { state: 'missing', reason: 'unmapped', witness: null }
+    : { state: 'value', text: text[field], witness: { field,
+      cell: { coordinate: { row: index, col: column, a1: `${String.fromCharCode(65 + column)}${index + 1}` }, presence: 'value', valueType: 'string', rawValue: text[field], isFormula: false, hasComment: false },
+      header: { coordinate: { row: 0, col: column, a1: `${String.fromCharCode(65 + column)}1` }, presence: 'value', valueType: 'string', rawValue: field, isFormula: false, hasComment: false } } }])) as AnnualSourceOccurrence['fields'];
+  return { occurrenceKey: `b0000000-0000-4000-8000-${String(index).padStart(12, '0')}`, scope: SCOPE,
+    source: { sourceId: `c0000000-0000-4000-8000-${String(index).padStart(12, '0')}`, filename: `synthetic-source-${index}.xlsx`, sha256: 'b'.repeat(64),
+      parser: { contractVersion: '1.2.0', sheetjsVersion: '0.20.3', sheetjsTarballSha256: 'c'.repeat(64), runtime: 'browser_worker' },
+      sheetIndex: 0, sheetName: 'مواد تجريبية', row: index, blockId: 'synthetic-block', mappingReference: 'synthetic-mapping' },
+    classification: { label: 'Synthetic medicines', origin: 'source', reference: 'synthetic-heading' }, fields };
+}
 
 export function annualFixture() {
   const state = { item: annualItem(), events: [] as AnnualNeedEvent[], changes: [] as AnnualCatalogChange[], requests: [] as MaterialRequest[], yearExists: true };
@@ -74,6 +88,7 @@ export function annualFixture() {
       return { ...state.item, idempotentReplay: false, change: audit };
     }),
     listAnnualCatalogChanges: vi.fn(async () => ({ scope: SCOPE, annualItemId: ID.annual, changes: state.changes, nextAfterChangeId: null })),
+    listAnnualCatalogOccurrences: vi.fn(async (scope, annualItemId) => ({ scope, annualItemId, occurrences: [], nextAfterOccurrenceId: null, attestation: 'client_attested' as const })),
     createAnnualRegistrationApi: vi.fn(() => registrationApi),
     listAnnualNeedEvents: vi.fn(async () => state.events),
     addAnnualNeedLine: vi.fn(saveNeed), correctAnnualNeedLine: vi.fn(saveNeed),
