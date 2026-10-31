@@ -84,3 +84,9 @@ No authenticated hosted session or PostgREST acceptance is implied by native SQL
 ### Official guidance checked
 
 Reviewed on 2026-10-31: [Supabase function security and grants](https://supabase.com/docs/guides/database/functions), [Supabase RLS](https://supabase.com/docs/guides/database/postgres/row-level-security), [PostgreSQL 17 row locking](https://www.postgresql.org/docs/17/explicit-locking.html), and the [Supabase changelog](https://supabase.com/changelog.md). These support the security and locking choices; the test evidence above establishes this implementation's observed behavior.
+
+## Master integration gate — 2026-11-01
+
+PR #261 (P2/PRISM) was merged into `master` at `7963622e6ad77236d77c466e0ee9507ce050cccd`, and its Vercel Production build reached READY. PR #262 is now retargeted from its former stacked PRISM branch to `master`. The A1 SQL candidate remains **NOT_APPLIED** on hosted environments, and no annual-catalog feature activation is implied by Git merge or Vercel deployment.
+
+This documentation-only follow-up triggers a new `pull_request` CI run against the actual `master` merge base. Release must preserve the isolated eight-file A1 functional diff, confirm PostgreSQL/quality/preview checks on the new PR head and base, and keep hosted SQL/migration reconciliation and authenticated acceptance as separate explicit gates. Do not reuse the earlier parent-branch CI as evidence of the new merge composition.
