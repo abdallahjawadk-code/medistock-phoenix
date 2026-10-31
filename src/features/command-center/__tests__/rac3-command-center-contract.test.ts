@@ -570,7 +570,7 @@ describe('RAC-3 · I) no backend or migration change', () => {
    * replaces: it would also catch a dependency edit smuggled in beside a
    * version bump, which a filename check never could.
    */
-  it('changes no dependency — package.json keeps its reviewed 6ce98332 contract and the WORKING lockfile must equal the complete SEC-HOTFIX-3 graph (the SEC-HOTFIX-2 graph frozen by exact commit + the explicit Vitest family 4.1.12 delta) plus exactly the CI-HOTFIX-4 undici 7.30.1 and authorized Vite 6.4.5 transformations', () => {
+  it('changes no dependency except pinned minimatch security hotfix — package.json keeps its reviewed 6ce98332 contract and the WORKING lockfile must equal the complete SEC-HOTFIX-3 graph (the SEC-HOTFIX-2 graph frozen by exact commit + the explicit Vitest family 4.1.12 delta) plus exactly the CI-HOTFIX-4 undici 7.30.1 and authorized Vite 6.4.5 transformations', () => {
     // CN-2A-SHEETJS: the audited dependency baseline advances from d70b24a9
     // to 6ce98332, the reviewed CN-2A commit that adds exactly one runtime
     // dependency — `xlsx` (SheetJS Community Edition 0.20.3, vendored
@@ -626,6 +626,9 @@ describe('RAC-3 · I) no backend or migration change', () => {
         ...base.overrides[ESTREE],
         minimatch: { ...base.overrides[ESTREE].minimatch, 'brace-expansion': '5.0.12' },
       },
+      // GHSA-g3hv-75wg-m249: audited exact transitive security replacement.
+      // Keep the existing nested brace-expansion pin; do not widen ranges.
+      minimatch: '11.0.1',
     });
     // CN-2B: the lint script gains the `api` root alongside `src`, reviewed as
     // the one approved scripts delta. Every other script stays byte-identical
@@ -942,7 +945,38 @@ describe('RAC-3 · I) no backend or migration change', () => {
     };
     const expectedViteSecurityLock = { ...expectedHotfix4Lock, packages: securityVitePackages };
     const workingLock = JSON.parse(readFileSync(join(process.cwd(), 'package-lock.json'), 'utf8'));
-    expect(normalise(workingLock)).toBe(normalise(expectedViteSecurityLock));
+    // MINIMATCH-HOTFIX / GHSA-g3hv-75wg-m249: no generic dependency drift.
+    // The single existing minimatch@10.2.5 (also used by ExcelJS via readdir-glob)
+    // advances to 11.0.1, the first patched major. One new dependency is
+    // required by the real 11.0.1 manifest; every other lock entry stays pinned.
+    const MINIMATCH = 'node_modules/minimatch';
+    const NONRECURSIVE = 'node_modules/@isaacs/nonrecursive-glob-match';
+    const oldMinimatch = securityVitePackages[MINIMATCH];
+    expect(oldMinimatch.version).toBe('10.2.5');
+    expect(securityVitePackages[NONRECURSIVE]).toBeUndefined();
+    const patchedMinimatch = {
+      ...oldMinimatch,
+      version: '11.0.1',
+      resolved: 'https://registry.npmjs.org/minimatch/-/minimatch-11.0.1.tgz',
+      integrity: 'sha512-t+Vn6DX4wPCxS23y03C0uhF7S1jpi1GfqPrnlEipCJaA2ykiNbMkVlDutZtmvLfRcUN6R8AYVlzTsQrT4RZoLQ==',
+      dependencies: {
+        '@isaacs/nonrecursive-glob-match': '^1.0.1',
+        'brace-expansion': '^5.0.12',
+      },
+    };
+    const nonrecursive = {
+      version: '1.0.3',
+      resolved: 'https://registry.npmjs.org/@isaacs/nonrecursive-glob-match/-/nonrecursive-glob-match-1.0.3.tgz',
+      integrity: 'sha512-SI7kyKHq4XXDRozw+r9GlRZkia1ZkFrpLW98r2IC2Bpr8YkFGE3fvjzmxCG0x78A++69HmDNrDvSMYBZmHGpKA==',
+      license: 'BlueOak-1.0.0',
+    };
+    const securePackages = Object.fromEntries([
+      ...Object.entries(securityVitePackages),
+      [NONRECURSIVE, nonrecursive],
+    ].sort(([a], [b]) => a.localeCompare(b))) as Record<string, Record<string, unknown>>;
+    securePackages[MINIMATCH] = patchedMinimatch;
+    const expectedMinimatchHotfixLock = { ...expectedViteSecurityLock, packages: securePackages };
+    expect(normalise(workingLock)).toBe(normalise(expectedMinimatchHotfixLock));
     // ... and the working package.json is the HEAD package.json whose contract is asserted above.
     expect(JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8'))).toEqual(head);
   });
