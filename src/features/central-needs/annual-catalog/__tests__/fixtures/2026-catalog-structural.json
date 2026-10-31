@@ -1,0 +1,1242 @@
+{
+  "fixtureKind": "sanitized_structural_not_original_workbook_replay",
+  "metadataPolicy": "Filenames, sheet names, classifications and file hashes are synthetic. Material definitions and selected field values retain source text. Precise original provenance remains in private evidence.",
+  "originalQuantityOrInstitutionCellsIncluded": false,
+  "samples": [
+    {
+      "sampleId": "essential-leading-zero",
+      "year": 2026,
+      "syntheticSource": {
+        "filename": "essential-drugs-2026.xls",
+        "sha256": "a7919a0be55031fbf0e35d044652508659947fa858235e0a8344b2a0f8ef9a47",
+        "sheetIndex": 0,
+        "sheetName": "Catalog",
+        "classification": "essential-drugs"
+      },
+      "blockSelection": {
+        "blockId": "0:A:B:C",
+        "headerRow": 1,
+        "firstRow": 5,
+        "lastRow": 5,
+        "indices": "zero_based",
+        "columnMap": {
+          "nationalCode": 0,
+          "scientificName": 1,
+          "unit": 2
+        }
+      },
+      "cells": [
+        {
+          "coordinate": {
+            "row": 1,
+            "col": 0,
+            "a1": "A2"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": "NATIONAL CODE",
+          "formattedText": "NATIONAL CODE",
+          "isFormula": false,
+          "hasComment": false
+        },
+        {
+          "coordinate": {
+            "row": 1,
+            "col": 1,
+            "a1": "B2"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": "ITEMS",
+          "formattedText": "ITEMS",
+          "isFormula": false,
+          "hasComment": false
+        },
+        {
+          "coordinate": {
+            "row": 1,
+            "col": 2,
+            "a1": "C2"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": "UNIT\nDOSE",
+          "formattedText": "UNIT\nDOSE",
+          "isFormula": false,
+          "hasComment": false
+        },
+        {
+          "coordinate": {
+            "row": 5,
+            "col": 0,
+            "a1": "A6"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": "01-AA0-004",
+          "formattedText": "01-AA0-004",
+          "isFormula": false,
+          "hasComment": false
+        },
+        {
+          "coordinate": {
+            "row": 5,
+            "col": 1,
+            "a1": "B6"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": "Digoxin  250 mcg scored Tablet",
+          "formattedText": "Digoxin  250 mcg scored Tablet",
+          "isFormula": false,
+          "hasComment": false
+        },
+        {
+          "coordinate": {
+            "row": 5,
+            "col": 2,
+            "a1": "C6"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": "Tablet",
+          "formattedText": "Tablet",
+          "isFormula": false,
+          "hasComment": false
+        }
+      ],
+      "warnings": [
+        "parallel_identity_block_requires_selection",
+        "clinical_fields_embedded_in_description"
+      ],
+      "canonicalItemId": null
+    },
+    {
+      "sampleId": "essential-code-trailing-spaces",
+      "year": 2026,
+      "syntheticSource": {
+        "filename": "essential-drugs-2026.xls",
+        "sha256": "a7919a0be55031fbf0e35d044652508659947fa858235e0a8344b2a0f8ef9a47",
+        "sheetIndex": 0,
+        "sheetName": "Catalog",
+        "classification": "essential-drugs"
+      },
+      "blockSelection": {
+        "blockId": "0:A:B:C",
+        "headerRow": 1,
+        "firstRow": 177,
+        "lastRow": 177,
+        "indices": "zero_based",
+        "columnMap": {
+          "nationalCode": 0,
+          "scientificName": 1,
+          "unit": 2
+        }
+      },
+      "cells": [
+        {
+          "coordinate": {
+            "row": 1,
+            "col": 0,
+            "a1": "A2"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": "NATIONAL CODE",
+          "formattedText": "NATIONAL CODE",
+          "isFormula": false,
+          "hasComment": false
+        },
+        {
+          "coordinate": {
+            "row": 1,
+            "col": 1,
+            "a1": "B2"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": "ITEMS",
+          "formattedText": "ITEMS",
+          "isFormula": false,
+          "hasComment": false
+        },
+        {
+          "coordinate": {
+            "row": 1,
+            "col": 2,
+            "a1": "C2"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": "UNIT\nDOSE",
+          "formattedText": "UNIT\nDOSE",
+          "isFormula": false,
+          "hasComment": false
+        },
+        {
+          "coordinate": {
+            "row": 177,
+            "col": 0,
+            "a1": "A178"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": "04-K00-016  ",
+          "formattedText": "04-K00-016  ",
+          "isFormula": false,
+          "hasComment": false
+        },
+        {
+          "coordinate": {
+            "row": 177,
+            "col": 1,
+            "a1": "B178"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": "Procyclidine hydrochloride 5mg Tablet                                                                                                                                                                                                                                  ",
+          "formattedText": "Procyclidine hydrochloride 5mg Tablet                                                                                                                                                                                                                                  ",
+          "isFormula": false,
+          "hasComment": false
+        },
+        {
+          "coordinate": {
+            "row": 177,
+            "col": 2,
+            "a1": "C178"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": "Tablet ",
+          "formattedText": "Tablet ",
+          "isFormula": false,
+          "hasComment": false
+        }
+      ],
+      "warnings": [
+        "national_code_trailing_spaces_preserved",
+        "source_unit_trailing_space_preserved",
+        "parallel_identity_block_requires_selection"
+      ],
+      "canonicalItemId": null
+    },
+    {
+      "sampleId": "dental-durable-new-code",
+      "year": 2026,
+      "syntheticSource": {
+        "filename": "dental-supplies-2026.xls",
+        "sha256": "cc998f4579395e8c7717a4ba09891995779754fcf62e8165def2a0cd2fdf7510",
+        "sheetIndex": 0,
+        "sheetName": "Catalog",
+        "classification": "dental-supplies"
+      },
+      "blockSelection": {
+        "blockId": "1:A:C:D",
+        "headerRow": 1,
+        "firstRow": 3,
+        "lastRow": 3,
+        "indices": "zero_based",
+        "columnMap": {
+          "scientificName": 2,
+          "unit": 3,
+          "currentNationalCode": 0,
+          "previousNationalCode": 1
+        }
+      },
+      "cells": [
+        {
+          "coordinate": {
+            "row": 1,
+            "col": 0,
+            "a1": "A2"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": "NEW CODE",
+          "formattedText": "NEW CODE",
+          "isFormula": false,
+          "hasComment": false
+        },
+        {
+          "coordinate": {
+            "row": 1,
+            "col": 2,
+            "a1": "C2"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": "DENTAL IMPLANT SUPPLIES",
+          "formattedText": "DENTAL IMPLANT SUPPLIES",
+          "isFormula": false,
+          "hasComment": false
+        },
+        {
+          "coordinate": {
+            "row": 0,
+            "col": 3,
+            "a1": "D1"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": "وحدة القياس",
+          "formattedText": "وحدة القياس",
+          "isFormula": false,
+          "hasComment": false
+        },
+        {
+          "coordinate": {
+            "row": 3,
+            "col": 0,
+            "a1": "A4"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": "DNI-RE00-001",
+          "formattedText": "DNI-RE00-001",
+          "isFormula": false,
+          "hasComment": false
+        },
+        {
+          "coordinate": {
+            "row": 3,
+            "col": 2,
+            "a1": "C4"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": "Surgical kit for implant",
+          "formattedText": "Surgical kit for implant",
+          "isFormula": false,
+          "hasComment": false
+        },
+        {
+          "coordinate": {
+            "row": 3,
+            "col": 3,
+            "a1": "D4"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": "kit",
+          "formattedText": "kit",
+          "isFormula": false,
+          "hasComment": false
+        },
+        {
+          "coordinate": {
+            "row": 1,
+            "col": 1,
+            "a1": "B2"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": "OLD CODE",
+          "formattedText": "OLD CODE",
+          "isFormula": false,
+          "hasComment": false
+        },
+        {
+          "coordinate": {
+            "row": 3,
+            "col": 1,
+            "a1": "B4"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": "M12-B0d-001",
+          "formattedText": "M12-B0d-001",
+          "isFormula": false,
+          "hasComment": false
+        }
+      ],
+      "warnings": [
+        "explicit_new_and_old_code_keep_separate",
+        "prior_heuristic_chose_old_code_column"
+      ],
+      "canonicalItemId": null
+    },
+    {
+      "sampleId": "dental-deleted-old-code",
+      "year": 2026,
+      "syntheticSource": {
+        "filename": "dental-supplies-2026.xls",
+        "sha256": "cc998f4579395e8c7717a4ba09891995779754fcf62e8165def2a0cd2fdf7510",
+        "sheetIndex": 0,
+        "sheetName": "Catalog",
+        "classification": "dental-supplies"
+      },
+      "blockSelection": {
+        "blockId": "1:A:C:D",
+        "headerRow": 1,
+        "firstRow": 5,
+        "lastRow": 5,
+        "indices": "zero_based",
+        "columnMap": {
+          "scientificName": 2,
+          "unit": 3,
+          "currentNationalCode": 0,
+          "previousNationalCode": 1
+        }
+      },
+      "cells": [
+        {
+          "coordinate": {
+            "row": 1,
+            "col": 0,
+            "a1": "A2"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": "NEW CODE",
+          "formattedText": "NEW CODE",
+          "isFormula": false,
+          "hasComment": false
+        },
+        {
+          "coordinate": {
+            "row": 1,
+            "col": 2,
+            "a1": "C2"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": "DENTAL IMPLANT SUPPLIES",
+          "formattedText": "DENTAL IMPLANT SUPPLIES",
+          "isFormula": false,
+          "hasComment": false
+        },
+        {
+          "coordinate": {
+            "row": 0,
+            "col": 3,
+            "a1": "D1"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": "وحدة القياس",
+          "formattedText": "وحدة القياس",
+          "isFormula": false,
+          "hasComment": false
+        },
+        {
+          "coordinate": {
+            "row": 5,
+            "col": 0,
+            "a1": "A6"
+          },
+          "presence": "blank",
+          "rawValue": null,
+          "isFormula": false,
+          "hasComment": false
+        },
+        {
+          "coordinate": {
+            "row": 5,
+            "col": 2,
+            "a1": "C6"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": " تم حذف المادة من قبل اللجنة الاستشارية",
+          "formattedText": " تم حذف المادة من قبل اللجنة الاستشارية",
+          "isFormula": false,
+          "hasComment": false
+        },
+        {
+          "coordinate": {
+            "row": 5,
+            "col": 3,
+            "a1": "D6"
+          },
+          "presence": "blank",
+          "rawValue": null,
+          "isFormula": false,
+          "hasComment": false
+        },
+        {
+          "coordinate": {
+            "row": 1,
+            "col": 1,
+            "a1": "B2"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": "OLD CODE",
+          "formattedText": "OLD CODE",
+          "isFormula": false,
+          "hasComment": false
+        },
+        {
+          "coordinate": {
+            "row": 5,
+            "col": 1,
+            "a1": "B6"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": "M12-B0f-002",
+          "formattedText": "M12-B0f-002",
+          "isFormula": false,
+          "hasComment": false
+        }
+      ],
+      "warnings": [
+        "source_marks_deleted",
+        "new_code_blank_do_not_promote_old_code",
+        "source_unit_blank"
+      ],
+      "canonicalItemId": null
+    },
+    {
+      "sampleId": "genetics-name-column-c",
+      "year": 2026,
+      "syntheticSource": {
+        "filename": "laboratory-supplies-2026.xls",
+        "sha256": "988d725eaf9fffee092a770952062be7a20107c3d14e764681c19f64b9f0c5bf",
+        "sheetIndex": 0,
+        "sheetName": "Catalog",
+        "classification": "laboratory-supplies"
+      },
+      "blockSelection": {
+        "blockId": "0:A:C:E",
+        "headerRow": 1,
+        "firstRow": 3,
+        "lastRow": 3,
+        "indices": "zero_based",
+        "columnMap": {
+          "nationalCode": 0,
+          "scientificName": 2,
+          "unit": 4
+        }
+      },
+      "cells": [
+        {
+          "coordinate": {
+            "row": 1,
+            "col": 0,
+            "a1": "A2"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": "national code",
+          "formattedText": "national code",
+          "isFormula": false,
+          "hasComment": false
+        },
+        {
+          "coordinate": {
+            "row": 1,
+            "col": 2,
+            "a1": "C2"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": " نبيذة اساسي بايولوجي جزيئي  2026",
+          "formattedText": " نبيذة اساسي بايولوجي جزيئي  2026",
+          "isFormula": false,
+          "hasComment": false
+        },
+        {
+          "coordinate": {
+            "row": 1,
+            "col": 4,
+            "a1": "E2"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": "وحدة القياس",
+          "formattedText": "وحدة القياس",
+          "isFormula": false,
+          "hasComment": false
+        },
+        {
+          "coordinate": {
+            "row": 3,
+            "col": 0,
+            "a1": "A4"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": "GEN-DE00-001",
+          "formattedText": "GEN-DE00-001",
+          "isFormula": false,
+          "hasComment": false
+        },
+        {
+          "coordinate": {
+            "row": 3,
+            "col": 2,
+            "a1": "C4"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": "Micro tube 0.5 ml                  ",
+          "formattedText": "Micro tube 0.5 ml                  ",
+          "isFormula": false,
+          "hasComment": false
+        },
+        {
+          "coordinate": {
+            "row": 3,
+            "col": 4,
+            "a1": "E4"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": "Pcs",
+          "formattedText": "Pcs",
+          "isFormula": false,
+          "hasComment": false
+        }
+      ],
+      "warnings": [
+        "name_not_adjacent_to_code",
+        "source_unit_is_pcs_no_package_conversion"
+      ],
+      "canonicalItemId": null
+    },
+    {
+      "sampleId": "shared-code-oncology",
+      "year": 2026,
+      "syntheticSource": {
+        "filename": "oncology-drugs-2026.xls",
+        "sha256": "0ace6742941309e0167659ec3b50532bab2fe5e5c2a25c7096aaa09a763f7f00",
+        "sheetIndex": 0,
+        "sheetName": "Catalog",
+        "classification": "oncology-drugs"
+      },
+      "blockSelection": {
+        "blockId": "0:A:B:C",
+        "headerRow": 1,
+        "firstRow": 8,
+        "lastRow": 8,
+        "indices": "zero_based",
+        "columnMap": {
+          "nationalCode": 0,
+          "scientificName": 1,
+          "unit": 2
+        }
+      },
+      "cells": [
+        {
+          "coordinate": {
+            "row": 1,
+            "col": 0,
+            "a1": "A2"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": "NATIONAL CODE",
+          "formattedText": "NATIONAL CODE",
+          "isFormula": false,
+          "hasComment": false
+        },
+        {
+          "coordinate": {
+            "row": 1,
+            "col": 1,
+            "a1": "B2"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": "ITEMS",
+          "formattedText": "ITEMS",
+          "isFormula": false,
+          "hasComment": false
+        },
+        {
+          "coordinate": {
+            "row": 1,
+            "col": 2,
+            "a1": "C2"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": "UNIT",
+          "formattedText": "UNIT",
+          "isFormula": false,
+          "hasComment": false
+        },
+        {
+          "coordinate": {
+            "row": 8,
+            "col": 0,
+            "a1": "A9"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": "04-H00-035",
+          "formattedText": "04-H00-035",
+          "isFormula": false,
+          "hasComment": false
+        },
+        {
+          "coordinate": {
+            "row": 8,
+            "col": 1,
+            "a1": "B9"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": "Morphine  sulphate  10mg/5ml syrup",
+          "formattedText": "Morphine  sulphate  10mg/5ml syrup",
+          "isFormula": false,
+          "hasComment": false
+        },
+        {
+          "coordinate": {
+            "row": 8,
+            "col": 2,
+            "a1": "C9"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": "bottle",
+          "formattedText": "bottle",
+          "isFormula": false,
+          "hasComment": false
+        }
+      ],
+      "warnings": [
+        "same_raw_code_in_distinct_file_not_canonical_identity"
+      ],
+      "canonicalItemId": null
+    },
+    {
+      "sampleId": "shared-code-essential",
+      "year": 2026,
+      "syntheticSource": {
+        "filename": "essential-drugs-2026.xls",
+        "sha256": "a7919a0be55031fbf0e35d044652508659947fa858235e0a8344b2a0f8ef9a47",
+        "sheetIndex": 0,
+        "sheetName": "Catalog",
+        "classification": "essential-drugs"
+      },
+      "blockSelection": {
+        "blockId": "0:A:B:C",
+        "headerRow": 1,
+        "firstRow": 157,
+        "lastRow": 157,
+        "indices": "zero_based",
+        "columnMap": {
+          "nationalCode": 0,
+          "scientificName": 1,
+          "unit": 2
+        }
+      },
+      "cells": [
+        {
+          "coordinate": {
+            "row": 1,
+            "col": 0,
+            "a1": "A2"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": "NATIONAL CODE",
+          "formattedText": "NATIONAL CODE",
+          "isFormula": false,
+          "hasComment": false
+        },
+        {
+          "coordinate": {
+            "row": 1,
+            "col": 1,
+            "a1": "B2"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": "ITEMS",
+          "formattedText": "ITEMS",
+          "isFormula": false,
+          "hasComment": false
+        },
+        {
+          "coordinate": {
+            "row": 1,
+            "col": 2,
+            "a1": "C2"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": "UNIT\nDOSE",
+          "formattedText": "UNIT\nDOSE",
+          "isFormula": false,
+          "hasComment": false
+        },
+        {
+          "coordinate": {
+            "row": 157,
+            "col": 0,
+            "a1": "A158"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": "04-H00-035",
+          "formattedText": "04-H00-035",
+          "isFormula": false,
+          "hasComment": false
+        },
+        {
+          "coordinate": {
+            "row": 157,
+            "col": 1,
+            "a1": "B158"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": "Morphine  sulphate  10mg/5ml syrup",
+          "formattedText": "Morphine  sulphate  10mg/5ml syrup",
+          "isFormula": false,
+          "hasComment": false
+        },
+        {
+          "coordinate": {
+            "row": 157,
+            "col": 2,
+            "a1": "C158"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": "bottle",
+          "formattedText": "bottle",
+          "isFormula": false,
+          "hasComment": false
+        }
+      ],
+      "warnings": [
+        "same_raw_code_in_distinct_file_not_canonical_identity"
+      ],
+      "canonicalItemId": null
+    },
+    {
+      "sampleId": "unit-difference-oncology",
+      "year": 2026,
+      "syntheticSource": {
+        "filename": "oncology-drugs-2026.xls",
+        "sha256": "0ace6742941309e0167659ec3b50532bab2fe5e5c2a25c7096aaa09a763f7f00",
+        "sheetIndex": 0,
+        "sheetName": "Catalog",
+        "classification": "oncology-drugs"
+      },
+      "blockSelection": {
+        "blockId": "0:A:B:C",
+        "headerRow": 1,
+        "firstRow": 15,
+        "lastRow": 15,
+        "indices": "zero_based",
+        "columnMap": {
+          "nationalCode": 0,
+          "scientificName": 1,
+          "unit": 2
+        }
+      },
+      "cells": [
+        {
+          "coordinate": {
+            "row": 1,
+            "col": 0,
+            "a1": "A2"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": "NATIONAL CODE",
+          "formattedText": "NATIONAL CODE",
+          "isFormula": false,
+          "hasComment": false
+        },
+        {
+          "coordinate": {
+            "row": 1,
+            "col": 1,
+            "a1": "B2"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": "ITEMS",
+          "formattedText": "ITEMS",
+          "isFormula": false,
+          "hasComment": false
+        },
+        {
+          "coordinate": {
+            "row": 1,
+            "col": 2,
+            "a1": "C2"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": "UNIT",
+          "formattedText": "UNIT",
+          "isFormula": false,
+          "hasComment": false
+        },
+        {
+          "coordinate": {
+            "row": 15,
+            "col": 0,
+            "a1": "A16"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": "05-C00-033",
+          "formattedText": "05-C00-033",
+          "isFormula": false,
+          "hasComment": false
+        },
+        {
+          "coordinate": {
+            "row": 15,
+            "col": 1,
+            "a1": "B16"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": "Voriconazole 200 mg tab",
+          "formattedText": "Voriconazole 200 mg tab",
+          "isFormula": false,
+          "hasComment": false
+        },
+        {
+          "coordinate": {
+            "row": 15,
+            "col": 2,
+            "a1": "C16"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": "tab",
+          "formattedText": "tab",
+          "isFormula": false,
+          "hasComment": false
+        }
+      ],
+      "warnings": [
+        "same_raw_code_in_distinct_file_not_canonical_identity",
+        "unit_and_description_text_differ"
+      ],
+      "canonicalItemId": null
+    },
+    {
+      "sampleId": "unit-difference-essential",
+      "year": 2026,
+      "syntheticSource": {
+        "filename": "essential-drugs-2026.xls",
+        "sha256": "a7919a0be55031fbf0e35d044652508659947fa858235e0a8344b2a0f8ef9a47",
+        "sheetIndex": 0,
+        "sheetName": "Catalog",
+        "classification": "essential-drugs"
+      },
+      "blockSelection": {
+        "blockId": "0:A:B:C",
+        "headerRow": 1,
+        "firstRow": 277,
+        "lastRow": 277,
+        "indices": "zero_based",
+        "columnMap": {
+          "nationalCode": 0,
+          "scientificName": 1,
+          "unit": 2
+        }
+      },
+      "cells": [
+        {
+          "coordinate": {
+            "row": 1,
+            "col": 0,
+            "a1": "A2"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": "NATIONAL CODE",
+          "formattedText": "NATIONAL CODE",
+          "isFormula": false,
+          "hasComment": false
+        },
+        {
+          "coordinate": {
+            "row": 1,
+            "col": 1,
+            "a1": "B2"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": "ITEMS",
+          "formattedText": "ITEMS",
+          "isFormula": false,
+          "hasComment": false
+        },
+        {
+          "coordinate": {
+            "row": 1,
+            "col": 2,
+            "a1": "C2"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": "UNIT\nDOSE",
+          "formattedText": "UNIT\nDOSE",
+          "isFormula": false,
+          "hasComment": false
+        },
+        {
+          "coordinate": {
+            "row": 277,
+            "col": 0,
+            "a1": "A278"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": "05-C00-033",
+          "formattedText": "05-C00-033",
+          "isFormula": false,
+          "hasComment": false
+        },
+        {
+          "coordinate": {
+            "row": 277,
+            "col": 1,
+            "a1": "B278"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": "Voriconazole 200 mg tablet",
+          "formattedText": "Voriconazole 200 mg tablet",
+          "isFormula": false,
+          "hasComment": false
+        },
+        {
+          "coordinate": {
+            "row": 277,
+            "col": 2,
+            "a1": "C278"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": "tablet",
+          "formattedText": "tablet",
+          "isFormula": false,
+          "hasComment": false
+        }
+      ],
+      "warnings": [
+        "same_raw_code_in_distinct_file_not_canonical_identity",
+        "unit_and_description_text_differ"
+      ],
+      "canonicalItemId": null
+    },
+    {
+      "sampleId": "missing-unit-oncology-shared",
+      "year": 2026,
+      "syntheticSource": {
+        "filename": "oncology-drugs-2026.xls",
+        "sha256": "0ace6742941309e0167659ec3b50532bab2fe5e5c2a25c7096aaa09a763f7f00",
+        "sheetIndex": 0,
+        "sheetName": "Catalog",
+        "classification": "oncology-drugs"
+      },
+      "blockSelection": {
+        "blockId": "0:A:B:C",
+        "headerRow": 1,
+        "firstRow": 12,
+        "lastRow": 12,
+        "indices": "zero_based",
+        "columnMap": {
+          "nationalCode": 0,
+          "scientificName": 1,
+          "unit": 2
+        }
+      },
+      "cells": [
+        {
+          "coordinate": {
+            "row": 1,
+            "col": 0,
+            "a1": "A2"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": "NATIONAL CODE",
+          "formattedText": "NATIONAL CODE",
+          "isFormula": false,
+          "hasComment": false
+        },
+        {
+          "coordinate": {
+            "row": 1,
+            "col": 1,
+            "a1": "B2"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": "ITEMS",
+          "formattedText": "ITEMS",
+          "isFormula": false,
+          "hasComment": false
+        },
+        {
+          "coordinate": {
+            "row": 1,
+            "col": 2,
+            "a1": "C2"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": "UNIT",
+          "formattedText": "UNIT",
+          "isFormula": false,
+          "hasComment": false
+        },
+        {
+          "coordinate": {
+            "row": 12,
+            "col": 0,
+            "a1": "A13"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": "05-C00-039",
+          "formattedText": "05-C00-039",
+          "isFormula": false,
+          "hasComment": false
+        },
+        {
+          "coordinate": {
+            "row": 12,
+            "col": 1,
+            "a1": "B13"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": "Micafungin (as Sodium) 50 mg / vial I.V infusion\nقاعدة اقل الاسعار\n(05-C00-032)\n(05-C00-039)\n",
+          "formattedText": "Micafungin (as Sodium) 50 mg / vial I.V infusion\nقاعدة اقل الاسعار\n(05-C00-032)\n(05-C00-039)\n",
+          "isFormula": false,
+          "hasComment": false
+        },
+        {
+          "coordinate": {
+            "row": 12,
+            "col": 2,
+            "a1": "C13"
+          },
+          "presence": "missing",
+          "rawValue": null,
+          "isFormula": false,
+          "hasComment": false
+        }
+      ],
+      "warnings": [
+        "same_raw_code_in_distinct_file_not_canonical_identity",
+        "source_unit_missing_do_not_inherit_other_file"
+      ],
+      "canonicalItemId": null
+    },
+    {
+      "sampleId": "present-unit-essential-shared",
+      "year": 2026,
+      "syntheticSource": {
+        "filename": "essential-drugs-2026.xls",
+        "sha256": "a7919a0be55031fbf0e35d044652508659947fa858235e0a8344b2a0f8ef9a47",
+        "sheetIndex": 0,
+        "sheetName": "Catalog",
+        "classification": "essential-drugs"
+      },
+      "blockSelection": {
+        "blockId": "0:A:B:C",
+        "headerRow": 1,
+        "firstRow": 274,
+        "lastRow": 274,
+        "indices": "zero_based",
+        "columnMap": {
+          "nationalCode": 0,
+          "scientificName": 1,
+          "unit": 2
+        }
+      },
+      "cells": [
+        {
+          "coordinate": {
+            "row": 1,
+            "col": 0,
+            "a1": "A2"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": "NATIONAL CODE",
+          "formattedText": "NATIONAL CODE",
+          "isFormula": false,
+          "hasComment": false
+        },
+        {
+          "coordinate": {
+            "row": 1,
+            "col": 1,
+            "a1": "B2"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": "ITEMS",
+          "formattedText": "ITEMS",
+          "isFormula": false,
+          "hasComment": false
+        },
+        {
+          "coordinate": {
+            "row": 1,
+            "col": 2,
+            "a1": "C2"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": "UNIT\nDOSE",
+          "formattedText": "UNIT\nDOSE",
+          "isFormula": false,
+          "hasComment": false
+        },
+        {
+          "coordinate": {
+            "row": 274,
+            "col": 0,
+            "a1": "A275"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": "05-C00-039",
+          "formattedText": "05-C00-039",
+          "isFormula": false,
+          "hasComment": false
+        },
+        {
+          "coordinate": {
+            "row": 274,
+            "col": 1,
+            "a1": "B275"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": "Micafungin (as Sodium) 50 mg / vial I.V infusion\nقاعدة اقل الاسعار\n(05-C00-032)\n(05-C00-039)\n",
+          "formattedText": "Micafungin (as Sodium) 50 mg / vial I.V infusion\nقاعدة اقل الاسعار\n(05-C00-032)\n(05-C00-039)\n",
+          "isFormula": false,
+          "hasComment": false
+        },
+        {
+          "coordinate": {
+            "row": 274,
+            "col": 2,
+            "a1": "C275"
+          },
+          "presence": "value",
+          "valueType": "string",
+          "rawValue": "vial",
+          "formattedText": "vial",
+          "isFormula": false,
+          "hasComment": false
+        }
+      ],
+      "warnings": [
+        "same_raw_code_in_distinct_file_not_canonical_identity"
+      ],
+      "canonicalItemId": null
+    }
+  ]
+}
