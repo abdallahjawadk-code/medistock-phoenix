@@ -488,6 +488,8 @@ describe('RAC-3 · I) no backend or migration change', () => {
       'supabase/candidates/FF1_r1_forward_fix_NOT_APPLIED.sql',
       // Current dossier kill switch, exact names only; historical FF1 remains immutable.
       'supabase/candidates/FF2_r1_dossiers_forward_fix_NOT_APPLIED.sql',
+      // P1 reservation repair, exact candidate only; the numbered history is unchanged.
+      'supabase/candidates/P1_dossier_workbook_reservation_NOT_APPLIED.sql',
       'supabase/candidates/__tests__/ff2-dossiers-forward-fix.dynamic.test.ts',
       'supabase/candidates/R1a_01_manual_source_schema_inert.sql',
       'supabase/candidates/R1a_02_authorization_closure.sql',

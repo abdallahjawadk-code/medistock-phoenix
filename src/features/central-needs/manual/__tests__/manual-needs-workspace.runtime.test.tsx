@@ -117,6 +117,37 @@ describe('R1-A4 manual workspace', () => {
     expect(await screen.findByText('12.5')).toBeInTheDocument();
   });
 
+  it('a pending workbook refusal preserves the input, gives a recovery action and never reports the manual entry as saved', async () => {
+    const { api } = makeApi();
+    api.addManualNeedLine.mockRejectedValueOnce(new CentralNeedsError('dossier_pending_workbook_scope', undefined, { sqlstate: '23505' }));
+    const view = mount(api);
+    await screen.findByRole('button', { name: 'Add line' });
+    fillAdd('7');
+    fireEvent.click(screen.getByRole('button', { name: 'Add line' }));
+    const alert = await screen.findByText(/This manual entry was not saved/);
+    expect(alert).toHaveAttribute('role', 'alert');
+    expect(alert).toHaveTextContent('This manual entry was not saved');
+    expect(alert).toHaveTextContent('source history');
+    expect(screen.getByLabelText('Annual quantity')).toHaveValue('7');
+    expect(screen.queryByText(/^Saved/)).toBeNull();
+    expect(api.addManualNeedLine).toHaveBeenCalledTimes(1);
+    expect(api.listManualNeedEvents).toHaveBeenCalledTimes(1);
+    view.unmount();
+    api.addManualNeedLine.mockRejectedValueOnce(new CentralNeedsError('dossier_pending_workbook_scope', undefined, { sqlstate: '23505' }));
+    mount(api, { lang: 'ar' });
+    await screen.findByRole('button', { name: 'إضافة سطر' });
+    fireEvent.change(screen.getByLabelText('المؤسسة المستفيدة'), { target: { value: 'b1' } });
+    fireEvent.change(screen.getByLabelText('المادة'), { target: { value: 'i1' } });
+    fireEvent.change(screen.getByLabelText('الكمية السنوية'), { target: { value: '7' } });
+    fireEvent.change(screen.getByLabelText('السبب'), { target: { value: 'الاحتياج المخطط' } });
+    fireEvent.click(screen.getByRole('button', { name: 'إضافة سطر' }));
+    const arAlert = await screen.findByText(/لم يُحفظ هذا الإدخال اليدوي/);
+    expect(arAlert).toHaveAttribute('role', 'alert');
+    expect(arAlert).toHaveTextContent('سجل الملفات');
+    expect(screen.getByLabelText('الكمية السنوية')).toHaveValue('7');
+    expect(api.addManualNeedLine).toHaveBeenCalledTimes(2);
+  });
+
   it('a stale refusal refreshes the list, keeps the typed input and uses a NEW key on the next attempt', async () => {
     const { api, setChain } = makeApi([event({ id: 'e1', eventSeq: 1, eventKind: 'add' })]);
     api.correctManualNeedLine.mockRejectedValueOnce(new CentralNeedsError('manual_need_line_stale'));

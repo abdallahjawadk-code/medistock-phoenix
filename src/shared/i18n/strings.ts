@@ -2238,6 +2238,7 @@ export const T: Dict = {
   cn2b_err_forbidden: { ar: 'لا تملك الصلاحية المطلوبة.', en: 'You do not hold the required permission.' },
   cn2b_err_not_authenticated: { ar: 'انتهت الجلسة.', en: 'Your session has ended.' },
   cn2b_err_load_failed: { ar: 'تعذّر تحميل البيانات.', en: 'Could not load the data.' },
+  cn2b_err_dossier_pending_workbook_scope: { ar: 'هذه المادة محجوزة للمؤسسة نفسها ضمن ملف لم يكتمل حفظه. استكمل الملف من سجل الملفات، ثم عدّل الاحتياج المحفوظ عند الحاجة. لم يُحفظ هذا الإدخال اليدوي.', en: 'This material is reserved for the same beneficiary in a workbook that has not finished saving. Resume it from source history, then edit the saved need if required. This manual entry was not saved.' },
   cn2b_err_verify_failed: { ar: 'تعذّر التحقّق الرسمي.', en: 'Authoritative verification failed.' },
   cn2b_err_browser_node_parity_mismatch: { ar: 'اختلفت نتيجة الخادم عن معاينة المتصفح — لم يُحفظ أي دليل.', en: 'The server parse differed from the browser preview — no evidence was stored.' },
   cn2b_err_archive_contains_rejected_entry: { ar: 'الأرشيف يحوي ملفًا مرفوضًا — لم تُنشأ أي دفعة.', en: 'The archive contains a rejected workbook — no batch was created.' },
