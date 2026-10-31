@@ -49,6 +49,7 @@ describe('annual workspace retains independent dossiers',()=>{
   });
   it('creates and opens another classification without replacing an approved dossier',async()=>{
     const {api,dossiers}=fixture();await open();
+    fireEvent.click(screen.getByText('Add needs dossier', { selector: 'summary' }));
     fireEvent.change(screen.getByLabelText('New dossier / classification name'),{target:{value:'Supplies'}});
     fireEvent.click(screen.getByRole('button',{name:'Add needs dossier'}));
     await waitFor(()=>expect(screen.getByTestId('revision-workspace')).toHaveTextContent('cr'));
@@ -81,6 +82,7 @@ describe('annual workspace retains independent dossiers',()=>{
     await waitFor(()=>expect(screen.getByTestId('revision-workspace')).toHaveTextContent('br'));
     let complete!:(r:{planId:string;planRevisionId:string})=>void;
     vi.mocked(api.openDossier!).mockImplementation(()=>new Promise(resolve=>{complete=resolve;}));
+    fireEvent.click(screen.getByText('Add needs dossier', { selector: 'summary' }));
     fireEvent.change(screen.getByLabelText('New dossier / classification name'),{target:{value:'Supplies'}});fireEvent.click(screen.getByRole('button',{name:'Add needs dossier'}));
     expect(screen.getByRole('button',{name:'Workspace mutation'})).toBeDisabled();
     dossiers.push({id:'c',key:'new',name:'Supplies',latestRevisionId:'cr',latestStatus:'draft',latestNumber:1,approvedRevisionId:null,approvedNumber:null});complete({planId:'c',planRevisionId:'cr'});

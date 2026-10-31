@@ -8,7 +8,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 
 vi.mock('@/shared/supabase/client', () => ({ supabase: { rpc: vi.fn() } }));
 const { ManualNeedsWorkspace } = await import('../ManualNeedsWorkspace');
-const { CentralNeedsError } = await import('../../central-needs.service');
+const { CentralNeedsError, centralNeedsErrorFromPostgrest } = await import('../../central-needs.service');
 import type { ManualNeedEvent, ManualCapabilities } from '../manual-needs.service';
 
 const REV = 'rev-1';
@@ -68,9 +68,55 @@ describe('persisted identity in a fresh reviewer session', () => {
     expect(screen.getByText('Material name unavailable')).toBeInTheDocument();
     expect(ready).not.toHaveBeenCalledWith(true);
   });
+  it.each(['Correct', 'Void line'] as const)('keeps the saved identity visible in %s after a fresh session without picker selections', async (action) => {
+    const { api } = makeApi([event({ id: 'persisted', eventSeq: 1, eventKind: 'add' })]);
+    const withLabels = { ...api, getManualCatalogLabels: vi.fn(async () => [{ id: 'i1', name: 'Persisted reagent', nameAr: null, unit: 'box', nationalCode: '00043-A', concentration: null, dosageForm: null, status: 'active' }]) };
+    mount(withLabels, { items: [] });
+    await screen.findByText('Persisted reagent');
+    fireEvent.click(screen.getByRole('button', { name: action }));
+    const form = screen.getByRole('form', { name: action });
+    expect(within(form).getByText('Persisted reagent')).toBeInTheDocument();
+    expect(within(form).getByText('00043-A')).toBeInTheDocument();
+    expect(within(form).queryByText('i1')).toBeNull();
+    expect(within(form).getByLabelText(action === 'Correct' ? 'Annual quantity' : 'Reason')).toHaveFocus();
+    expect(api.correctManualNeedLine).not.toHaveBeenCalled();
+    expect(api.voidManualNeedLine).not.toHaveBeenCalled();
+  });
 });
 
 describe('R1-A4 manual workspace', () => {
+  it('offers an explicit read retry after load failure without writing a line', async () => {
+    const { api } = makeApi();
+    api.listManualNeedEvents.mockRejectedValueOnce(new Error('network'));
+    mount(api);
+    expect(await screen.findByText('The lines could not be loaded. Reload to confirm the current data.')).toHaveAttribute('role', 'alert');
+    fireEvent.click(screen.getByRole('button', { name: 'Reload lines' }));
+    expect(await screen.findByRole('button', { name: 'Add line' })).toBeEnabled();
+    expect(api.listManualNeedEvents).toHaveBeenCalledTimes(2);
+    expect(api.addManualNeedLine).not.toHaveBeenCalled();
+  });
+  it('keeps the old editable form unavailable while retrying a failed post-write refresh', async () => {
+    const { api } = makeApi();
+    let finishRead!: (events: ManualNeedEvent[]) => void;
+    api.listManualNeedEvents
+      .mockResolvedValueOnce([])
+      .mockRejectedValueOnce(new Error('refresh failed'))
+      .mockImplementationOnce(() => new Promise((resolve) => { finishRead = resolve; }));
+    mount(api);
+    await screen.findByRole('button', { name: 'Add line' });
+    fillAdd('5');
+    fireEvent.click(screen.getByRole('button', { name: 'Add line' }));
+    await screen.findByRole('button', { name: 'Reload lines' });
+    fireEvent.click(screen.getByRole('button', { name: 'Reload lines' }));
+    expect(screen.getByText('Loading…')).toBeInTheDocument();
+    expect(screen.queryByRole('form', { name: 'Add line' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Add line' })).toBeNull();
+    expect(api.addManualNeedLine).toHaveBeenCalledTimes(1);
+    finishRead([event({ id: 'saved', eventSeq: 1, eventKind: 'add', quantityText: '5' })]);
+    expect(await screen.findByRole('button', { name: 'Add line' })).toBeEnabled();
+    expect(screen.getByText('5')).toBeInTheDocument();
+    expect(api.addManualNeedLine).toHaveBeenCalledTimes(1);
+  });
   it('without the manual key it explains why and offers no editing control', async () => {
     const { api } = makeApi([event({ id: 'e1', eventSeq: 1, eventKind: 'add' })], caps({ manualSet: false }));
     mount(api);
@@ -115,6 +161,90 @@ describe('R1-A4 manual workspace', () => {
     expect(args[4]).toBeNull();                         // no expected event for a brand-new scope
     expect(api.listManualNeedEvents).toHaveBeenCalledTimes(2);
     expect(await screen.findByText('12.5')).toBeInTheDocument();
+  });
+
+  it('clears a removed picker choice and its unsaved quantity without writing or voiding a saved line', async () => {
+    const { api } = makeApi();
+    const { rerender } = mount(api);
+    await screen.findByRole('button', { name: 'Add line' });
+    fillAdd('12.5');
+    rerender(<ManualNeedsWorkspace lang="en" organizationId="org" planRevisionId={REV} revisionStatus="draft" sourceMode="manual"
+      beneficiaries={B} items={[I[1]]} api={api} />);
+    expect(screen.getByLabelText('Item')).toHaveValue('');
+    expect(screen.getByLabelText('Annual quantity')).toHaveValue('');
+    expect(screen.getByLabelText('Reason')).toHaveValue('');
+    fireEvent.click(screen.getByRole('button', { name: 'Add line' }));
+    expect(await screen.findByText('Choose the beneficiary and the item.')).toBeInTheDocument();
+    expect(api.addManualNeedLine).not.toHaveBeenCalled();
+    expect(api.voidManualNeedLine).not.toHaveBeenCalled();
+  });
+
+  it.each([['Item', 'i2'], ['Beneficiary institution', 'b2']])('does not carry quantity or reason into another %s', async (field, value) => {
+    const { api } = makeApi();
+    mount(api);
+    await screen.findByRole('button', { name: 'Add line' });
+    fillAdd('12.5', 'target A');
+    fireEvent.change(screen.getByLabelText(field), { target: { value } });
+    expect(screen.getByLabelText('Annual quantity')).toHaveValue('');
+    expect(screen.getByLabelText('Reason')).toHaveValue('');
+    fireEvent.click(screen.getByRole('button', { name: 'Add line' }));
+    expect(api.addManualNeedLine).not.toHaveBeenCalled();
+  });
+
+  it('preserves unsent quantity and reason when the language changes', async () => {
+    const { api } = makeApi();
+    const { rerender } = mount(api);
+    await screen.findByRole('button', { name: 'Add line' });
+    fillAdd('12.5', 'annual plan');
+    rerender(<ManualNeedsWorkspace lang="ar" organizationId="org" planRevisionId={REV} revisionStatus="draft" sourceMode="manual"
+      beneficiaries={B} items={I} api={api} />);
+    expect(screen.getByLabelText('الكمية السنوية')).toHaveValue('12.5');
+    expect(screen.getByLabelText('السبب')).toHaveValue('annual plan');
+    expect(api.listManualNeedEvents).toHaveBeenCalledTimes(1);
+    expect(api.addManualNeedLine).not.toHaveBeenCalled();
+  });
+
+  it('completes a deferred write and releases busy after a language change without a second intent', async () => {
+    const { api } = makeApi();
+    let complete!: (value: Awaited<ReturnType<typeof api.addManualNeedLine>>) => void;
+    api.addManualNeedLine.mockImplementationOnce(() => new Promise((resolve) => { complete = resolve; }));
+    const { rerender } = mount(api);
+    await screen.findByRole('button', { name: 'Add line' });
+    fillAdd('12.5');
+    fireEvent.click(screen.getByRole('button', { name: 'Add line' }));
+    rerender(<ManualNeedsWorkspace lang="ar" organizationId="org" planRevisionId={REV} revisionStatus="draft" sourceMode="manual"
+      beneficiaries={B} items={I} api={api} />);
+    expect(screen.getByLabelText('الكمية السنوية')).toHaveValue('12.5');
+    expect(screen.getByRole('button', { name: 'إضافة سطر' })).toBeDisabled();
+    complete({ idempotentReplay: false, eventId: 'saved', eventSeq: 1 });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'إضافة سطر' })).toBeEnabled());
+    expect(api.addManualNeedLine).toHaveBeenCalledTimes(1);
+    expect(api.newManualIdempotencyKey).toHaveBeenCalledTimes(1);
+    expect(api.listManualNeedEvents).toHaveBeenCalledTimes(2);
+  });
+
+  it('retains the exact wrapped transport intent across a language change and an explicit retry', async () => {
+    const { api } = makeApi();
+    api.addManualNeedLine.mockRejectedValueOnce(centralNeedsErrorFromPostgrest({ message: 'TypeError: Failed to fetch', code: '' }));
+    const locked = vi.fn();
+    const { rerender } = mount(api, { onScopeLockChange: locked });
+    await screen.findByRole('button', { name: 'Add line' });
+    fillAdd('12.5', 'same intent');
+    fireEvent.click(screen.getByRole('button', { name: 'Add line' }));
+    await screen.findByText(/The request outcome is not confirmed/);
+    expect(screen.getByLabelText('Item')).toBeDisabled();
+    expect(screen.getByLabelText('Annual quantity')).toBeDisabled();
+    expect(locked).toHaveBeenLastCalledWith(true);
+    rerender(<ManualNeedsWorkspace lang="ar" organizationId="org" planRevisionId={REV} revisionStatus="draft" sourceMode="manual"
+      beneficiaries={B} items={I} api={api} onScopeLockChange={locked} />);
+    expect(screen.getByLabelText('الكمية السنوية')).toHaveValue('12.5');
+    expect(screen.getByLabelText('الكمية السنوية')).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'إضافة سطر' }));
+    await waitFor(() => expect(api.addManualNeedLine).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(locked).toHaveBeenLastCalledWith(false));
+    const [first, second] = api.addManualNeedLine.mock.calls as unknown as unknown[][];
+    expect(second).toEqual(first);
+    expect(api.newManualIdempotencyKey).toHaveBeenCalledTimes(1);
   });
 
   it('a pending workbook refusal preserves the input, gives a recovery action and never reports the manual entry as saved', async () => {
