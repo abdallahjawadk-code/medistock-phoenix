@@ -8,6 +8,7 @@
 import { supabase } from '@/shared/supabase/client';
 import { centralNeedsErrorFromPostgrest } from '../central-needs.service';
 import { checkManualQuantityText } from './manual-quantity';
+import type { AnnualNeedBinding } from '../annual-catalog/annual-needs.contract';
 
 export type ManualEventKind = 'add' | 'correct' | 'void' | 'carried_forward';
 
@@ -24,6 +25,11 @@ export interface ManualNeedEvent {
   reason: string;
   reference: string | null;
   actorId: string;
+  /** Present only on the P3-B read path; legacy events never invent historical values. */
+  actorName?: string | null;
+  createdAt?: string;
+  fromTrustedProfile?: boolean;
+  annualBinding?: AnnualNeedBinding | null;
 }
 
 export interface ManualCapabilities {

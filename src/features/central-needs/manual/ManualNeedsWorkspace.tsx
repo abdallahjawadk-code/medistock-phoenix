@@ -19,7 +19,9 @@ import { getManualCatalogLabels } from './manual-catalog.service';
 import type { ManualCapabilities, ManualNeedEvent, ManualScope } from './manual-needs.service';
 import { canEditManual, foldManualEvents, scopeKeyOf } from './manual-needs.view-model';
 import { checkManualQuantityText, proposeAsciiDigits } from './manual-quantity';
-import { mt, quantityReasonText, type ManualLang } from './manual-needs.i18n';
+import { mt, annualNeedsErrorText, manualUnitText, quantityReasonText, type ManualLang } from './manual-needs.i18n';
+import { AnnualCatalogContractError, type AnnualCatalogItemResult } from '../annual-catalog/annual-catalog-server.contract';
+import type { AnnualNeedBinding } from '../annual-catalog/annual-needs.contract';
 
 export interface ManualNeedsApi {
   getManualCatalogLabels?: typeof getManualCatalogLabels;
@@ -32,7 +34,7 @@ export interface ManualNeedsApi {
 }
 
 interface Option { id: string; name: string }
-interface ItemOption extends Option { nameAr?: string | null; unit: string; nationalCode?: string | null; concentration?: string | null; dosageForm?: string | null }
+interface ItemOption extends Option { nameAr?: string | null; unit: string; nationalCode?: string | null; concentration?: string | null; dosageForm?: string | null; annualItem?: AnnualCatalogItemResult }
 
 interface Props {
   lang: ManualLang;
@@ -45,6 +47,10 @@ interface Props {
   api?: ManualNeedsApi;
   onIdentityReady?: (ready: boolean) => void;
   onScopeLockChange?: (locked: boolean) => void;
+  annualMode?: boolean;
+  annualEntryEnabled?: boolean;
+  beneficiaryId?: string;
+  onBeneficiaryChange?: (id: string) => void;
 }
 
 const defaultApi: ManualNeedsApi = { ...realApi, getManualCatalogLabels };
@@ -54,7 +60,8 @@ type Pending =
   | { kind: 'correct'; scopeKey: string }
   | { kind: 'void'; scopeKey: string };
 
-export function ManualNeedsWorkspace({ lang, organizationId, planRevisionId, revisionStatus, sourceMode, beneficiaries, items, api = defaultApi, onIdentityReady, onScopeLockChange }: Props) {
+export function ManualNeedsWorkspace({ lang, organizationId, planRevisionId, revisionStatus, sourceMode, beneficiaries, items, api = defaultApi,
+  onIdentityReady, onScopeLockChange, annualMode = false, annualEntryEnabled = true, beneficiaryId, onBeneficiaryChange }: Props) {
   const [caps, setCaps] = useState<ManualCapabilities | null>(null);
   const [events, setEvents] = useState<ManualNeedEvent[] | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -66,7 +73,8 @@ export function ManualNeedsWorkspace({ lang, organizationId, planRevisionId, rev
   const [errorText, setErrorText] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const [beneficiary, setBeneficiary] = useState('');
+  const [localBeneficiary, setBeneficiary] = useState('');
+  const beneficiary = beneficiaryId ?? localBeneficiary;
   const [item, setItem] = useState('');
   const [quantity, setQuantity] = useState('');
   const [reason, setReason] = useState('');
@@ -95,7 +103,25 @@ export function ManualNeedsWorkspace({ lang, organizationId, planRevisionId, rev
       ]);
       if (epoch.current !== myEpoch) return;
       setCaps(c); setEvents(e); setLoadFailed(false);
-      if (api.getManualCatalogLabels && e.length > 0) {
+      if (annualMode) {
+        // A bound event supplies its historical identity. A live canonical label cannot replace it.
+        const rows = foldManualEvents(e);
+        const unboundIds = [...new Set(e.filter((event) => !event.annualBinding).map((event) => event.centralItemId))];
+        if (unboundIds.length > 0 && api.getManualCatalogLabels) {
+          try {
+            const labels = await api.getManualCatalogLabels(unboundIds);
+            if (epoch.current !== myEpoch) return;
+            setPersistedItems(labels); setLabelsFailed(false);
+            // Existing submitted revisions remain reviewable. These labels are explicitly current, never fabricated snapshots.
+            onIdentityReady?.(rows.filter((row) => row.live).every((row) => !!row.annualBinding || labels.some((label) => label.id === row.centralItemId)));
+          } catch {
+            if (epoch.current === myEpoch) { setLabelsFailed(true); onIdentityReady?.(rows.filter((row) => row.live).every((row) => !!row.annualBinding)); }
+          }
+        } else {
+          setPersistedItems([]); setLabelsFailed(false);
+          onIdentityReady?.(rows.filter((row) => row.live).every((row) => !!row.annualBinding));
+        }
+      } else if (api.getManualCatalogLabels && e.length > 0) {
         try {
           const labels = await api.getManualCatalogLabels(e.map((row) => row.centralItemId));
           if (epoch.current !== myEpoch) return;
@@ -112,7 +138,7 @@ export function ManualNeedsWorkspace({ lang, organizationId, planRevisionId, rev
       if (epoch.current !== myEpoch) return;
       setLoadFailed(true);
     }
-  }, [api, organizationId, planRevisionId, onIdentityReady]);
+  }, [api, organizationId, planRevisionId, onIdentityReady, annualMode]);
 
   useEffect(() => {
     epoch.current += 1;
@@ -141,14 +167,26 @@ export function ManualNeedsWorkspace({ lang, organizationId, planRevisionId, rev
   }, [items, item, pending, scopeLocked, reset, lang]);
 
   const rows = useMemo(() => foldManualEvents(events ?? []), [events]);
-  const displayItems = useMemo(() => [
-    ...persistedItems.map((row) => ({ ...row, name: lang === 'ar' && row.nameAr ? row.nameAr : row.name })),
-    ...items.filter((i) => !persistedItems.some((p) => p.id === i.id)),
-  ], [items, persistedItems, lang]);
+  const displayItems = useMemo(() => {
+    const persisted = persistedItems.map((row) => ({ ...row, name: lang === 'ar' && row.nameAr ? row.nameAr : row.name }));
+    return annualMode ? [...items, ...persisted.filter((row) => !items.some((item) => item.id === row.id))]
+      : [...persisted, ...items.filter((item) => !persisted.some((row) => row.id === item.id))];
+  }, [items, persistedItems, lang, annualMode]);
   const editable = caps !== null && canEditManual({ status: revisionStatus, sourceMode, manualSet: caps.manualSet });
+  const entryEnabled = editable && (!annualMode || annualEntryEnabled);
   const nameOf = (list: Option[], id: string) => list.find((o) => o.id === id)?.name ?? id;
   const unitOf = (id: string) => displayItems.find((o) => o.id === id)?.unit ?? '';
   const itemNameOf = (id: string) => displayItems.find((o) => o.id === id)?.name ?? (lang === 'ar' ? 'تعذر تحميل اسم المادة' : 'Material name unavailable');
+  const currentCanonicalName = (id: string) => {
+    const label = persistedItems.find((item) => item.id === id);
+    return (lang === 'ar' ? label?.nameAr : null) ?? label?.name ?? (lang === 'ar' ? 'تعذر تحميل اسم المادة' : 'Material name unavailable');
+  };
+  const boundText = (binding: AnnualNeedBinding, field: keyof AnnualNeedBinding['fields']) => {
+    const value = binding.fields[field];
+    return value.state === 'known' ? value.value : null;
+  };
+  const boundName = (binding: AnnualNeedBinding) => (lang === 'ar' ? boundText(binding, 'nameAr') : null)
+    ?? boundText(binding, 'scientificName') ?? mt('annualUnnamed', lang);
 
   const validateQuantity = (text: string): boolean => {
     const c = checkManualQuantityText(text);
@@ -174,12 +212,15 @@ export function ManualNeedsWorkspace({ lang, organizationId, planRevisionId, rev
     } catch (e: unknown) {
       if (epoch.current !== mine) return;
       if (e instanceof CentralNeedsError) {
-        setErrorText(centralNeedsErrorText(e, lang));
+        setErrorText((annualMode ? annualNeedsErrorText(e.businessCode, lang) : null) ?? centralNeedsErrorText(e, lang));
         // The service wraps fetch failures in this generic error without SQLSTATE.
         // It is not a definitive database refusal: retain the exact intent for replay.
         const unknownOutcome = e.businessCode === 'central_needs_request_failed' && e.sqlstate === null;
         if (!unknownOutcome) intentKey.current = null;
         if (e.businessCode === 'manual_need_line_stale') { setNoticeKind('warning'); setNotice(mt('staleRefreshed', lang)); await load(mine); }
+      } else if (e instanceof AnnualCatalogContractError) {
+        setErrorText(mt(e.outcomeUnknown ? 'annualNeedUnknown' : 'annualBindingRequired', lang));
+        if (!e.outcomeUnknown) intentKey.current = null;
       } else {
         setErrorText(centralNeedsErrorText('load_failed', lang)); // transport failure: keep the SAME key for the retry
       }
@@ -222,7 +263,10 @@ export function ManualNeedsWorkspace({ lang, organizationId, planRevisionId, rev
     if (scopeLocked || value === (field === 'beneficiary' ? beneficiary : item)) return;
     const hadInput = quantity !== '' || reason !== '';
     reset();
-    if (field === 'beneficiary') setBeneficiary(value); else setItem(value);
+    if (field === 'beneficiary') {
+      if (onBeneficiaryChange) { onBeneficiaryChange(value); setItem(''); }
+      else setBeneficiary(value);
+    } else setItem(value);
     if (hadInput) setNotice(mt('changedTarget', lang));
   };
 
@@ -234,7 +278,12 @@ export function ManualNeedsWorkspace({ lang, organizationId, planRevisionId, rev
   const editingRow = pending && pending.kind !== 'add' ? rows.find((row) => row.scopeKey === pending.scopeKey) : undefined;
   const editorItemId = editingRow?.centralItemId ?? item;
   const editorItem = displayItems.find((candidate) => candidate.id === editorItemId);
-  const editorUnit = editingRow?.approvedUnit ?? editorItem?.unit ?? '';
+  const selectedAnnualItem = items.find((candidate) => candidate.id === editorItemId)?.annualItem;
+  const editorBinding = annualMode && editingRow && pending?.kind === 'correct' && selectedAnnualItem
+    ? { ...selectedAnnualItem.fieldVersion, canonicalItemId: selectedAnnualItem.membership.canonicalItemId ?? '' }
+    : editingRow?.annualBinding;
+  const editorUnit = editorBinding ? boundText(editorBinding, 'unit') ?? '' : editingRow?.approvedUnit ?? editorItem?.unit ?? '';
+  const visibleRows = annualMode && beneficiary ? rows.filter((row) => row.beneficiaryOrganizationId === beneficiary) : rows;
 
   if (loadFailed) {
     return <section className="prism-needs-workspace" lang={lang} dir={dir} aria-label={mt('title', lang)}>
@@ -261,7 +310,7 @@ export function ManualNeedsWorkspace({ lang, organizationId, planRevisionId, rev
       {unresolvedIntent && <p role="note" className="prism-notice prism-notice--warning">{mt('unknownOutcome', lang)}</p>}
       {labelsFailed && <p role="alert" className="prism-notice prism-notice--error">{lang === 'ar' ? 'تعذر تحميل بعض أسماء المواد. لم تتغير البيانات المحفوظة.' : 'Some material names could not be loaded. Saved data is unchanged.'}</p>}
 
-      {editable && (
+      {editable && (entryEnabled || pending?.kind === 'void') && (
         <form
           className="prism-line-form"
           onSubmit={(ev) => { ev.preventDefault(); if (pending && pending.kind !== 'add') submitPending(); else submitAdd(); }}
@@ -270,12 +319,13 @@ export function ManualNeedsWorkspace({ lang, organizationId, planRevisionId, rev
         >
           {(!pending || pending.kind === 'add') && (
             <div className="prism-line-form__fields">
-              <label>{mt('beneficiary', lang)}
+              {beneficiaryId === undefined && <label>{mt('beneficiary', lang)}
                 <select value={beneficiary} onChange={(e) => changeTarget('beneficiary', e.target.value)} disabled={scopeLocked}>
                   <option value="">{mt('choose', lang)}</option>
                   {beneficiaries.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
                 </select>
-              </label>
+              </label>}
+              {beneficiaryId !== undefined && <p className="prism-context-chip">{mt('beneficiary', lang)}: <bdi>{nameOf(beneficiaries, beneficiaryId) || mt('choose', lang)}</bdi></p>}
               <label>{mt('item', lang)}
                 <select value={item} onChange={(e) => changeTarget('item', e.target.value)} disabled={scopeLocked}>
                   <option value="">{mt('choose', lang)}</option>
@@ -287,8 +337,14 @@ export function ManualNeedsWorkspace({ lang, organizationId, planRevisionId, rev
           {editorItemId && (
             <div className="prism-line-form__identity">
               {editingRow && <p><bdi>{nameOf(beneficiaries, editingRow.beneficiaryOrganizationId)}</bdi></p>}
-              <PrismMaterialIdentity name={itemNameOf(editorItemId)} nationalCode={editorItem?.nationalCode}
-                concentration={editorItem?.concentration} dosageForm={editorItem?.dosageForm} unit={editorUnit} />
+              <PrismMaterialIdentity name={editorBinding ? boundName(editorBinding) : itemNameOf(editorItemId)}
+                nationalCode={editorBinding ? boundText(editorBinding, 'nationalCode') : editorItem?.nationalCode}
+                concentration={editorBinding ? boundText(editorBinding, 'concentration') : editorItem?.concentration}
+                dosageForm={editorBinding ? boundText(editorBinding, 'dosageForm') : editorItem?.dosageForm} unit={editorUnit ? manualUnitText(editorUnit, lang) : ''} />
+              {annualMode && editingRow && !editingRow.annualBinding && <p className="prism-notice prism-notice--warning">{mt('annualHistoricalUnbound', lang)}</p>}
+              {annualMode && editingRow && selectedAnnualItem && pending?.kind === 'correct'
+                && selectedAnnualItem.fieldVersion.fieldVersionId !== editingRow.annualBinding?.fieldVersionId
+                && <p className="prism-search-hint">{mt('annualCorrectionUsesSelection', lang)}</p>}
             </div>
           )}
           {(!pending || pending.kind !== 'void') && (
@@ -301,7 +357,7 @@ export function ManualNeedsWorkspace({ lang, organizationId, planRevisionId, rev
                 onChange={(e) => { setQuantity(e.target.value); if (quantityError) validateQuantity(e.target.value); }}
               />
             </label>
-            {editorUnit && <span className="prism-unit"><span className="sr-only">{mt('unit', lang)}: </span><bdi>{editorUnit}</bdi></span>}
+            {editorUnit && <span className="prism-unit"><span className="sr-only">{mt('unit', lang)}: </span><bdi>{manualUnitText(editorUnit, lang)}</bdi></span>}
             </div>
           )}
           {(!pending || pending.kind !== 'void') && <p id="manual-qty-hint" className="prism-field-hint">{mt('quantityHint', lang)}</p>}
@@ -319,7 +375,7 @@ export function ManualNeedsWorkspace({ lang, organizationId, planRevisionId, rev
       )}
 
       <div className="prism-saved-lines">
-        {rows.length === 0 ? (
+        {visibleRows.length === 0 ? (
           <section className="prism-empty-records" aria-label={mt('savedLines', lang)}>
             <h3>{mt('savedLines', lang)}</h3>
             <div className="prism-empty-lines">
@@ -341,17 +397,26 @@ export function ManualNeedsWorkspace({ lang, organizationId, planRevisionId, rev
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => (
+              {visibleRows.map((r) => (
                 <tr key={r.scopeKey} data-live={r.live ? 'true' : 'false'}>
                   <td><bdi>{nameOf(beneficiaries, r.beneficiaryOrganizationId)}</bdi></td>
-                  <td><bdi>{itemNameOf(r.centralItemId)}</bdi>
-                    {displayItems.find((i) => i.id === r.centralItemId)?.nationalCode && <small className="prism-table-code"><bdi dir="ltr">{displayItems.find((i) => i.id === r.centralItemId)?.nationalCode}</bdi></small>}
+                  <td><bdi>{annualMode ? (r.annualBinding ? boundName(r.annualBinding) : currentCanonicalName(r.centralItemId)) : itemNameOf(r.centralItemId)}</bdi>
+                    {annualMode && !r.annualBinding && <small className="prism-table-code">{mt('annualCurrentCanonicalLabel', lang)}</small>}
+                    {(r.annualBinding ? boundText(r.annualBinding, 'nationalCode') : !annualMode && displayItems.find((i) => i.id === r.centralItemId)?.nationalCode) && <small className="prism-table-code"><bdi dir="ltr">{r.annualBinding ? boundText(r.annualBinding, 'nationalCode') : displayItems.find((i) => i.id === r.centralItemId)?.nationalCode}</bdi></small>}
+                    {annualMode && <details className="prism-need-event-history"><summary>{mt('annualNeedHistory', lang)}</summary><ol>{r.history.map((event) => <li key={event.id}>
+                      <p><strong>{event.fromTrustedProfile && event.actorName ? event.actorName : mt('annualHistoricalActorMissing', lang)}</strong>
+                        {event.createdAt && <> · <time dateTime={event.createdAt}>{new Intl.DateTimeFormat(lang === 'ar' ? 'ar-IQ' : 'en-GB', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Baghdad' }).format(new Date(event.createdAt))} {mt('annualBaghdadTime', lang)}</time></>}</p>
+                      <p>{event.reason}</p>
+                      {event.annualBinding ? <PrismMaterialIdentity compact name={boundName(event.annualBinding)} nationalCode={boundText(event.annualBinding, 'nationalCode')}
+                        dosageForm={boundText(event.annualBinding, 'dosageForm')} concentration={boundText(event.annualBinding, 'concentration')} unit={event.approvedUnit ? manualUnitText(event.approvedUnit, lang) : null} /> : <p>{mt('annualHistoricalUnbound', lang)}. {mt('annualCurrentCanonicalLabel', lang)}: <bdi>{currentCanonicalName(event.centralItemId)}</bdi></p>}
+                      <p>{event.eventKind === 'void' ? mt('voided', lang) : <bdi dir="ltr">{event.quantityText}</bdi>}</p>
+                    </li>)}</ol></details>}
                   </td>
                   <td dir="ltr">{r.live ? r.quantityText : mt('voided', lang)}</td>
-                  <td>{r.live ? (r.approvedUnit ?? unitOf(r.centralItemId)) : ''}</td>
+                  <td>{r.live ? manualUnitText(r.approvedUnit ?? unitOf(r.centralItemId), lang) : ''}</td>
                   {editable && <td>{r.live && <div className="prism-row-actions">
-                    <button type="button" disabled={scopeLocked} onClick={() => startPending({ kind: 'correct', scopeKey: r.scopeKey })}>{mt('correct', lang)}</button>
-                    <button type="button" className="prism-button--danger" disabled={scopeLocked} onClick={() => startPending({ kind: 'void', scopeKey: r.scopeKey })}>{mt('void', lang)}</button>
+                    <button type="button" disabled={scopeLocked || !entryEnabled || (annualMode && r.beneficiaryOrganizationId !== beneficiary)} onClick={() => startPending({ kind: 'correct', scopeKey: r.scopeKey })}>{mt('correct', lang)}</button>
+                    <button type="button" className="prism-button--danger" disabled={scopeLocked || (annualMode && r.beneficiaryOrganizationId !== beneficiary)} onClick={() => startPending({ kind: 'void', scopeKey: r.scopeKey })}>{mt('void', lang)}</button>
                   </div>}</td>}
                 </tr>
               ))}

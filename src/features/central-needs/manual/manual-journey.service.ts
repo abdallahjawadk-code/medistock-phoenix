@@ -14,6 +14,7 @@ import {
 import type { ResolverHit } from '../excel-identity';
 import { getNeedsFeatures, listNeedsDossiers, openNeedsDossier, openNeedsDossierCorrection, readAnnualNeeds } from './dossier.service';
 import { getManualCatalogLabels } from './manual-catalog.service';
+import { getAnnualNeedsContract } from '../annual-catalog/annual-needs.service';
 
 export interface YearRevision {
   id: string;
@@ -26,6 +27,7 @@ export interface BeneficiaryOption { id: string; name: string; nameAr: string }
 export interface CatalogOption { id: string; name: string; nameAr: string | null; concentration: string | null; dosageForm: string | null; unit: string; nationalCode?: string | null }
 
 export interface JourneyApi {
+  annualNeedsContract?: typeof getAnnualNeedsContract;
   readCatalogItems?: typeof getManualCatalogLabels;
   features?: typeof getNeedsFeatures;
   listDossiers?: typeof listNeedsDossiers;
@@ -71,6 +73,7 @@ async function listDossierRevisions(planId: string): Promise<YearRevision[]> {
 }
 
 export const realJourneyApi: JourneyApi = {
+  annualNeedsContract: getAnnualNeedsContract,
   readCatalogItems: getManualCatalogLabels,
   features: getNeedsFeatures,
   listDossiers: listNeedsDossiers,

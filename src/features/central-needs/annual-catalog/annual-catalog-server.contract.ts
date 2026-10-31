@@ -265,9 +265,41 @@ export function validateCanonicalPreview(value: unknown, scope: AnnualCatalogSco
   return row as unknown as AnnualCanonicalPreview;
 }
 
+/** P3-B callers opt into annual corrections explicitly; A1's strict snapshot boundary stays the default. */
+export function validateAnnualCatalogFields(value: unknown, canonicalId: string, allowAnnualEdits = false): AnnualFieldVersion['fields'] {
+  const fields = catalogObject(value, ANNUAL_IDENTITY_FIELDS, 'fieldVersion.fields');
+  for (const key of ANNUAL_IDENTITY_FIELDS) {
+    const state = fields[key] as JsonObject | null;
+    check(!!state && typeof state === 'object', 'response', `fields.${key}`);
+    if (state.state === 'missing') {
+      catalogObject(state, ['state', 'reason'], `fields.${key}`);
+      check(state.reason === 'canonical_missing' || (allowAnnualEdits && state.reason === 'annual_correction_missing'),
+        'response', `fields.${key}.reason`);
+    } else {
+      catalogObject(state, ['state', 'value', 'origins'], `fields.${key}`);
+      check(state.state === 'known', 'response', `fields.${key}.state`);
+      catalogText(state.value, `fields.${key}.value`, 'response');
+      check(Array.isArray(state.origins) && state.origins.length === 1, 'response', `fields.${key}.origins`);
+      const candidate = state.origins[0] as JsonObject | null;
+      if (allowAnnualEdits && candidate?.kind === 'manual') {
+        const origin = catalogObject(candidate, ['kind', 'decisionReference'], `fields.${key}.origin`);
+        catalogUuid(origin.decisionReference, `fields.${key}.decisionReference`, 'response');
+      } else {
+        const origin = catalogObject(candidate, ['kind', 'canonicalItemId', 'decisionReference'], `fields.${key}.origin`);
+        check(origin.kind === 'canonical' && catalogUuid(origin.canonicalItemId, `fields.${key}.canonicalItemId`, 'response') === canonicalId,
+          'response', `fields.${key}.origin`);
+        catalogText(origin.decisionReference, `fields.${key}.decisionReference`, 'response', 2000);
+      }
+      if (key === 'unit') check(UNITS.includes(String(state.value)), 'response', 'fields.unit.value');
+    }
+  }
+  return fields as unknown as AnnualFieldVersion['fields'];
+}
+
 /** Old-version reads validate associations but may legitimately differ from the current head. */
 export function validateAnnualCatalogItem(value: unknown, scope: AnnualCatalogScope, expected: {
   annualItemId?: string; canonicalItemId?: string; fieldVersionId?: string; current?: boolean; write?: boolean; requestId?: string;
+  allowAnnualEdits?: boolean;
 } = {}): AnnualCatalogItemResult | AnnualCatalogWriteResult | AnnualMaterialCompletionResult {
   const keys = ['scope', 'membership', 'fieldVersion', 'canonicalFingerprint', 'canonicalDrift', 'selectable',
     'selectionBlockers', 'sourceOccurrenceCount', 'sourceAttestation'];
@@ -293,25 +325,7 @@ export function validateAnnualCatalogItem(value: unknown, scope: AnnualCatalogSc
   check(!expected.fieldVersionId || versionId === expected.fieldVersionId, 'response', 'fieldVersion.fieldVersionId');
   check(!expected.current || headId === versionId, 'response', 'fieldVersion.current');
   catalogInteger(version.versionNumber, 1, 2_147_483_647, 'fieldVersion.versionNumber', 'response');
-  const fields = catalogObject(version.fields, ANNUAL_IDENTITY_FIELDS, 'fieldVersion.fields');
-  for (const key of ANNUAL_IDENTITY_FIELDS) {
-    const state = fields[key] as JsonObject | null;
-    check(!!state && typeof state === 'object', 'response', `fields.${key}`);
-    if (state.state === 'missing') {
-      catalogObject(state, ['state', 'reason'], `fields.${key}`);
-      check(state.reason === 'canonical_missing', 'response', `fields.${key}.reason`);
-    } else {
-      catalogObject(state, ['state', 'value', 'origins'], `fields.${key}`);
-      check(state.state === 'known', 'response', `fields.${key}.state`);
-      catalogText(state.value, `fields.${key}.value`, 'response');
-      check(Array.isArray(state.origins) && state.origins.length === 1, 'response', `fields.${key}.origins`);
-      const origin = catalogObject(state.origins[0], ['kind', 'canonicalItemId', 'decisionReference'], `fields.${key}.origin`);
-      check(origin.kind === 'canonical' && catalogUuid(origin.canonicalItemId, `fields.${key}.canonicalItemId`, 'response') === canonicalId,
-        'response', `fields.${key}.origin`);
-      catalogText(origin.decisionReference, `fields.${key}.decisionReference`, 'response', 2000);
-      if (key === 'unit') check(UNITS.includes(String(state.value)), 'response', 'fields.unit.value');
-    }
-  }
+  const fields = validateAnnualCatalogFields(version.fields, canonicalId, expected.allowAnnualEdits);
   catalogFingerprint(row.canonicalFingerprint, 'item.canonicalFingerprint', 'response');
   catalogBoolean(row.canonicalDrift, 'item.canonicalDrift');
   catalogBoolean(row.selectable, 'item.selectable');

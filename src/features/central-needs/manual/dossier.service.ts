@@ -1,6 +1,7 @@
 /** Additive contract discovery; no permission or transport failure becomes legacy mode. */
 import { supabase } from '@/shared/supabase/client';
 import { centralNeedsErrorFromPostgrest } from '../central-needs.service';
+import { annualNeedsCheck, validateAnnualNeedBinding, type AnnualNeedBinding } from '../annual-catalog/annual-needs.contract';
 
 export interface NeedsFeatures { nationalCode: boolean; sameActorManual: boolean; dossiers: boolean; workbookIntake: boolean }
 export interface NeedsDossier {
@@ -12,6 +13,8 @@ export interface AnnualNeedRow {
   dossierId: string; dossierName: string; revisionId: string; beneficiaryId: string;
   itemId: string; name: string; nameAr: string | null; nationalCode: string | null;
   quantityText: string; unit: string; warehouseId: string | null;
+  annualBinding?: AnnualNeedBinding | null;
+  identitySource?: 'annual_version' | 'legacy_current_canonical';
 }
 
 export function isMissingNeedsContract(error: { code?: string; message?: string } | null, name: string): boolean {
@@ -59,8 +62,29 @@ export async function openNeedsDossierCorrection(organizationId: string, year: n
 export async function readAnnualNeeds(organizationId: string, year: number): Promise<AnnualNeedRow[]> {
   const { data, error } = await supabase.rpc('phoenix_central_needs_annual_summary', { p_organization_id: organizationId, p_plan_year: year });
   if (error) throw centralNeedsErrorFromPostgrest(error);
-  return (data ?? []).map((r: Record<string, unknown>) => ({ dossierId: r.dossier_id as string, dossierName: r.dossier_name as string,
-    revisionId: r.revision_id as string, beneficiaryId: r.beneficiary_id as string, itemId: r.item_id as string,
-    name: r.name as string, nameAr: r.name_ar as string | null, nationalCode: r.national_code as string | null,
-    quantityText: r.quantity_text as string, unit: r.unit as string, warehouseId: r.warehouse_id as string | null }));
+  return (data ?? []).map((r: Record<string, unknown>) => {
+    const row: AnnualNeedRow = { dossierId: r.dossier_id as string, dossierName: r.dossier_name as string,
+      revisionId: r.revision_id as string, beneficiaryId: r.beneficiary_id as string, itemId: r.item_id as string,
+      name: r.name as string, nameAr: r.name_ar as string | null, nationalCode: r.national_code as string | null,
+      quantityText: r.quantity_text as string, unit: r.unit as string, warehouseId: r.warehouse_id as string | null };
+    // Older servers do not advertise a frozen reference. Never synthesize one from today's catalog.
+    if ('annual_binding' in r || 'identity_source' in r) {
+      annualNeedsCheck('annual_binding' in r && 'identity_source' in r, 'summary.reference');
+      if (r.annual_binding === null) {
+        annualNeedsCheck(r.identity_source === 'legacy_current_canonical', 'summary.source');
+        row.annualBinding = null; row.identitySource = 'legacy_current_canonical';
+      } else {
+        const binding = validateAnnualNeedBinding(r.annual_binding,
+          { ownerOrgId: organizationId, planningYear: year }, { canonicalItemId: row.itemId });
+        annualNeedsCheck(r.identity_source === 'annual_version', 'summary.source');
+        for (const [field, reported] of [['scientificName', row.name], ['nameAr', row.nameAr],
+          ['nationalCode', row.nationalCode], ['unit', row.unit]] as const) {
+          const saved = binding.fields[field];
+          annualNeedsCheck((saved.state === 'known' ? saved.value : null) === reported, `summary.${field}`);
+        }
+        row.annualBinding = binding; row.identitySource = 'annual_version';
+      }
+    }
+    return row;
+  });
 }

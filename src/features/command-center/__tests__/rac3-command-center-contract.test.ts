@@ -493,6 +493,9 @@ describe('RAC-3 · I) no backend or migration change', () => {
       // P3-A1 annual catalog foundation: exact isolated candidate and native suite only.
       'supabase/candidates/P3A1_annual_catalog_NOT_APPLIED.sql',
       'supabase/candidates/__tests__/p3a1-annual-catalog.dynamic.test.ts',
+      // P3-B: reasoned annual edits and immutable need references, isolated candidate/proof only.
+      'supabase/candidates/P3B_annual_needs_audit_NOT_APPLIED.sql',
+      'supabase/candidates/__tests__/p3b-annual-needs-audit.dynamic.test.ts',
       'supabase/candidates/__tests__/ff2-dossiers-forward-fix.dynamic.test.ts',
       'supabase/candidates/R1a_01_manual_source_schema_inert.sql',
       'supabase/candidates/R1a_02_authorization_closure.sql',
@@ -552,6 +555,11 @@ describe('RAC-3 · I) no backend or migration change', () => {
       && !ALLOWED_SQL.includes(f))).toEqual([]);
     // P-HARDEN-01 negative controls on the REAL ALLOWED_SQL list: the two hosted-adapter files are registered by exact name; near-misses are flagged.
     const flag = (files: string[]) => files.filter(f => f.startsWith('supabase/') && !f.startsWith('supabase/migrations/__tests__/') && !ALLOWED_SQL.includes(f));
+    expect(flag(['supabase/candidates/P3B_annual_needs_audit_NOT_APPLIED.sql', 'supabase/candidates/__tests__/p3b-annual-needs-audit.dynamic.test.ts'])).toEqual([]);
+    const p3bNearMisses = ['supabase/candidates/P3B_annual_needs_audit_NOT_APPLIED_v2.sql',
+      'supabase/candidates/P3C_annual_needs_NOT_APPLIED.sql', 'supabase/migrations/236_phoenix_annual_needs_audit.sql',
+      'supabase/candidates/__tests__/p3b-annual-needs-extra.dynamic.test.ts'];
+    expect(flag(p3bNearMisses)).toEqual(p3bNearMisses);
     expect(flag(['supabase/candidates/staging-baseline/hosted-adapter/hosted-adapter.mjs', 'supabase/candidates/__tests__/hosted-adapter.dynamic.test.ts'])).toEqual([]);
     const unregistered = ['supabase/candidates/staging-baseline/hosted-adapter/hosted-adapter.mjs.bak', 'supabase/candidates/staging-baseline/hosted-adapter/other.mjs', 'supabase/candidates/staging-baseline/hosted-adapter.mjs',
       'supabase/candidates/__tests__/hosted-adapter.dynamic.test.ts.orig', 'supabase/candidates/__tests__/hosted-adapter-extra.dynamic.test.ts', 'supabase/candidates/hosted-adapter/hosted-adapter.mjs'];
