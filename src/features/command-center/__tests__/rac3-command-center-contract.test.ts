@@ -1,4 +1,5 @@
 import { execSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -480,6 +481,18 @@ describe('RAC-3 · I) no backend or migration change', () => {
     // security suites live under supabase/migrations/__tests__/, which this guard
     // already exempts.
     const M222 = 'supabase/migrations/222_phoenix_governed_warehouse_correction_security.sql';
+    // P3-C2: the reviewed original-byte candidate and its disposable proof only.
+    // Pin the candidate bytes as well as its exact name; no sibling gets this allowance.
+    const P3C2 = 'supabase/candidates/P3C2_annual_originals_NOT_APPLIED.sql';
+    const P3C2_PROOF = 'supabase/candidates/__tests__/p3c2-annual-originals.dynamic.test.ts';
+    const isReviewedP3C2 = (path: string, bytes: Uint8Array) => path === P3C2
+      && createHash('sha256').update(bytes).digest('hex') === '17cd88fa51492c9b5722c4ae95a31275976360205f82584f46c676b65522f600';
+    const p3c2Bytes = readFileSync(join(process.cwd(), P3C2));
+    expect(isReviewedP3C2(P3C2, p3c2Bytes)).toBe(true);
+    const p3c2Tampered = Buffer.from(p3c2Bytes);
+    p3c2Tampered[0] ^= 1;
+    expect(isReviewedP3C2(P3C2, p3c2Tampered)).toBe(false);
+    expect(isReviewedP3C2(`${P3C2}.bak`, p3c2Bytes)).toBe(false);
     // R1 (staging release candidate): the un-numbered SQL CANDIDATES and their tooling/tests under supabase/candidates/ (never in the numbered
     // chain, never applied outside a disposable database) are registered by EXACT filename, exactly as M200-M222 were; no wildcard and no
     // directory exemption, so every other supabase/ file still fails this guard closed. They touch no command-centre object.
@@ -496,6 +509,7 @@ describe('RAC-3 · I) no backend or migration change', () => {
       // P3-B: reasoned annual edits and immutable need references, isolated candidate/proof only.
       'supabase/candidates/P3B_annual_needs_audit_NOT_APPLIED.sql',
       'supabase/candidates/__tests__/p3b-annual-needs-audit.dynamic.test.ts',
+      P3C2, P3C2_PROOF,
       'supabase/candidates/__tests__/ff2-dossiers-forward-fix.dynamic.test.ts',
       'supabase/candidates/R1a_01_manual_source_schema_inert.sql',
       'supabase/candidates/R1a_02_authorization_closure.sql',
@@ -555,6 +569,11 @@ describe('RAC-3 · I) no backend or migration change', () => {
       && !ALLOWED_SQL.includes(f))).toEqual([]);
     // P-HARDEN-01 negative controls on the REAL ALLOWED_SQL list: the two hosted-adapter files are registered by exact name; near-misses are flagged.
     const flag = (files: string[]) => files.filter(f => f.startsWith('supabase/') && !f.startsWith('supabase/migrations/__tests__/') && !ALLOWED_SQL.includes(f));
+    expect(flag([P3C2, P3C2_PROOF])).toEqual([]);
+    const p3c2NearMisses = ['supabase/candidates/P3C2_annual_originals_NOT_APPLIED_v2.sql',
+      'supabase/candidates/P3C3_annual_originals_NOT_APPLIED.sql', 'supabase/migrations/236_phoenix_annual_originals.sql',
+      `${P3C2}.bak`, `${P3C2_PROOF}.orig`, 'supabase/candidates/__tests__/p3c2-annual-originals-extra.dynamic.test.ts'];
+    expect(flag(p3c2NearMisses)).toEqual(p3c2NearMisses);
     expect(flag(['supabase/candidates/P3B_annual_needs_audit_NOT_APPLIED.sql', 'supabase/candidates/__tests__/p3b-annual-needs-audit.dynamic.test.ts'])).toEqual([]);
     const p3bNearMisses = ['supabase/candidates/P3B_annual_needs_audit_NOT_APPLIED_v2.sql',
       'supabase/candidates/P3C_annual_needs_NOT_APPLIED.sql', 'supabase/migrations/236_phoenix_annual_needs_audit.sql',
