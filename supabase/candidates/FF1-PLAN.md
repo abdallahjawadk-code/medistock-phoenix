@@ -1,3 +1,10 @@
+> **Current dossier scope — HOLD (2026-10-29):** FF1 below is the historical
+> M230 candidate and is incomplete for the M232–235 matrix-v2 entry points.
+> Do not use it as an exhaustive switch for that future schema. The separate
+> unnumbered FF2 candidate and its scoped evidence are described in
+> `docs/phoenix/FF2-DOSSIERS-PLAN.md`; they still require independent review and
+> an owner release decision. No automatic application is authorized.
+
 # FF1 - R1 forward-fix plan (D18, ADR 14.3) - UNNUMBERED, UNAPPLIED, KILL-SWITCH ONLY
 
 File: `supabase/candidates/FF1_r1_forward_fix_NOT_APPLIED.sql` (one transaction, VERIFY inside). Tests: `supabase/candidates/__tests__/ff1-forward-fix.dynamic.test.ts` (static contract + FF-01..04 + a normal-sequence regression on the PG rig).

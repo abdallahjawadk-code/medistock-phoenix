@@ -50,6 +50,26 @@ const fillAdd = (qty: string, reason = 'planned need') => {
   fireEvent.change(screen.getByLabelText('Reason'), { target: { value: reason } });
 };
 
+describe('persisted identity in a fresh reviewer session', () => {
+  it('loads saved material names and national code even when the picker is empty', async () => {
+    const { api }=makeApi([event({id:'persisted',eventSeq:1,eventKind:'add'})]);
+    const ready=vi.fn();
+    const withLabels={...api,getManualCatalogLabels:vi.fn(async()=>[{id:'i1',name:'Persisted reagent',nameAr:null,unit:'box',nationalCode:'00043-A',concentration:null,dosageForm:null,status:'active'}])};
+    mount(withLabels,{items:[],revisionStatus:'approved',onIdentityReady:ready});
+    expect(await screen.findByText('Persisted reagent')).toBeInTheDocument();
+    expect(screen.getByText(/00043-A/)).toBeInTheDocument();
+    expect(screen.queryByText('i1')).toBeNull();expect(ready).toHaveBeenLastCalledWith(true);
+  });
+  it('reports denied identity loading and keeps decision readiness false', async () => {
+    const {api}=makeApi([event({id:'persisted',eventSeq:1,eventKind:'add'})]);const ready=vi.fn();
+    const withLabels={...api,getManualCatalogLabels:vi.fn(async()=>{throw new Error('denied');})};
+    mount(withLabels,{items:[],revisionStatus:'approved',onIdentityReady:ready});
+    await screen.findByText('Some material names could not be loaded. Saved data is unchanged.');
+    expect(screen.getByText('Material name unavailable')).toBeInTheDocument();
+    expect(ready).not.toHaveBeenCalledWith(true);
+  });
+});
+
 describe('R1-A4 manual workspace', () => {
   it('without the manual key it explains why and offers no editing control', async () => {
     const { api } = makeApi([event({ id: 'e1', eventSeq: 1, eventKind: 'add' })], caps({ manualSet: false }));

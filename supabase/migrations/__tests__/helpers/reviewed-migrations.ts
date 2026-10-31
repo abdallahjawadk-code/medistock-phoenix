@@ -335,6 +335,7 @@ export const REVIEWED_MIGRATION_FILES: readonly string[] = Object.freeze([
   '228_phoenix_central_needs_material_registration_inert.sql',
   '229_phoenix_central_needs_manual_activation.sql',
   '230_phoenix_central_needs_material_registration_activation.sql', '231_phoenix_unit_test_vocabulary.sql',
+  '232_phoenix_central_needs_same_actor_approval.sql', '233_phoenix_central_needs_distinct_national_code.sql', '234_phoenix_central_needs_annual_dossiers.sql', '235_phoenix_central_needs_dossier_workbook_intake.sql',
 ]);
 
 const REVIEWED_SET: ReadonlySet<string> = new Set(REVIEWED_MIGRATION_FILES);

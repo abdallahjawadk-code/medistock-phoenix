@@ -62,7 +62,7 @@ export function MaterialPicker({ lang, scopeKey, search, selected, onPick, onRem
           {hits.map((h) => (
             <li key={h.id}>
               <span>{lang === 'ar' && h.nameAr ? h.nameAr : h.name}</span>{' '}
-              <span dir="ltr">{[h.concentration, h.dosageForm, h.unit].filter(Boolean).join(' · ')}</span>{' '}
+              <span dir="ltr">{[h.nationalCode, h.concentration, h.dosageForm, h.unit].filter(Boolean).join(' · ')}</span>{' '}
               <button type="button" onClick={() => onPick(h)} disabled={selected.some((s) => s.id === h.id)}>{jt('material_use', lang)}</button>
             </li>
           ))}

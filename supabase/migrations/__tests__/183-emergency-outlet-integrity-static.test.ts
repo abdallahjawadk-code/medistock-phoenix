@@ -142,7 +142,7 @@ describe('183 registration and shape', () => {
       '221_phoenix_pharmacy_department_subpurchase_exclusion.sql',
       // Route A proposed M222 (OPS2-F1 v2): one owner-only warehouse correction applier and two warehouse
       // correction functions re-bodied with unchanged ACLs; no emergency-outlet or distribution-point SQL.
-      '222_phoenix_governed_warehouse_correction_security.sql', '223_phoenix_central_needs_manual_source_schema_inert.sql', '224_phoenix_central_needs_authorization_closure.sql', '225_phoenix_central_needs_lifecycle_relations_and_sod.sql', '226_phoenix_central_needs_manual_routines_inert.sql', '227_phoenix_central_needs_blockers_digest_d27.sql', '228_phoenix_central_needs_material_registration_inert.sql', '229_phoenix_central_needs_manual_activation.sql', '230_phoenix_central_needs_material_registration_activation.sql', '231_phoenix_unit_test_vocabulary.sql',
+      '222_phoenix_governed_warehouse_correction_security.sql', '223_phoenix_central_needs_manual_source_schema_inert.sql', '224_phoenix_central_needs_authorization_closure.sql', '225_phoenix_central_needs_lifecycle_relations_and_sod.sql', '226_phoenix_central_needs_manual_routines_inert.sql', '227_phoenix_central_needs_blockers_digest_d27.sql', '228_phoenix_central_needs_material_registration_inert.sql', '229_phoenix_central_needs_manual_activation.sql', '230_phoenix_central_needs_material_registration_activation.sql', '231_phoenix_unit_test_vocabulary.sql', '232_phoenix_central_needs_same_actor_approval.sql', '233_phoenix_central_needs_distinct_national_code.sql', '234_phoenix_central_needs_annual_dossiers.sql', '235_phoenix_central_needs_dossier_workbook_intake.sql',
     ];
     const i = REVIEWED_MIGRATION_FILES.indexOf(NAME);
     expect(REVIEWED_MIGRATION_FILES.slice(i + 1)).toEqual(SUCCESSORS);
@@ -150,7 +150,7 @@ describe('183 registration and shape', () => {
       .toBe(SUCCESSORS[SUCCESSORS.length - 1]);
     // The ceiling is now 222; `[2-9]\d\d` would match it, so this asserts
     // numerically that nothing sits ABOVE the ceiling.
-    expect(REVIEWED_MIGRATION_FILES.filter(f => Number(f.slice(0, 3)) > 231)).toHaveLength(0);
+    expect(REVIEWED_MIGRATION_FILES.filter(f => Number(f.slice(0, 3)) > 235)).toHaveLength(0);
   });
 
   it('is a single transaction, manual-apply only', () => {

@@ -1,6 +1,6 @@
 /**
  * R1-A2/A4 — the governed material-registration surface: request a NEW material (never a catalog write from the client),
- * and - for an independent reviewer - review it. Every action calls a server routine and the list is re-read afterwards (no
+ * and - for an authorized reviewer - review it (same actor only after the M232 contract). Every action calls a server routine and the list is re-read afterwards (no
  * optimistic state). A stale answer refreshes and keeps what the person typed; a response of another organization is discarded.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -43,6 +43,8 @@ interface Props {
   prefill: RegistrationPrefill | null;
   onUseItem: (item: ResolvedMaterialUse) => void;
   api?: RegistrationApi;
+  nationalCodeEnabled?: boolean;
+  sameActorEnabled?: boolean;
 }
 
 /** Mirrors the server's PROVISIONAL review cap (approve_new_material refuses above it). 50 is an engineering fail-closed value, NOT an owner-approved product
@@ -53,7 +55,7 @@ type FormState = Omit<MaterialDescriptor, 'unit'> & { unit: MaterialUnit | '' };
 const EMPTY: FormState = { scientificName: '', nameAr: null, tradeName: null, strength: null, dosageForm: null, unit: '', barcode: null, note: null };
 const orNull = (s: string): string | null => (s.trim() === '' ? null : s);
 
-export function MaterialRegistrationPanel({ lang, organizationId, actorId, planRevisionId, prefill, onUseItem, api = realApi }: Props) {
+export function MaterialRegistrationPanel({ lang, organizationId, actorId, planRevisionId, prefill, onUseItem, api = realApi, nationalCodeEnabled = false, sameActorEnabled = false }: Props) {
   const [caps, setCaps] = useState<MaterialCapabilities | null>(null);
   const [requests, setRequests] = useState<MaterialRequest[] | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -68,6 +70,7 @@ export function MaterialRegistrationPanel({ lang, organizationId, actorId, planR
   const [candidates, setCandidates] = useState<MaterialCandidate[]>([]);
   const [acks, setAcks] = useState<Set<string>>(new Set());
   const [decisionNote, setDecisionNote] = useState('');
+  const [assignCode, setAssignCode] = useState<Set<string>>(new Set());
   const intentKey = useRef<string | null>(null);
   const epoch = useRef(0);
 
@@ -125,8 +128,17 @@ export function MaterialRegistrationPanel({ lang, organizationId, actorId, planR
   const key = () => (intentKey.current ??= api.newMaterialIdempotencyKey());
   const descriptor = (): MaterialDescriptor => ({
     ...form, unit: form.unit as MaterialUnit, scientificName: form.scientificName.trim(), nameAr: orNull(form.nameAr ?? ''), tradeName: orNull(form.tradeName ?? ''),
-    strength: orNull(form.strength ?? ''), dosageForm: orNull(form.dosageForm ?? ''), barcode: orNull(form.barcode ?? ''), note: orNull(form.note ?? ''),
+    strength: orNull(form.strength ?? ''), dosageForm: orNull(form.dosageForm ?? ''), barcode: orNull(form.barcode ?? ''), ...(nationalCodeEnabled ? { nationalCode: orNull(form.nationalCode ?? '') } : {}), note: orNull(form.note ?? ''),
   });
+  const resolveExisting = (r: MaterialRequest, c: MaterialCandidate) => act(() =>
+    nationalCodeEnabled && r.nationalCode
+      ? api.resolveMaterialExisting(r.id,r.version,c.centralItemId,decisionNote || jt('reg_resolve_existing',lang),{expected:c.nationalCode ?? null})
+      : api.resolveMaterialExisting(r.id,r.version,c.centralItemId,decisionNote || jt('reg_resolve_existing',lang)));
+  const approveMaterial = (r: MaterialRequest) => act(() =>
+    nationalCodeEnabled
+      ? api.approveNewMaterial(r.id,r.version,[...acks],decisionNote || jt('reg_approve_new',lang),r.nationalCode ?? null)
+      : api.approveNewMaterial(r.id,r.version,[...acks],decisionNote || jt('reg_approve_new',lang)));
+
   const canSave = form.scientificName.trim() !== '' && form.unit !== '' && !busy;
 
   const save = () => {
@@ -141,12 +153,12 @@ export function MaterialRegistrationPanel({ lang, organizationId, actorId, planR
   const expand = async (r: MaterialRequest) => {
     if (open === r.id) { setOpen(null); return; }
     const mine = epoch.current;
-    setOpen(r.id); setEvents([]); setCandidates([]); setAcks(new Set()); setDecisionNote('');
+    setAssignCode(new Set()); setOpen(r.id); setEvents([]); setCandidates([]); setAcks(new Set()); setDecisionNote('');
     try {
       const [ev, cand] = await Promise.all([
         api.listMaterialRequestEvents(r.id),
-        caps?.canReview && r.status === 'under_review' && r.reviewerId === actorId && r.requesterId !== actorId
-          ? api.listMaterialRequestCandidates(r.id) : Promise.resolve([] as MaterialCandidate[]),
+        caps?.canReview && r.status === 'under_review' && r.reviewerId === actorId && (sameActorEnabled || r.requesterId !== actorId)
+          ? (nationalCodeEnabled ? api.listMaterialRequestCandidates(r.id, true) : api.listMaterialRequestCandidates(r.id)) : Promise.resolve([] as MaterialCandidate[]),
       ]);
       if (epoch.current !== mine) return;
       setEvents(ev); setCandidates(cand);
@@ -192,6 +204,9 @@ export function MaterialRegistrationPanel({ lang, organizationId, actorId, planR
               {MATERIAL_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
             </select>
           </label>
+          {nationalCodeEnabled && <label>{lang === 'ar' ? 'الرمز الوطني' : 'National code'}
+            <input dir="ltr" value={form.nationalCode ?? ''} disabled={busy} maxLength={64} onChange={(e) => setForm({ ...form, nationalCode: e.target.value })} />
+          </label>}
           <label>{jt('reg_barcode', lang)}
             <input dir="ltr" value={form.barcode ?? ''} disabled={busy} onChange={(e) => setForm({ ...form, barcode: e.target.value })} />
           </label>
@@ -210,16 +225,16 @@ export function MaterialRegistrationPanel({ lang, organizationId, actorId, planR
       <ul>
         {requests.map((r) => {
           const mine = r.requesterId === actorId;
-          const isMyReview = caps.canReview && !mine && r.status === 'under_review' && r.reviewerId === actorId;
+          const isMyReview = caps.canReview && (sameActorEnabled || !mine) && r.status === 'under_review' && r.reviewerId === actorId;
           return (
             <li key={r.id} data-status={r.status}>
               <button type="button" aria-expanded={open === r.id} onClick={() => void expand(r)}>
-                <span dir="ltr">{r.scientificName}</span> — {statusText(r.status)}
+                <span dir="ltr">{r.scientificName}</span>{r.nationalCode && <small dir="ltr"> · {r.nationalCode}</small>} — {statusText(r.status)}
               </button>
               {mine && (r.status === 'draft' || r.status === 'needs_info') && (
                 <>
                   <button type="button" disabled={busy} onClick={() => { setEditing({ id: r.id, version: r.version });
-                    setForm({ scientificName: r.scientificName, nameAr: r.nameAr, tradeName: r.tradeName, strength: r.strength, dosageForm: r.dosageForm, unit: r.unit, barcode: r.barcode, note: r.note }); }}>
+                    setForm({ scientificName: r.scientificName, nameAr: r.nameAr, tradeName: r.tradeName, strength: r.strength, dosageForm: r.dosageForm, unit: r.unit, barcode: r.barcode, nationalCode: r.nationalCode, note: r.note }); }}>
                     {jt('reg_edit', lang)}</button>
                   <button type="button" disabled={busy} onClick={() => void act(() => api.submitMaterialRequest(r.id, r.version))}>{jt('reg_submit', lang)}</button>
                 </>
@@ -227,8 +242,8 @@ export function MaterialRegistrationPanel({ lang, organizationId, actorId, planR
               {mine && (r.status === 'draft' || r.status === 'submitted' || r.status === 'needs_info') && (
                 <button type="button" disabled={busy} onClick={() => void act(() => api.cancelMaterialRequest(r.id, r.version, jt('reg_cancel_request', lang)))}>{jt('reg_cancel_request', lang)}</button>
               )}
-              {caps.canReview && mine && r.status !== 'draft' && r.status !== 'cancelled' && <small>{jt('reg_independent', lang)}</small>}
-              {caps.canReview && !mine && r.status === 'submitted' && (
+              {!sameActorEnabled && caps.canReview && mine && r.status !== 'draft' && r.status !== 'cancelled' && <small>{jt('reg_independent', lang)}</small>}
+              {caps.canReview && (sameActorEnabled || !mine) && r.status === 'submitted' && (
                 <button type="button" disabled={busy} onClick={() => void act(() => api.startMaterialReview(r.id, r.version))}>{jt('reg_start_review', lang)}</button>
               )}
               {(r.status === 'resolved_existing' || r.status === 'approved_new') && r.resolvedItemId && (
@@ -253,9 +268,10 @@ export function MaterialRegistrationPanel({ lang, organizationId, actorId, planR
                               {jt('reg_ack', lang)}
                             </label>
                           )}
+                          {nationalCodeEnabled && r.nationalCode && !c.nationalCode && <label><input type="checkbox" checked={assignCode.has(c.centralItemId)} onChange={(e)=>setAssignCode((old)=>{const n=new Set(old);if(e.target.checked)n.add(c.centralItemId);else n.delete(c.centralItemId);return n;})} />{lang==='ar'?'أؤكد حفظ الرمز الوطني على المادة الموجودة دون تغيير الباركود':'Assign the national code to this existing material; keep its barcode'}</label>}
                           {c.status === 'active' && (
-                            <button type="button" disabled={busy || (strong.length > 0 && c.grade !== 'strong')}
-                              onClick={() => void act(() => api.resolveMaterialExisting(r.id, r.version, c.centralItemId, decisionNote || jt('reg_resolve_existing', lang)))}>{jt('reg_resolve_existing', lang)}</button>
+                            <button type="button" disabled={busy || (strong.length > 0 && c.grade !== 'strong') || !!(nationalCodeEnabled && r.nationalCode && ((!c.nationalCode && !assignCode.has(c.centralItemId)) || (c.nationalCode && c.nationalCode!==r.nationalCode)))}
+                              onClick={() => void resolveExisting(r, c)}>{jt('reg_resolve_existing', lang)}</button>
                           )}
                         </div>
                       ))}
@@ -266,7 +282,7 @@ export function MaterialRegistrationPanel({ lang, organizationId, actorId, planR
                       {strong.length === 0 && tooMany && <p role="note">{jt('reg_too_many', lang).replace('__N__', String(MAX_REVIEWABLE_ADVISORY))}</p>}
                       {strong.length === 0 && !tooMany && !allAcked && <p role="note">{jt('reg_ack_needed', lang)}</p>}
                       <button type="button" disabled={busy || strong.length > 0 || tooMany || !allAcked}
-                        onClick={() => void act(() => api.approveNewMaterial(r.id, r.version, [...acks], decisionNote || jt('reg_approve_new', lang)))}>{jt('reg_approve_new', lang)}</button>
+                        onClick={() => void approveMaterial(r)}>{jt('reg_approve_new', lang)}</button>
                       <button type="button" disabled={busy || decisionNote.trim() === ''}
                         onClick={() => void act(() => api.requestMaterialInfo(r.id, r.version, decisionNote))}>{jt('reg_ask_info', lang)}</button>
                       <button type="button" disabled={busy || decisionNote.trim() === ''}

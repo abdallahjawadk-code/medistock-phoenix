@@ -486,6 +486,9 @@ describe('RAC-3 · I) no backend or migration change', () => {
     const R1_CANDIDATES = [
       // D18: the unnumbered, unapplied R1 forward-fix candidate (exact filename).
       'supabase/candidates/FF1_r1_forward_fix_NOT_APPLIED.sql',
+      // Current dossier kill switch, exact names only; historical FF1 remains immutable.
+      'supabase/candidates/FF2_r1_dossiers_forward_fix_NOT_APPLIED.sql',
+      'supabase/candidates/__tests__/ff2-dossiers-forward-fix.dynamic.test.ts',
       'supabase/candidates/R1a_01_manual_source_schema_inert.sql',
       'supabase/candidates/R1a_02_authorization_closure.sql',
       // R1-RBAC-v2: exact reviewed #248 paths; every unlisted sibling remains refused.
@@ -532,7 +535,7 @@ describe('RAC-3 · I) no backend or migration change', () => {
     ];
     const ALLOWED_SQL = [...R1_CANDIDATES, M200, M201, M202, M203, M204, M205, M206, M207, M208, M209, M210, M211, M212, M213, M214, M215, M216, M217, M218, M219, M220, M221, M222,
       // R1 numbering (D9 closed): the eight R1 migrations M223-M230, registered by EXACT filename (candidate bytes unchanged, R1-NUMBERING-MANIFEST.json).
-      'supabase/migrations/223_phoenix_central_needs_manual_source_schema_inert.sql', 'supabase/migrations/224_phoenix_central_needs_authorization_closure.sql', 'supabase/migrations/225_phoenix_central_needs_lifecycle_relations_and_sod.sql', 'supabase/migrations/226_phoenix_central_needs_manual_routines_inert.sql', 'supabase/migrations/227_phoenix_central_needs_blockers_digest_d27.sql', 'supabase/migrations/228_phoenix_central_needs_material_registration_inert.sql', 'supabase/migrations/229_phoenix_central_needs_manual_activation.sql', 'supabase/migrations/230_phoenix_central_needs_material_registration_activation.sql', 'supabase/migrations/231_phoenix_unit_test_vocabulary.sql'];
+      'supabase/migrations/223_phoenix_central_needs_manual_source_schema_inert.sql', 'supabase/migrations/224_phoenix_central_needs_authorization_closure.sql', 'supabase/migrations/225_phoenix_central_needs_lifecycle_relations_and_sod.sql', 'supabase/migrations/226_phoenix_central_needs_manual_routines_inert.sql', 'supabase/migrations/227_phoenix_central_needs_blockers_digest_d27.sql', 'supabase/migrations/228_phoenix_central_needs_material_registration_inert.sql', 'supabase/migrations/229_phoenix_central_needs_manual_activation.sql', 'supabase/migrations/230_phoenix_central_needs_material_registration_activation.sql', 'supabase/migrations/231_phoenix_unit_test_vocabulary.sql', 'supabase/migrations/232_phoenix_central_needs_same_actor_approval.sql', 'supabase/migrations/233_phoenix_central_needs_distinct_national_code.sql', 'supabase/migrations/234_phoenix_central_needs_annual_dossiers.sql', 'supabase/migrations/235_phoenix_central_needs_dossier_workbook_intake.sql'];
     const changed = execSync(
       'git diff --name-only b707f073d60b4cc61205c35003ab491f3aed7468',
       { cwd: process.cwd(), encoding: 'utf8' },
@@ -567,7 +570,7 @@ describe('RAC-3 · I) no backend or migration change', () => {
    * replaces: it would also catch a dependency edit smuggled in beside a
    * version bump, which a filename check never could.
    */
-  it('changes no dependency — package.json keeps its reviewed 6ce98332 contract and the WORKING lockfile must equal the complete SEC-HOTFIX-3 graph (the SEC-HOTFIX-2 graph frozen by exact commit + the explicit Vitest family 4.1.12 delta) plus exactly the CI-HOTFIX-4 undici 7.30.1 and authorized Vite 6.4.5 transformations', () => {
+  it('changes no dependency except pinned minimatch security hotfix — package.json keeps its reviewed 6ce98332 contract and the WORKING lockfile must equal the complete SEC-HOTFIX-3 graph (the SEC-HOTFIX-2 graph frozen by exact commit + the explicit Vitest family 4.1.12 delta) plus exactly the CI-HOTFIX-4 undici 7.30.1 and authorized Vite 6.4.5 transformations', () => {
     // CN-2A-SHEETJS: the audited dependency baseline advances from d70b24a9
     // to 6ce98332, the reviewed CN-2A commit that adds exactly one runtime
     // dependency — `xlsx` (SheetJS Community Edition 0.20.3, vendored
@@ -621,8 +624,11 @@ describe('RAC-3 · I) no backend or migration change', () => {
       ...base.overrides,
       [ESTREE]: {
         ...base.overrides[ESTREE],
-        minimatch: { ...base.overrides[ESTREE].minimatch, 'brace-expansion': '5.0.12' },
+        minimatch: { ...base.overrides[ESTREE].minimatch, '.': '11.0.1', 'brace-expansion': '5.0.12' },
       },
+      // GHSA-g3hv-75wg-m249: audited exact transitive security replacement.
+      // Keep the existing nested brace-expansion pin; do not widen ranges.
+      minimatch: '11.0.1',
     });
     // CN-2B: the lint script gains the `api` root alongside `src`, reviewed as
     // the one approved scripts delta. Every other script stays byte-identical
@@ -928,7 +934,7 @@ describe('RAC-3 · I) no backend or migration change', () => {
     // transform only version/resolved/integrity of the existing Vite entry.
     const prevViteSecurity = hotfix4Packages[VITE];
     expect(prevViteSecurity.version).toBe('6.4.4');
-    const securityVitePackages = {
+    const securityVitePackages: Record<string, Record<string, unknown>> = {
       ...hotfix4Packages,
       [VITE]: {
         ...prevViteSecurity,
@@ -939,7 +945,41 @@ describe('RAC-3 · I) no backend or migration change', () => {
     };
     const expectedViteSecurityLock = { ...expectedHotfix4Lock, packages: securityVitePackages };
     const workingLock = JSON.parse(readFileSync(join(process.cwd(), 'package-lock.json'), 'utf8'));
-    expect(normalise(workingLock)).toBe(normalise(expectedViteSecurityLock));
+    // MINIMATCH-HOTFIX / GHSA-g3hv-75wg-m249: no generic dependency drift.
+    // The single existing minimatch@10.2.5 (also used by ExcelJS via readdir-glob)
+    // advances to 11.0.1, the first patched major. One new dependency is
+    // required by the real 11.0.1 manifest; every other lock entry stays pinned.
+    const MINIMATCH = 'node_modules/minimatch';
+    const NONRECURSIVE = 'node_modules/@isaacs/nonrecursive-glob-match';
+    const oldMinimatch = securityVitePackages[MINIMATCH];
+    expect(oldMinimatch.version).toBe('10.2.5');
+    expect(securityVitePackages[NONRECURSIVE]).toBeUndefined();
+    const patchedMinimatch = {
+      ...oldMinimatch,
+      version: '11.0.1',
+      resolved: 'https://registry.npmjs.org/minimatch/-/minimatch-11.0.1.tgz',
+      integrity: 'sha512-t+Vn6DX4wPCxS23y03C0uhF7S1jpi1GfqPrnlEipCJaA2ykiNbMkVlDutZtmvLfRcUN6R8AYVlzTsQrT4RZoLQ==',
+      dependencies: {
+        '@isaacs/nonrecursive-glob-match': '^1.0.1',
+        'brace-expansion': '^5.0.12',
+      },
+    };
+    const nonrecursive = {
+      version: '1.0.3',
+      resolved: 'https://registry.npmjs.org/@isaacs/nonrecursive-glob-match/-/nonrecursive-glob-match-1.0.3.tgz',
+      integrity: 'sha512-SI7kyKHq4XXDRozw+r9GlRZkia1ZkFrpLW98r2IC2Bpr8YkFGE3fvjzmxCG0x78A++69HmDNrDvSMYBZmHGpKA==',
+      license: 'BlueOak-1.0.0',
+    };
+    const secureEntries: Array<[string, Record<string, unknown>]> = [
+      ...Object.entries(securityVitePackages),
+      [NONRECURSIVE, nonrecursive],
+    ];
+    const securePackages = Object.fromEntries(
+      secureEntries.sort(([a], [b]) => a.localeCompare(b)),
+    ) as Record<string, Record<string, unknown>>;
+    securePackages[MINIMATCH] = patchedMinimatch;
+    const expectedMinimatchHotfixLock = { ...expectedViteSecurityLock, packages: securePackages };
+    expect(normalise(workingLock)).toBe(normalise(expectedMinimatchHotfixLock));
     // ... and the working package.json is the HEAD package.json whose contract is asserted above.
     expect(JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8'))).toEqual(head);
   });

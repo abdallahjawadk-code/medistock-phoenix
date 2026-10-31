@@ -1,11 +1,11 @@
 /**
  * R1-A4 — the manual annual-needs JOURNEY of the Screen-3 tab:
- *   year -> beneficiary institution -> material -> manual annual quantity -> review -> submit -> independent approve / reject -> history.
+ *   year -> beneficiary institution -> material -> manual annual quantity -> review -> submit -> capability-checked approve / reject -> history.
  *
  * It COMPOSES the existing pieces (the manual workspace for the lines, the PRE3-A resolver through the picker, the governed
  * material registration, the A3 identity assist, the existing readiness / submit / approve / reject routines and the revision
  * history) and adds no authority of its own. Org-level scope: nothing here depends on a selected warehouse. Every decision is a
- * server call followed by a re-read; responses of a previous organization / year are discarded; the maker can never approve.
+ * server call followed by a re-read; responses of a previous organization / year are discarded. M232 permits the maker to approve only with the separate approval capability.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CentralNeedsError, type ReviewReadiness } from '../central-needs.service';
@@ -18,6 +18,8 @@ import { IdentityAssistPanel, type IdentityPreviewHandle } from './IdentityAssis
 import { realJourneyApi, type BeneficiaryOption, type CatalogOption, type JourneyApi, type YearRevision } from './manual-journey.service';
 import type { ManualCapabilities } from './manual-needs.service';
 import { jt, journeyErrorText, type JourneyKey, type JourneyLang } from './manual-journey.i18n';
+import type { NeedsDossier, NeedsFeatures, AnnualNeedRow } from './dossier.service';
+import { DossierWorkbookIntake } from './DossierWorkbookIntake';
 
 interface Props {
   lang: JourneyLang;
@@ -66,6 +68,15 @@ export function ManualNeedsJourney({ lang, organizationId, actorId, api = realJo
   const [loadFailed, setLoadFailed] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [errorText, setErrorText] = useState<string | null>(null);
+  const [features, setFeatures] = useState<NeedsFeatures | null>(null);
+  const [dossiers, setDossiers] = useState<NeedsDossier[]>([]);
+  const [selectedDossier, setSelectedDossier] = useState('');
+  const [dossierName, setDossierName] = useState('');
+  const [summary, setSummary] = useState<AnnualNeedRow[]>([]);
+  const [workspaceVersion, setWorkspaceVersion] = useState(0);
+  const [identitiesReady, setIdentitiesReady] = useState(false);
+  const dossierIntent = useRef<string | null>(null);
+  const selectedDossierRef = useRef('');
   const epoch = useRef(0);
 
   const latest = revisions && revisions.length > 0 ? revisions[0] : null;
@@ -77,6 +88,7 @@ export function ManualNeedsJourney({ lang, organizationId, actorId, api = realJo
     const mine = epoch.current;
     setYear(null); setRevisions(null); setCaps(null); setItems([]); setPrefill(null); setShowRegistration(false); setReadiness(null);
     setConfirmSubmit(false); setNotice(null); setErrorText(null); setLoadFailed(false); setBenefFailed(false); setBeneficiaries(null);
+    setFeatures(null); setDossiers([]); setSelectedDossier(''); selectedDossierRef.current=''; setSummary([]); setDossierName(''); dossierIntent.current=null;
     previewHandle.reset();
     void (async () => {
       try {
@@ -91,9 +103,19 @@ export function ManualNeedsJourney({ lang, organizationId, actorId, api = realJo
 
   const loadYear = useCallback(async (y: number, mine: number) => {
     try {
-      const revs = await api.listYearRevisions(organizationId, y);
+      const f = api.features ? await api.features() : null;
+      let revs: YearRevision[];
+      let ds: NeedsDossier[] = [];
+      let annual: AnnualNeedRow[] = [];
+      let id = selectedDossierRef.current;
+      if (f?.dossiers && api.listDossiers && api.listDossierRevisions && api.annualSummary) {
+        [ds, annual] = await Promise.all([api.listDossiers(organizationId,y), api.annualSummary(organizationId,y)]);
+        if (!ds.some((d) => d.id===id)) id=ds.find((d)=>d.key==='')?.id ?? ds[0]?.id ?? '';
+        revs=id ? await api.listDossierRevisions(id) : [];
+      } else revs = await api.listYearRevisions(organizationId, y);
       const c = await api.getCaps(organizationId, revs[0]?.id ?? null);
       if (epoch.current !== mine) return;
+      setFeatures(f); setDossiers(ds); setSummary(annual); selectedDossierRef.current=id; setSelectedDossier(id);
       setRevisions(revs); setCaps(c); setYear(y); setLoadFailed(false);
     } catch {
       if (epoch.current !== mine) return;
@@ -105,8 +127,34 @@ export function ManualNeedsJourney({ lang, organizationId, actorId, api = realJo
     if (!yearValid) return;
     epoch.current += 1;
     const mine = epoch.current;
+    selectedDossierRef.current=''; setSelectedDossier(''); setDossiers([]); setSummary([]); setItems([]); setPrefill(null); setShowRegistration(false); dossierIntent.current=null;
+    setBusy(false);
     setRevisions(null); setCaps(null); setReadiness(null); setConfirmSubmit(false); setNotice(null); setErrorText(null);
     void loadYear(Number(yearText), mine);
+  };
+
+  const chooseDossier = (id: string) => {
+    if (year===null || busy) return;
+    const mine=++epoch.current;
+    selectedDossierRef.current=id; setSelectedDossier(id); setRevisions(null); setCaps(null); setItems([]); setPrefill(null);
+    setShowRegistration(false); setReadiness(null); setConfirmSubmit(false); setCorrectionReason(''); setRejectReason('');
+    setNotice(null); setErrorText(null); previewHandle.reset();
+    void loadYear(year,mine);
+  };
+
+  const createDossier = async () => {
+    if (year===null || !api.openDossier || dossierName.trim()==='' || busy) return;
+    const mine=epoch.current; const key=dossierIntent.current ??= crypto.randomUUID();
+    setBusy(true); setErrorText(null);
+    try {
+      const r=await api.openDossier(organizationId,year,key,dossierName.trim());
+      if (epoch.current!==mine) return;
+      selectedDossierRef.current=r.planId; setSelectedDossier(r.planId); setRevisions(null); setCaps(null);
+      setItems([]); setPrefill(null); setShowRegistration(false); setReadiness(null); setConfirmSubmit(false);
+      dossierIntent.current=null; setDossierName('');
+      await loadYear(year,mine);
+    } catch(e) { if(epoch.current===mine) setErrorText(e instanceof CentralNeedsError ? journeyErrorText(e,lang) : jt('err_load_failed',lang)); }
+    finally { if(epoch.current===mine) setBusy(false); }
   };
 
   /** One server action, then a re-read of the truth. A refusal is shown by its database identifier; a stale one refreshes. */
@@ -155,15 +203,26 @@ export function ManualNeedsJourney({ lang, organizationId, actorId, api = realJo
     () => (beneficiaries ?? []).map((b) => ({ id: b.id, name: lang === 'ar' && b.nameAr ? b.nameAr : b.name })),
     [beneficiaries, lang],
   );
-  const itemOptions = useMemo(() => items.map((i) => ({ id: i.id, name: lang === 'ar' && i.nameAr ? i.nameAr : i.name, unit: i.unit })), [items, lang]);
+  const itemOptions = useMemo(() => items.map((i) => ({ id: i.id, name: lang === 'ar' && i.nameAr ? i.nameAr : i.name, unit: i.unit, nationalCode: i.nationalCode })), [items, lang]);
 
   const addItem = (i: CatalogOption) => setItems((cur) => (cur.some((x) => x.id === i.id) ? cur : [...cur, i]));
-  const useResolved = (r: ResolvedMaterialUse) => addItem({ id: r.id, name: r.name, nameAr: r.nameAr, concentration: r.concentration, dosageForm: r.dosageForm, unit: r.unit });
+  const useResolved = async (r: ResolvedMaterialUse) => {
+    const mine=epoch.current;
+    if (!api.readCatalogItems) { addItem(r); return; }
+    try {
+      const rows=await api.readCatalogItems([r.id]);
+      if(epoch.current!==mine) return;
+      const item=rows.find((i)=>i.id===r.id && i.status==='active');
+      if(!item) throw new Error('resolved_catalog_item_unavailable');
+      addItem(item);
+    } catch { if(epoch.current===mine) setErrorText(lang==='ar'?'تعذر تحميل هوية المادة المعتمدة. لم تُضف للاختيار.':'The registered material identity could not be loaded. It was not added to the selection.'); }
+  };
 
   const isManualDraft = !!latest && latest.sourceMode === 'manual' && latest.status === 'draft';
-  const canDecide = !!latest && latest.status === 'submitted' && !!caps && caps.approve && !caps.approveExcludedForRevision;
+  const canDecide = !!latest && latest.status === 'submitted' && !!caps && caps.approve && !caps.approveExcludedForRevision && identitiesReady;
   const makerBlocked = !!latest && latest.status === 'submitted' && !!caps && caps.approve && caps.approveExcludedForRevision;
   const closed = !!latest && ['approved', 'rejected', 'withdrawn'].includes(latest.status);
+  const namedDossier = !!features?.dossiers && dossiers.some((d)=>d.id===selectedDossier && d.key!=='');
   const statusText = (s: string) => jt(`status_${s}` as JourneyKey, lang);
 
   return (
@@ -182,6 +241,20 @@ export function ManualNeedsJourney({ lang, organizationId, actorId, api = realJo
           <button type="submit" disabled={!yearValid || busy}>{jt('open_year', lang)}</button>
         </form>
         {loadFailed && <p role="alert">{jt('failed', lang)}</p>}
+        {year!==null && features && !features.dossiers && <p role="note">{lang==='ar'?'ميزة الحزم المتعددة لم تُفعّل في قاعدة البيانات بعد. المسار الحالي متاح كما هو.':'Multiple dossiers are not deployed to this database yet. The current path remains available.'}</p>}
+        {year!==null && features?.dossiers && <section aria-label={lang==='ar'?'حزم احتياج السنة':'Annual needs dossiers'}>
+          <h3>{lang==='ar'?'حزم احتياج السنة':'Annual needs dossiers'}</h3>
+          <label>{lang==='ar'?'الحزمة / التصنيف':'Dossier / classification'}<select value={selectedDossier} disabled={busy} onChange={(e)=>chooseDossier(e.target.value)}><option value="">—</option>{dossiers.map((d)=><option key={d.id} value={d.id}>{d.name} · {d.latestStatus ?? '—'}</option>)}</select></label>
+          <p>{lang==='ar'?'لكل حزمة مراجعتها واعتمادها؛ التصحيح يستبدل الحزمة نفسها فقط.':'Each dossier has its own review and approval; a correction replaces only that dossier.'}</p>
+          {caps?.edit && caps.manualSet && <form onSubmit={(e)=>{e.preventDefault();void createDossier();}}>
+            <label>{lang==='ar'?'اسم الحزمة / التصنيف الجديد':'New dossier / classification name'}<input value={dossierName} maxLength={120} disabled={busy} onChange={(e)=>{setDossierName(e.target.value);dossierIntent.current=null;}} /></label>
+            <button type="submit" disabled={busy || !dossierName.trim()}>{lang==='ar'?'إضافة حزمة احتياج':'Add needs dossier'}</button>
+          </form>}
+          <details><summary>{lang==='ar'?'الاحتياج السنوي المعتمد لكل الحزم':'Approved annual needs across dossiers'}</summary>
+            {summary.length===0 ? <p>{lang==='ar'?'لا توجد سطور معتمدة. المسودات ليست كميات معتمدة.':'No approved lines. Drafts do not count as approved quantities.'}</p> :
+            <table><thead><tr>{(lang==='ar'?['الحزمة','المؤسسة','المادة','الرمز الوطني','الكمية','الوحدة']:['Dossier','Beneficiary','Material','National code','Quantity','Unit']).map((h)=><th key={h}>{h}</th>)}</tr></thead><tbody>{summary.map((r,i)=><tr key={`${r.revisionId}:${r.itemId}:${i}`}><td>{r.dossierName}</td><td>{beneficiaryOptions.find((b)=>b.id===r.beneficiaryId)?.name ?? r.beneficiaryId}</td><td>{lang==='ar'&&r.nameAr?r.nameAr:r.name}</td><td dir="ltr">{r.nationalCode ?? '—'}</td><td dir="ltr">{r.quantityText}</td><td>{r.unit}</td></tr>)}</tbody></table>}
+          </details>
+        </section>}
         {year !== null && revisions !== null && caps !== null && (
           <div>
             {latest ? (
@@ -197,7 +270,7 @@ export function ManualNeedsJourney({ lang, organizationId, actorId, api = realJo
                   <input value={correctionReason} disabled={busy} onChange={(e) => setCorrectionReason(e.target.value)} />
                 </label>
                 <button type="button" disabled={busy || correctionReason.trim() === ''}
-                  onClick={() => void act(() => api.openCorrection(organizationId, year, latest.id, correctionReason.trim()), jt('open_correction', lang))}>{jt('open_correction', lang)}</button>
+                  onClick={() => void act(() => namedDossier && api.openDossierCorrection ? api.openDossierCorrection(organizationId, year, latest.id, correctionReason.trim()) : api.openCorrection(organizationId, year, latest.id, correctionReason.trim()), jt('open_correction', lang))}>{namedDossier && api.openDossierCorrection ? (lang==='ar'?'فتح تصحيح ونسخ السطور المعتمدة':'Open correction and copy approved lines') : jt('open_correction', lang)}</button>
               </div>
             )}
           </div>
@@ -206,6 +279,7 @@ export function ManualNeedsJourney({ lang, organizationId, actorId, api = realJo
 
       {year !== null && latest && latest.sourceMode === 'manual' && caps && (
         <>
+          <fieldset disabled={busy} style={{border:0,padding:0,margin:0,minWidth:0}} aria-label={lang==='ar'?'مساحة الاحتياج المفتوحة':'Opened needs workspace'}>
           <section aria-labelledby="step-lines">
             <h3 id="step-lines">{jt('step_lines', lang)}</h3>
             {isManualDraft && caps.manualSet && (
@@ -216,13 +290,21 @@ export function ManualNeedsJourney({ lang, organizationId, actorId, api = realJo
                   onUseItem={addItem} onRequestRegistration={(p) => { setPrefill(p); setShowRegistration(true); }} />
                 {showRegistration && (
                   <MaterialRegistrationPanel lang={lang} organizationId={organizationId} actorId={actorId} planRevisionId={latest.id}
+                    nationalCodeEnabled={features?.nationalCode} sameActorEnabled={features?.sameActorManual}
                     prefill={prefill} onUseItem={useResolved} api={registrationApi} />
                 )}
               </>
             )}
-            <ManualNeedsWorkspace lang={lang} organizationId={organizationId} planRevisionId={latest.id} revisionStatus={latest.status}
-              sourceMode={latest.sourceMode} beneficiaries={beneficiaryOptions} items={itemOptions} api={workspaceApi} />
+            <ManualNeedsWorkspace key={`${latest.id}:${workspaceVersion}`} lang={lang} organizationId={organizationId} planRevisionId={latest.id} revisionStatus={latest.status}
+              sourceMode={latest.sourceMode} beneficiaries={beneficiaryOptions} items={itemOptions} api={workspaceApi} onIdentityReady={setIdentitiesReady} />
+            {features?.dossiers && !features.workbookIntake && namedDossier && <p role="note">{lang==='ar'?'رفع ملفات الاحتياج غير متاح حاليًا لهذه البيئة. يمكنك متابعة الإدخال اليدوي.':'Workbook intake is currently unavailable in this environment. Manual entry remains available.'}</p>}
+            {features?.workbookIntake && !namedDossier && <p role="note">{lang==='ar'?'لرفع ملفات حسب التصنيف، أضف حزمة باسم التصنيف من أعلى الصفحة.':'To upload classification workbooks, add a named dossier above.'}</p>}
+            {features?.workbookIntake && selectedDossier && namedDossier &&
+              <DossierWorkbookIntake key={`${organizationId}:${latest.id}`} lang={lang} year={Number(year)} planId={selectedDossier} revisionId={latest.id}
+                editable={isManualDraft && caps.manualSet && !busy} beneficiaries={beneficiaries ?? []} search={api.searchCatalog}
+                onSaved={()=>{setWorkspaceVersion((v)=>v+1);setReadiness(null);}} />}
           </section>
+          </fieldset>
 
           {isManualDraft && caps.edit && (
             <section aria-labelledby="step-review">
@@ -253,6 +335,7 @@ export function ManualNeedsJourney({ lang, organizationId, actorId, api = realJo
             </section>
           )}
 
+          {latest.status==='submitted' && caps.approve && !identitiesReady && <p role="note">{lang==='ar'?'انتظر تحميل أسماء المواد قبل اتخاذ القرار.':'Wait for material names before making a decision.'}</p>}
           {latest.status === 'submitted' && (
             <section aria-labelledby="step-decide">
               <h3 id="step-decide">{jt('step_decide', lang)}</h3>
@@ -275,7 +358,8 @@ export function ManualNeedsJourney({ lang, organizationId, actorId, api = realJo
       {year !== null && (
         <section aria-labelledby="step-history">
           <h3 id="step-history">{jt('step_history', lang)}</h3>
-          <CentralNeedsRevisionHistory lang={lang} organizationId={organizationId} planYear={year} />
+          <CentralNeedsRevisionHistory key={`${organizationId}:${year}:${selectedDossier}`} lang={lang} organizationId={organizationId} planYear={year}
+            planId={features?.dossiers ? selectedDossier || undefined : undefined} />
         </section>
       )}
     </section>

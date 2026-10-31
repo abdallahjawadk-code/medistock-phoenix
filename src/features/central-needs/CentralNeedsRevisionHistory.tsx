@@ -29,6 +29,7 @@ interface Props {
   lang: Lang;
   organizationId: string;
   planYear: number;
+  planId?: string;
 }
 
 function eventText(e: RevisionLifecycleEvent, numberOf: (id: string | null) => string, lang: Lang): string {
@@ -49,7 +50,7 @@ function eventText(e: RevisionLifecycleEvent, numberOf: (id: string | null) => s
   }
 }
 
-export function CentralNeedsRevisionHistory({ lang, organizationId, planYear }: Props) {
+export function CentralNeedsRevisionHistory({ lang, organizationId, planYear, planId }: Props) {
   const [state, setState] = useState<
     { phase: 'idle' } | { phase: 'loading' } | { phase: 'done'; history: RevisionLifecycle } | { phase: 'failed'; code: string }
   >({ phase: 'idle' });
@@ -57,11 +58,11 @@ export function CentralNeedsRevisionHistory({ lang, organizationId, planYear }: 
   const load = useCallback(async () => {
     setState({ phase: 'loading' });
     try {
-      setState({ phase: 'done', history: await fetchRevisionLifecycle(organizationId, planYear) });
+      setState({ phase: 'done', history: await (planId ? fetchRevisionLifecycle(organizationId, planYear, planId) : fetchRevisionLifecycle(organizationId, planYear)) });
     } catch (e: unknown) {
       setState({ phase: 'failed', code: e instanceof CentralNeedsError ? e.businessCode : 'load_failed' });
     }
-  }, [organizationId, planYear]);
+  }, [organizationId, planYear, planId]);
 
   // The event rows carry revision ids; the person reads revision numbers.
   const numberOf = (history: RevisionLifecycle) => (id: string | null): string => {

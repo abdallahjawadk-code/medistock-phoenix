@@ -4,6 +4,7 @@
  * CentralNeedsError carrying the database identifier, and nothing here retries.
  */
 import { supabase } from '@/shared/supabase/client';
+import { getNeedsFeatures } from './dossier.service';
 import { centralNeedsErrorFromPostgrest } from '../central-needs.service';
 
 export type MaterialRequestStatus =
@@ -20,6 +21,7 @@ export interface MaterialDescriptor {
   dosageForm: string | null;
   unit: MaterialUnit;
   barcode: string | null;
+  nationalCode?: string | null;
   note: string | null;
 }
 
@@ -60,6 +62,7 @@ export interface MaterialCandidate {
   unit: string;
   barcode: string | null;
   status: string;
+  nationalCode?: string | null;
 }
 
 export interface MaterialCapabilities { canRequest: boolean; canReview: boolean; canLink: boolean }
@@ -109,6 +112,7 @@ export async function listMaterialRequests(organizationId: string): Promise<Mate
     dosageForm: (r.dosage_form as string | null) ?? null,
     unit: r.unit as MaterialUnit,
     barcode: (r.barcode as string | null) ?? null,
+    nationalCode: (r.national_code as string | null) ?? null,
     note: (r.note as string | null) ?? null,
     provenanceKind: r.provenance_kind as MaterialProvenanceKind,
     reviewerId: (r.reviewer_id as string | null) ?? null,
@@ -132,8 +136,8 @@ export async function listMaterialRequestEvents(requestId: string): Promise<Mate
   }));
 }
 
-export async function listMaterialRequestCandidates(requestId: string): Promise<MaterialCandidate[]> {
-  const { data, error } = await supabase.rpc('phoenix_central_needs_material_request_candidates', { p_request_id: requestId });
+export async function listMaterialRequestCandidates(requestId: string, withNationalCode = false): Promise<MaterialCandidate[]> {
+  const { data, error } = await supabase.rpc(withNationalCode ? 'phoenix_central_needs_material_request_code_candidates' : 'phoenix_central_needs_material_request_candidates', { p_request_id: requestId });
   if (error) fail(error);
   return ((data ?? []) as Array<Record<string, unknown>>).map((r) => ({
     centralItemId: r.central_item_id as string,
@@ -145,6 +149,7 @@ export async function listMaterialRequestCandidates(requestId: string): Promise<
     dosageForm: (r.dosage_form as string | null) ?? null,
     unit: r.unit as string,
     barcode: (r.barcode as string | null) ?? null,
+    nationalCode: (r.national_code as string | null) ?? null,
     status: r.status as string,
   }));
 }
@@ -154,7 +159,10 @@ export async function createMaterialRequestDraft(
   provenance: { kind: 'manual_typed' } | { kind: 'excel_assist'; pointer: ExcelAssistProvenance },
   planRevisionId: string | null = null,
 ) {
-  const { data, error } = await supabase.rpc('phoenix_central_needs_create_material_request_draft', {
+  const withCode = d.nationalCode !== undefined;
+  if (withCode && !(await getNeedsFeatures()).nationalCode) throw new Error('national_code_not_deployed');
+  const { data, error } = await supabase.rpc(withCode ? 'phoenix_central_needs_create_material_request_with_code' : 'phoenix_central_needs_create_material_request_draft', {
+    ...(withCode ? { p_national_code: d.nationalCode } : {}),
     p_organization_id: organizationId,
     p_scientific_name: d.scientificName,
     p_name_ar: d.nameAr,
@@ -174,7 +182,10 @@ export async function createMaterialRequestDraft(
 }
 
 export async function updateMaterialRequestDraft(requestId: string, expectedVersion: number, d: MaterialDescriptor) {
-  const { data, error } = await supabase.rpc('phoenix_central_needs_update_material_request_draft', {
+  const withCode = d.nationalCode !== undefined;
+  if (withCode && !(await getNeedsFeatures()).nationalCode) throw new Error('national_code_not_deployed');
+  const { data, error } = await supabase.rpc(withCode ? 'phoenix_central_needs_update_material_request_with_code' : 'phoenix_central_needs_update_material_request_draft', {
+    ...(withCode ? { p_national_code: d.nationalCode } : {}),
     p_request_id: requestId,
     p_expected_version: expectedVersion,
     p_scientific_name: d.scientificName,
@@ -208,8 +219,9 @@ export async function requestMaterialInfo(requestId: string, expectedVersion: nu
   return writeResult(data);
 }
 
-export async function resolveMaterialExisting(requestId: string, expectedVersion: number, itemId: string, note: string) {
-  const { data, error } = await supabase.rpc('phoenix_central_needs_resolve_material_existing', {
+export async function resolveMaterialExisting(requestId: string, expectedVersion: number, itemId: string, note: string, codeAssignment?: { expected: string | null }) {
+  const { data, error } = await supabase.rpc(codeAssignment ? 'phoenix_central_needs_resolve_material_existing_with_code' : 'phoenix_central_needs_resolve_material_existing', {
+    ...(codeAssignment ? { p_expected_code: codeAssignment.expected, p_confirm_code: true } : {}),
     p_request_id: requestId, p_expected_version: expectedVersion, p_item_id: itemId, p_note: note,
   });
   if (error) fail(error);
@@ -217,8 +229,9 @@ export async function resolveMaterialExisting(requestId: string, expectedVersion
 }
 
 /** `acknowledgedCandidates` = the similar catalog items a human confirmed are NOT the same material. */
-export async function approveNewMaterial(requestId: string, expectedVersion: number, acknowledgedCandidates: string[], note: string) {
-  const { data, error } = await supabase.rpc('phoenix_central_needs_approve_new_material', {
+export async function approveNewMaterial(requestId: string, expectedVersion: number, acknowledgedCandidates: string[], note: string, expectedNationalCode?: string | null) {
+  const { data, error } = await supabase.rpc(expectedNationalCode !== undefined ? 'phoenix_central_needs_approve_material_with_code' : 'phoenix_central_needs_approve_new_material', {
+    ...(expectedNationalCode !== undefined ? { p_expected_national_code: expectedNationalCode } : {}),
     p_request_id: requestId, p_expected_version: expectedVersion, p_acknowledged_candidates: acknowledgedCandidates, p_note: note,
   });
   if (error) fail(error);

@@ -13,12 +13,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CentralNeedsError } from '../central-needs.service';
 import { centralNeedsErrorText } from '../central-needs.i18n';
 import * as realApi from './manual-needs.service';
+import { getManualCatalogLabels } from './manual-catalog.service';
 import type { ManualCapabilities, ManualNeedEvent, ManualScope } from './manual-needs.service';
 import { canEditManual, foldManualEvents, scopeKeyOf } from './manual-needs.view-model';
 import { checkManualQuantityText, proposeAsciiDigits } from './manual-quantity';
 import { mt, quantityReasonText, type ManualLang } from './manual-needs.i18n';
 
 export interface ManualNeedsApi {
+  getManualCatalogLabels?: typeof getManualCatalogLabels;
   getManualCapabilities: typeof realApi.getManualCapabilities;
   listManualNeedEvents: typeof realApi.listManualNeedEvents;
   addManualNeedLine: typeof realApi.addManualNeedLine;
@@ -28,7 +30,7 @@ export interface ManualNeedsApi {
 }
 
 interface Option { id: string; name: string }
-interface ItemOption extends Option { unit: string }
+interface ItemOption extends Option { unit: string; nationalCode?: string | null }
 
 interface Props {
   lang: ManualLang;
@@ -39,17 +41,22 @@ interface Props {
   beneficiaries: Option[];
   items: ItemOption[];
   api?: ManualNeedsApi;
+  onIdentityReady?: (ready: boolean) => void;
 }
+
+const defaultApi: ManualNeedsApi = { ...realApi, getManualCatalogLabels };
 
 type Pending =
   | { kind: 'add' }
   | { kind: 'correct'; scopeKey: string }
   | { kind: 'void'; scopeKey: string };
 
-export function ManualNeedsWorkspace({ lang, organizationId, planRevisionId, revisionStatus, sourceMode, beneficiaries, items, api = realApi }: Props) {
+export function ManualNeedsWorkspace({ lang, organizationId, planRevisionId, revisionStatus, sourceMode, beneficiaries, items, api = defaultApi, onIdentityReady }: Props) {
   const [caps, setCaps] = useState<ManualCapabilities | null>(null);
   const [events, setEvents] = useState<ManualNeedEvent[] | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
+  const [persistedItems, setPersistedItems] = useState<ItemOption[]>([]);
+  const [labelsFailed, setLabelsFailed] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [errorText, setErrorText] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -80,25 +87,40 @@ export function ManualNeedsWorkspace({ lang, organizationId, planRevisionId, rev
       ]);
       if (epoch.current !== myEpoch) return;
       setCaps(c); setEvents(e); setLoadFailed(false);
+      if (api.getManualCatalogLabels && e.length > 0) {
+        try {
+          const labels = await api.getManualCatalogLabels(e.map((row) => row.centralItemId));
+          if (epoch.current !== myEpoch) return;
+          setPersistedItems(labels.map((row) => ({ ...row, name: lang === 'ar' && row.nameAr ? row.nameAr : row.name })));
+          setLabelsFailed(false);
+          onIdentityReady?.(e.every((row) => labels.some((label) => label.id === row.centralItemId)));
+        } catch {
+          if (epoch.current === myEpoch) { setLabelsFailed(true); onIdentityReady?.(false); }
+        }
+      } else onIdentityReady?.(true);
     } catch {
       if (epoch.current !== myEpoch) return;
       setLoadFailed(true);
     }
-  }, [api, organizationId, planRevisionId]);
+  }, [api, organizationId, planRevisionId, lang, onIdentityReady]);
 
   useEffect(() => {
     epoch.current += 1;
     const mine = epoch.current;
     setCaps(null); setEvents(null); setLoadFailed(false); setBeneficiary(''); setItem('');
+    setPersistedItems([]); setLabelsFailed(false);
+    onIdentityReady?.(false);
     reset();
     void load(mine);
     return () => { epoch.current += 1; };
   }, [organizationId, planRevisionId, load, reset]);
 
   const rows = useMemo(() => foldManualEvents(events ?? []), [events]);
+  const displayItems = useMemo(() => [...persistedItems, ...items.filter((i) => !persistedItems.some((p) => p.id === i.id))], [items, persistedItems]);
   const editable = caps !== null && canEditManual({ status: revisionStatus, sourceMode, manualSet: caps.manualSet });
   const nameOf = (list: Option[], id: string) => list.find((o) => o.id === id)?.name ?? id;
-  const unitOf = (id: string) => items.find((o) => o.id === id)?.unit ?? '';
+  const unitOf = (id: string) => displayItems.find((o) => o.id === id)?.unit ?? '';
+  const itemNameOf = (id: string) => displayItems.find((o) => o.id === id)?.name ?? (lang === 'ar' ? 'تعذر تحميل اسم المادة' : 'Material name unavailable');
 
   const validateQuantity = (text: string): boolean => {
     const c = checkManualQuantityText(text);
@@ -183,6 +205,7 @@ export function ManualNeedsWorkspace({ lang, organizationId, planRevisionId, rev
 
       <div role="status" aria-live="polite">{notice}</div>
       {errorText && <p role="alert">{errorText}</p>}
+      {labelsFailed && <p role="alert">{lang === 'ar' ? 'تعذر تحميل بعض أسماء المواد. لم تتغير البيانات المحفوظة.' : 'Some material names could not be loaded. Saved data is unchanged.'}</p>}
 
       <div className="pharma-table-scroll" role="region" aria-label={mt('title', lang)} tabIndex={0}>
       <table>
@@ -201,7 +224,9 @@ export function ManualNeedsWorkspace({ lang, organizationId, planRevisionId, rev
           {rows.map((r) => (
             <tr key={r.scopeKey} data-live={r.live ? 'true' : 'false'}>
               <td>{nameOf(beneficiaries, r.beneficiaryOrganizationId)}</td>
-              <td>{nameOf(items, r.centralItemId)}</td>
+              <td>{itemNameOf(r.centralItemId)}
+                {displayItems.find((i) => i.id === r.centralItemId)?.nationalCode && <small dir="ltr"> · {displayItems.find((i) => i.id === r.centralItemId)?.nationalCode}</small>}
+              </td>
               <td dir="ltr">{r.live ? r.quantityText : mt('voided', lang)}</td>
               <td>{r.live ? (r.approvedUnit ?? unitOf(r.centralItemId)) : ''}</td>
               {editable && (

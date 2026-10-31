@@ -128,6 +128,13 @@ const D = {
   ia_warning_row_without_name: { ar: 'بعض الصفوف بلا اسم وأُهملت.', en: 'Some rows have no name and were ignored.' },
   ia_warning_header_like_row: { ar: 'أُهمل سطر يشبه العناوين.', en: 'A header-like line was ignored.' },
   // server refusal codes introduced by A2 / A4
+  err_material_code_review_confirmation_required: { ar: 'هذا الطلب يتضمن رمزًا وطنيًا يحتاج الواجهة المحدثة وتأكيد المراجع. حدّث التطبيق ثم راجع الطلب.', en: 'This request contains a national code requiring the updated interface and reviewer confirmation. Update the app and review the request.' },
+  err_annual_need_duplicate_dossier_scope: { ar: 'المادة مسجلة للمؤسسة نفسها في حزمة معتمدة أخرى لهذه السنة. صحح الحزمة المعنية بدل تكرار الكمية.', en: 'This material already belongs to another approved dossier for this beneficiary and year. Correct that dossier instead of duplicating the quantity.' },
+  err_dossier_key_already_used: { ar: 'هذه الحزمة موجودة بالفعل. افتحها من قائمة الحزم.', en: 'This dossier already exists. Open it from the dossier list.' },
+  err_dossier_file_already_imported: { ar: 'هذا الملف محفوظ في الحزمة بالفعل. راجع سجل الملفات؛ لن نضيف كمياته مرة أخرى.', en: 'This file is already saved in this dossier. Check source history; its quantities will not be added again.' },
+  err_material_duplicate_national_code: { ar: 'الرمز الوطني مرتبط بمادة موجودة. راجع المطابقة واربط الطلب بالمادة الصحيحة.', en: 'This national code is attached to an existing material. Review the match and resolve to the correct item.' },
+  err_national_code_assignment_stale: { ar: 'تغير الرمز الوطني في الدليل. أعد تحميل الطلب وراجعه قبل الحفظ.', en: 'The catalog national code changed. Reload and review before saving.' },
+  err_national_code_assignment_conflict: { ar: 'الرمز أو الوحدة لا يطابقان المادة. لن نغير الرمز الموجود تلقائيًا.', en: 'The code or unit conflicts with the selected material. An existing code is never overwritten automatically.' },
   err_material_request_stale: { ar: 'تغيّر الطلب في الخادم. حُدّثت القائمة؛ راجع ثم قرّر من جديد.', en: 'The request changed on the server. The list was refreshed; review and decide again.' },
   err_material_duplicate_strong_match: { ar: 'توجد مادة مطابقة في الدليل؛ اربط الطلب بها.', en: 'A matching item already exists in the catalog; resolve to it.' },
   err_material_duplicate_review_too_large: { ar: 'عدد المواد المشابهة كبير جدًا لمراجعة آمنة؛ ضيّق الطلب أو اربطه بمادة قائمة أو ارفضه.', en: 'Too many similar items to review safely; narrow the request, resolve it to an existing item, or reject it.' },
