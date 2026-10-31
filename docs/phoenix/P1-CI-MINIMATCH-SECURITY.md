@@ -82,3 +82,23 @@ after this follow-up are recorded against its own commit in PR #260.
 - [Official minimatch 11.0.3 changelog](https://github.com/isaacs/minimatch/blob/v11.0.3/changelog.md)
 - [Upstream 11.0.1 to 11.0.3 changes](https://github.com/isaacs/minimatch/compare/v11.0.1...v11.0.3)
 - [npm overrides documentation](https://docs.npmjs.com/cli/v10/configuring-npm/package-json/#overrides)
+
+## Post-R1 master integration and required E2E trigger — 2026-11-01
+
+PR #256 is merged into `master` at `04c50691b17697d9673da9c06600dce37dbad426`.
+The P1 branch was integrated with that release using a two-parent Git merge
+whose complete source tree matches the reviewed P1 head. Compared with the
+published R1 release, P1 adds or changes exactly 16 paths. Its
+`P1_dossier_workbook_reservation_NOT_APPLIED.sql` remains an **unapplied,
+unnumbered SQL candidate**; this Git integration neither applies it to hosted
+Supabase nor enables database functionality.
+
+The P1 pull request was then retargeted to `master`, but that `edited`
+activity alone did not emit the repository's required authenticated-browser
+check: `e2e-authenticated.yml` listens to the default `pull_request`
+activities and `workflow_dispatch`, not `edited`. This documentation-only
+synchronization deliberately requests fresh required CI and browser acceptance
+for the master-targeted P1 branch. It changes no dependency, application logic,
+workflow, protection setting or SQL. Evidence from the earlier feature-base
+CI run must **not** substitute for results on the resulting commit. Keep the
+release on HOLD until the required checks on that commit conclude successfully.
