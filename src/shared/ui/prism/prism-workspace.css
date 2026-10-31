@@ -205,6 +205,34 @@ html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-vis
 .prism-empty-lines svg { color: var(--prism-accent); }
 .prism-loading { display: flex; align-items: center; gap: 10px; color: var(--prism-muted); }
 .prism-loading__dot { inline-size: 8px; block-size: 8px; border-radius: 50%; background: var(--prism-accent); animation: prism-pulse 1.2s ease-in-out infinite; }
+.prism-annual-picker > .prism-search-hint { margin-block-end: 12px; }
+.prism-annual-result__identity { min-inline-size: 0; flex: 1; }
+.prism-annual-result__actions { display: grid; gap: 6px; flex: 0 0 auto; }
+.prism-annual-blockers { margin-block: 8px 0; padding-inline-start: 20px; color: var(--prism-warning); font-size: 12px; }
+.prism-annual-more, .prism-annual-add { margin-block-start: 12px; margin-inline-end: 8px; }
+.prism-annual-editor { min-inline-size: 0; display: grid; gap: 14px; padding: 16px; border: 1px solid var(--prism-line); border-radius: 14px; background: var(--prism-soft); }
+.prism-annual-editor__header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
+.prism-annual-field-table table { min-inline-size: 560px; table-layout: fixed; }
+.prism-annual-field-table th:first-child { inline-size: 25%; }
+.prism-annual-field-table td { overflow-wrap: anywhere; }
+.prism-annual-field-table tr[data-changed='true'] { background: var(--prism-selection); }
+.prism-annual-canonical { padding: 14px; background: var(--prism-surface); border: 1px solid var(--prism-line); border-radius: 12px; }
+.prism-annual-canonical dl { display: grid; gap: 0; margin-block: 10px; }
+.prism-annual-canonical dl > div { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr); gap: 12px; padding-block: 8px; border-block-end: 1px solid var(--prism-line); }
+.prism-annual-canonical dd { margin: 0; overflow-wrap: anywhere; }
+.prism-annual-canonical dt { color: var(--prism-muted); }
+.prism-annual-history > ol { list-style: none; margin: 0; padding: 0; }
+.prism-annual-history summary { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.prism-annual-history__actor { display: inline-flex; align-items: center; gap: 8px; }
+.prism-annual-history time { color: var(--prism-muted); font-size: 11px; }
+.prism-annual-history details > p { margin-block: 10px; overflow-wrap: anywhere; }
+.prism-annual-needs { display: grid; gap: 18px; min-inline-size: 0; }
+.prism-annual-beneficiary { max-inline-size: 36rem; }
+.prism-workspace fieldset.prism-annual-quantity { margin: 0; padding: 0; border: 0; min-inline-size: 0; }
+.prism-annual-addition { display: grid; gap: 14px; padding: 16px; border: 1px solid var(--prism-line); border-radius: 14px; background: var(--prism-soft); min-inline-size: 0; }
+.prism-need-event-history { min-inline-size: 16rem; }
+.prism-need-event-history ol { padding-inline-start: 18px; }
+.prism-need-event-history li { padding-block: 8px; }
 @keyframes prism-pulse { 50% { opacity: .35; } }
 @container (min-width: 52rem) {
   .prism-scope-panel:has(.prism-dossiers) { display: grid; grid-template-columns: minmax(230px, .65fr) minmax(0, 1.35fr); column-gap: 24px; }

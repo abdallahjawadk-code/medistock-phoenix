@@ -22,6 +22,8 @@ import type { ManualCapabilities } from './manual-needs.service';
 import { jt, journeyErrorText, type JourneyKey, type JourneyLang } from './manual-journey.i18n';
 import type { NeedsDossier, NeedsFeatures, AnnualNeedRow } from './dossier.service';
 import { DossierWorkbookIntake } from './DossierWorkbookIntake';
+import { AnnualNeedsWorkspace, type AnnualNeedsUiApi } from '../annual-catalog/AnnualNeedsWorkspace';
+import { mt } from './manual-needs.i18n';
 
 interface Props {
   lang: JourneyLang;
@@ -34,6 +36,7 @@ interface Props {
   preview?: IdentityPreviewHandle;
   /** test seam: the plan year the journey opens on */
   initialYear?: number;
+  annualApi?: AnnualNeedsUiApi;
 }
 
 const BLOCKER_COPY: Record<string, { ar: string; en: string }> = {
@@ -50,7 +53,7 @@ const BLOCKER_COPY: Record<string, { ar: string; en: string }> = {
 
 const currentYear = () => new Date().getFullYear();
 
-export function ManualNeedsJourney({ lang, organizationId, actorId, api = realJourneyApi, workspaceApi, registrationApi, preview, initialYear }: Props) {
+export function ManualNeedsJourney({ lang, organizationId, actorId, api = realJourneyApi, workspaceApi, registrationApi, preview, initialYear, annualApi }: Props) {
   const realPreview = useCentralNeedsPreview();
   const previewHandle: IdentityPreviewHandle = preview ?? realPreview;
   const [yearText, setYearText] = useState(String(initialYear ?? currentYear()));
@@ -79,9 +82,11 @@ export function ManualNeedsJourney({ lang, organizationId, actorId, api = realJo
   const [summary, setSummary] = useState<AnnualNeedRow[]>([]);
   const [workspaceVersion, setWorkspaceVersion] = useState(0);
   const [identitiesReady, setIdentitiesReady] = useState(false);
+  const [annualMode, setAnnualMode] = useState<'legacy' | 'annual' | 'checking' | 'unavailable'>('legacy');
   const dossierIntent = useRef<string | null>(null);
   const selectedDossierRef = useRef('');
   const epoch = useRef(0);
+  const beneficiaryEpoch = useRef(0);
   const onLineScopeLockChange = useCallback((locked: boolean) => {
     setLineScopeLocked(locked);
     if (locked) { setReadiness(null); setConfirmSubmit(false); }
@@ -93,23 +98,36 @@ export function ManualNeedsJourney({ lang, organizationId, actorId, api = realJo
   // organization switch: forget everything and discard anything still in flight
   useEffect(() => {
     epoch.current += 1;
-    const mine = epoch.current;
+    const beneficiaryRequest = ++beneficiaryEpoch.current;
     setYear(null); setRevisions(null); setCaps(null); setItems([]); setPrefill(null); setShowRegistration(false); setReadiness(null);
     setConfirmSubmit(false); setNotice(null); setErrorText(null); setLoadFailed(false); setBenefFailed(false); setBeneficiaries(null);
     setFeatures(null); setDossiers([]); setSelectedDossier(''); selectedDossierRef.current=''; setSummary([]); setDossierName(''); dossierIntent.current=null;
+    setAnnualMode('legacy');
     previewHandle.reset();
     void (async () => {
       try {
         const list = await api.listBeneficiaries();
-        if (epoch.current === mine) setBeneficiaries(list);
+        if (beneficiaryEpoch.current === beneficiaryRequest) setBeneficiaries(list);
       } catch {
-        if (epoch.current === mine) { setBeneficiaries([]); setBenefFailed(true); }
+        if (beneficiaryEpoch.current === beneficiaryRequest) { setBeneficiaries([]); setBenefFailed(true); }
       }
     })();
-    return () => { epoch.current += 1; };
-  }, [organizationId]);
+    return () => { epoch.current += 1; beneficiaryEpoch.current += 1; };
+  }, [organizationId, actorId]);
 
   const loadYear = useCallback(async (y: number, mine: number) => {
+    let nextAnnualMode: 'legacy' | 'annual' = 'legacy';
+    if (api.annualNeedsContract) {
+      setAnnualMode('checking');
+      try {
+        const contract = await api.annualNeedsContract();
+        if (epoch.current !== mine) return;
+        nextAnnualMode = contract ? 'annual' : 'legacy';
+      } catch {
+        if (epoch.current === mine) { setAnnualMode('unavailable'); setYear(y); setRevisions(null); setCaps(null); setLoadFailed(true); }
+        return;
+      }
+    }
     try {
       const f = api.features ? await api.features() : null;
       let revs: YearRevision[];
@@ -125,6 +143,7 @@ export function ManualNeedsJourney({ lang, organizationId, actorId, api = realJo
       if (epoch.current !== mine) return;
       setFeatures(f); setDossiers(ds); setSummary(annual); selectedDossierRef.current=id; setSelectedDossier(id);
       setRevisions(revs); setCaps(c); setYear(y); setLoadFailed(false);
+      setAnnualMode(nextAnnualMode);
     } catch {
       if (epoch.current !== mine) return;
       setLoadFailed(true);
@@ -243,6 +262,8 @@ export function ManualNeedsJourney({ lang, organizationId, actorId, api = realJo
       <div role="status" aria-live="polite" className="prism-notice prism-notice--success">{notice}</div>
       {errorText && <p role="alert" className="prism-notice prism-notice--error">{errorText}</p>}
       {benefFailed && <p role="alert" className="prism-notice prism-notice--error">{jt('beneficiaries_failed', lang)}</p>}
+      {annualMode === 'unavailable' && <p role="alert" className="prism-notice prism-notice--error">{mt('annualCapabilityFailed', lang)}</p>}
+      {annualMode === 'checking' && <p role="status" className="prism-loading">{mt('annualCapabilityChecking', lang)}</p>}
 
       <section className="prism-panel prism-scope-panel" aria-labelledby="step-year">
         <h3 id="step-year">{jt('step_year', lang)}</h3>
@@ -292,12 +313,22 @@ export function ManualNeedsJourney({ lang, organizationId, actorId, api = realJo
         )}
       </section>
 
+      {year !== null && revisions !== null && !latest && caps && annualMode === 'annual' && <section className="prism-panel">
+        <AnnualNeedsWorkspace lang={lang} scope={{ ownerOrgId: organizationId, planningYear: year }} actorId={actorId} revision={null}
+          capabilities={caps} beneficiaries={beneficiaries ?? []} searchRegisteredMaterials={api.searchCatalog}
+          nationalCodeEnabled={features?.nationalCode} sameActorEnabled={features?.sameActorManual} api={annualApi} manualApi={workspaceApi}
+          onIdentityReady={setIdentitiesReady} onScopeLockChange={onLineScopeLockChange} />
+      </section>}
+
       {year !== null && latest && latest.sourceMode === 'manual' && caps && (
         <>
           <fieldset disabled={busy} className="prism-opened-workspace" aria-label={lang==='ar'?'مساحة الاحتياج المفتوحة':'Opened needs workspace'}>
           <section className="prism-panel" aria-labelledby="step-lines">
             <h3 id="step-lines">{jt('step_lines', lang)}</h3>
-            <div className="prism-entry-grid">
+            {annualMode === 'annual' ? <AnnualNeedsWorkspace lang={lang} scope={{ ownerOrgId: organizationId, planningYear: year }} actorId={actorId}
+              revision={latest} capabilities={caps} beneficiaries={beneficiaries ?? []} searchRegisteredMaterials={api.searchCatalog}
+              nationalCodeEnabled={features?.nationalCode} sameActorEnabled={features?.sameActorManual} api={annualApi} manualApi={workspaceApi}
+              onIdentityReady={setIdentitiesReady} onScopeLockChange={onLineScopeLockChange} /> : annualMode === 'legacy' && <div className="prism-entry-grid">
             {isManualDraft && caps.manualSet && (
               <fieldset className="prism-entry-grid__catalog" disabled={lineScopeLocked} aria-label={jt('material_selection_area', lang)}>
                 <MaterialPicker lang={lang} scopeKey={`${organizationId}:${latest.id}`} search={api.searchCatalog} selected={items}
@@ -316,15 +347,15 @@ export function ManualNeedsJourney({ lang, organizationId, actorId, api = realJo
             )}
             <ManualNeedsWorkspace key={`${latest.id}:${workspaceVersion}`} lang={lang} organizationId={organizationId} planRevisionId={latest.id} revisionStatus={latest.status}
               sourceMode={latest.sourceMode} beneficiaries={beneficiaryOptions} items={itemOptions} api={workspaceApi} onIdentityReady={setIdentitiesReady} onScopeLockChange={onLineScopeLockChange} />
-            </div>
-            <div className="prism-source-intake">
+            </div>}
+            {annualMode === 'legacy' && <div className="prism-source-intake">
             {features?.dossiers && !features.workbookIntake && namedDossier && <p role="note">{lang==='ar'?'رفع ملفات الاحتياج غير متاح حاليًا لهذه البيئة. يمكنك متابعة الإدخال اليدوي.':'Workbook intake is currently unavailable in this environment. Manual entry remains available.'}</p>}
             {features?.workbookIntake && !namedDossier && <p role="note">{lang==='ar'?'لرفع ملفات حسب التصنيف، أضف حزمة باسم التصنيف من أعلى الصفحة.':'To upload classification workbooks, add a named dossier above.'}</p>}
             {features?.workbookIntake && selectedDossier && namedDossier &&
               <DossierWorkbookIntake key={`${organizationId}:${latest.id}`} lang={lang} year={Number(year)} planId={selectedDossier} revisionId={latest.id}
                 editable={isManualDraft && caps.manualSet && !controlsBusy} beneficiaries={beneficiaries ?? []} search={api.searchCatalog}
                 onSaved={()=>{setWorkspaceVersion((v)=>v+1);setReadiness(null);}} />}
-            </div>
+            </div>}
           </section>
           </fieldset>
 

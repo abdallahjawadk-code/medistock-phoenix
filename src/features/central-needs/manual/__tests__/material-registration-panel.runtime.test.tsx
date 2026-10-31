@@ -82,11 +82,71 @@ describe('requester', () => {
     fireEvent.change(screen.getByLabelText('Unit'), { target: { value: 'box' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save request as draft' }));
     await screen.findByText(/connection failed/);
-    fireEvent.click(screen.getByRole('button', { name: 'Save request as draft' }));
+    expect(screen.getByLabelText('Scientific name')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Save request as draft' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Reconcile the same operation' }));
     await waitFor(() => expect(api.createMaterialRequestDraft).toHaveBeenCalledTimes(2));
     const calls = api.createMaterialRequestDraft.mock.calls as unknown as unknown[][];
     expect(calls[0][2]).toBe(calls[1][2]);
     expect(api.newMaterialIdempotencyKey).toHaveBeenCalledTimes(1);
+  });
+
+  it('freezes the original annual descriptor and key after a normalized transport error, and locks the parent scope', async () => {
+    const { api } = make([]); const locked = vi.fn();
+    api.createMaterialRequestDraft.mockRejectedValueOnce(new CentralNeedsError('central_needs_request_failed', 'Failed to fetch', { sqlstate: null }));
+    const props = { lang: 'en' as const, organizationId: 'org-1', actorId: ME, planRevisionId: null,
+      scopeKey: 'org-1:2026', api, onUseItem: vi.fn(), onScopeLockChange: locked };
+    const view = render(<MaterialRegistrationPanel {...props} prefill={null} />);
+    fireEvent.change(await screen.findByLabelText('Scientific name'), { target: { value: 'Original material' } });
+    fireEvent.change(screen.getByLabelText('Unit'), { target: { value: 'box' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save request as draft' }));
+    await screen.findByRole('button', { name: 'Reconcile the same operation' });
+    expect(locked).toHaveBeenLastCalledWith(true);
+    view.rerender(<MaterialRegistrationPanel {...props} prefill={{ descriptor: { scientificName: 'Different material', unit: 'vial' }, pointer: null }} />);
+    expect(screen.getByLabelText('Scientific name')).toHaveValue('Original material');
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Reconcile the same operation' }));
+    await waitFor(() => expect(locked).toHaveBeenLastCalledWith(false));
+    const calls = api.createMaterialRequestDraft.mock.calls as unknown as unknown[][];
+    expect(calls).toHaveLength(2); expect(calls[1]).toEqual(calls[0]);
+    expect(calls[1][1]).toMatchObject({ scientificName: 'Original material', unit: 'box' });
+    expect(api.newMaterialIdempotencyKey).toHaveBeenCalledTimes(1);
+  });
+
+  it('an acknowledged write with a failed follow-up read retries only the read', async () => {
+    const { api } = make([]); const locked = vi.fn();
+    api.listMaterialRequests.mockResolvedValueOnce([]).mockRejectedValueOnce(new TypeError('read unavailable')).mockResolvedValueOnce([req({ id: 'saved-request' })]);
+    mount(api, { onScopeLockChange: locked });
+    fireEvent.change(await screen.findByLabelText('Scientific name'), { target: { value: 'Zolpidem' } });
+    fireEvent.change(screen.getByLabelText('Unit'), { target: { value: 'box' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save request as draft' }));
+    await screen.findByText(/server confirmed the write/i);
+    expect(locked).toHaveBeenLastCalledWith(true);
+    expect(screen.getByRole('button', { name: 'Save request as draft' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Reconcile the same operation' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Reload requests' }));
+    await screen.findByRole('button', { name: /Zolpidem — draft/ });
+    expect(api.createMaterialRequestDraft).toHaveBeenCalledTimes(1);
+    expect(api.listMaterialRequests).toHaveBeenCalledTimes(3);
+    expect(screen.getByLabelText('Scientific name')).toHaveValue('');
+    expect(locked).toHaveBeenLastCalledWith(false);
+  });
+
+  it('a definitive refusal permits a new corrected intent with a new key', async () => {
+    const { api } = make([]);
+    api.createMaterialRequestDraft.mockRejectedValueOnce(new CentralNeedsError('material_request_descriptor_invalid', undefined, { sqlstate: '23514' }));
+    mount(api);
+    fireEvent.change(await screen.findByLabelText('Scientific name'), { target: { value: 'Wrong' } });
+    fireEvent.change(screen.getByLabelText('Unit'), { target: { value: 'box' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save request as draft' }));
+    await screen.findByText('material_request_descriptor_invalid');
+    await waitFor(() => expect(screen.getByLabelText('Scientific name')).not.toBeDisabled());
+    fireEvent.change(screen.getByLabelText('Scientific name'), { target: { value: 'Corrected' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save request as draft' }));
+    await waitFor(() => expect(api.createMaterialRequestDraft).toHaveBeenCalledTimes(2));
+    const calls = api.createMaterialRequestDraft.mock.calls as unknown as unknown[][];
+    expect(calls[0][2]).not.toBe(calls[1][2]);
+    expect(calls[1][1]).toMatchObject({ scientificName: 'Corrected' });
   });
 
   it('submit / withdraw act on the version the person saw; the requester cannot start a review of their own request', async () => {
@@ -281,5 +341,36 @@ describe('resolution, linkage, scope', () => {
     const sci = await screen.findByLabelText('الاسم العلمي');
     expect(sci).toHaveAttribute('dir', 'ltr');
     expect(screen.getByLabelText('الوحدة')).toBeInTheDocument();
+  });
+
+  it.each([{ actorId: OTHER, scopeKey: '2026' }, { actorId: ME, scopeKey: '2027' }])(
+    'discards a late request list when the actor or annual context changes', async (next) => {
+      const { api } = make([]);
+      let release!: (value: MaterialRequest[]) => void;
+      api.listMaterialRequests.mockImplementationOnce(() => new Promise<MaterialRequest[]>((resolve) => { release = resolve; }));
+      const view = mount(api, { scopeKey: '2026' });
+      view.rerender(<MaterialRegistrationPanel lang="en" organizationId="org-1" actorId={next.actorId} scopeKey={next.scopeKey}
+        planRevisionId="rev-1" prefill={null} onUseItem={() => undefined} api={api} />);
+      release([req({ id: 'old-context', scientificName: 'Previous context material' })]);
+      await screen.findByText('No requests.');
+      expect(screen.queryByText(/Previous context material/)).toBeNull();
+      expect(api.getMaterialCapabilities).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it('keeps details of the currently expanded request when an earlier details response arrives late', async () => {
+    const first = req({ id: 'first', requesterId: OTHER, scientificName: 'First material', status: 'under_review', reviewerId: ME });
+    const second = req({ id: 'second', requesterId: OTHER, scientificName: 'Second material', status: 'under_review', reviewerId: ME });
+    const { api } = make([first, second], { canReview: true, canRequest: false });
+    let release!: (value: MaterialCandidate[]) => void;
+    api.listMaterialRequestCandidates.mockImplementationOnce(() => new Promise<MaterialCandidate[]>((resolve) => { release = resolve; }))
+      .mockResolvedValueOnce([cand({ centralItemId: 'correct', name: 'Current candidate' })]);
+    mount(api);
+    fireEvent.click(await screen.findByRole('button', { name: /First material — under review/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Second material — under review/ }));
+    await screen.findByText(/Current candidate/);
+    release([cand({ centralItemId: 'wrong', name: 'Previous candidate' })]);
+    await waitFor(() => expect(screen.queryByText(/Previous candidate/)).toBeNull());
+    expect(screen.getByText(/Current candidate/)).toBeInTheDocument();
   });
 });
