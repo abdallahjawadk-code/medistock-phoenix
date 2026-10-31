@@ -934,7 +934,7 @@ describe('RAC-3 · I) no backend or migration change', () => {
     // transform only version/resolved/integrity of the existing Vite entry.
     const prevViteSecurity = hotfix4Packages[VITE];
     expect(prevViteSecurity.version).toBe('6.4.4');
-    const securityVitePackages = {
+    const securityVitePackages: Record<string, Record<string, unknown>> = {
       ...hotfix4Packages,
       [VITE]: {
         ...prevViteSecurity,
@@ -970,10 +970,13 @@ describe('RAC-3 · I) no backend or migration change', () => {
       integrity: 'sha512-SI7kyKHq4XXDRozw+r9GlRZkia1ZkFrpLW98r2IC2Bpr8YkFGE3fvjzmxCG0x78A++69HmDNrDvSMYBZmHGpKA==',
       license: 'BlueOak-1.0.0',
     };
-    const securePackages = Object.fromEntries([
+    const secureEntries: Array<[string, Record<string, unknown>]> = [
       ...Object.entries(securityVitePackages),
       [NONRECURSIVE, nonrecursive],
-    ].sort(([a], [b]) => a.localeCompare(b))) as Record<string, Record<string, unknown>>;
+    ];
+    const securePackages = Object.fromEntries(
+      secureEntries.sort(([a], [b]) => a.localeCompare(b)),
+    ) as Record<string, Record<string, unknown>>;
     securePackages[MINIMATCH] = patchedMinimatch;
     const expectedMinimatchHotfixLock = { ...expectedViteSecurityLock, packages: securePackages };
     expect(normalise(workingLock)).toBe(normalise(expectedMinimatchHotfixLock));
