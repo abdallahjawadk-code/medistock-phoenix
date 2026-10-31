@@ -624,7 +624,7 @@ describe('RAC-3 · I) no backend or migration change', () => {
       ...base.overrides,
       [ESTREE]: {
         ...base.overrides[ESTREE],
-        minimatch: { ...base.overrides[ESTREE].minimatch, 'brace-expansion': '5.0.12' },
+        minimatch: { ...base.overrides[ESTREE].minimatch, '.': '11.0.1', 'brace-expansion': '5.0.12' },
       },
       // GHSA-g3hv-75wg-m249: audited exact transitive security replacement.
       // Keep the existing nested brace-expansion pin; do not widen ranges.
