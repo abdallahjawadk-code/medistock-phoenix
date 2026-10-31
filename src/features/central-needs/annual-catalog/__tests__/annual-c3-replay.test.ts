@@ -94,6 +94,31 @@ describe('C3 isolated server evidence replay — no legal material or quantity w
     };
     await expect(annualC3TemplateSha256(unproven)).rejects.toThrow('annual_c3_source_classification_not_proven');
   });
+  it('permits genuine source classification only when an exact original cell proves it', async () => {
+    const base = await fixture();
+    const block = base.reviewedTemplate.manifest.blocks[0];
+    const manifest: C3TemplateManifest = {
+      ...base.reviewedTemplate.manifest,
+      blocks: [{ ...block,
+        classification: { origin: 'source', label: 'Scientific Name', reference: 'REVIEWED_CELL_A1' },
+        classificationCell: { row: 0, col: 0, a1: 'A1', expectedText: 'Scientific Name' },
+      }],
+    };
+    const expectedSha256 = await annualC3TemplateSha256(manifest);
+    const result = await replayAnnualC3Evidence({ ...base, reviewedTemplate: { manifest, expectedSha256 } });
+    expect(result.sourceClassifications).toEqual([expect.objectContaining({
+      blockId: 'a', coordinate: { row: 0, col: 0, a1: 'A1' }, rawText: 'Scientific Name',
+    })]);
+    expect(result.rows[0].classification?.origin).toBe('source');
+    const tampered: C3TemplateManifest = { ...manifest, blocks: [{
+      ...manifest.blocks[0],
+      classificationCell: { row: 0, col: 0, a1: 'A1', expectedText: 'False source text' },
+    }] };
+    const badSha = await annualC3TemplateSha256(tampered);
+    await expect(replayAnnualC3Evidence({ ...base, reviewedTemplate: {
+      manifest: tampered, expectedSha256: badSha,
+    } })).rejects.toThrow('annual_c3_source_classification_not_proven');
+  });
   it('rejects unsupported page size and mismatched format', async () => {
     const base = await fixture();
     await expect(replayAnnualC3Evidence({ ...base, pageSize: 51 })).rejects.toThrow('annual_c3_page_size_invalid');
