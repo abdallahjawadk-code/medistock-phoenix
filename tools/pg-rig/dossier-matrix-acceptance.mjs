@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {ANNUAL_FIXTURE} from './annual-dossier-acceptance.mjs';
 export function dossierMatrixCases(driver) {
- const {org,actor,outsider,hospital}=ANNUAL_FIXTURE;
+ const {org,actor,editor,outsider,hospital}=ANNUAL_FIXTURE;
  const hospital2='80000000-0000-4000-8000-000000000004';
  const rpc=async(user,name,args=[]) => (await driver.as(user,`SELECT public.phoenix_central_needs_${name}(${args.map((_,i)=>'$'+(i+1)).join(',')}) AS r`,args))[0].r;
  const val=async(sql,args=[]) => (await driver.admin(sql,args))[0].n;
@@ -86,6 +86,82 @@ export function dossierMatrixCases(driver) {
    await assert.rejects(()=>rpc(actor,'begin_dossier_workbook',[opened.plan_revision_id,'typed.csv',hash,source.toString('base64'),JSON.stringify([row(s.items[0].id)]),'[]',JSON.stringify({...confirmation,plan_year:year+2}),'90000000-0000-4000-8000-000000000011']),/dossier_existing_manual_scope/);
    assert.equal(await val('SELECT count(*)::int n FROM public.central_needs_dossier_intakes WHERE plan_revision_id=$1',[opened.plan_revision_id]),0);
    assert.equal(await val('SELECT count(*)::int n FROM public.central_needs_dossier_documents WHERE plan_id=$1',[opened.plan_id]),0);
+  }},
+  {name:'P1: pending cells reject manual and forged intake writes while received and non-overlapping scopes remain editable',run:async()=>{
+   const plan=await rpc(actor,'open_dossier',[org,2036,'p1-partial-reservation','اختبار الحجز الجزئي']);
+   const revision=plan.plan_revision_id;
+   const capture=await rpc(actor,'begin_dossier_workbook',[revision,'p1.csv',hash,source.toString('base64'),JSON.stringify(s.rows),'[]',JSON.stringify({...confirmation,plan_year:2036}),'90000000-0000-4000-8000-000000000036']);
+   await rpc(actor,'apply_dossier_workbook_batch',[capture.intake_id,0]);
+   const count=async()=>({
+    events:await val('SELECT count(*)::int n FROM public.central_needs_manual_need_events WHERE plan_revision_id=$1',[revision]),
+    receipts:await val('SELECT count(*)::int n FROM public.central_needs_dossier_receipts WHERE intake_id=$1',[capture.intake_id]),
+   });
+   assert.deepEqual(await count(),{events:100,receipts:1});
+   for(const who of [actor,editor]){
+    await assert.rejects(()=>rpc(who,'add_manual_need_line',[revision,hospital,s.items[100].id,null,'7','Reviewed manual overlap','p1-pending-'+who,null,null]),/dossier_pending_workbook_scope/);
+    await assert.rejects(()=>rpc(who,'add_manual_need_line',[revision,hospital,s.items[100].id,null,'0','Human-confirmed workbook cell','intake:'+capture.intake_id+':100',null,'workbook:'+hash]),/dossier_pending_workbook_scope/);
+   }
+   assert.deepEqual(await count(),{events:100,receipts:1});
+   await assert.rejects(()=>rpc(actor,'submit_revision',[revision]),/dossier_intake_incomplete/);
+   await assert.rejects(()=>rpc(editor,'apply_dossier_workbook_batch',[capture.intake_id,100]),/forbidden_central_needs/);
+   const [extra]=await driver.admin("INSERT INTO public.central_items(name,name_ar,unit,status) VALUES('P1 unrelated item','مادة أخرى','test','active') RETURNING id");
+   const [warehouse]=await driver.admin("INSERT INTO public.warehouses(organization_id,name,name_ar) VALUES($1,'P1 beneficiary warehouse','مخزن المستفيد') RETURNING id",[hospital]);
+   const extraArgs=[revision,hospital,extra.id,null,'7','Reviewed other material','p1-other-material',null,null];
+   const reservedKey='intake:'+capture.intake_id+':100';
+   await assert.rejects(()=>rpc(actor,'add_manual_need_line',[...extraArgs.slice(0,6),reservedKey,null,null]),/manual_idempotency_key_reserved/);
+   const extraEvent=await rpc(actor,'add_manual_need_line',extraArgs);
+   await assert.rejects(()=>rpc(actor,'correct_manual_need_line',[revision,hospital,extra.id,null,'8','Unrelated correction claiming intake key',reservedKey,extraEvent.event_id,null]),/manual_idempotency_key_reserved/);
+   await assert.rejects(()=>rpc(actor,'void_manual_need_line',[revision,hospital,extra.id,null,'Unrelated void claiming intake key',reservedKey,extraEvent.event_id,null]),/manual_idempotency_key_reserved/);
+   await rpc(actor,'add_manual_need_line',[revision,hospital2,s.items[100].id,null,'8','Reviewed other beneficiary','p1-other-beneficiary',null,null]);
+   await assert.rejects(()=>rpc(actor,'add_manual_need_line',[revision,hospital,s.items[100].id,warehouse.id,'9','Overlapping warehouse split','p1-reserved-warehouse',null,null]),/dossier_pending_workbook_scope/);
+   const [otherWarehouseItem]=await driver.admin("INSERT INTO public.central_items(name,name_ar,unit,status) VALUES('P1 warehouse-only item','مادة مخزن أخرى','test','active') RETURNING id");
+   await rpc(actor,'add_manual_need_line',[revision,hospital,otherWarehouseItem.id,warehouse.id,'9','Reviewed other warehouse material','p1-other-warehouse',null,null]);
+   const [received]=await driver.admin('SELECT id FROM public.central_needs_manual_need_events WHERE plan_revision_id=$1 AND central_item_id=$2',[revision,s.items[0].id]);
+   const voided=await rpc(actor,'void_manual_need_line',[revision,hospital,s.items[0].id,null,'Explicit received-line correction','p1-received-void',received.id,null]);
+   await rpc(actor,'add_manual_need_line',[revision,hospital,s.items[0].id,null,'11520','Explicit received-line replacement','p1-received-readd',voided.event_id,null]);
+   assert.equal((await rpc(actor,'add_manual_need_line',extraArgs)).idempotent_replay,true);
+   assert.equal((await rpc(actor,'apply_dossier_workbook_batch',[capture.intake_id,0])).idempotent_replay,true);
+   assert.deepEqual(await count(),{events:105,receipts:1});
+   const progress=await driver.as(actor,'SELECT * FROM public.phoenix_central_needs_dossier_sources($1)',[plan.plan_id]);
+   assert.equal(Object.values(progress[0])[0].applied_rows,100);
+   assert.equal((await rpc(actor,'apply_dossier_workbook_batch',[capture.intake_id,100])).complete,true);
+   assert.deepEqual(await count(),{events:110,receipts:2});
+   const [saved]=await driver.admin('SELECT approved_quantity::text quantity FROM public.central_needs_need_lines WHERE plan_revision_id=$1 AND central_item_id=$2 AND beneficiary_organization_id=$3 AND target_warehouse_id IS NULL',[revision,s.items[100].id,hospital]);
+   assert.equal(saved.quantity,'0');
+  }},
+  {name:'P1: pending capture refuses an overlapping carry atomically for institution totals and warehouse splits',run:async()=>{
+   for(const [offset,warehouseScope] of [[0,false],[1,true]]){
+    const planYear=2037+offset;
+    const opened=await rpc(actor,'open_dossier',[org,planYear,'p1-carry-overlap','اختبار ترحيل متداخل']);
+    const items=await driver.admin("INSERT INTO public.central_items(name,name_ar,unit,status) VALUES('P1 carry overlap','ترحيل متداخل','test','active'),('P1 carry other','ترحيل آخر','test','active') RETURNING id");
+    const warehouse=warehouseScope?(await driver.admin("INSERT INTO public.warehouses(organization_id,name,name_ar) VALUES($1,'P1 carry source','مخزن مصدر الترحيل') RETURNING id",[hospital]))[0].id:null;
+    await rpc(actor,'add_manual_need_line',[opened.plan_revision_id,hospital,items[0].id,warehouse,'5','Approved predecessor','p1-carry-source-a',null,null]);
+    await rpc(actor,'add_manual_need_line',[opened.plan_revision_id,hospital,items[1].id,null,'6','Approved predecessor','p1-carry-source-b',null,null]);
+    await rpc(actor,'submit_revision',[opened.plan_revision_id]);await rpc(actor,'approve_revision',[opened.plan_revision_id]);
+    const correction=await rpc(actor,'open_manual_correction_revision',[org,planYear,opened.plan_revision_id,'Explicit named dossier correction']);
+    const revision=correction.plan_revision_id;
+    const capture=await rpc(actor,'begin_dossier_workbook',[revision,'carry.csv',hash,source.toString('base64'),JSON.stringify([row(items[0].id,0,{source_code:null,quantity_text:'42'})]),'[]',JSON.stringify({...confirmation,plan_year:planYear}),`90000000-0000-4000-8000-00000000003${7+offset}`]);
+    await assert.rejects(()=>rpc(actor,'carry_forward_manual_lines',[revision,opened.plan_revision_id]),/dossier_pending_workbook_scope/);
+    assert.equal(await val('SELECT count(*)::int n FROM public.central_needs_manual_need_events WHERE plan_revision_id=$1',[revision]),0);
+    assert.equal(await val('SELECT count(*)::int n FROM public.central_needs_need_lines WHERE plan_revision_id=$1',[revision]),0);
+    assert.equal(await val('SELECT count(*)::int n FROM public.central_needs_dossier_receipts WHERE intake_id=$1',[capture.intake_id]),0);
+    assert.equal((await rpc(actor,'apply_dossier_workbook_batch',[capture.intake_id,0])).complete,true);
+    const [old]=await driver.admin('SELECT status FROM public.central_needs_plan_revisions WHERE id=$1',[opened.plan_revision_id]);assert.equal(old.status,'approved');
+    const [saved]=await driver.admin('SELECT approved_quantity::text quantity FROM public.central_needs_need_lines WHERE plan_revision_id=$1',[revision]);assert.equal(saved.quantity,'42');
+   }
+  }},
+  {name:'P1: a non-overlapping carry and its matching replay remain available while another material is pending',run:async()=>{
+   const opened=await rpc(actor,'open_dossier',[org,2039,'p1-carry-disjoint','اختبار ترحيل مستقل']);
+   const items=await driver.admin("INSERT INTO public.central_items(name,name_ar,unit,status) VALUES('P1 carry retained','مادة مرحلة','test','active'),('P1 capture new','مادة ملف جديدة','test','active') RETURNING id");
+   await rpc(actor,'add_manual_need_line',[opened.plan_revision_id,hospital,items[0].id,null,'5','Approved retained line','p1-carry-kept',null,null]);
+   await rpc(actor,'submit_revision',[opened.plan_revision_id]);await rpc(actor,'approve_revision',[opened.plan_revision_id]);
+   const correction=await rpc(actor,'open_manual_correction_revision',[org,2039,opened.plan_revision_id,'Explicit non-overlapping correction']);
+   const revision=correction.plan_revision_id;
+   const capture=await rpc(actor,'begin_dossier_workbook',[revision,'carry-new.csv',hash,source.toString('base64'),JSON.stringify([row(items[1].id,0,{source_code:null,quantity_text:'42'})]),'[]',JSON.stringify({...confirmation,plan_year:2039}),'90000000-0000-4000-8000-000000000039']);
+   assert.equal((await rpc(actor,'carry_forward_manual_lines',[revision,opened.plan_revision_id])).carried_count,1);
+   assert.equal((await rpc(actor,'carry_forward_manual_lines',[revision,opened.plan_revision_id])).idempotent_replay,true);
+   assert.equal((await rpc(actor,'apply_dossier_workbook_batch',[capture.intake_id,0])).complete,true);
+   assert.equal(await val('SELECT count(*)::int n FROM public.central_needs_manual_need_events WHERE plan_revision_id=$1',[revision]),2);
   }},
   {name:'matrix: restricted callers cannot mutate evidence directly or read another PDA capture',run:async()=>{
    for(const table of ['documents','intakes','receipts']) await assert.rejects(()=>driver.as(actor,`DELETE FROM public.central_needs_dossier_${table}`),/permission denied/);

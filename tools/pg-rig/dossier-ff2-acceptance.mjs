@@ -7,6 +7,7 @@ const candidate=(name)=>readFileSync(fileURLToPath(new URL('../../supabase/candi
 export function dossierForwardFixCases(driver) {
  const ff2=candidate('FF2_r1_dossiers_forward_fix_NOT_APPLIED.sql');
  const ff1=candidate('FF1_r1_forward_fix_NOT_APPLIED.sql');
+ const privateWriter='phoenix_private.central_needs_add_manual_need_line_reserved_v1(boolean,uuid,uuid,uuid,uuid,text,text,text,uuid,text)';
  const signatures=[...new Set([...ff2.matchAll(/\('(phoenix_central_needs_[^']+)','[0-9a-f]{32}'\)/g)].map((m)=>m[1]))];
  assert.equal(signatures.length,27);
  const value=async(sql,args=[]) => (await driver.admin(sql,args))[0];
@@ -41,6 +42,30 @@ export function dossierForwardFixCases(driver) {
    assert.notEqual(altered,original);await driver.admin(altered);
    await assert.rejects(()=>driver.script(ff2),/FF2_precondition_failed: body drift/);
    await driver.admin(original);assert.equal(await callable(),27);
+  }},
+  {name:'P1/FF2: the private writer cannot be called by API roles and body drift is refused before any revoke',run:async()=>{
+   for(const role of ['anon','authenticated','service_role']){
+    assert.equal((await value('SELECT has_function_privilege($1,$2::regprocedure,\'EXECUTE\') allowed',[role,privateWriter])).allowed,false);
+    await assert.rejects(()=>driver.asRole(role,ANNUAL_FIXTURE.actor,'SELECT phoenix_private.central_needs_add_manual_need_line_reserved_v1(true,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL)'),/permission denied/);
+   }
+   const original=(await value('SELECT pg_get_functiondef($1::regprocedure) d',[privateWriter])).d;
+   const altered=original.replace(/(AS \$function\$)/,'$1\n-- Rig-only private writer body drift\n');
+   assert.notEqual(altered,original);
+   try{
+    await driver.admin(altered);
+    await assert.rejects(()=>driver.script(ff2),/FF2_precondition_failed: private reservation writer body drift/);
+    assert.equal(await callable(),27);
+   }finally{await driver.admin(original);}
+  }},
+  {name:'P1/FF2: an authenticated grant to the private writer is detected by both the seal and containment precondition',run:async()=>{
+   try{
+    await driver.admin(`GRANT EXECUTE ON FUNCTION ${privateWriter} TO authenticated`);
+    const breaches=await driver.admin('SELECT * FROM phoenix_private.central_needs_capability_breaches_v1()');
+    assert.ok(breaches.some((row)=>Object.values(row).includes('private workbook reservation writer is executable by authenticated')));
+    await assert.rejects(()=>driver.script(ff2),/FF2_precondition_failed: private reservation writer callable/);
+    assert.equal(await callable(),27);
+   }finally{await driver.admin(`REVOKE ALL ON FUNCTION ${privateWriter} FROM authenticated`);}
+   assert.equal((await value('SELECT count(*)::int n FROM phoenix_private.central_needs_capability_breaches_v1()')).n,0);
   }},
   {name:'FF2: all 27 entry points reject actual calls from every API role, with evidence and staffing unchanged',run:async()=>{
    const before=await dataDigest();const scope=(await value("SELECT md5(pg_get_functiondef('phoenix_cn_policy.actor_scope_org(text)'::regprocedure)) d")).d;

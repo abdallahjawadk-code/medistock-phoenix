@@ -488,6 +488,8 @@ describe('RAC-3 · I) no backend or migration change', () => {
       'supabase/candidates/FF1_r1_forward_fix_NOT_APPLIED.sql',
       // Current dossier kill switch, exact names only; historical FF1 remains immutable.
       'supabase/candidates/FF2_r1_dossiers_forward_fix_NOT_APPLIED.sql',
+      // P1 reservation repair, exact candidate only; the numbered history is unchanged.
+      'supabase/candidates/P1_dossier_workbook_reservation_NOT_APPLIED.sql',
       'supabase/candidates/__tests__/ff2-dossiers-forward-fix.dynamic.test.ts',
       'supabase/candidates/R1a_01_manual_source_schema_inert.sql',
       'supabase/candidates/R1a_02_authorization_closure.sql',
@@ -570,7 +572,7 @@ describe('RAC-3 · I) no backend or migration change', () => {
    * replaces: it would also catch a dependency edit smuggled in beside a
    * version bump, which a filename check never could.
    */
-  it('changes no dependency except pinned minimatch security hotfix — package.json keeps its reviewed 6ce98332 contract and the WORKING lockfile must equal the complete SEC-HOTFIX-3 graph (the SEC-HOTFIX-2 graph frozen by exact commit + the explicit Vitest family 4.1.12 delta) plus exactly the CI-HOTFIX-4 undici 7.30.1 and authorized Vite 6.4.5 transformations', () => {
+  it('keeps the reviewed dependency graph plus only the explicit undici, Vite and CI-HOTFIX-6 minimatch security transformations', () => {
     // CN-2A-SHEETJS: the audited dependency baseline advances from d70b24a9
     // to 6ce98332, the reviewed CN-2A commit that adds exactly one runtime
     // dependency — `xlsx` (SheetJS Community Edition 0.20.3, vendored
@@ -616,19 +618,22 @@ describe('RAC-3 · I) no backend or migration change', () => {
     // CI-HOTFIX-3: the one reviewed overrides delta (see the lockfile exception
     // below). The nested `@typescript-eslint/typescript-estree > minimatch >
     // brace-expansion` pin moves from exactly 5.0.9 to exactly 5.0.12; the
-    // baseline value is asserted first, and every other override — and every
-    // other key of this one — stays identical to the baseline.
+    // baseline value is asserted first. CI-HOTFIX-6 additionally pins the four
+    // existing minimatch consumers to 11.0.3 for GHSA-g3hv-75wg-m249. The
+    // package's dot override and its existing brace pin are both explicit so
+    // the nested estree override cannot leave an older minimatch installed.
     const ESTREE = '@typescript-eslint/typescript-estree';
+    const minimatchSecurityOverride = { '.': '11.0.3', 'brace-expansion': '5.0.12' };
     expect(base.overrides[ESTREE].minimatch['brace-expansion']).toBe('5.0.9');
     expect(head.overrides).toEqual({
       ...base.overrides,
       [ESTREE]: {
         ...base.overrides[ESTREE],
-        minimatch: { ...base.overrides[ESTREE].minimatch, '.': '11.0.1', 'brace-expansion': '5.0.12' },
+        minimatch: minimatchSecurityOverride,
       },
-      // GHSA-g3hv-75wg-m249: audited exact transitive security replacement.
-      // Keep the existing nested brace-expansion pin; do not widen ranges.
-      minimatch: '11.0.1',
+      '@eslint/config-array': { minimatch: minimatchSecurityOverride },
+      eslint: { minimatch: minimatchSecurityOverride },
+      'readdir-glob': { minimatch: minimatchSecurityOverride },
     });
     // CN-2B: the lint script gains the `api` root alongside `src`, reviewed as
     // the one approved scripts delta. Every other script stays byte-identical
@@ -934,7 +939,7 @@ describe('RAC-3 · I) no backend or migration change', () => {
     // transform only version/resolved/integrity of the existing Vite entry.
     const prevViteSecurity = hotfix4Packages[VITE];
     expect(prevViteSecurity.version).toBe('6.4.4');
-    const securityVitePackages: Record<string, Record<string, unknown>> = {
+    const securityVitePackages = {
       ...hotfix4Packages,
       [VITE]: {
         ...prevViteSecurity,
@@ -944,42 +949,48 @@ describe('RAC-3 · I) no backend or migration change', () => {
       },
     };
     const expectedViteSecurityLock = { ...expectedHotfix4Lock, packages: securityVitePackages };
-    const workingLock = JSON.parse(readFileSync(join(process.cwd(), 'package-lock.json'), 'utf8'));
-    // MINIMATCH-HOTFIX / GHSA-g3hv-75wg-m249: no generic dependency drift.
-    // The single existing minimatch@10.2.5 (also used by ExcelJS via readdir-glob)
-    // advances to 11.0.1, the first patched major. One new dependency is
-    // required by the real 11.0.1 manifest; every other lock entry stays pinned.
+    // CI-HOTFIX-6: the new audit advisory covers minimatch <11.0.1. Version
+    // 11 changes its matching engine, so this is a reviewed compatibility
+    // change, not an audit exception. The four current consumers retain their
+    // versions; consumer behavior is exercised in minimatch-consumer-compatibility.
+    // Preserve the entire prior graph and permit exactly one replacement and
+    // one new transitive engine, including their registry integrity pins.
     const MINIMATCH = 'node_modules/minimatch';
-    const NONRECURSIVE = 'node_modules/@isaacs/nonrecursive-glob-match';
-    const oldMinimatch = securityVitePackages[MINIMATCH];
-    expect(oldMinimatch.version).toBe('10.2.5');
-    expect(securityVitePackages[NONRECURSIVE]).toBeUndefined();
+    const GLOB_MATCH = 'node_modules/@isaacs/nonrecursive-glob-match';
+    const previousMinimatch = hotfix4Packages[MINIMATCH];
+    expect(previousMinimatch.version).toBe('10.2.5');
+    expect(previousMinimatch.dependencies).toEqual({ 'brace-expansion': '^5.0.5' });
+    expect(securityVitePackages).not.toHaveProperty(GLOB_MATCH);
     const patchedMinimatch = {
-      ...oldMinimatch,
-      version: '11.0.1',
-      resolved: 'https://registry.npmjs.org/minimatch/-/minimatch-11.0.1.tgz',
-      integrity: 'sha512-t+Vn6DX4wPCxS23y03C0uhF7S1jpi1GfqPrnlEipCJaA2ykiNbMkVlDutZtmvLfRcUN6R8AYVlzTsQrT4RZoLQ==',
+      ...previousMinimatch,
+      version: '11.0.3',
+      resolved: 'https://registry.npmjs.org/minimatch/-/minimatch-11.0.3.tgz',
+      integrity: 'sha512-iny/40PEGkNJQ5/Pv6z3nm6FbRAby32GeZRjCUJk2WnNDbgPSTcdI+DDvLqsgBdD4cD5sMtMheqPPnehCCa8Nw==',
       dependencies: {
-        '@isaacs/nonrecursive-glob-match': '^1.0.1',
+        '@isaacs/nonrecursive-glob-match': '^1.0.3',
         'brace-expansion': '^5.0.12',
       },
     };
-    const nonrecursive = {
+    const globEngine = {
       version: '1.0.3',
       resolved: 'https://registry.npmjs.org/@isaacs/nonrecursive-glob-match/-/nonrecursive-glob-match-1.0.3.tgz',
       integrity: 'sha512-SI7kyKHq4XXDRozw+r9GlRZkia1ZkFrpLW98r2IC2Bpr8YkFGE3fvjzmxCG0x78A++69HmDNrDvSMYBZmHGpKA==',
       license: 'BlueOak-1.0.0',
     };
-    const secureEntries: Array<[string, Record<string, unknown>]> = [
-      ...Object.entries(securityVitePackages),
-      [NONRECURSIVE, nonrecursive],
-    ];
-    const securePackages = Object.fromEntries(
-      secureEntries.sort(([a], [b]) => a.localeCompare(b)),
-    ) as Record<string, Record<string, unknown>>;
-    securePackages[MINIMATCH] = patchedMinimatch;
-    const expectedMinimatchHotfixLock = { ...expectedViteSecurityLock, packages: securePackages };
-    expect(normalise(workingLock)).toBe(normalise(expectedMinimatchHotfixLock));
+    // Insert before the recorded successor without reordering historical
+    // entries. The serialized whole-graph assertion remains unchanged.
+    const INSERT_BEFORE = 'node_modules/@jridgewell/gen-mapping';
+    expect(securityVitePackages).toHaveProperty(INSERT_BEFORE);
+    const expectedMinimatchSecurityLock = {
+      ...expectedViteSecurityLock,
+      packages: Object.fromEntries(Object.entries(securityVitePackages).flatMap(
+        ([path, entry]): [string, unknown][] => path === INSERT_BEFORE
+          ? [[GLOB_MATCH, globEngine], [path, entry]]
+          : [[path, path === MINIMATCH ? patchedMinimatch : entry]],
+      )),
+    };
+    const workingLock = JSON.parse(readFileSync(join(process.cwd(), 'package-lock.json'), 'utf8'));
+    expect(normalise(workingLock)).toBe(normalise(expectedMinimatchSecurityLock));
     // ... and the working package.json is the HEAD package.json whose contract is asserted above.
     expect(JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8'))).toEqual(head);
   });

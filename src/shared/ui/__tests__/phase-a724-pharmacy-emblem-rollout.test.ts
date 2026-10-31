@@ -71,6 +71,7 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
   });
   it('has no unapproved migration/service/Auth/RBAC/environment diff',()=>{
     const BASE='4dc6d8122dbef51fb7632266f8e92b983559cc8e';
+    const P1_CANDIDATE='supabase/candidates/P1_dossier_workbook_reservation_NOT_APPLIED.sql';
     const WATCHED=['package.json','package-lock.json','supabase','src/shared/supabase','src/shared/authz','src/app','.env','.env.local'] as const;
     const EXCLUDED:string[]=[
       'src/app/AppContext.tsx','src/app/AuthenticatedApp.tsx','src/app/__tests__/auth-resilience-context.runtime.test.tsx','src/app/__tests__/auth-dead-end-screens.runtime.test.tsx','src/app/__tests__/auth-session-race.runtime.test.tsx','src/app/__tests__/db-pressure-quick-wins.test.ts','src/app/__tests__/auth-cold-start-deadline.runtime.test.tsx','src/app/screen-continuity.ts','src/app/__tests__/phase-b45-screen-continuity.runtime.test.ts','src/shared/supabase/services/auth.service.ts','src/shared/supabase/services/availability.service.ts','src/shared/supabase/services/__tests__/frontend-live-removed-at-filters.test.ts','src/shared/supabase/services/__tests__/auth-signout.runtime.test.ts','src/shared/supabase/__tests__/permission-persistence.test.ts','src/shared/supabase/__tests__/permission-matrix-readiness.test.ts','src/shared/supabase/__tests__/permission-save-diagnostics.test.ts','src/shared/authz/__tests__/screen-access.test.ts',
@@ -850,6 +851,9 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
       // Current dossier kill switch, exact names only; historical FF1 remains immutable.
       'supabase/candidates/FF2_r1_dossiers_forward_fix_NOT_APPLIED.sql',
       'supabase/candidates/__tests__/ff2-dossiers-forward-fix.dynamic.test.ts',
+      // P1 #260: the reviewed, unnumbered reservation candidate only. Its
+      // exact bytes are pinned below; no sibling or numbered migration is exempt.
+      P1_CANDIDATE,
       'supabase/candidates/__tests__/ff1-forward-fix.dynamic.test.ts',
       'supabase/migrations/__tests__/w0-central-needs-excel-path-authority.dynamic.test.ts',
       'supabase/candidates/__tests__/functional-journey.dynamic.test.ts',
@@ -886,6 +890,15 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
     expect(prohibited).toEqual([]);
     // P-HARDEN-01 negative controls on the REAL EXCLUDED list: the two hosted-adapter files are registered by exact name; near-misses and siblings are not.
     const flag=(files:string[])=>files.filter(f=>WATCHED.some(p=>f===p||f.startsWith(p+'/'))&&!EXCLUDED.includes(f));
+    expect(sha256(join(ROOT,P1_CANDIDATE))).toBe('d0f914e47b559fa027e9372beb17dc5cc4fe46affee29b480149b5a3be9440ff');
+    expect(flag([P1_CANDIDATE])).toEqual([]);
+    const p1NearMisses=[
+      `${P1_CANDIDATE}.unreviewed`,
+      'supabase/candidates/P1_dossier_workbook_reservation_NOT_APPLIED_v2.sql',
+      'supabase/candidates/unreviewed-reservation.sql',
+      'supabase/migrations/236_phoenix_dossier_workbook_reservation.sql',
+    ];
+    expect(flag(p1NearMisses)).toEqual(p1NearMisses);
     expect(flag(['supabase/candidates/staging-baseline/hosted-adapter/hosted-adapter.mjs','supabase/candidates/__tests__/hosted-adapter.dynamic.test.ts'])).toEqual([]);
     const unregistered=['supabase/candidates/staging-baseline/hosted-adapter/hosted-adapter.mjs.bak','supabase/candidates/staging-baseline/hosted-adapter/other.mjs','supabase/candidates/staging-baseline/hosted-adapter.mjs',
       'supabase/candidates/__tests__/hosted-adapter.dynamic.test.ts.orig','supabase/candidates/__tests__/hosted-adapter-extra.dynamic.test.ts','supabase/candidates/hosted-adapter/hosted-adapter.mjs'];
