@@ -58,6 +58,23 @@ The initial CI audit failure and local first failure remain evidence, not flakes
 This change does not apply the P1 SQL candidate, repair historical conflicted
 captures, enable features, retire navigation, or authorize a release.
 
+## Subsequent whole-suite guard finding
+
+Run `41174706243` on `f980abd09d731a70ef205529fba2b79641237222`
+passed audit and TypeScript, then reported **20,789 passed, one failed and
+3,765 skipped** tests. The failure was A7.2.4's historical watched-path guard:
+the new P1 SQL candidate had not been registered there. This is distinct from
+the corrected dependency advisory; the skipped database suites in the quality
+job are not database passes.
+
+The separate registration follow-up changes this guard and this report only.
+It names the one reviewed, still-unapplied candidate and pins its complete
+SHA-256 to `d0f914e47b559fa027e9372beb17dc5cc4fe46affee29b480149b5a3be9440ff`.
+Negative controls use the real exclusion list to reject near-miss names,
+an unreviewed sibling and a numbered migration. The historical base, watched
+prefixes, existing exclusions and every SQL byte remain unchanged. Results
+after this follow-up are recorded against its own commit in PR #260.
+
 ## Primary sources
 
 - [GitHub reviewed advisory](https://github.com/advisories/GHSA-g3hv-75wg-m249)
