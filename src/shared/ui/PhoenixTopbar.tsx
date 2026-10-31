@@ -2,7 +2,7 @@ import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { PhoenixIcon } from './PhoenixIcon';
 import { NotificationBell } from './NotificationBell';
-import { GuideEntryButton } from '@/features/guide/GuideEntryButton';
+import { PharmaSculpture } from './PharmaSculpture';
 import { GUIDE_ANCHORS, guideAnchor } from '@/features/guide/guide.anchors';
 
 interface Props {
@@ -10,12 +10,9 @@ interface Props {
   isMobile: boolean;
   menuOpen: boolean;
   onMenuClick: () => void;
-  /** INTERACTIVE-GUIDE-IG1 — opens Guide & Help. Absent on surfaces that do
-   *  not host the guide (the QA gallery renders this topbar directly). */
-  onOpenGuide?: () => void;
 }
 
-export function PhoenixTopbar({ title, isMobile, menuOpen, onMenuClick, onOpenGuide }: Props) {
+export function PhoenixTopbar({ title, isMobile, menuOpen, onMenuClick }: Props) {
   const { lang, toggleLang, toggleTheme, theme } = useApp();
 
   return (
@@ -51,6 +48,7 @@ export function PhoenixTopbar({ title, isMobile, menuOpen, onMenuClick, onOpenGu
       {/* The design source leads with the screen title and sets the scope line
           beneath it, and drops the scope line on phones where the row has to
           stay one line tall. */}
+      <PharmaSculpture className="pharma-topbar-sculpture" />
       <div className="nexus-topbar-title">
         <h1 className="nexus-topbar-heading">{title}</h1>
         {!isMobile && (
@@ -64,15 +62,6 @@ export function PhoenixTopbar({ title, isMobile, menuOpen, onMenuClick, onOpenGu
         <span {...guideAnchor(GUIDE_ANCHORS.shellTopbarNotifications)} style={{ display: 'inline-flex' }}>
           <NotificationBell />
         </span>
-
-        {/* INTERACTIVE-GUIDE-IG1 — desktop only, and that is a measured
-            decision rather than a preference: at 375px this row already fills
-            its width with the menu trigger, the screen title and these three
-            controls, so a fourth here would take width from the title. On a
-            phone the entry lives in the drawer, the shell's existing overflow
-            surface, beside My Account — so there is exactly one entry at every
-            breakpoint, never two. */}
-        {!isMobile && onOpenGuide && <GuideEntryButton onOpen={onOpenGuide} variant="topbar" />}
 
         <button
           onClick={toggleLang}

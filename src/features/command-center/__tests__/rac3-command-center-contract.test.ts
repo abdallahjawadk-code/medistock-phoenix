@@ -570,7 +570,7 @@ describe('RAC-3 · I) no backend or migration change', () => {
    * replaces: it would also catch a dependency edit smuggled in beside a
    * version bump, which a filename check never could.
    */
-  it('changes no dependency — package.json keeps its reviewed 6ce98332 contract and the WORKING lockfile must equal the complete SEC-HOTFIX-3 graph (the SEC-HOTFIX-2 graph frozen by exact commit + the explicit Vitest family 4.1.12 delta) plus the exact CI-HOTFIX-4 undici 7.30.1 and CI-HOTFIX-5 Vite 6.4.5 transformations', () => {
+  it('changes no dependency — package.json keeps its reviewed 6ce98332 contract and the WORKING lockfile must equal the complete SEC-HOTFIX-3 graph (the SEC-HOTFIX-2 graph frozen by exact commit + the explicit Vitest family 4.1.12 delta) plus exactly the CI-HOTFIX-4 undici 7.30.1 and authorized Vite 6.4.5 transformations', () => {
     // CN-2A-SHEETJS: the audited dependency baseline advances from d70b24a9
     // to 6ce98332, the reviewed CN-2A commit that adds exactly one runtime
     // dependency — `xlsx` (SheetJS Community Edition 0.20.3, vendored
@@ -924,26 +924,25 @@ describe('RAC-3 · I) no backend or migration change', () => {
     // cannot see an uncommitted lockfile and would report a false GREEN for it;
     // in CI the working tree is the checked-out commit, so the strictness is
     // the same. The whole graph must be the SEC-HOTFIX-3 graph above plus
-    // the CI-HOTFIX-4 undici delta and the exact CI-HOTFIX-5 Vite delta below, with only the
+    // exactly the CI-HOTFIX-4 undici 7.30.1 and Vite 6.4.5 transformations, with only the
     // pre-existing release-version normalisation.
-    const workingLock = JSON.parse(readFileSync(join(process.cwd(), 'package-lock.json'), 'utf8'));
-    // CI-HOTFIX-5 / GHSA-8g5g-mxqh-grgj: exact Vite-only delta. The 6.4.5
-    // registry manifest has identical dependency/optional/peer/bin/engine fields;
-    // its tarball SHA-512 matches this integrity. Keep all historical graphs.
-    expect(hotfix4Packages[VITE].version).toBe('6.4.4');
-    const expectedHotfix5Lock = {
-      ...expectedHotfix4Lock,
-      packages: {
-        ...hotfix4Packages,
-        [VITE]: {
-          ...hotfix4Packages[VITE],
-          version: '6.4.5',
-          resolved: 'https://registry.npmjs.org/vite/-/vite-6.4.5.tgz',
-          integrity: 'sha512-4enwjFfi4IwtEh0w+jPzpLVOFQiPHmmzPxcHXQOyEur47o6u0jE573DmGpjA+7irXoMLYRZD5ZaFUEneS3abPg==',
-        },
+    // Owner-authorized security exception: GHSA-8g5g-mxqh-grgj fixes
+    // Vite 6.4.4 in 6.4.5. Preserve every historical graph pin above and
+    // transform only version/resolved/integrity of the existing Vite entry.
+    const prevViteSecurity = hotfix4Packages[VITE];
+    expect(prevViteSecurity.version).toBe('6.4.4');
+    const securityVitePackages = {
+      ...hotfix4Packages,
+      [VITE]: {
+        ...prevViteSecurity,
+        version: '6.4.5',
+        resolved: 'https://registry.npmjs.org/vite/-/vite-6.4.5.tgz',
+        integrity: 'sha512-4enwjFfi4IwtEh0w+jPzpLVOFQiPHmmzPxcHXQOyEur47o6u0jE573DmGpjA+7irXoMLYRZD5ZaFUEneS3abPg==',
       },
     };
-    expect(normalise(workingLock)).toBe(normalise(expectedHotfix5Lock));
+    const expectedViteSecurityLock = { ...expectedHotfix4Lock, packages: securityVitePackages };
+    const workingLock = JSON.parse(readFileSync(join(process.cwd(), 'package-lock.json'), 'utf8'));
+    expect(normalise(workingLock)).toBe(normalise(expectedViteSecurityLock));
     // ... and the working package.json is the HEAD package.json whose contract is asserted above.
     expect(JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8'))).toEqual(head);
   });

@@ -207,6 +207,7 @@ export function ManualNeedsWorkspace({ lang, organizationId, planRevisionId, rev
       {errorText && <p role="alert">{errorText}</p>}
       {labelsFailed && <p role="alert">{lang === 'ar' ? 'تعذر تحميل بعض أسماء المواد. لم تتغير البيانات المحفوظة.' : 'Some material names could not be loaded. Saved data is unchanged.'}</p>}
 
+      <div className="pharma-table-scroll" role="region" aria-label={mt('title', lang)} tabIndex={0}>
       <table>
         <caption>{mt('title', lang)}</caption>
         <thead>
@@ -242,6 +243,7 @@ export function ManualNeedsWorkspace({ lang, organizationId, planRevisionId, rev
           ))}
         </tbody>
       </table>
+      </div>
 
       {editable && (
         <form
