@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { AuthenticatedCaller } from '../../_lib/supabase';
-import { annualOriginalSha256, encodeAnnualOriginalBytes } from
-  '../../../src/features/central-needs/annual-catalog/annual-originals.contract';
+import { createHash } from 'node:crypto';
+const annualOriginalSha256 = async (bytes: Uint8Array): Promise<string> =>
+  createHash('sha256').update(bytes).digest('hex');
+const encodeAnnualOriginalBytes = (bytes: Uint8Array): string => Buffer.from(bytes).toString('base64');
 import { readAuthorizedAnnualC3Original } from '../annual-c3-authorized-source';
 
 const scope = { ownerOrgId: '11111111-1111-4111-8111-111111111111', planningYear: 2026 };
@@ -98,17 +100,17 @@ describe('C3 server C2-original bridge — private, read-only', () => {
       .rejects.toThrow('annual_c3_original_sha256_mismatch');
     const { caller: malformed } = callerFor({ ...source, base64: undefined });
     await expect(readAuthorizedAnnualC3Original(malformed, scope, originalId))
-      .rejects.toThrow('annual_catalog_invalid_response');
+      .rejects.toThrow('annual_c3_base64_invalid');
     const { caller: wrongSize } = callerFor({ ...source, original: { ...source.original, byteSize: 1 } });
     await expect(readAuthorizedAnnualC3Original(wrongSize, scope, originalId))
-      .rejects.toThrow('annual_catalog_invalid_response');
+      .rejects.toThrow('annual_c3_base64_invalid');
   });
   it('rejects invalid actor and request UUIDs before sending RPCs', async () => {
     const { caller, rpc } = callerFor(await fixture());
     await expect(readAuthorizedAnnualC3Original({ ...caller, userId: 'unverified' }, scope, originalId))
-      .rejects.toThrow('annual_catalog_invalid_input');
+      .rejects.toThrow('annual_c3_invalid_uuid');
     await expect(readAuthorizedAnnualC3Original(caller, scope, 'invalid-id'))
-      .rejects.toThrow('annual_catalog_invalid_input');
+      .rejects.toThrow('annual_c3_invalid_uuid');
     expect(rpc).not.toHaveBeenCalled();
   });
 });
