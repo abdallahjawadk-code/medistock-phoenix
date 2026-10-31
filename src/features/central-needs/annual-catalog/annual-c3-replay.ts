@@ -8,7 +8,7 @@ import { CN2A_CONTRACT_VERSION, SHEETJS_VERSION, SHEETJS_TARBALL_SHA256,
   type WorkbookFileFormat } from '../import/contract';
 import { replayWorkbook } from '../import/node-replay';
 import { sha256Hex } from '../import/parser-core';
-import { type AnnualCatalogScope, type AnnualSourceBlock, type AnnualSourceOccurrence } from './annual-catalog.contract';
+import { SOURCE_IDENTITY_FIELDS, type AnnualCatalogScope, type AnnualSourceBlock, type AnnualSourceOccurrence } from './annual-catalog.contract';
 import { assertAnnualScope, assertSameAnnualScope, annualScopeKey } from './annual-catalog.model';
 import { extractAnnualIdentityBlock } from './annual-catalog-source';
 import { ANNUAL_ORIGINAL_ATTESTATION, ANNUAL_ORIGINAL_MAX_BYTES, annualOriginalFilename,
@@ -145,8 +145,14 @@ function validTemplate(manifest: C3TemplateManifest): void {
     for (let j = i + 1; j < manifest.blocks.length; j += 1) {
       const a = manifest.blocks[i]; const b = manifest.blocks[j];
       if (a.sheetIndex !== b.sheetIndex || a.lastRow < b.firstRow || b.lastRow < a.firstRow) continue;
-      const aColumns = new Set(Object.values(a.columns).flatMap(binding => binding ? [binding.column] : []));
-      const bColumns = new Set(Object.values(b.columns).flatMap(binding => binding ? [binding.column] : []));
+      const aColumns = new Set(SOURCE_IDENTITY_FIELDS.flatMap(field => {
+        const selected = a.columns[field];
+        return selected ? [selected.column] : [];
+      }));
+      const bColumns = new Set(SOURCE_IDENTITY_FIELDS.flatMap(field => {
+        const selected = b.columns[field];
+        return selected ? [selected.column] : [];
+      }));
       check([...aColumns].every(column => !bColumns.has(column)), 'overlapping_blocks');
     }
   }
