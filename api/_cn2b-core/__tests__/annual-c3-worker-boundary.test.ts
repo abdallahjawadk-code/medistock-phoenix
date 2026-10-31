@@ -102,8 +102,11 @@ describe('C3 isolated worker transport — not an HTTP route or parser approval'
     try {
       const m = mockFactory(() => {});
       const pending = runC3IsolatedWorker(entry, fixture(), m.factory);
+      // Attach the rejection observer BEFORE advancing fake timers: a valid
+      // timeout must not become an unhandled rejection in the full CI run.
+      const rejection = expect(pending).rejects.toThrow('annual_c3_worker_timeout');
       await vi.advanceTimersByTimeAsync(C3_WORKER_BOUNDARY.timeoutMs + 1);
-      await expect(pending).rejects.toThrow('annual_c3_worker_timeout');
+      await rejection;
       expect(m.workers[0].terminated).toBe(1);
     } finally { vi.useRealTimers(); }
   });
