@@ -13,9 +13,9 @@ const originalFilename = 'synthetic.xlsx';
 async function fixture() {
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([
-    ['Scientific Name', 'National Code', 'وحدة المناعة'],
-    ['Paracetamol', '001-02', 0],
-    ['Amoxicillin', '009-03', 100],
+    ['Scientific Name', 'National Code', 'وحدة المناعة', 'Parallel Name', 'Parallel Code'],
+    ['Paracetamol', '001-02', 0, 'Ibuprofen', 'P-001'],
+    ['Amoxicillin', '009-03', 100, 'Metformin', 'P-002'],
   ]), 'sheet');
   const bytes = new Uint8Array(XLSX.write(workbook, { type: 'array', bookType: 'xlsx' }));
   const sha = await sha256Hex(bytes);
@@ -114,10 +114,53 @@ describe('C3 isolated server evidence replay — no legal material or quantity w
       ...manifest.blocks[0],
       classificationCell: { row: 0, col: 0, a1: 'A1', expectedText: 'False source text' },
     }] };
-    const badSha = await annualC3TemplateSha256(tampered);
+    // This malformed template fails closed BEFORE it may be fingerprinted.
+    await expect(annualC3TemplateSha256(tampered)).rejects.toThrow(
+      'annual_c3_source_classification_not_proven',
+    );
+    const mismatchedCell: C3TemplateManifest = { ...manifest, blocks: [{
+      ...manifest.blocks[0],
+      classification: { origin: 'source', label: 'Unseen Category', reference: 'REVIEWED_CELL_A1' },
+      classificationCell: { row: 0, col: 0, a1: 'A1', expectedText: 'Unseen Category' },
+    }] };
+    const mismatchSha = await annualC3TemplateSha256(mismatchedCell);
     await expect(replayAnnualC3Evidence({ ...base, reviewedTemplate: {
-      manifest: tampered, expectedSha256: badSha,
-    } })).rejects.toThrow('annual_c3_source_classification_not_proven');
+      manifest: mismatchedCell, expectedSha256: mismatchSha,
+    } })).rejects.toThrow('annual_c3_classification_cell_mismatch');
+  });
+  it('keeps parallel XLS identity blocks separate when their mapped columns do not overlap', async () => {
+    const base = await fixture();
+    const first = base.reviewedTemplate.manifest.blocks[0];
+    const second = {
+      ...first, blockId: 'parallel', mappingReference: 'REVIEWED_PARALLEL_BLOCK',
+      classification: null,
+      columns: {
+        scientificName: { column: 3, expectedHeaderText: 'Parallel Name' },
+        nationalCode: { column: 4, expectedHeaderText: 'Parallel Code' },
+      },
+    } as const;
+    const manifest: C3TemplateManifest = {
+      ...base.reviewedTemplate.manifest, blocks: [first, second],
+    };
+    const expectedSha256 = await annualC3TemplateSha256(manifest);
+    const result = await replayAnnualC3Evidence({
+      ...base, reviewedTemplate: { manifest, expectedSha256 },
+    });
+    expect(result.rows.map(row => [row.source.blockId, row.source.row])).toEqual([
+      ['a', 1], ['parallel', 1], ['a', 2], ['parallel', 2],
+    ]);
+    expect(result.rows[1].fields.nationalCode).toMatchObject({
+      state: 'value', text: 'P-001', witness: { cell: { coordinate: { a1: 'E2' } } },
+    });
+    expect(result.status).toBe('source_evidence_only_review_required');
+    expect(result.totalRows).toBe(4);
+    const conflicting = { ...second, columns: {
+      scientificName: { column: 0, expectedHeaderText: 'Scientific Name' },
+      nationalCode: { column: 4, expectedHeaderText: 'Parallel Code' },
+    } };
+    await expect(annualC3TemplateSha256({
+      ...manifest, blocks: [first, conflicting],
+    })).rejects.toThrow('annual_c3_overlapping_blocks');
   });
   it('rejects unsupported page size and mismatched format', async () => {
     const base = await fixture();

@@ -138,11 +138,16 @@ function validTemplate(manifest: C3TemplateManifest): void {
     const label = unit?.expectedHeaderText?.trim().replace(/\s+/g, ' ');
     check(label !== 'وحدة المناعة' && label !== 'وحدة الهرمونات', 'department_not_a_unit');
   }
+  // The real 2026 XLS corpus contains parallel material blocks in different
+  // physical column lanes on overlapping rows. Keep each witness/block distinct.
+  // A shared mapped column on overlapping rows is ambiguous and remains blocked.
   for (let i = 0; i < manifest.blocks.length; i += 1) {
     for (let j = i + 1; j < manifest.blocks.length; j += 1) {
       const a = manifest.blocks[i]; const b = manifest.blocks[j];
-      check(a.sheetIndex !== b.sheetIndex || a.lastRow < b.firstRow || b.lastRow < a.firstRow,
-        'overlapping_blocks');
+      if (a.sheetIndex !== b.sheetIndex || a.lastRow < b.firstRow || b.lastRow < a.firstRow) continue;
+      const aColumns = new Set(Object.values(a.columns).flatMap(binding => binding ? [binding.column] : []));
+      const bColumns = new Set(Object.values(b.columns).flatMap(binding => binding ? [binding.column] : []));
+      check([...aColumns].every(column => !bColumns.has(column)), 'overlapping_blocks');
     }
   }
 }
