@@ -12,15 +12,16 @@ import type { MaterialRequest, MaterialUnit } from '../manual/material-registrat
 import { mt, annualNeedsErrorText, manualUnitText, type ManualLang } from '../manual/manual-needs.i18n';
 import { AnnualCatalogPicker, annualFieldText } from './AnnualCatalogPicker';
 import { AnnualCatalogEditor, type AnnualEditorSubmission } from './AnnualCatalogEditor';
+import { AnnualCatalogSources } from './AnnualCatalogSources';
 import type { AnnualCatalogScope } from './annual-catalog.contract';
 import { AnnualCatalogContractError, type AnnualCanonicalPreview, type AnnualCatalogItemResult, type AnnualCatalogWriteResult,
   type AnnualCatalogYearResult } from './annual-catalog-server.contract';
-import { listAnnualCatalogYears, openAnnualCatalogYear, previewAnnualCanonical } from './annual-catalog.service';
+import { listAnnualCatalogYears, openAnnualCatalogYear, previewAnnualCanonical, listAnnualCatalogOccurrences } from './annual-catalog.service';
 import type { AnnualCatalogChange, AnnualCatalogEditResult, AnnualEditableFields, AnnualNeedBinding } from './annual-needs.contract';
 import * as annualServices from './annual-needs.service';
 
 export const realAnnualNeedsUiApi = {
-  listAnnualCatalogYears, openAnnualCatalogYear, previewAnnualCanonical,
+  listAnnualCatalogYears, openAnnualCatalogYear, previewAnnualCanonical, listAnnualCatalogOccurrences,
   searchAnnualCatalogForNeeds: annualServices.searchAnnualCatalogForNeeds,
   getAnnualCatalogItemForNeeds: annualServices.getAnnualCatalogItemForNeeds,
   addAnnualCatalogItemForNeeds: annualServices.addAnnualCatalogItemForNeeds,
@@ -409,6 +410,7 @@ export function AnnualNeedsWorkspace({ lang, scope, actorId, revision, capabilit
       </section>}
       {inspected && <AnnualCatalogEditor key={`${inspected.membership.annualItemId}:${editorReset}`} lang={lang} contextKey={contextKey} item={inspected}
         changes={changes} canEdit={canManage} busy={catalogBusy || manualLocked || registrationLocked || pendingReadId !== null} outcomeUnknown={unknown}
+        sourcePanel={<AnnualCatalogSources lang={lang} contextKey={contextKey} scope={scope} annualItemId={inspected.membership.annualItemId} reader={api.listAnnualCatalogOccurrences} />}
         historyBusy={historyBusy} historyFailed={historyFailed} hasMoreHistory={historyCursor !== null} canonicalPreview={canonicalPreview}
         onSave={saveEdit} onRefreshCanonical={refreshCanonical} onPreviewCanonical={() => void previewCurrentCanonical()}
         onReloadCurrent={() => void reloadInspected()}
