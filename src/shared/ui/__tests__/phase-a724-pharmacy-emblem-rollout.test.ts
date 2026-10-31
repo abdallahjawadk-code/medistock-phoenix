@@ -72,6 +72,9 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
   it('has no unapproved migration/service/Auth/RBAC/environment diff',()=>{
     const BASE='4dc6d8122dbef51fb7632266f8e92b983559cc8e';
     const P1_CANDIDATE='supabase/candidates/P1_dossier_workbook_reservation_NOT_APPLIED.sql';
+    const P3A1_CANDIDATE='supabase/candidates/P3A1_annual_catalog_NOT_APPLIED.sql';
+    const P3A1_PROOF='supabase/candidates/__tests__/p3a1-annual-catalog.dynamic.test.ts';
+    const P3A1_SHA256='1cfab7101634410288702e71bde670d6816ceeaea1dd06a21f510f9cc86e90bf';
     const WATCHED=['package.json','package-lock.json','supabase','src/shared/supabase','src/shared/authz','src/app','.env','.env.local'] as const;
     const EXCLUDED:string[]=[
       'src/app/AppContext.tsx','src/app/AuthenticatedApp.tsx','src/app/__tests__/auth-resilience-context.runtime.test.tsx','src/app/__tests__/auth-dead-end-screens.runtime.test.tsx','src/app/__tests__/auth-session-race.runtime.test.tsx','src/app/__tests__/db-pressure-quick-wins.test.ts','src/app/__tests__/auth-cold-start-deadline.runtime.test.tsx','src/app/screen-continuity.ts','src/app/__tests__/phase-b45-screen-continuity.runtime.test.ts','src/shared/supabase/services/auth.service.ts','src/shared/supabase/services/availability.service.ts','src/shared/supabase/services/__tests__/frontend-live-removed-at-filters.test.ts','src/shared/supabase/services/__tests__/auth-signout.runtime.test.ts','src/shared/supabase/__tests__/permission-persistence.test.ts','src/shared/supabase/__tests__/permission-matrix-readiness.test.ts','src/shared/supabase/__tests__/permission-save-diagnostics.test.ts','src/shared/authz/__tests__/screen-access.test.ts',
@@ -854,6 +857,10 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
       // P1 #260: the reviewed, unnumbered reservation candidate only. Its
       // exact bytes are pinned below; no sibling or numbered migration is exempt.
       P1_CANDIDATE,
+      // P3-A1: only the isolated annual-catalog candidate and its exact native
+      // database proof. Candidate bytes are pinned below; no SQL prefix is exempt.
+      P3A1_CANDIDATE,
+      P3A1_PROOF,
       'supabase/candidates/__tests__/ff1-forward-fix.dynamic.test.ts',
       'supabase/migrations/__tests__/w0-central-needs-excel-path-authority.dynamic.test.ts',
       'supabase/candidates/__tests__/functional-journey.dynamic.test.ts',
@@ -899,6 +906,24 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
       'supabase/migrations/236_phoenix_dossier_workbook_reservation.sql',
     ];
     expect(flag(p1NearMisses)).toEqual(p1NearMisses);
+    const acceptsA1Candidate=(path:string,bytes:Uint8Array)=>path===P3A1_CANDIDATE
+      && EXCLUDED.includes(path) && createHash('sha256').update(bytes).digest('hex')===P3A1_SHA256;
+    const a1Bytes=readFileSync(join(ROOT,P3A1_CANDIDATE));
+    expect(flag([P3A1_CANDIDATE,P3A1_PROOF])).toEqual([]);
+    expect(acceptsA1Candidate(P3A1_CANDIDATE,a1Bytes)).toBe(true);
+    // Exercise the same content gate without modifying the candidate on disk.
+    expect(acceptsA1Candidate(P3A1_CANDIDATE,Buffer.concat([a1Bytes,Buffer.from('\nSELECT 1; -- unreviewed change\n')]))).toBe(false);
+    const a1NearMisses=[
+      `${P3A1_CANDIDATE}.unreviewed`,
+      'supabase/candidates/P3A1_annual_catalog_NOT_APPLIED_v2.sql',
+      'supabase/candidates/P3A2_annual_catalog_NOT_APPLIED.sql',
+      'supabase/candidates/unreviewed-annual-catalog.sql',
+      'supabase/migrations/236_phoenix_annual_catalog.sql',
+      `${P3A1_PROOF}.unreviewed`,
+      'supabase/candidates/__tests__/p3a1-annual-catalog-extra.dynamic.test.ts',
+    ];
+    expect(flag(a1NearMisses)).toEqual(a1NearMisses);
+    for(const path of a1NearMisses) expect(acceptsA1Candidate(path,a1Bytes),path).toBe(false);
     expect(flag(['supabase/candidates/staging-baseline/hosted-adapter/hosted-adapter.mjs','supabase/candidates/__tests__/hosted-adapter.dynamic.test.ts'])).toEqual([]);
     const unregistered=['supabase/candidates/staging-baseline/hosted-adapter/hosted-adapter.mjs.bak','supabase/candidates/staging-baseline/hosted-adapter/other.mjs','supabase/candidates/staging-baseline/hosted-adapter.mjs',
       'supabase/candidates/__tests__/hosted-adapter.dynamic.test.ts.orig','supabase/candidates/__tests__/hosted-adapter-extra.dynamic.test.ts','supabase/candidates/hosted-adapter/hosted-adapter.mjs'];
