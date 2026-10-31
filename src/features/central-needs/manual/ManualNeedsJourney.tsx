@@ -8,6 +8,8 @@
  * server call followed by a re-read; responses of a previous organization / year are discarded. M232 permits the maker to approve only with the separate approval capability.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
+import { PrismWorkspace } from '@/shared/ui/prism/PrismWorkspace';
 import { CentralNeedsError, type ReviewReadiness } from '../central-needs.service';
 import { CentralNeedsRevisionHistory } from '../CentralNeedsRevisionHistory';
 import { useCentralNeedsPreview } from '../useCentralNeedsPreview';
@@ -65,6 +67,8 @@ export function ManualNeedsJourney({ lang, organizationId, actorId, api = realJo
   const [correctionReason, setCorrectionReason] = useState('');
   const [rejectReason, setRejectReason] = useState('');
   const [busy, setBusy] = useState(false);
+  const [lineScopeLocked, setLineScopeLocked] = useState(false);
+  const controlsBusy = busy || lineScopeLocked;
   const [loadFailed, setLoadFailed] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [errorText, setErrorText] = useState<string | null>(null);
@@ -78,6 +82,10 @@ export function ManualNeedsJourney({ lang, organizationId, actorId, api = realJo
   const dossierIntent = useRef<string | null>(null);
   const selectedDossierRef = useRef('');
   const epoch = useRef(0);
+  const onLineScopeLockChange = useCallback((locked: boolean) => {
+    setLineScopeLocked(locked);
+    if (locked) { setReadiness(null); setConfirmSubmit(false); }
+  }, []);
 
   const latest = revisions && revisions.length > 0 ? revisions[0] : null;
   const yearValid = /^\d{4}$/.test(yearText) && Number(yearText) >= 2000 && Number(yearText) <= 2100;
@@ -203,7 +211,7 @@ export function ManualNeedsJourney({ lang, organizationId, actorId, api = realJo
     () => (beneficiaries ?? []).map((b) => ({ id: b.id, name: lang === 'ar' && b.nameAr ? b.nameAr : b.name })),
     [beneficiaries, lang],
   );
-  const itemOptions = useMemo(() => items.map((i) => ({ id: i.id, name: lang === 'ar' && i.nameAr ? i.nameAr : i.name, unit: i.unit, nationalCode: i.nationalCode })), [items, lang]);
+  const itemOptions = useMemo(() => items.map((i) => ({ id: i.id, name: lang === 'ar' && i.nameAr ? i.nameAr : i.name, unit: i.unit, nationalCode: i.nationalCode, concentration: i.concentration, dosageForm: i.dosageForm })), [items, lang]);
 
   const addItem = (i: CatalogOption) => setItems((cur) => (cur.some((x) => x.id === i.id) ? cur : [...cur, i]));
   const useResolved = async (r: ResolvedMaterialUse) => {
@@ -226,50 +234,57 @@ export function ManualNeedsJourney({ lang, organizationId, actorId, api = realJo
   const statusText = (s: string) => jt(`status_${s}` as JourneyKey, lang);
 
   return (
-    <section className="pharma-manual-journey" dir={lang === 'ar' ? 'rtl' : 'ltr'} aria-labelledby="journey-title" data-testid="manual-needs-journey">
-      <h2 id="journey-title">{jt('title', lang)}</h2>
-      <div role="status" aria-live="polite">{notice}</div>
-      {errorText && <p role="alert">{errorText}</p>}
-      {benefFailed && <p role="alert">{jt('beneficiaries_failed', lang)}</p>}
+    <PrismWorkspace lang={lang} title={jt('title', lang)} headingId="journey-title" data-testid="manual-needs-journey"
+      description={jt('workspace_description', lang)}
+      context={year !== null ? <>
+        <span className="prism-context-chip"><PhoenixIcon name="clock" size={16} aria-hidden="true" />{jt('opened_year', lang)} <bdi dir="ltr">{year}</bdi></span>
+        {latest && <span className="prism-context-chip"><PhoenixIcon name={latest.status === 'approved' ? 'check' : 'file'} size={16} aria-hidden="true" />{statusText(latest.status)}</span>}
+      </> : undefined}>
+      <div role="status" aria-live="polite" className="prism-notice prism-notice--success">{notice}</div>
+      {errorText && <p role="alert" className="prism-notice prism-notice--error">{errorText}</p>}
+      {benefFailed && <p role="alert" className="prism-notice prism-notice--error">{jt('beneficiaries_failed', lang)}</p>}
 
-      <section aria-labelledby="step-year">
+      <section className="prism-panel prism-scope-panel" aria-labelledby="step-year">
         <h3 id="step-year">{jt('step_year', lang)}</h3>
-        <form onSubmit={(e) => { e.preventDefault(); openYear(); }}>
+        <form className="prism-scope-form" onSubmit={(e) => { e.preventDefault(); openYear(); }}>
           <label>{jt('year', lang)}
-            <input dir="ltr" inputMode="numeric" value={yearText} disabled={busy} aria-invalid={!yearValid} onChange={(e) => setYearText(e.target.value)} />
+            <input dir="ltr" inputMode="numeric" value={yearText} disabled={controlsBusy} aria-invalid={!yearValid} onChange={(e) => setYearText(e.target.value)} />
           </label>
-          <button type="submit" disabled={!yearValid || busy}>{jt('open_year', lang)}</button>
+          <button type="submit" disabled={!yearValid || controlsBusy} aria-busy={busy}><PhoenixIcon name="file" size={16} aria-hidden="true" />{jt('open_year', lang)}</button>
         </form>
         {loadFailed && <p role="alert">{jt('failed', lang)}</p>}
         {year!==null && features && !features.dossiers && <p role="note">{lang==='ar'?'ميزة الحزم المتعددة لم تُفعّل في قاعدة البيانات بعد. المسار الحالي متاح كما هو.':'Multiple dossiers are not deployed to this database yet. The current path remains available.'}</p>}
-        {year!==null && features?.dossiers && <section aria-label={lang==='ar'?'حزم احتياج السنة':'Annual needs dossiers'}>
-          <h3>{lang==='ar'?'حزم احتياج السنة':'Annual needs dossiers'}</h3>
-          <label>{lang==='ar'?'الحزمة / التصنيف':'Dossier / classification'}<select value={selectedDossier} disabled={busy} onChange={(e)=>chooseDossier(e.target.value)}><option value="">—</option>{dossiers.map((d)=><option key={d.id} value={d.id}>{d.name} · {d.latestStatus ?? '—'}</option>)}</select></label>
-          <p>{lang==='ar'?'لكل حزمة مراجعتها واعتمادها؛ التصحيح يستبدل الحزمة نفسها فقط.':'Each dossier has its own review and approval; a correction replaces only that dossier.'}</p>
-          {caps?.edit && caps.manualSet && <form onSubmit={(e)=>{e.preventDefault();void createDossier();}}>
-            <label>{lang==='ar'?'اسم الحزمة / التصنيف الجديد':'New dossier / classification name'}<input value={dossierName} maxLength={120} disabled={busy} onChange={(e)=>{setDossierName(e.target.value);dossierIntent.current=null;}} /></label>
-            <button type="submit" disabled={busy || !dossierName.trim()}>{lang==='ar'?'إضافة حزمة احتياج':'Add needs dossier'}</button>
-          </form>}
+        {year!==null && features?.dossiers && <section className="prism-dossiers" aria-label={lang==='ar'?'حزم احتياج السنة':'Annual needs dossiers'}>
+          <label>{lang==='ar'?'الحزمة / التصنيف':'Dossier / classification'}<select value={selectedDossier} disabled={controlsBusy} onChange={(e)=>chooseDossier(e.target.value)}><option value="">—</option>{dossiers.map((d)=><option key={d.id} value={d.id}>{d.name} · {d.latestStatus ? statusText(d.latestStatus) : '—'}</option>)}</select></label>
+          <p className="prism-search-hint">{lang==='ar'?'لكل حزمة مراجعتها واعتمادها؛ التصحيح يستبدل الحزمة نفسها فقط.':'Each dossier has its own review and approval; a correction replaces only that dossier.'}</p>
+          <div className="prism-dossier-tools">
+          {caps?.edit && caps.manualSet && <details>
+            <summary>{lang==='ar'?'إضافة حزمة احتياج':'Add needs dossier'}</summary>
+            <form onSubmit={(e)=>{e.preventDefault();void createDossier();}}>
+            <label>{lang==='ar'?'اسم الحزمة / التصنيف الجديد':'New dossier / classification name'}<input value={dossierName} maxLength={120} disabled={controlsBusy} onChange={(e)=>{setDossierName(e.target.value);dossierIntent.current=null;}} /></label>
+            <button type="submit" disabled={controlsBusy || !dossierName.trim()}>{lang==='ar'?'إضافة حزمة احتياج':'Add needs dossier'}</button>
+          </form></details>}
           <details><summary>{lang==='ar'?'الاحتياج السنوي المعتمد لكل الحزم':'Approved annual needs across dossiers'}</summary>
             {summary.length===0 ? <p>{lang==='ar'?'لا توجد سطور معتمدة. المسودات ليست كميات معتمدة.':'No approved lines. Drafts do not count as approved quantities.'}</p> :
             <table><thead><tr>{(lang==='ar'?['الحزمة','المؤسسة','المادة','الرمز الوطني','الكمية','الوحدة']:['Dossier','Beneficiary','Material','National code','Quantity','Unit']).map((h)=><th key={h}>{h}</th>)}</tr></thead><tbody>{summary.map((r,i)=><tr key={`${r.revisionId}:${r.itemId}:${i}`}><td>{r.dossierName}</td><td>{beneficiaryOptions.find((b)=>b.id===r.beneficiaryId)?.name ?? r.beneficiaryId}</td><td>{lang==='ar'&&r.nameAr?r.nameAr:r.name}</td><td dir="ltr">{r.nationalCode ?? '—'}</td><td dir="ltr">{r.quantityText}</td><td>{r.unit}</td></tr>)}</tbody></table>}
           </details>
+          </div>
         </section>}
         {year !== null && revisions !== null && caps !== null && (
-          <div>
+          <div className="prism-revision-summary">
             {latest ? (
               <p>{jt('revision_label', lang).replace('__N__', String(latest.revisionNumber)).replace('__S__', statusText(latest.status))}</p>
             ) : <p>{jt('no_revision', lang)}</p>}
             {!latest && caps.edit && caps.manualSet && (
-              <button type="button" disabled={busy} onClick={() => void act(() => api.openPlan(organizationId, year), jt('start_plan', lang))}>{jt('start_plan', lang)}</button>
+              <button type="button" className="prism-button--primary" disabled={controlsBusy} onClick={() => void act(() => api.openPlan(organizationId, year), jt('start_plan', lang))}>{jt('start_plan', lang)}</button>
             )}
             {latest && latest.sourceMode === 'excel' && <p role="note">{jt('excel_revision_readonly', lang)}</p>}
             {latest && closed && caps.edit && caps.manualSet && (
               <div>
                 <label>{jt('correction_reason', lang)}
-                  <input value={correctionReason} disabled={busy} onChange={(e) => setCorrectionReason(e.target.value)} />
+                  <input value={correctionReason} disabled={controlsBusy} onChange={(e) => setCorrectionReason(e.target.value)} />
                 </label>
-                <button type="button" disabled={busy || correctionReason.trim() === ''}
+                <button type="button" disabled={controlsBusy || correctionReason.trim() === ''}
                   onClick={() => void act(() => namedDossier && api.openDossierCorrection ? api.openDossierCorrection(organizationId, year, latest.id, correctionReason.trim()) : api.openCorrection(organizationId, year, latest.id, correctionReason.trim()), jt('open_correction', lang))}>{namedDossier && api.openDossierCorrection ? (lang==='ar'?'فتح تصحيح ونسخ السطور المعتمدة':'Open correction and copy approved lines') : jt('open_correction', lang)}</button>
               </div>
             )}
@@ -279,41 +294,48 @@ export function ManualNeedsJourney({ lang, organizationId, actorId, api = realJo
 
       {year !== null && latest && latest.sourceMode === 'manual' && caps && (
         <>
-          <fieldset disabled={busy} style={{border:0,padding:0,margin:0,minWidth:0}} aria-label={lang==='ar'?'مساحة الاحتياج المفتوحة':'Opened needs workspace'}>
-          <section aria-labelledby="step-lines">
+          <fieldset disabled={busy} className="prism-opened-workspace" aria-label={lang==='ar'?'مساحة الاحتياج المفتوحة':'Opened needs workspace'}>
+          <section className="prism-panel" aria-labelledby="step-lines">
             <h3 id="step-lines">{jt('step_lines', lang)}</h3>
+            <div className="prism-entry-grid">
             {isManualDraft && caps.manualSet && (
-              <>
+              <fieldset className="prism-entry-grid__catalog" disabled={lineScopeLocked} aria-label={jt('material_selection_area', lang)}>
                 <MaterialPicker lang={lang} scopeKey={`${organizationId}:${latest.id}`} search={api.searchCatalog} selected={items}
                   onPick={addItem} onRemove={(id) => setItems((c) => c.filter((x) => x.id !== id))} onRequestRegistration={() => setShowRegistration(true)} />
-                <IdentityAssistPanel lang={lang} scopeKey={`${organizationId}:${latest.id}`} preview={previewHandle} resolve={api.resolveForIdentity}
-                  onUseItem={addItem} onRequestRegistration={(p) => { setPrefill(p); setShowRegistration(true); }} />
+                <details className="prism-identity-help">
+                  <summary>{jt('identity_help', lang)}</summary>
+                  <IdentityAssistPanel lang={lang} scopeKey={`${organizationId}:${latest.id}`} preview={previewHandle} resolve={api.resolveForIdentity}
+                    onUseItem={addItem} onRequestRegistration={(p) => { setPrefill(p); setShowRegistration(true); }} />
+                </details>
                 {showRegistration && (
                   <MaterialRegistrationPanel lang={lang} organizationId={organizationId} actorId={actorId} planRevisionId={latest.id}
                     nationalCodeEnabled={features?.nationalCode} sameActorEnabled={features?.sameActorManual}
                     prefill={prefill} onUseItem={useResolved} api={registrationApi} />
                 )}
-              </>
+              </fieldset>
             )}
             <ManualNeedsWorkspace key={`${latest.id}:${workspaceVersion}`} lang={lang} organizationId={organizationId} planRevisionId={latest.id} revisionStatus={latest.status}
-              sourceMode={latest.sourceMode} beneficiaries={beneficiaryOptions} items={itemOptions} api={workspaceApi} onIdentityReady={setIdentitiesReady} />
+              sourceMode={latest.sourceMode} beneficiaries={beneficiaryOptions} items={itemOptions} api={workspaceApi} onIdentityReady={setIdentitiesReady} onScopeLockChange={onLineScopeLockChange} />
+            </div>
+            <div className="prism-source-intake">
             {features?.dossiers && !features.workbookIntake && namedDossier && <p role="note">{lang==='ar'?'رفع ملفات الاحتياج غير متاح حاليًا لهذه البيئة. يمكنك متابعة الإدخال اليدوي.':'Workbook intake is currently unavailable in this environment. Manual entry remains available.'}</p>}
             {features?.workbookIntake && !namedDossier && <p role="note">{lang==='ar'?'لرفع ملفات حسب التصنيف، أضف حزمة باسم التصنيف من أعلى الصفحة.':'To upload classification workbooks, add a named dossier above.'}</p>}
             {features?.workbookIntake && selectedDossier && namedDossier &&
               <DossierWorkbookIntake key={`${organizationId}:${latest.id}`} lang={lang} year={Number(year)} planId={selectedDossier} revisionId={latest.id}
-                editable={isManualDraft && caps.manualSet && !busy} beneficiaries={beneficiaries ?? []} search={api.searchCatalog}
+                editable={isManualDraft && caps.manualSet && !controlsBusy} beneficiaries={beneficiaries ?? []} search={api.searchCatalog}
                 onSaved={()=>{setWorkspaceVersion((v)=>v+1);setReadiness(null);}} />}
+            </div>
           </section>
           </fieldset>
 
           {isManualDraft && caps.edit && (
-            <section aria-labelledby="step-review">
+            <section className="prism-panel" aria-labelledby="step-review">
               <h3 id="step-review">{jt('step_review', lang)}</h3>
-              <button type="button" disabled={busy} onClick={() => void checkReadiness()}>{jt('readiness', lang)}</button>
+              <button type="button" disabled={controlsBusy} onClick={() => void checkReadiness()}>{jt('readiness', lang)}</button>
               {readiness && (readiness.ready
-                ? <p role="status">{jt('ready', lang)}</p>
+                ? <p role="status" className="prism-notice prism-notice--success">{jt('ready', lang)}</p>
                 : (
-                  <div role="alert">
+                  <div role="alert" className="prism-notice prism-notice--warning">
                     <p>{jt('not_ready', lang)}</p>
                     <ul>{readiness.blockers.map((b) => <li key={`${b.blocker}:${b.detail ?? ''}`}>{BLOCKER_COPY[b.blocker]?.[lang] ?? b.blocker}</li>)}</ul>
                   </div>
@@ -322,14 +344,14 @@ export function ManualNeedsJourney({ lang, organizationId, actorId, api = realJo
           )}
 
           {isManualDraft && readiness?.ready && caps.edit && (
-            <section aria-labelledby="step-submit">
+            <section className="prism-panel" aria-labelledby="step-submit">
               <h3 id="step-submit">{jt('step_submit', lang)}</h3>
               {!confirmSubmit
-                ? <button type="button" disabled={busy} onClick={() => setConfirmSubmit(true)}>{jt('submit', lang)}</button>
+                ? <button type="button" className="prism-button--primary" disabled={controlsBusy} onClick={() => setConfirmSubmit(true)}>{jt('submit', lang)}</button>
                 : (
                   <div role="group" aria-label={jt('confirm_submit', lang)}>
-                    <button type="button" disabled={busy} onClick={() => void act(() => api.submit(latest.id), jt('submitted_ok', lang))}>{jt('confirm_submit', lang)}</button>
-                    <button type="button" disabled={busy} onClick={() => setConfirmSubmit(false)}>{jt('cancel', lang)}</button>
+                    <button type="button" disabled={controlsBusy} onClick={() => void act(() => api.submit(latest.id), jt('submitted_ok', lang))}>{jt('confirm_submit', lang)}</button>
+                    <button type="button" disabled={controlsBusy} onClick={() => setConfirmSubmit(false)}>{jt('cancel', lang)}</button>
                   </div>
                 )}
             </section>
@@ -337,17 +359,17 @@ export function ManualNeedsJourney({ lang, organizationId, actorId, api = realJo
 
           {latest.status==='submitted' && caps.approve && !identitiesReady && <p role="note">{lang==='ar'?'انتظر تحميل أسماء المواد قبل اتخاذ القرار.':'Wait for material names before making a decision.'}</p>}
           {latest.status === 'submitted' && (
-            <section aria-labelledby="step-decide">
+            <section className="prism-panel" aria-labelledby="step-decide">
               <h3 id="step-decide">{jt('step_decide', lang)}</h3>
               {makerBlocked && <p role="note">{jt('maker_cannot_decide', lang)}</p>}
               {!caps.approve && <p role="note">{jt('no_decide_rights', lang)}</p>}
               {canDecide && (
                 <div>
-                  <button type="button" disabled={busy} onClick={() => void act(() => api.approve(latest.id), jt('decided_ok', lang))}>{jt('approve', lang)}</button>
+                  <button type="button" disabled={controlsBusy} onClick={() => void act(() => api.approve(latest.id), jt('decided_ok', lang))}>{jt('approve', lang)}</button>
                   <label>{jt('reject_reason', lang)}
-                    <input value={rejectReason} disabled={busy} onChange={(e) => setRejectReason(e.target.value)} />
+                    <input value={rejectReason} disabled={controlsBusy} onChange={(e) => setRejectReason(e.target.value)} />
                   </label>
-                  <button type="button" disabled={busy || rejectReason.trim() === ''} onClick={() => void act(() => api.reject(latest.id, rejectReason.trim()), jt('decided_ok', lang))}>{jt('reject', lang)}</button>
+                  <button type="button" disabled={controlsBusy || rejectReason.trim() === ''} onClick={() => void act(() => api.reject(latest.id, rejectReason.trim()), jt('decided_ok', lang))}>{jt('reject', lang)}</button>
                 </div>
               )}
             </section>
@@ -356,12 +378,12 @@ export function ManualNeedsJourney({ lang, organizationId, actorId, api = realJo
       )}
 
       {year !== null && (
-        <section aria-labelledby="step-history">
+        <section className="prism-panel" aria-labelledby="step-history">
           <h3 id="step-history">{jt('step_history', lang)}</h3>
           <CentralNeedsRevisionHistory key={`${organizationId}:${year}:${selectedDossier}`} lang={lang} organizationId={organizationId} planYear={year}
             planId={features?.dossiers ? selectedDossier || undefined : undefined} />
         </section>
       )}
-    </section>
+    </PrismWorkspace>
   );
 }

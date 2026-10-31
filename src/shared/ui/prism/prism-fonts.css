@@ -1,0 +1,19 @@
+/* Same-origin fonts: no runtime CDN requests; notices and hashes live in
+ * public/fonts/prism. Noto Sans Arabic is supplied by the existing dependency. */
+@import '@fontsource-variable/noto-sans-arabic/wght.css';
+
+@font-face {
+  font-family: 'Changa';
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: swap;
+  src: url('/fonts/prism/Changa-variable.ttf') format('truetype');
+}
+
+@font-face {
+  font-family: 'Sora';
+  font-style: normal;
+  font-weight: 100 800;
+  font-display: swap;
+  src: url('/fonts/prism/Sora-variable.ttf') format('truetype');
+}

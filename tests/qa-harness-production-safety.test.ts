@@ -71,6 +71,11 @@ const FORBIDDEN = [
   'QA-INT-77',
   'qa-os-1',
   'qa-om-1',
+  // P2 PRISM: the dedicated tests/browser entry and its in-memory service
+  // fixtures must never become an application route or a production fallback.
+  '__prismNeedsFixture',
+  'fixture-revision-2026',
+  'prism-needs.visual.entry',
   // The canonical fixture UUID prefixes. A leak of any one of these would mean
   // synthetic return documents shipped in a production bundle.
   '0aa11111-0000-4000-8000',

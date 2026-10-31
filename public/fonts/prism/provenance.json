@@ -1,0 +1,40 @@
+{
+  "source_repository": "https://github.com/google/fonts",
+  "source_commit": "6c1dbe27dcf7d817d4b62cec033ba77fa8e2a5ec",
+  "retrieved_utc": "2026-10-31",
+  "license": "SIL Open Font License 1.1; full family notices included",
+  "modifications": "None. Original variable TTFs redistributed verbatim.",
+  "fonts": [
+    {
+      "file": "Changa-variable.ttf",
+      "source": "https://raw.githubusercontent.com/google/fonts/6c1dbe27dcf7d817d4b62cec033ba77fa8e2a5ec/ofl/changa/Changa%5Bwght%5D.ttf",
+      "bytes": 132140,
+      "sha256": "7c4f7a14d4b70ac8816ea8df3a0b127aee4c5f5af7239aca2afecc84ddc7f4d3"
+    },
+    {
+      "file": "Changa-OFL.txt",
+      "source": "https://raw.githubusercontent.com/google/fonts/6c1dbe27dcf7d817d4b62cec033ba77fa8e2a5ec/ofl/changa/OFL.txt",
+      "bytes": 4388,
+      "sha256": "6b12c8d417bb766fa017d1161c7ca050392817a7eecbf3110fc2a8616564b956"
+    },
+    {
+      "file": "Sora-variable.ttf",
+      "source": "https://raw.githubusercontent.com/google/fonts/6c1dbe27dcf7d817d4b62cec033ba77fa8e2a5ec/ofl/sora/Sora%5Bwght%5D.ttf",
+      "bytes": 111400,
+      "sha256": "84ff7096ae3ec6c8be47d906d1a0ba4de7f2ce78c615275c77301964a316e16c"
+    },
+    {
+      "file": "Sora-OFL.txt",
+      "source": "https://raw.githubusercontent.com/google/fonts/6c1dbe27dcf7d817d4b62cec033ba77fa8e2a5ec/ofl/sora/OFL.txt",
+      "bytes": 4385,
+      "sha256": "ba0b9729c9428ba79a0459ab8ec575791b51509dbec213e383d0316d37fec299"
+    }
+  ],
+  "existing_dependency": {
+    "package": "@fontsource-variable/noto-sans-arabic",
+    "version": "5.2.10",
+    "license_file": "NotoSansArabic-OFL.txt",
+    "license_sha256": "91053c23e8a0fe5fc9b5fdbe5ff74ceffd66f6f996c123f1a6ca4c23487c1fff",
+    "source": "Installed locked dependency; original font binaries are emitted by Vite from this existing package."
+  }
+}

@@ -11,7 +11,7 @@ const supabaseRpc = vi.fn(); const supabaseFrom = vi.fn();
 vi.mock('@/shared/supabase/client', () => ({ supabase: { rpc: (...a: unknown[]) => supabaseRpc(...a), from: (...a: unknown[]) => supabaseFrom(...a) } }));
 vi.mock('../../CentralNeedsRevisionHistory', () => ({ CentralNeedsRevisionHistory: (p: { planYear: number; organizationId: string }) => <div data-testid="history" data-year={p.planYear} data-org={p.organizationId} /> }));
 const { ManualNeedsJourney } = await import('../ManualNeedsJourney');
-const { CentralNeedsError } = await import('../../central-needs.service');
+const { CentralNeedsError, centralNeedsErrorFromPostgrest } = await import('../../central-needs.service');
 import type { JourneyApi, YearRevision } from '../manual-journey.service';
 import type { ManualCapabilities } from '../manual-needs.service';
 
@@ -151,6 +151,45 @@ describe('steps 2-4 — lines, review, submit', () => {
     expect((m.workspaceApi.addManualNeedLine.mock.calls[0] as unknown[])[1]).toBe('12.5');
   });
 
+  it('locks other journey targets during an unresolved line write, clears old readiness, and leaves the same retry usable', async () => {
+    const m = draft();
+    let failWrite!: (error: unknown) => void;
+    m.workspaceApi.addManualNeedLine.mockImplementationOnce(() => new Promise((_resolve, reject) => { failWrite = reject; }));
+    mount(m);
+    await open();
+    await screen.findByTestId('manual-needs-workspace');
+    fireEvent.change(screen.getByLabelText('Search a registered material'), { target: { value: 'zol' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Use' }));
+    const form = screen.getByRole('form', { name: 'Add line' });
+    fireEvent.change(within(form).getByLabelText('Beneficiary institution'), { target: { value: 'b1' } });
+    fireEvent.change(within(form).getByLabelText('Item'), { target: { value: 'i-zol' } });
+    fireEvent.change(within(form).getByLabelText('Annual quantity'), { target: { value: '12.5' } });
+    fireEvent.change(within(form).getByLabelText('Reason'), { target: { value: 'planned' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Check readiness' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Submit for independent review' }));
+    expect(screen.getByRole('button', { name: 'Confirm submission' })).toBeInTheDocument();
+    fireEvent.click(within(form).getByRole('button', { name: 'Add line' }));
+    expect(screen.getByRole('button', { name: 'Open year' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Search' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Remove Zolpidem' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Check readiness' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Confirm submission' })).toBeNull();
+    failWrite(centralNeedsErrorFromPostgrest({ message: 'TypeError: Failed to fetch', code: '' }));
+    await screen.findByText(/The request outcome is not confirmed/);
+    expect(within(form).getByRole('button', { name: 'Add line' })).toBeEnabled();
+    expect(within(form).getByLabelText('Annual quantity')).toHaveValue('12.5');
+    expect(screen.getByRole('button', { name: 'Remove Zolpidem' })).toBeDisabled();
+    fireEvent.click(within(form).getByRole('button', { name: 'Add line' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Open year' })).toBeEnabled());
+    expect(m.workspaceApi.addManualNeedLine).toHaveBeenCalledTimes(2);
+    expect(m.workspaceApi.newManualIdempotencyKey).toHaveBeenCalledTimes(1);
+    const calls = m.workspaceApi.addManualNeedLine.mock.calls as unknown as unknown[][];
+    expect(calls[1]).toEqual(calls[0]);
+    expect(screen.queryByRole('button', { name: 'Submit for independent review' })).toBeNull();
+    expect(m.api.submit).not.toHaveBeenCalled();
+  });
+
   it('a search that finds nothing offers the registration request; a FAILED search never says "not registered"', async () => {
     const m = draft();
     mount(m);
@@ -203,7 +242,7 @@ describe('step 5 — the independent decision', () => {
     const m = submitted(caps({ approve: true, approveExcludedForRevision: true }));
     mount(m);
     await open();
-    expect(await screen.findByText(/Whoever entered or submitted this need cannot decide/)).toBeInTheDocument();
+    expect(await screen.findByText('Your account cannot decide on this revision.')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Reject' })).toBeNull();
   });
