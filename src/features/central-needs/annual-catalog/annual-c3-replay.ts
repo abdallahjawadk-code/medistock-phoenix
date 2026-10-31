@@ -20,6 +20,17 @@ export const C3_REPLAY_LIMITS = {
 } as const;
 
 /** The manifest is a SERVER-APPROVED review artifact, never a request payload. */
+/** Evidence of a category written in the original workbook, not a legal category. */
+export interface C3SourceClassificationCell {
+  readonly row: number;
+  readonly col: number;
+  readonly a1: string;
+  readonly expectedText: string;
+}
+export interface C3TemplateBlock extends AnnualSourceBlock {
+  /** Required if classification.origin is source; exact physical cell proof. */
+  readonly classificationCell?: C3SourceClassificationCell;
+}
 export interface C3TemplateManifest {
   readonly templateId: string;
   readonly version: string;
@@ -28,7 +39,7 @@ export interface C3TemplateManifest {
   readonly sheetjsVersion: typeof SHEETJS_VERSION;
   readonly sheetjsTarballSha256: typeof SHEETJS_TARBALL_SHA256;
   readonly allowedFormats: readonly WorkbookFileFormat[];
-  readonly blocks: readonly AnnualSourceBlock[];
+  readonly blocks: readonly C3TemplateBlock[];
 }
 
 export interface C3PinnedTemplate {
@@ -56,12 +67,28 @@ export interface C3ReplayPage {
   readonly template: { readonly id: string; readonly version: string;
     readonly sha256: string; readonly reviewReference: string };
   readonly status: 'source_evidence_only_review_required';
+  /** Exact original-cell proof for source classifications; never a catalog approval. */
+  readonly sourceClassifications: readonly {
+    blockId: string; sheetIndex: number; sheetName: string;
+    coordinate: { row: number; col: number; a1: string };
+    rawText: string;
+  }[];
   readonly rows: readonly AnnualSourceOccurrence[];
   readonly totalRows: number;
   readonly nextCursor: string | null;
 }
 function check(ok: boolean, code: string): asserts ok {
   if (!ok) throw new Error('annual_c3_' + code);
+}
+function sourceA1(row: number, col: number): string {
+  let index = col + 1;
+  let name = '';
+  while (index > 0) {
+    index--;
+    name = String.fromCharCode(65 + index % 26) + name;
+    index = Math.floor(index / 26);
+  }
+  return name + String(row + 1);
 }
 function validUuid(value: unknown): boolean {
   return typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
@@ -91,10 +118,22 @@ function validTemplate(manifest: C3TemplateManifest): void {
       && block.firstRow >= 0 && block.lastRow >= block.firstRow, 'template_rows_invalid');
     count += block.lastRow - block.firstRow + 1;
     check(count <= C3_REPLAY_LIMITS.maxRows, 'template_row_limit');
-    // This older adapter has no coordinate for a source-classification cell.
-    // Until a separately reviewed coordinate-backed contract, it is only a proposal.
-    check(block.classification === null || block.classification?.origin === 'proposed',
-      'source_classification_not_proven');
+    // A template is permitted to quote a source category ONLY with a reviewed
+    // physical coordinate. A free-text label alone is never source evidence.
+    const category = block.classification;
+    const witness = block.classificationCell;
+    if (category?.origin === 'source') {
+      check(witness !== undefined && typeof category.label === 'string'
+        && category.label.length > 0 && category.label.length <= 4000
+        && typeof witness.expectedText === 'string' && witness.expectedText === category.label
+        && Number.isInteger(witness.row) && witness.row >= 0 && witness.row < block.firstRow
+        && Number.isInteger(witness.col) && witness.col >= 0 && witness.col < 256
+        && witness.a1 === sourceA1(witness.row, witness.col),
+        'source_classification_not_proven');
+    } else {
+      check((category === null || category?.origin === 'proposed') && witness === undefined,
+        'source_classification_not_proven');
+    }
     const unit = block.columns?.unit;
     const label = unit?.expectedHeaderText?.trim().replace(/\s+/g, ' ');
     check(label !== 'وحدة المناعة' && label !== 'وحدة الهرمونات', 'department_not_a_unit');
@@ -166,7 +205,22 @@ export async function replayAnnualC3Evidence(input: C3ReplayInput): Promise<C3Re
   check(parsed.workbook.format === extension
     && input.reviewedTemplate.manifest.allowedFormats.includes(parsed.workbook.format), 'format_mismatch');
   const rows: AnnualSourceOccurrence[] = [];
+  const sourceClassifications: C3ReplayPage['sourceClassifications'][number][] = [];
   for (const block of input.reviewedTemplate.manifest.blocks) {
+    const witness = block.classificationCell;
+    if (witness) {
+      const sheet = parsed.workbook.sheets.find(s => s.index === block.sheetIndex);
+      check(sheet !== undefined, 'classification_sheet_missing');
+      const matches = sheet.cells.filter(c => c.coordinate.row === witness.row && c.coordinate.col === witness.col);
+      check(matches.length === 1, 'classification_cell_missing');
+      const cell = matches[0];
+      check(cell.coordinate.a1 === witness.a1 && cell.presence === 'value'
+        && cell.valueType === 'string' && cell.isFormula === false
+        && cell.rawValue === witness.expectedText,
+        'classification_cell_mismatch');
+      sourceClassifications.push({ blockId: block.blockId, sheetIndex: sheet.index, sheetName: sheet.name,
+        coordinate: { ...cell.coordinate }, rawText: cell.rawValue });
+    }
     rows.push(...extractAnnualIdentityBlock({
       scope: input.scope, sourceScope: input.originalScope, sourceId: original.originalId, parsed, block,
     }));
@@ -190,7 +244,8 @@ export async function replayAnnualC3Evidence(input: C3ReplayInput): Promise<C3Re
     template: { id: input.reviewedTemplate.manifest.templateId,
       version: input.reviewedTemplate.manifest.version, sha256: input.reviewedTemplate.expectedSha256,
       reviewReference: input.reviewedTemplate.manifest.reviewReference },
-    status: 'source_evidence_only_review_required', rows: rows.slice(offset, offset + pageSize),
+    status: 'source_evidence_only_review_required', sourceClassifications,
+    rows: rows.slice(offset, offset + pageSize),
     totalRows: rows.length, nextCursor: next,
   };
   check(new TextEncoder().encode(JSON.stringify(result)).byteLength <= C3_REPLAY_LIMITS.maxResponseBytes,
