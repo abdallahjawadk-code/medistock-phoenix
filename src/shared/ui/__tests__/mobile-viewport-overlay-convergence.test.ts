@@ -136,7 +136,7 @@ describe('authenticated shell keeps landscape content outside side cutouts', () 
     const appShell = read('shared/ui/PhoenixAppShell.tsx');
     expect(appShell).toContain('env(safe-area-inset-right, 0px)');
     expect(appShell).toContain('env(safe-area-inset-left, 0px)');
-    expect(appShell).toContain('calc(var(--bnh) + 14px + env(safe-area-inset-bottom, 0px))');
+    expect(appShell).toContain('calc(24px + env(safe-area-inset-bottom, 0px))');
   });
 
   it('lets dialog actions wrap on 320-380px phones instead of forcing overflow', () => {

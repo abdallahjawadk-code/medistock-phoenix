@@ -219,3 +219,90 @@
 :root,
 [data-theme="dark"] { --focus-ring: var(--cyan); --focus-ring-contrast: #EAF6FB; }
 [data-theme="light"] { --focus-ring: var(--cyan); --focus-ring-contrast: #122335; }
+
+/* PHARMA MOLECULAR — owner-authorized visual direction, 2026-10-30.
+   Images govern pine / ivory / sage / brass, sculpted edges and depth.
+   Business semantics (ok/warn/danger) remain distinct; no state is inferred. */
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'] {
+  --pharma-pine: #103e30;
+  --pharma-pine-deep: #08291f;
+  --pharma-pine-soft: #21543e;
+  --pharma-sage: #dce7cc;
+  --pharma-brass: #b19650;
+  --pharma-on-pine: #fffdf4;
+  --pharma-on-pine-muted: #c7d8c6;
+  --pharma-sculpture-green: #57955b;
+  --pharma-sculpture-deep: #10472c;
+  --pharma-sculpture-highlight: #c9e0ad;
+  --pharma-sculpture-white: #fffef3;
+  --pharma-sculpture-ivory: #e6e7cd;
+  --pharma-sculpture-shade: #a1b08d;
+  --pharma-sculpture-shadow: #123e30;
+  --pharma-molecule-node: #b9d3a4;
+  --pharma-header-ink: #fffdf4;
+  --pharma-header-muted: #d1e2cf;
+  --pharma-header-line: #4c715b;
+  --pharma-header-control: #214e3d;
+  --pharma-duration: 240ms;
+  --pharma-ease: cubic-bezier(.2,.75,.25,1);
+  --font-sans: 'IBM Plex Sans Arabic', 'Inter Variable', system-ui, sans-serif;
+  --font-ar: 'IBM Plex Sans Arabic', 'Inter Variable', system-ui, sans-serif;
+  --r1: 8px; --r2: 13px; --r3: 18px; --r4: 22px; --r5: 30px;
+  --sw: 228px; --tbh: 92px; --bnh: 78px;
+  --fs-base: 14px; --fs-2xl: 28px;
+  --phoenix-sidebar-bg: var(--pharma-pine);
+  --phoenix-sidebar-bg-2: var(--pharma-pine-deep);
+  --phoenix-sidebar-text: var(--pharma-on-pine-muted);
+  --phoenix-sidebar-text-strong: var(--pharma-on-pine);
+  --phoenix-sidebar-active-bg: linear-gradient(145deg, #739b69, #294e36);
+  --phoenix-sidebar-active-text: var(--pharma-on-pine);
+  --phoenix-sidebar-hover-bg: #28503c;
+  --phoenix-sidebar-border: #40654d;
+  --phoenix-gold: var(--pharma-brass);
+  --phoenix-gold-2: #c2ad70;
+  --phoenix-gold-ink: #17291b;
+}
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight'][data-theme='light'] {
+  --bg: #f3f0e7; --surface: #fffdf6; --surface2: #eeeee2; --field: #faf8f0;
+  --line: #d8dccc; --line2: #c9b87e; --text: #183c2d; --muted: #586557;
+  --cyan: #286443; --cyanDim: #1a5133; --teal: #326e54;
+  --ember: #967135; --ember2: #ab8440; --gold: #9a803e;
+  --ok: #1f663f; --warn: #885b12; --danger: #ad3538;
+  --chip: #e1ebd6; --chipW: #f5e6bf; --chipD: #f9e5e1; --hover: #edf3e6;
+  --glass: #fffdf6f2; --glass-strong: #fffdf6;
+  --ambient-a: #cddac630; --ambient-b: #c6ac6620; --ambient-c: #e1e7c530;
+  --highlight: #ffffffb3;
+  --pharma-canvas-top: #faf8f1; --pharma-panel-line: #e2e1d4;
+  --pharma-selected: #deebce; --pharma-shadow-ink: #25452d;
+  --pharma-inset: #e1e4d4; --pharma-focus: #216841;
+  --pharma-muted-surface: #eeeee3; --pharma-row-selected: #e6efdc;
+  --sh-xs: 0 1px 2px #25452d0a;
+  --sh-sm: 0 3px 8px #25452d09, 0 1px 2px #25452d05;
+  --sh-md: 0 10px 24px #25452d12, 0 2px 6px #25452d08;
+  --sh-lg: 0 18px 38px #25452d16, inset 0 1px 0 #ffffffcf;
+  --sh-xl: 0 28px 70px #173c2b30;
+  --sh-depth: 0 14px 34px #25452d13, 0 2px 4px #25452d07, inset 0 1px 0 #fffffff0;
+  --sh-float: 0 24px 55px #25452d20;
+  --focus-ring: #216841; --focus-ring-contrast: #ffffff;
+}
+html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-visual='daylight']:not([data-theme='light']) {
+  --bg: #091d16; --surface: #102a20; --surface2: #17372a; --field: #0b2219;
+  --line: #35513e; --line2: #87794e; --text: #f2f2df; --muted: #b4c5ac;
+  --cyan: #b0d398; --cyanDim: #a0c985; --teal: #a8d4b4;
+  --ember: #d1b36c; --ember2: #e2c785; --gold: #d1b36c;
+  --ok: #a6d69f; --warn: #efd08c; --danger: #ffb6b0;
+  --chip: #25422d; --chipW: #493c20; --chipD: #482b2b; --hover: #203d2c;
+  --glass: #102a20f2; --glass-strong: #102a20;
+  --ambient-a: #55794318; --ambient-b: #cfb46b12; --ambient-c: #5a865e14;
+  --highlight: #e7edd710;
+  --pharma-canvas-top: #10271d; --pharma-panel-line: #294b35;
+  --pharma-selected: #2b4a31; --pharma-shadow-ink: #000d05;
+  --pharma-inset: #071b12; --pharma-focus: #c3e3aa;
+  --pharma-muted-surface: #193426; --pharma-row-selected: #28422e;
+  --sh-xs: 0 1px 3px #000d0529; --sh-sm: 0 3px 8px #000d0529;
+  --sh-md: 0 10px 24px #000d0533; --sh-lg: 0 18px 38px #000d0544;
+  --sh-xl: 0 28px 70px #000d0577;
+  --sh-depth: 0 14px 34px #000d0544, inset 0 1px 0 #e7edd70d;
+  --sh-float: 0 24px 55px #000d0566;
+  --focus-ring: #c3e3aa; --focus-ring-contrast: #091d16;
+}

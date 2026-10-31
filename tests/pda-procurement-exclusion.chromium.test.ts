@@ -10,8 +10,8 @@
  *     workspace exactly once; a pharmacy department authority gets the
  *     not-applicable state, no tablist, never the "no warehouse" message, and
  *     the workspace's scope read is never issued for it;
- *   * every navigation surface — desktop sidebar, phone drawer, phone bottom
- *     bar and the Ctrl+K command palette — decided by the production
+ *   * every active navigation surface — desktop sidebar, phone drawer and the
+ *     Ctrl+K command palette — decided by the production
  *     `projectNavigation`/`isScreenAuthorized` predicate with the active
  *     organization kind, not by the test;
  *   * Arabic RTL and English LTR, desktop and a 375px phone viewport.
@@ -142,7 +142,10 @@ function screen21Entry(page: Page, surface: string, lang: Lang) {
 }
 
 async function openPalette(page: Page, lang: Lang) {
-  await page.locator(MAIN).click({ position: { x: 5, y: 5 } });
+  // The rounded content corner is outside the main's hit-test region. Focus
+  // the actual keyboard target instead of clicking a decorative coordinate.
+  await page.locator(MAIN).focus();
+  expect(await page.locator(MAIN).evaluate(el => document.activeElement === el)).toBe(true);
   await page.keyboard.press('Control+k');
   const dialog = page.getByRole('dialog', { name: t('cc_palette_title', lang) });
   await dialog.waitFor({ state: 'visible', timeout: 10000 });
@@ -283,10 +286,10 @@ describe('PDA-PROC-1 · navigation surfaces (real browser)', () => {
       }
     }, 120000);
 
-    it(`(c) pharmacy department authority (${lang}, 375px): no Screen 19 in the phone drawer or the bottom bar`, async () => {
+    it(`(c) pharmacy department authority (${lang}, 375px): no Screen 19 in the phone drawer and no retired bottom bar`, async () => {
       const { context, page } = await open({ scene: 'shell', org: QA_PDA_ORG_ID, lang, viewport: PHONE });
       try {
-        await page.locator(BOTTOM_NAV).waitFor({ state: 'visible', timeout: 30000 });
+        expect(await page.locator(BOTTOM_NAV).count()).toBe(0);
         expect(await screen19Entry(page, BOTTOM_NAV, lang).count()).toBe(0);
         await page.locator(MENU_TRIGGER).click();
         await page.locator(DRAWER_NAV).waitFor({ state: 'visible', timeout: 10000 });
@@ -317,11 +320,11 @@ describe('PDA-PROC-1 · navigation surfaces (real browser)', () => {
     }
   }, 120000);
 
-  it('(d) care institution (375px): Screen 19 is offered in the phone drawer; the bottom bar never carried it', async () => {
+  it('(d) care institution (375px): Screen 19 is offered in the phone drawer; the retired bottom bar is absent', async () => {
     const { context, page } = await open({ scene: 'shell', org: ORG_A, lang: 'ar', viewport: PHONE });
     try {
-      await page.locator(BOTTOM_NAV).waitFor({ state: 'visible', timeout: 30000 });
-      // BOTTOM_NAV is a fixed four-slot shortcut strip that has never listed Screen 19.
+      // The owner retired the entire shortcut strip; the drawer remains authoritative.
+      expect(await page.locator(BOTTOM_NAV).count()).toBe(0);
       expect(await screen19Entry(page, BOTTOM_NAV, 'ar').count()).toBe(0);
       await page.locator(MENU_TRIGGER).click();
       await page.locator(DRAWER_NAV).waitFor({ state: 'visible', timeout: 10000 });

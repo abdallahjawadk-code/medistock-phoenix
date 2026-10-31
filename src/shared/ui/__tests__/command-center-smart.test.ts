@@ -264,10 +264,11 @@ describe('Safety guards', () => {
     }
   });
 
-  it('PhoenixAppShell mounts CommandPalette without altering its existing sidebar/topbar/bottomnav wiring', () => {
+  it('PhoenixAppShell preserves palette and side navigation after owner retires the bottom bar', () => {
     expect(shell).toContain('<CommandPalette onNavigate={onNavigate} />');
     expect(shell).toContain('<PhoenixSidebar');
     expect(shell).toContain('<PhoenixTopbar');
-    expect(shell).toContain('<PhoenixMobileBottomNav');
+    expect(shell).toContain('<PhoenixMobileDrawer');
+    expect(shell).not.toContain('<PhoenixMobileBottomNav');
   });
 });

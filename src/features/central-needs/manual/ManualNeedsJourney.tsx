@@ -226,7 +226,7 @@ export function ManualNeedsJourney({ lang, organizationId, actorId, api = realJo
   const statusText = (s: string) => jt(`status_${s}` as JourneyKey, lang);
 
   return (
-    <section dir={lang === 'ar' ? 'rtl' : 'ltr'} aria-labelledby="journey-title" data-testid="manual-needs-journey">
+    <section className="pharma-manual-journey" dir={lang === 'ar' ? 'rtl' : 'ltr'} aria-labelledby="journey-title" data-testid="manual-needs-journey">
       <h2 id="journey-title">{jt('title', lang)}</h2>
       <div role="status" aria-live="polite">{notice}</div>
       {errorText && <p role="alert">{errorText}</p>}

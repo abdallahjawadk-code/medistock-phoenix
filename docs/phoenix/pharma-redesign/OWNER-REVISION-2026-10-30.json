@@ -1,0 +1,7 @@
+{
+  "ownerDecision": "Adopt visual design; retire phone bottom navigation and all interactive-help entry points",
+  "base": "73928eb36fa4116ffe1ee48e7435d0d85dc15252",
+  "scope": "Independent UI-only candidate on master; no PR #256 changes; database untouched",
+  "supersedesSourceBaseOnly": "1db8a46ec5c66018ccda6b8b8c853d50343a36f0",
+  "historicalReviewArtifactSha256": "a3752099c2242c1815e055f734d6a2b544d92dc10c51866b468f5091af792a2b"
+}
