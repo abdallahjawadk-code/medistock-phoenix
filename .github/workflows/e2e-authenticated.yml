@@ -496,6 +496,7 @@ jobs:
 
       - name: Build production bundle against the local Supabase instance
         env:
+          VITE_R1_MANUAL_NEEDS_TAB: "enabled"
           VITE_PHOENIX_SUPABASE_URL: ${{ steps.sb.outputs.api_url }}
           VITE_PHOENIX_SUPABASE_ANON_KEY: ${{ steps.sb.outputs.anon_key }}
           VITE_PHOENIX_BATCH_IDENTITY_051_ENABLED: "true"
@@ -547,6 +548,11 @@ jobs:
         env:
           SUPABASE_ANON_KEY: ${{ steps.sb.outputs.anon_key }}
         run: node tools/e2e-acceptance/annual-beneficiaries.mjs e2e-seed.json
+
+      - name: Verify the actual annual-entry monthly proposal UI (disposable only)
+        env:
+          SUPABASE_ANON_KEY: ${{ steps.sb.outputs.anon_key }}
+        run: node tools/e2e-acceptance/monthly-proposal-ui.mjs http://127.0.0.1:4173 e2e-seed.json
 
       - name: Stop preview server
         if: always()

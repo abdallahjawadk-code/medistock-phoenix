@@ -145,9 +145,11 @@ export function ManualNeedsJourney({ lang, organizationId, actorId, api = realJo
       let annual: AnnualNeedRow[] = [];
       let id = selectedDossierRef.current;
       if (f?.dossiers && api.listDossiers && api.listDossierRevisions && api.annualSummary) {
-        [ds, annual] = await Promise.all([api.listDossiers(organizationId,y), api.annualSummary(organizationId,y)]);
+        [ds, annual] = nextAnnualMode === 'annual'
+          ? await Promise.all([api.listDossiers(organizationId,y,true), api.annualSummary(organizationId,y,true)])
+          : await Promise.all([api.listDossiers(organizationId,y), api.annualSummary(organizationId,y)]);
         if (!ds.some((d) => d.id===id)) id=ds.find((d)=>d.key==='')?.id ?? ds[0]?.id ?? '';
-        revs=id ? await api.listDossierRevisions(id) : [];
+        revs=id ? await (nextAnnualMode === 'annual' ? api.listDossierRevisions(id,true) : api.listDossierRevisions(id)) : [];
       } else revs = await api.listYearRevisions(organizationId, y);
       const c = await api.getCaps(organizationId, revs[0]?.id ?? null);
       if (epoch.current !== mine) return;
@@ -156,7 +158,7 @@ export function ManualNeedsJourney({ lang, organizationId, actorId, api = realJo
       setAnnualMode(nextAnnualMode);
     } catch {
       if (epoch.current !== mine) return;
-      setLoadFailed(true);
+      setAnnualMode(nextAnnualMode === 'annual' ? 'unavailable' : 'legacy'); setLoadFailed(true);
     }
   }, [api, organizationId]);
 
@@ -324,10 +326,12 @@ export function ManualNeedsJourney({ lang, organizationId, actorId, api = realJo
       </section>
 
       {year !== null && revisions !== null && !latest && caps && annualMode === 'annual' && <section className="prism-panel">
+        <fieldset disabled={busy} className="prism-opened-workspace" aria-label={lang === 'ar' ? 'تهيئة فهرس السنة' : 'Annual catalog preparation'}>
         <AnnualNeedsWorkspace lang={lang} scope={{ ownerOrgId: organizationId, planningYear: year }} actorId={actorId} revision={null}
           capabilities={caps} beneficiaries={beneficiaries ?? []} searchRegisteredMaterials={api.searchCatalog}
           nationalCodeEnabled={features?.nationalCode} sameActorEnabled={features?.sameActorManual} api={annualApi} manualApi={workspaceApi}
           onIdentityReady={setIdentitiesReady} onScopeLockChange={onLineScopeLockChange} />
+        </fieldset>
       </section>}
 
       {year !== null && latest && latest.sourceMode === 'manual' && caps && (
