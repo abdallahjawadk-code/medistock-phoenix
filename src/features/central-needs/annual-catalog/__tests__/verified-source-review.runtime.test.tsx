@@ -81,6 +81,18 @@ describe('actual source-review component; explicit choices and unknown outcomes'
     expect(screen.queryByRole('button', { name: 'Confirm annual membership' })).toBeNull();
     expect(screen.getByLabelText('Select source row 2')).not.toBeChecked();
   });
+  it('clears completed state before reviewing another choice on the same source page', async () => {
+    const f = fixture(); render(view(f)); await choose(f); fireEvent.click(screen.getByRole('button', { name: 'Confirm annual membership' }));
+    await waitFor(() => expect(f.onFresh).toHaveBeenCalled());
+    fireEvent.click(screen.getByLabelText('Select source row 2'));
+    fireEvent.change(screen.getByLabelText('Search a registered material'), { target: { value: 'Amox' } });
+    fireEvent.click(screen.getByRole('button', { name: /^Search$/ }));
+    const use = await screen.findByRole('button', { name: /^Use$/ }); use.focus(); fireEvent.click(use);
+    await waitFor(() => expect(screen.getByLabelText('Membership review reason')).toBeEnabled());
+    expect(screen.queryByText(/Membership was committed and its current state read/)).toBeNull();
+    expect(screen.getByRole('heading', { name: 'Review material identity from original' })).not.toHaveFocus();
+    expect(f.api.commit).toHaveBeenCalledTimes(1);
+  });
   it.each(['ar','en'] as const)('describes one identity-review choice without promising a need-line selection: %s', async lang => {
     const f = fixture(), shown = render(view(f)); await choose(f); shown.rerender(view(f,lang));
     expect(screen.getByRole('region', { name: lang === 'ar' ? 'المادة المختارة للمراجعة' : 'Material chosen for review' })).toBeVisible();

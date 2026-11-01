@@ -123,7 +123,7 @@ function ScopedReview({ lang, scope, actorId, original, canWrite, disabled = fal
           const allowed = canReviewSourceRow(row, read.page.classifications ?? []);
           return <div className="prism-source-review-row" key={row.occurrenceKey}>
             <label><input type="checkbox" checked={keys.includes(row.occurrenceKey)} disabled={!allowed || !committable} onChange={event => {
-              setKeys(old => event.target.checked ? [...old, row.occurrenceKey] : old.filter(key => key !== row.occurrenceKey)); setChoice(null); setPreview(null); setReason('');
+              setKeys(old => event.target.checked ? [...old, row.occurrenceKey] : old.filter(key => key !== row.occurrenceKey)); setChoice(null); setPreview(null); setReason(''); setSaved(false); setVerified(null);
             }} />{vt('selectRow', lang)} {row.source.row + 1}</label>
             {!allowed && <p className="prism-notice prism-notice--warning">{vt('rowHeld', lang)}</p>}
             <ul><SourceRecord occurrence={row} lang={lang} /></ul>
