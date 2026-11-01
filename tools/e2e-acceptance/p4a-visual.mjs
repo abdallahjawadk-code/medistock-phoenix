@@ -297,6 +297,9 @@ try {
       report.annualMatrix.push({ id, ...state });
     }
   }
+  await annual.page.emulateMedia({ reducedMotion: 'reduce' });
+  const annualMotion = await annual.page.locator('.cn2b-simple-card button').evaluateAll(elements => elements.map(el => getComputedStyle(el).transitionDuration));
+  check('Reduced motion removes annual review action transitions', annualMotion.length > 0 && annualMotion.every(value => value.split(',').every(v => parseFloat(v) === 0)), annualMotion);
   await annual.context.close();
   check('No runtime/network/server errors', report.errors.length === 0, report.errors);
 } catch (e) {
