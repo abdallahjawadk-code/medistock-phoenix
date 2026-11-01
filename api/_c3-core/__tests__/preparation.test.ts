@@ -20,11 +20,17 @@ function caller(rows: unknown[][] = [['Name', 'Code', 'Unit'], ['Synthetic medic
   const book = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet(rows), 'Identity');
   if (extraSheet) XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([['Other unreviewed sheet']]), 'Unreviewed');
   const bytes = Buffer.from(XLSX.write(book, { type: 'buffer', bookType: 'xlsx' }));
-  const rpc = vi.fn().mockResolvedValue({ error: null, data: { scope, base64: bytes.toString('base64'), original: {
+  const data = { scope, base64: bytes.toString('base64'), original: {
     originalId: id, firstFilename: 'arbitrary-filename.xlsx', byteSize: bytes.length,
     sha256: createHash('sha256').update(bytes).digest('hex'), attestation: 'server_received_original',
-  } } });
-  return { userId: scope.ownerOrgId, client: { rpc } } as unknown as AuthenticatedCaller;
+    createdBy: scope.ownerOrgId, createdByName: 'Synthetic fixture', createdByRole: 'central_needs_editor', createdAt: '2026-11-01T00:00:00Z',
+  } };
+  const contract = { version: 1, scope: 'owner_year', maxFileBytes: 3145728, extensions: ['xls', 'xlsx', 'csv'],
+    attestation: 'server_received_original', atomicReceipt: true, intentBoundReplay: true };
+  const rpc = vi.fn().mockImplementation(async (name: string) => ({ error: null,
+    data: name === 'phoenix_central_needs_actor_authorized' ? true
+      : name === 'phoenix_central_needs_annual_originals_contract' ? contract : data }));
+  return { userId: scope.ownerOrgId, accessToken: 'synthetic-only-token', client: { rpc } } as unknown as AuthenticatedCaller;
 }
 describe('C3 trusted source preparation with explicit workbook coverage', () => {
   it('replays a unique registered workbook and binds immutable registry identity', async () => {

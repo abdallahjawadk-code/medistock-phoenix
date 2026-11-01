@@ -1,4 +1,5 @@
-/** Trusted Node orchestration, unwired until durable persistence is accepted. */
+/** Trusted Node computation, unwired until worker/HTTP boundaries are accepted.
+ * This routine must run inside an enforceably terminating worker before exposure. */
 import { createHash } from 'node:crypto';
 import type { AuthenticatedCaller } from '../_lib/supabase.ts';
 import { readAnnualOriginalAsCaller } from './original-reader.ts';

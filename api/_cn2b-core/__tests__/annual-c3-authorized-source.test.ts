@@ -83,7 +83,7 @@ describe('C3 server C2-original bridge — private, read-only', () => {
   it('rejects foreign scope and a different original ID returned by the server', async () => {
     const source = await fixture();
     const { caller } = callerFor({ ...source, scope: { ...scope, planningYear: 2027 } });
-    await expect(readAuthorizedAnnualC3Original(caller, scope, originalId)).rejects.toThrow('scope.mismatch');
+    await expect(readAuthorizedAnnualC3Original(caller, scope, originalId)).rejects.toThrow('annual_c3_scope_mismatch');
     const { caller: wrong } = callerFor({ ...source, original: {
       ...source.original, originalId: '44444444-4444-4444-8444-444444444444',
     } });
