@@ -42,6 +42,20 @@ const check = (name, passed, detail = null) => {
   report.checks.push({ name, passed, detail });
   console.log(`${passed ? 'PASS' : 'FAIL'} P4-A ${name}`);
 };
+function contrast(foreground, background) {
+  const luminance = color => {
+    if (!/^rgba?\(/.test(color)) return null;
+    const channels = color.match(/[\d.]+/g).map(Number);
+    if (channels.length === 4 && channels[3] !== 1) return null;
+    const linear = channels.slice(0, 3).map(v => {
+      const s = v / 255;
+      return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+    });
+    return linear[0] * 0.2126 + linear[1] * 0.7152 + linear[2] * 0.0722;
+  };
+  const fg = luminance(foreground), bg = luminance(background);
+  return fg === null || bg === null ? null : (Math.max(fg, bg) + 0.05) / (Math.min(fg, bg) + 0.05);
+}
 let browser;
 try { browser = await chromium.launch({ headless: true, channel: 'chrome' }); }
 catch { browser = await chromium.launch({ headless: true }); }
@@ -99,6 +113,7 @@ async function appearance(page, lang, theme) {
   }
   await page.waitForFunction(({ lang, theme }) => document.documentElement.lang === lang && document.documentElement.dataset.theme === theme, { lang, theme });
   await page.evaluate(() => document.fonts.ready);
+  await settleView(page);
 }
 
 async function navigate(page, label, mobile) {
@@ -136,7 +151,8 @@ try {
           headingLineHeight: parseFloat(getComputedStyle(heading).lineHeight),
           sidebarWidth: sidebar?.getBoundingClientRect().width ?? null,
           activeBackground: active ? getComputedStyle(active).backgroundColor : null,
-          controlSizes: controls.map(el => ({ label: el.getAttribute('aria-label'), width: el.getBoundingClientRect().width, height: el.getBoundingClientRect().height })),
+          controlSizes: controls.map(el => ({ label: el.getAttribute('aria-label'), width: el.getBoundingClientRect().width, height: el.getBoundingClientRect().height,
+            foreground: getComputedStyle(el).color, background: getComputedStyle(el).backgroundColor })),
         };
       });
       check(`${id} direction`, measured.dir === (lang === 'ar' ? 'rtl' : 'ltr'));
@@ -145,6 +161,8 @@ try {
       check(`${id} heading font`, measured.headingFont.includes(lang === 'ar' ? 'Changa' : 'Sora'), measured.headingFont);
       check(`${id} readable title`, measured.headingWidth >= 96 && measured.headingHeight <= measured.headingLineHeight * 2 + 1, { width: measured.headingWidth, height: measured.headingHeight });
       check(`${id} touch controls`, measured.controlSizes.every(s => s.width >= 43.5 && s.height >= 43.5), measured.controlSizes);
+      const controlContrast = measured.controlSizes.map(s => ({ label: s.label, ratio: contrast(s.foreground, s.background) }));
+      check(`${id} settled control contrast`, controlContrast.every(c => c.ratio !== null && c.ratio >= 4.5), controlContrast);
       if (width >= 768) {
         check(`${id} compact reference rail`, Math.abs(measured.sidebarWidth - 88) <= 1, measured.sidebarWidth);
         const beforeLabels = await page.locator('#phoenix-desktop-navigation .premium-nav-item').allTextContents();
