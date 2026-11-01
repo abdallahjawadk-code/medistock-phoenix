@@ -162,6 +162,7 @@ export function SimpleInstitutionCard({
         )}
       </div>
 
+      <div className="cn2b-simple-review-decision">
       {error && (
         <div className="cn2b-simple-error" role="alert">
           <PhoenixIcon name="warning" size={16} inline aria-hidden="true" /> {error}
@@ -292,6 +293,7 @@ export function SimpleInstitutionCard({
           </div>
         </div>
       )}
+      </div>
     </section>
   );
 }

@@ -395,6 +395,7 @@ export function SimpleMaterialCard({ lang, importSessionId, editable, targetEnti
         </p>
       </div>
 
+      <div className="cn2b-simple-review-decision">
       {error && (
         <div className="cn2b-simple-error" role="alert">
           <PhoenixIcon name="warning" size={16} inline aria-hidden="true" /> {error}
@@ -552,6 +553,7 @@ export function SimpleMaterialCard({ lang, importSessionId, editable, targetEnti
           </div>
         </div>
       )}
+      </div>
     </section>
   );
 }
