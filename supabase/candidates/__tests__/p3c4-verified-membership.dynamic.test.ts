@@ -286,6 +286,37 @@ run('C4 restricted native roles and actual C2/worker evidence; not JWT acceptanc
     await expect(admin('DELETE FROM phoenix_c4.activation_events')).rejects.toThrow('c4_history_immutable');
     expect(await forbidden()).toEqual(forbiddenBefore); expect(await oldSeal()).toEqual([]); expect(await seal()).toEqual([]);
   });
+  it('serializes distinct proofs competing for the same owner/year canonical membership', async () => {
+    const f = await fixture(); const firstProof = await prepare(f.args);
+    const nextArgs = [...f.args]; nextArgs[3] = randomUUID(); const secondProof = await prepare(nextArgs);
+    const before = await snapshot(); let release!: () => void;
+    const held = new Promise<void>(resolve => { release = resolve; });
+    let admitted!: () => void; const admission = new Promise<void>(resolve => { admitted = resolve; });
+    const writing = rig.asUser(F.actor, async (c: PoolClient) => {
+      const result = (await c.query(command('commit', commitArgs(firstProof)), commitArgs(firstProof))).rows[0].r;
+      admitted(); await held; return result;
+    }, { commit: true });
+    let competing: Promise<{ error: string | null }> | undefined;
+    try {
+      await Promise.race([admission, writing.then(() => { throw new Error('write did not hold'); })]);
+      let pid = 0; let started!: () => void; const waiting = new Promise<void>(resolve => { started = resolve; });
+      competing = rig.asUser(F.actor, async (c: PoolClient) => {
+        pid = (await c.query('SELECT pg_backend_pid() pid')).rows[0].pid; started();
+        return (await c.query(command('commit', commitArgs(secondProof)), commitArgs(secondProof))).rows[0].r;
+      }, { commit: true }).then(() => ({ error: null }), (error: Error) => ({ error: error.message }));
+      await waiting; const deadline = Date.now() + 5000; let blocked = false;
+      while (Date.now() < deadline) {
+        blocked = (await admin("SELECT wait_event_type='Lock' blocked FROM pg_stat_activity WHERE pid=$1", [pid]))[0]?.blocked === true;
+        if (blocked) break; await new Promise(resolve => setTimeout(resolve, 20));
+      }
+      expect(blocked).toBe(true);
+    } finally { release(); }
+    await writing; expect((await competing!).error).toBe('annual_catalog_membership_exists');
+    const after = await snapshot(); expect(after.memberships).toBe(before.memberships + 1);
+    expect(after.versions).toBe(before.versions + 1); expect(after.commits).toBe(before.commits + 1);
+    expect(after.audit).toBe(before.audit + 1); expect(after.receipts).toBe(before.receipts + 1);
+    expect(await call('receipt', [F.org, 2026, secondProof.requestId])).toMatchObject({ status: 'prepared' });
+  });
   it('orders owner deactivation after an already admitted transaction, then refuses new writes', async () => {
     const f = await fixture(); const p = await prepare(f.args);
     let release!: () => void; const held = new Promise<void>(resolve => { release = resolve; });
