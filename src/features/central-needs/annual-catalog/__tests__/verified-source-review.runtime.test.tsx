@@ -62,6 +62,7 @@ describe('actual source-review component; explicit choices and unknown outcomes'
   });
   it('requires an explicit profile choice even when only one exists', async () => {
     const f = fixture(); render(view(f));
+    expect(screen.getByRole('heading', { name: 'Review material identity from original' })).toHaveFocus();
     expect(await screen.findByLabelText('Reviewed profile')).toHaveValue(''); expect(screen.getByRole('button', { name: 'Read source witnesses' })).toBeDisabled();
     expect(f.api.readPage).not.toHaveBeenCalled();
   });
@@ -77,6 +78,8 @@ describe('actual source-review component; explicit choices and unknown outcomes'
     await waitFor(() => expect(f.onFresh).toHaveBeenCalledWith(f.fresh)); expect(f.api.commit).toHaveBeenCalledTimes(1);
     expect(f.api.commit.mock.calls[0][0].request.occurrenceKeys).toHaveLength(1); expect(f.api.current).toHaveBeenCalledWith(SCOPE, ID.annual);
     expect(f.onLock).toHaveBeenLastCalledWith(false);
+    expect(screen.queryByRole('button', { name: 'Confirm annual membership' })).toBeNull();
+    expect(screen.getByLabelText('Select source row 2')).not.toBeChecked();
   });
   it('reads receipt first after an unknown result and permits only explicit same-intent retry', async () => {
     const f = fixture(); f.api.commit.mockRejectedValueOnce(new VerifiedSourceError('c4_commit_outcome_unknown', true, ID.request)); render(view(f));

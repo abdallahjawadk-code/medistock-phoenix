@@ -74,6 +74,7 @@ function ScopedReview({ lang, scope, actorId, original, canWrite, disabled = fal
     try {
       const item = await api.current(scope, result.membership.annualItemId); if (!live.current) return;
       onFresh(item); setCurrentId(null); setPending(null); setSaved(true);
+      setKeys([]); setChoice(null); setPreview(null); setReason('');
     } catch { if (live.current) setError('failed'); }
   };
   const send = (same = false) => void operate(async () => {
