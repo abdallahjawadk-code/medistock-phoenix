@@ -87,9 +87,11 @@ try {
     export {readAuthorizedAnnualC3Original} from './api/_cn2b-core/annual-c3-authorized-source.ts';
     export {runC3IsolatedWorker} from './api/_cn2b-core/annual-c3-worker-boundary.ts';
     export {callerHasCentralNeedsAuthority} from './api/_lib/supabase.ts';
-    export {createC4MembershipHandler} from './api/_c4-core/http.ts';`, resolveDir: process.cwd() }, outfile: bridge });
+    export {createC4MembershipHandler} from './api/_c4-core/http.ts';
+    export {createAnnualSourceDiscoveryHandler} from './api/_c4-core/discovery.ts';`, resolveDir: process.cwd() }, outfile: bridge });
   await build({ ...shared, entryPoints: ['api/_c3-core/worker-entry.ts'], outfile: worker });
-  const { authenticate, readAuthorizedAnnualC3Original, runC3IsolatedWorker, callerHasCentralNeedsAuthority, createC4MembershipHandler } = await import(pathToFileURL(bridge).href);
+  const { authenticate, readAuthorizedAnnualC3Original, runC3IsolatedWorker, callerHasCentralNeedsAuthority,
+    createC4MembershipHandler, createAnnualSourceDiscoveryHandler } = await import(pathToFileURL(bridge).href);
   const caller = await authenticate(new Request('http://127.0.0.1/c4-test', { headers: { authorization: `Bearer ${signed.data.session.access_token}` } }));
   assert.equal(caller?.userId, actor);
   const code = `00-${randomUUID()}`, name = 'Synthetic C4 actual Auth identity';
@@ -135,11 +137,13 @@ try {
   const handler = createC4MembershipHandler({ registrations: [manifest], workerEntry: pathToFileURL(worker),
     authenticate, authorized: callerHasCentralNeedsAuthority, read: readAuthorizedAnnualC3Original,
     run: runC3IsolatedWorker, service: () => service, workerSha256: async () => sha(readFileSync(worker)) });
+  const discover = createAnnualSourceDiscoveryHandler({ registrations: [manifest], authenticate, authorized: callerHasCentralNeedsAuthority });
   server = createServer(async (req, res) => {
     try {
-      const response = await handler(new Request('http://127.0.0.1/central-needs/commit-verified-membership', {
+      const url = new URL(req.url, 'http://127.0.0.1');
+      const response = await (url.pathname === '/central-needs/annual-source-capabilities' ? discover : handler)(new Request(url, {
         method: req.method, headers: Object.fromEntries(Object.entries(req.headers).map(([key, value]) => [key, Array.isArray(value) ? value.join(',') : value ?? ''])),
-        body: Readable.toWeb(req), duplex: 'half' }));
+        ...(req.method === 'POST' ? { body: Readable.toWeb(req), duplex: 'half' } : {}) }));
       res.writeHead(response.status, Object.fromEntries(response.headers)); res.end(await response.text());
     } catch { res.writeHead(500); res.end(); }
   });
@@ -152,6 +156,17 @@ try {
     expectedCanonicalFingerprint: preview.data.canonicalFingerprint, reason: args.p_reason };
   const send = (token, body = httpInput) => fetch(endpoint, { method: 'POST', headers: { 'content-type': 'application/json',
     ...(token ? { authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify(body) });
+  const discoverUrl = new URL('/central-needs/annual-source-capabilities', endpoint);
+  discoverUrl.search = new URLSearchParams({ ownerOrgId: scope.ownerOrgId, planningYear: String(scope.planningYear) }).toString();
+  const availability = token => fetch(discoverUrl, { headers: token ? { authorization: `Bearer ${token}` } : {} });
+  check('anonymous discovery reveals no profile metadata', (await availability(null)).status === 401);
+  check('foreign institution cannot discover another owner profiles', (await availability(foreign.data.session.access_token)).status === 403);
+  const discoveredResponse = await availability(signed.data.session.access_token); const discovered = await discoveredResponse.json();
+  check('actual HTTP discovery advertises only explicitly reviewed profile identity', discoveredResponse.status === 200
+    && discoveredResponse.headers.get('cache-control') === 'no-store' && discovered.capabilities.commitState === 'ready'
+    && discovered.capabilities.selectionMode === 'explicit_reviewed_profile'
+    && JSON.stringify(discovered.capabilities.profiles) === JSON.stringify([{ id: manifest.template.id, version: 1, sha256: sha(JSON.stringify(manifest)) }])
+    && JSON.stringify(await counts()) === JSON.stringify(before));
   check('anonymous HTTP cannot prepare or commit', (await send(null)).status === 401);
   check('foreign institution HTTP is refused before preparing evidence', (await send(foreign.data.session.access_token)).status === 403);
   check('HTTP rejects browser quantities and stale source identity without effects',
@@ -178,6 +193,10 @@ try {
     && JSON.stringify(await counts()) === JSON.stringify(after));
   check('HTTP observes the same JWT revocation without new effects', (await send(signed.data.session.access_token)).status === 403
     && JSON.stringify(await counts()) === JSON.stringify(after));
+  const revokedDiscovery = await availability(signed.data.session.access_token);
+  check('discovery retains view but refuses commit after current edit revocation', revokedDiscovery.status === 200
+    && (await revokedDiscovery.json()).capabilities.commitState === 'forbidden'
+    && JSON.stringify(await counts()) === JSON.stringify(after));
   check('no canonical, need quantity or stock change; all capability seals stay closed', after.canonical === before.canonical
     && after.needs === before.needs && after.stock === before.stock && after.outlet === before.outlet
     && (await db.query('SELECT * FROM phoenix_private.central_needs_capability_breaches_v1()')).rowCount === 0
@@ -188,7 +207,7 @@ try {
 } finally {
   if (server) { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
   await editor.auth.signOut(); await outsider.auth.signOut(); await db.end();
-  report.passed = report.checks.length === 17 && report.checks.every(c => c.passed) && report.errors.length === 0;
+  report.passed = report.checks.length === 21 && report.checks.every(c => c.passed) && report.errors.length === 0;
   mkdirSync(output, { recursive: true }); writeFileSync(join(output, 'c4-verified-membership.json'), JSON.stringify(report, null, 2));
   if (!report.passed) process.exitCode = 1;
 }
