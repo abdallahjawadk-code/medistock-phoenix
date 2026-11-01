@@ -226,6 +226,7 @@ html[data-pharma-design][data-phoenix-ui-phase][data-phoenix-visual] .prism-shel
     flex: 1; max-inline-size: 480px; padding: 10px 16px;
     color: var(--p4-muted); background: var(--p4-wash); border: 1px solid var(--p4-line);
     border-radius: 10px; cursor: pointer; font: inherit; font-size: 12px;
+    transition: box-shadow 160ms ease !important;
     & span { flex: 1; text-align: start; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     & svg { flex-shrink: 0; }
     & kbd { font-size: 10px; white-space: nowrap; }
@@ -247,7 +248,7 @@ html[data-pharma-design][data-phoenix-ui-phase][data-phoenix-visual] .prism-shel
 }
 @media (prefers-reduced-motion: reduce) {
   html[data-pharma-design][data-phoenix-ui-phase][data-phoenix-visual] .prism-shell .premium-sidebar[data-pharma-nav] .premium-nav-item { transition: none !important; }
-  html[data-pharma-design][data-phoenix-ui-phase][data-phoenix-visual] .prism-shell .premium-topbar .nexus-control { transition: none !important; }
+  html[data-pharma-design][data-phoenix-ui-phase][data-phoenix-visual] .prism-shell .premium-topbar :is(.nexus-control, .prism-command-search) { transition: none !important; }
 }
 @media (forced-colors: active) {
   html[data-pharma-design][data-phoenix-ui-phase][data-phoenix-visual] .prism-shell .premium-sidebar[data-pharma-nav] .premium-nav-item[aria-current='page'] { outline: 2px solid Highlight !important; }
