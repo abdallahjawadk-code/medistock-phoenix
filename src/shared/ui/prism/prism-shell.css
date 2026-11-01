@@ -203,7 +203,13 @@ html[data-pharma-design][data-phoenix-ui-phase][data-phoenix-visual] .prism-shel
     background: transparent; color: var(--p4-rail-ink); border: 1px solid var(--p4-rail-line);
     border-radius: 8px; cursor: pointer;
   }
-  & #phoenix-mobile-drawer .premium-mobile-drawer { background: var(--p4-rail) !important; color: var(--p4-rail-ink); }
+  & #phoenix-mobile-drawer .premium-mobile-drawer {
+    background: var(--p4-rail) !important; color: var(--p4-rail-ink);
+    border: 1px solid var(--p4-rail-line) !important;
+    outline: none !important;
+    box-shadow: 0 24px 70px rgb(4 13 29 / 30%) !important;
+  }
+  & #phoenix-mobile-drawer .premium-drawer-backdrop { background: rgb(4 13 29 / 65%) !important; }
   & .premium-topbar {
     min-height: 80px !important; padding-inline: 24px !important;
     background: var(--p4-panel) !important; color: var(--p4-ink);
