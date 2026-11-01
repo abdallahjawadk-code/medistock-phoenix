@@ -3,6 +3,7 @@ import { chromium } from 'playwright-core';
 import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
+import pg from 'pg';
 
 const base = new URL(process.argv[2] || 'http://127.0.0.1:4173');
 const seed = JSON.parse(readFileSync(process.argv[3] || 'e2e-seed.json', 'utf8'));
@@ -10,6 +11,21 @@ const local = value => ['127.0.0.1', 'localhost', '[::1]'].includes(new URL(valu
 if (!local(base.href) || !local(seed.supabaseUrl) || !local(seed.databaseUrl)) {
   throw new Error('P4-A acceptance requires the disposable loopback-only app, Auth and database');
 }
+// Complete this disposable actor's own warehouse scope. Its role/default
+// permissions and the independent cross-organization fixture stay unchanged.
+const fixtureDb = new pg.Client({ connectionString: seed.databaseUrl });
+await fixtureDb.connect();
+try {
+  const owner = await fixtureDb.query(`SELECT p.id FROM public.profiles p
+    JOIN public.warehouses w ON w.organization_id=p.organization_id
+    WHERE p.id=$1 AND p.role='institution_admin' AND p.organization_id=$2 AND w.id=$3`,
+  [seed.users.institutionAdminA.id, seed.orgA, seed.stageE.whA]);
+  if (owner.rowCount !== 1) throw new Error('P4-A synthetic warehouse ownership mismatch');
+  await fixtureDb.query(`INSERT INTO public.profile_scope_assignments
+    (profile_id,organization_id,scope_type,warehouse_id,is_active)
+    VALUES ($1,$2,'warehouse',$3,true) ON CONFLICT DO NOTHING`,
+  [seed.users.institutionAdminA.id, seed.orgA, seed.stageE.whA]);
+} finally { await fixtureDb.end(); }
 const out = resolve('docs/phoenix/e2e-acceptance/p4a');
 mkdirSync(out, { recursive: true });
 const report = {
@@ -49,7 +65,7 @@ async function login(user) {
 
 async function settleView(page) {
   await page.waitForLoadState('networkidle');
-  await page.locator('#phoenix-main .nexus-loading, #phoenix-main [data-rac3-state="loading"]').waitFor({ state: 'detached', timeout: 20000 });
+  await page.waitForFunction(() => !document.querySelector('#phoenix-main .nexus-loading, #phoenix-main [data-rac3-state="loading"]'), null, { timeout: 20000 });
   await page.evaluate(async () => {
     const animations = document.getAnimations().filter(a => Number.isFinite(a.effect?.getComputedTiming().iterations));
     await Promise.all(animations.map(a => a.finished.catch(() => {})));
@@ -91,12 +107,16 @@ try {
         const sidebar = document.querySelector('.prism-shell > .premium-sidebar');
         const active = sidebar?.querySelector('[aria-current=page]');
         const controls = [...top.querySelectorAll('button')].filter(el => el.getClientRects().length);
+        const heading = top.querySelector('h1');
         return {
           dir: shell.dir, lang: document.documentElement.lang,
           overflow: Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) - innerWidth,
           topbar: getComputedStyle(top).backgroundColor,
           panelToken: getComputedStyle(shell).getPropertyValue('--p4-panel').trim(),
           headingFont: getComputedStyle(top.querySelector('h1')).fontFamily,
+          headingWidth: heading.getBoundingClientRect().width,
+          headingHeight: heading.getBoundingClientRect().height,
+          headingLineHeight: parseFloat(getComputedStyle(heading).lineHeight),
           sidebarWidth: sidebar?.getBoundingClientRect().width ?? null,
           activeBackground: active ? getComputedStyle(active).backgroundColor : null,
           controlSizes: controls.map(el => ({ label: el.getAttribute('aria-label'), width: el.getBoundingClientRect().width, height: el.getBoundingClientRect().height })),
@@ -106,6 +126,7 @@ try {
       check(`${id} document overflow`, measured.overflow <= 1, measured.overflow);
       check(`${id} PRISM topbar palette`, measured.topbar === (theme === 'light' ? 'rgb(255, 255, 255)' : 'rgb(12, 32, 55)'), measured.topbar);
       check(`${id} heading font`, measured.headingFont.includes(lang === 'ar' ? 'Changa' : 'Sora'), measured.headingFont);
+      check(`${id} readable title`, measured.headingWidth >= 96 && measured.headingHeight <= measured.headingLineHeight * 2 + 1, { width: measured.headingWidth, height: measured.headingHeight });
       check(`${id} touch controls`, measured.controlSizes.every(s => s.width >= 43.5 && s.height >= 43.5), measured.controlSizes);
       if (width >= 768) {
         check(`${id} compact reference rail`, Math.abs(measured.sidebarWidth - 88) <= 1, measured.sidebarWidth);
@@ -153,7 +174,12 @@ try {
       }
       await page.locator('[data-pharma-screen="3"]').waitFor();
       await settleView(page);
+      await page.locator('.nexus-it-context-bar select').selectOption(seed.stageE.whA);
+      await page.getByRole('tab', { name: lang === 'ar' ? 'رصيد المخزن' : 'Warehouse stock', exact: true }).click();
+      await settleView(page);
+      await page.locator('.nexus-it-stock-list').getByText('E2E Initial Provisioning Material', { exact: true }).waitFor();
       await page.screenshot({ path: resolve(out, `${id}-materials.png`), fullPage: true });
+      check(`${id} real warehouse material workspace`, true);
       await navigate(page, lang === 'ar' ? 'الإحصائيات' : 'Statistics', width < 768);
       report.matrix.push({ id, ...measured });
     }
