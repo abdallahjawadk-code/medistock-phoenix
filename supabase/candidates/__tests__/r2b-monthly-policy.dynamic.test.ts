@@ -208,4 +208,29 @@ run('R2-B owner-published metadata; restricted native roles, not JWT acceptance'
     finally { await admin("UPDATE public.profile_permission_overrides SET allowed=true WHERE profile_id=$1 AND permission_key='central_needs.view'", [F.actor]); }
     expect(await counts()).toEqual(before); await seals();
   });
+  it('enumerates only eligible beneficiary names through existing annual view without widening directory RLS', async () => {
+    expect(await user('SELECT jsonb_agg(id ORDER BY id) r FROM public.organizations')).toEqual([F.org]);
+    const definitions = () => admin(`SELECT p.oid,pg_get_functiondef(p.oid) definition,p.proacl,p.proowner
+      FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE (n.nspname='public' OR n.nspname LIKE 'phoenix%')
+      AND p.prokind IN ('f','p') AND p.proname<>'phoenix_manual_beneficiaries_v1' ORDER BY p.oid`);
+    const original = await definitions();
+    await admin(readFileSync(resolve('supabase/candidates/R1_beneficiary_catalog_read_NOT_APPLIED.sql'), 'utf8'));
+    expect(await definitions()).toEqual(original);
+    const expected = await admin(`SELECT id,name,coalesce(nullif(name_ar,''),name) "nameAr" FROM public.organizations
+      WHERE organization_kind='care_institution' AND status='active' AND archived_at IS NULL ORDER BY id`);
+    const read = (owner = F.org, after: string | null = null, limit: number | null = 50, role = 'authenticated') =>
+      user<{ version: number; ownerOrgId: string; rows: unknown[]; nextAfterId: string | null }>(
+        'SELECT public.phoenix_manual_beneficiaries_v1($1,$2,$3) r', [owner, after, limit], role);
+    expect(await read()).toEqual({ version: 1, ownerOrgId: F.org, rows: expected, nextAfterId: null });
+    const first = await read(F.org, null, 1); expect(first.rows).toEqual(expected.slice(0,1)); expect(first.nextAfterId).toBe(expected[0].id);
+    const second = await read(F.org, first.nextAfterId, 1); expect(second.rows).toEqual(expected.slice(1,2));
+    for (const limit of [0,51,null]) await expect(read(F.org,null,limit)).rejects.toThrow('manual_beneficiaries_limit_invalid');
+    for (const role of ['anon','service_role']) await expect(read(F.org,null,50,role)).rejects.toThrow(/permission denied/);
+    await expect(read(F.other)).rejects.toThrow(/forbidden/);
+    await admin("UPDATE public.profile_permission_overrides SET allowed=false WHERE profile_id=$1 AND permission_key='central_needs.view'", [F.actor]);
+    try { await expect(read()).rejects.toThrow(/forbidden/); }
+    finally { await admin("UPDATE public.profile_permission_overrides SET allowed=true WHERE profile_id=$1 AND permission_key='central_needs.view'", [F.actor]); }
+    expect(await user('SELECT jsonb_agg(id ORDER BY id) r FROM public.organizations')).toEqual([F.org]);
+    expect(await counts()).toEqual(before); await seals();
+  });
 });

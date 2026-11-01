@@ -15,6 +15,7 @@ import type { ResolverHit } from '../excel-identity';
 import { getNeedsFeatures, listNeedsDossiers, openNeedsDossier, openNeedsDossierCorrection, readAnnualNeeds } from './dossier.service';
 import { getManualCatalogLabels } from './manual-catalog.service';
 import { getAnnualNeedsContract } from '../annual-catalog/annual-needs.service';
+import { listAnnualBeneficiaries } from './annual-beneficiaries.service';
 
 export interface YearRevision {
   id: string;
@@ -37,6 +38,7 @@ export interface JourneyApi {
   listDossierRevisions?: (planId: string, transactionSafe?: boolean) => Promise<YearRevision[]>;
   listYearRevisions(organizationId: string, year: number): Promise<YearRevision[]>;
   listBeneficiaries(): Promise<BeneficiaryOption[]>;
+  listAnnualBeneficiaries?: typeof listAnnualBeneficiaries;
   searchCatalog(query: string): Promise<CatalogOption[]>;
   resolveForIdentity(query: string): Promise<ResolverHit[]>;
   getCaps(organizationId: string, planRevisionId: string | null): Promise<ManualCapabilities>;
@@ -74,6 +76,7 @@ async function listDossierRevisions(planId: string, transactionSafe = false): Pr
 
 export const realJourneyApi: JourneyApi = {
   annualNeedsContract: getAnnualNeedsContract,
+  listAnnualBeneficiaries,
   readCatalogItems: getManualCatalogLabels,
   features: getNeedsFeatures,
   listDossiers: listNeedsDossiers,
