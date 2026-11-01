@@ -23,7 +23,7 @@ function refusal(message: string | undefined): Response | null {
   if (message === 'c4_not_enabled' || message === 'c4_schema_not_ready') return errorResponse(503, 'c4_unavailable');
   if (message && ['c4_idempotency_conflict','c4_source_identity_conflict','c4_source_identity_held','c4_classification_held',
     'c4_canonical_stale_or_incomplete','c4_source_binding_invalid','annual_catalog_membership_exists',
-    'annual_catalog_year_archived'].includes(message)) return errorResponse(409, 'c4_review_conflict');
+    'annual_catalog_year_inactive','annual_catalog_idempotency_conflict'].includes(message)) return errorResponse(409, 'c4_review_conflict');
   return null;
 }
 async function permitted(deps: Dependencies, caller: AuthenticatedCaller, input: C4MembershipInput) {

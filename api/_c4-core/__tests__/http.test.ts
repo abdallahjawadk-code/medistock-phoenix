@@ -109,4 +109,11 @@ describe('C4 trusted HTTP review choices and two identities', () => {
     expect(await response.json()).toEqual({ ok: false, error: 'c4_commit_outcome_unknown', requestId });
     expect(f.serviceRpc).toHaveBeenCalledOnce();
   });
+  it.each(['annual_catalog_year_inactive', 'annual_catalog_idempotency_conflict'])('treats confirmed SQL refusal %s as a conflict', async message => {
+    const f = setup(); f.userRpc.mockImplementation(async (name: string) => name === 'phoenix_c4_commit'
+      ? { data: null, error: { message } }
+      : { data: { version: 1, enabled: true, catalogCommitImplemented: true, trustedPreparationRequiresServer: true, maxPageRows: 50, maxEvidenceBytes: 262144 }, error: null });
+    const response = await f.handler(request()); expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ ok: false, error: 'c4_review_conflict' });
+  });
 });
