@@ -1,9 +1,11 @@
 /* P4-B inventory surface only. Keep all read/mutation owners and semantic
    status colors; bridge existing component tokens into the accepted palette. */
 html[data-pharma-design][data-phoenix-ui-phase][data-phoenix-visual] .prism-shell[data-pharma-screen='3'] {
+  & .nexus-app-column { background: var(--p4-wash) !important; }
   & #phoenix-main {
     background: var(--p4-wash) !important;
     border-start-start-radius: 0;
+    border-start-end-radius: 0;
   }
   & .nexus-inventory-transfers--center {
     --s: var(--p4-panel); --s2: var(--p4-wash); --surface: var(--p4-panel); --surface2: var(--p4-wash);
