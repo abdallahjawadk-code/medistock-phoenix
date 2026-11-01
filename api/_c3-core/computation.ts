@@ -5,6 +5,7 @@ import { createAnnualExtractionEngine, type AnnualExtractionTemplate, type Annua
 import type { AnnualExtractionOriginal } from '../../src/features/central-needs/annual-catalog/annual-extraction-core.ts';
 import { replayWorkbook } from '../../src/features/central-needs/import/node-replay.ts';
 import { DEFAULT_PARSER_LIMITS, type FileParseResult } from '../../src/features/central-needs/import/contract.ts';
+import { preflightC3Workbook, C3_ZIP_LIMITS } from './workbook-preflight.ts';
 
 export interface RegisteredAnnualLayout {
   template: AnnualExtractionTemplate;
@@ -46,6 +47,13 @@ export function createAnnualSourceComputer(registrations: readonly RegisteredAnn
   const engine = createAnnualExtractionEngine(registry.map(r => r.template));
   return {
     async compute(original: AnnualExtractionOriginal): Promise<AnnualPreparationResult> {
+      if (original.bytes.length < 1 || original.bytes.length > C3_ZIP_LIMITS.maxStandaloneInputBytes) {
+        return { status: 'held', reason: 'parse_rejected' };
+      }
+      // One immutable byte snapshot is used for admission and BOTH parser passes.
+      original = { ...original, scope: { ...original.scope }, bytes: Uint8Array.from(original.bytes) };
+      if (original.byteSize !== original.bytes.length || createHash('sha256').update(original.bytes).digest('hex') !== original.sha256
+        || !await preflightC3Workbook(original.bytes)) return { status: 'held', reason: 'parse_rejected' };
       const parsed = await replayWorkbook(original.bytes, original.filename);
       if (parsed.outcome !== 'accepted' || !parsed.workbook) return { status: 'held', reason: 'parse_rejected' };
       if (parsed.workbook.format !== original.filename.split('.').at(-1)?.toLowerCase()) {
