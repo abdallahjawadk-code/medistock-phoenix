@@ -265,6 +265,9 @@ try {
         await detail.getByRole('button', { name: lang === 'ar' ? 'العودة إلى الدفعات' : 'Back to batches', exact: true }).click();
         check(`${id} narrow detail return restores row focus`, await materialButton.isVisible()
           && await materialButton.evaluate(el => el === document.activeElement));
+        const restoredRow = await materialButton.boundingBox();
+        check(`${id} restored batch focus is inside the viewport`, restoredRow !== null
+          && restoredRow.y >= 0 && restoredRow.y + restoredRow.height <= 900);
         await materialButton.press('Enter');
         const stockSearch = page.locator('.nexus-it-stock-list input[type="search"]');
         await stockSearch.fill('E2E deliberately unmatched batch filter');

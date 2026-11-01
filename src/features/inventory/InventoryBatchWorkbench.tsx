@@ -39,7 +39,7 @@ export function InventoryBatchWorkbench({ batches, lang, renderBatch }: Props) {
     if (media?.matches) {
       if (detailOpen && !selectionRemoved) focusDetails();
       else if (!detailOpen && wasOpen.current && restoreFocus.current) {
-        (triggerRef.current?.isConnected ? triggerRef.current : listRef.current)?.focus({ preventScroll: true });
+        (triggerRef.current?.isConnected ? triggerRef.current : listRef.current)?.focus();
       }
     }
     const onViewportChange = () => {
