@@ -1,0 +1,71 @@
+/* P4-B first surface: real batch list/details only; no global theme mutation. */
+html[data-pharma-design][data-phoenix-ui-phase][data-phoenix-visual] .prism-stock-workbench {
+  --stock-ink: #111d42; --stock-muted: #53658b; --stock-panel: #fff;
+  --stock-soft: #f2f7fe; --stock-line: #d5e2f5; --stock-accent: #1554f5;
+  display: grid; grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+  grid-template-areas: 'detail list';
+  align-items: start; gap: 18px; min-inline-size: 0;
+  color: var(--stock-ink); font-family: 'Noto Sans Arabic Variable', system-ui, sans-serif;
+  &[lang='en'] { font-family: 'Sora', system-ui, sans-serif; }
+  & .prism-stock-workbench__list { min-inline-size: 0; grid-area: list; }
+  & .nexus-it-batch-row {
+    background: var(--stock-panel) !important; border: 1px solid var(--stock-line) !important;
+    border-radius: 16px !important; box-shadow: 0 6px 24px rgb(38 68 122 / 5%) !important;
+    color: var(--stock-ink); padding: 16px !important;
+  }
+  & .prism-stock-batch-select {
+    display: flex; align-items: center; gap: 10px; inline-size: 100%; min-block-size: 44px;
+    padding: 8px 10px; text-align: start; font: inherit; font-weight: 650;
+    background: var(--stock-soft); color: var(--stock-ink); border: 1px solid var(--stock-line); border-radius: 10px;
+    cursor: pointer; overflow-wrap: anywhere;
+    &[aria-pressed='true'] { border-color: var(--stock-accent); box-shadow: inset 3px 0 0 var(--stock-accent); }
+    &:focus-visible { outline: 3px solid var(--stock-accent); outline-offset: 3px; }
+    & svg { flex-shrink: 0; color: var(--stock-accent); }
+  }
+  & .nexus-it-batch-row__meta { color: var(--stock-muted) !important; overflow-wrap: anywhere; }
+  & .nexus-it-stat { color: var(--stock-ink); background: var(--stock-soft); border-color: var(--stock-line); }
+  & .nexus-it-batch-row__id { flex-basis: 100%; }
+  & .nexus-it-batch-row__stats { inline-size: 100%; gap: 8px !important; }
+  & .prism-stock-detail {
+    grid-area: detail;
+    min-inline-size: 0; padding: 24px; border: 1px solid #284360; border-radius: 18px;
+    background: linear-gradient(145deg, #102b43, #061827); color: #f0f5ff;
+    box-shadow: 0 12px 32px rgb(7 23 41 / 12%); overflow-wrap: anywhere;
+    & p, & h3 { margin: 0; }
+    & .prism-stock-detail__back {
+      display: none; min-block-size: 44px; padding: 8px 12px; margin-block-end: 16px;
+      border: 1px solid #8aaaff; border-radius: 10px; background: transparent; color: #f0f5ff; font: inherit; cursor: pointer;
+    }
+    & :is(h3, button):focus-visible { outline: 3px solid #a9bfff; outline-offset: 4px; }
+    & h3 { font: inherit; font-size: 23px; font-weight: 700; line-height: 1.5; color: #f0f5ff !important; }
+    & .prism-stock-detail__eyebrow { font-weight: 650; font-size: 16px; color: #f0f5ff; }
+    & .prism-stock-detail__scope { color: #b1c5e4; font-size: 12px; margin-block-start: 5px; }
+    & .prism-stock-detail__symbol { display: grid; place-items: center; block-size: 110px; color: #8aaaff; }
+    & .prism-stock-detail__code { color: #b1c5e4; margin-block: 6px 18px; }
+    & .prism-stock-detail__balances { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding-block: 18px; border-block: 1px solid #284360; }
+    & .prism-stock-detail__balances > div:first-child { grid-column: 1 / -1; }
+    & .prism-stock-detail__balances span { display: block; color: #b1c5e4; font-size: 12px; }
+    & .prism-stock-detail__balances strong { display: block; font-size: 22px; font-variant-numeric: tabular-nums; }
+    & .prism-stock-detail__balances > div:first-child strong { font-size: 38px; }
+    & dl { margin-block: 18px 0; }
+    & dl > div { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding-block: 10px; border-block-end: 1px solid #284360; font-size: 12px; }
+    & dt { color: #b1c5e4; }
+    & dd { margin: 0; min-inline-size: 0; }
+  }
+}
+html[data-theme='dark'][data-pharma-design][data-phoenix-ui-phase][data-phoenix-visual] .prism-stock-workbench {
+  --stock-ink: #f0f5ff; --stock-muted: #b1c5e4; --stock-panel: #0c2037;
+  --stock-soft: #102941; --stock-line: #284360; --stock-accent: #8aaaff;
+}
+@media (max-width: 1100px) {
+  html[data-pharma-design][data-phoenix-ui-phase][data-phoenix-visual] .prism-stock-workbench {
+    grid-template-columns: minmax(0, 1fr); grid-template-areas: 'list' 'detail';
+    & .prism-stock-detail { display: none; }
+    &[data-detail-open='true'] .prism-stock-workbench__list { display: none; }
+    &[data-detail-open='true'] .prism-stock-detail { display: block; }
+    & .prism-stock-detail .prism-stock-detail__back { display: inline-flex; align-items: center; }
+  }
+}
+@media (forced-colors: active) {
+  .prism-stock-batch-select[aria-pressed='true'] { outline: 2px solid Highlight; }
+}
