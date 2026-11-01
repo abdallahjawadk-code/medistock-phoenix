@@ -71,7 +71,11 @@ describe('documented monthly proposal reference; no defaults, approval or persis
     expect(reviewMonthlyDraft('10.25', context, policy(), changed.map(row => ({ ...row, quantity: '1' })), 'Change')).toMatchObject({ status: 'held', reason: 'sum_mismatch' });
   });
   it('refuses malformed runtime edits without throwing or ignoring extra fields', () => {
-    expect(reviewMonthlyDraft('10.25', context, policy(), [null as unknown as { month: number; quantity: string }], 'Change'))
+    const malformed = [null, { month: 4, quantity: '2.75' }, { month: 6, quantity: '2.5' }] as unknown as { month: number; quantity: string }[];
+    expect(reviewMonthlyDraft('10.25', context, policy(), malformed, 'Change'))
       .toMatchObject({ status: 'held', reason: 'invalid_edits' });
+    expect(reviewMonthlyDraft('10.25', context, policy(), [
+      { month: 2, quantity: '2.5', unauthorized: true }, { month: 4, quantity: '2.75' }, { month: 6, quantity: '2.5' },
+    ] as { month: number; quantity: string }[], 'Change')).toMatchObject({ status: 'held', reason: 'invalid_edits' });
   });
 });
