@@ -33,6 +33,9 @@ describe('P4-A scoped PRISM shell safety', () => {
     expect(css).toContain(".prism-shell[dir='ltr']");
     expect(css).toContain('prefers-reduced-motion');
     expect(css).toContain('forced-colors');
+    expect(css).toContain('.prism-shell > .premium-mobile-drawer');
+    expect(css).toContain(".prism-shell[dir='ltr'] > .premium-mobile-drawer");
+    expect(css).toContain(".prism-shell > .premium-mobile-drawer .premium-nav-item[data-active='true']");
     expect(css).not.toMatch(/(^|\n)\s*(?:html|body|:root)\s*\{/);
     expect(css).not.toMatch(/https?:\/\//);
     expect(fonts).toContain("url('/fonts/prism/Changa-variable.ttf')");
