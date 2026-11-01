@@ -312,6 +312,8 @@ html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-vis
   .prism-workspace *, .prism-material-picker *, .prism-needs-workspace * { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }
 .prism-verified-source { min-inline-size: 0; margin-block: 16px; padding: 16px; border: 1px solid var(--prism-line); border-radius: var(--prism-radius); background: var(--prism-surface); overflow-wrap: anywhere; }
+/* Keep foreground and background in the same theme throughout a theme switch. */
+.prism-workspace .prism-verified-source :where(button, input, select, textarea) { transition: border-color 140ms ease; }
 .prism-verified-source fieldset { min-inline-size: 0; }
 .prism-verified-source > .prism-source-canonical-review { border: 0; margin: 0; padding: 0; }
 .prism-source-profile { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; }

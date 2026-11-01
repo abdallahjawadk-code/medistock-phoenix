@@ -30,7 +30,7 @@ const output = resolve('docs/phoenix/e2e-acceptance/c4-source-ui'); mkdirSync(ou
 const report = { commit: head, sourceHead: prerequisite.sourceHead, environment: 'fresh synthetic PDA; actual Auth/C2/Node C3/C4 handlers and browser UI',
   productionSqlApplied: false, hostedCompatibility: prerequisite.hostedCompatibility, realWorkbookUsed: false,
   matrixCaptureMode: 'three actual viewport positions per combination; no element stitching',
-  completed: false, checks: [], errors: [], counters: null };
+  completed: false, checks: [], errors: [], counters: null, controlContrast: [] };
 const check = (name, passed) => { report.checks.push({ name, passed: Boolean(passed) }); console.log(`${passed ? 'PASS' : 'FAIL'} C4 UI ${name}`); assert(passed, name); };
 const sha = value => createHash('sha256').update(value).digest('hex');
 const owner = randomUUID(), year = 2026, maker = { email: `c4-ui-maker-${randomUUID()}@phoenix.local` };
@@ -132,6 +132,18 @@ try {
       check(`${label} no document overflow`, await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
       check(`${label} review direction and accessible heading`, await panel.getAttribute('dir') === (lang === 'ar' ? 'rtl' : 'ltr') && await panel.getByRole('heading', { level: 3 }).count() === 1);
       check(`${label} no quantity or approval editor in identity review`, await panel.getByLabel(/^(Annual quantity|الكمية السنوية)$/).count() === 0);
+      const contrast = await panel.locator('header button, .prism-source-profile select, .prism-source-profile button, .prism-source-canonical-review > section > button').evaluateAll(elements => elements.map(el => {
+        const style = getComputedStyle(el);
+        const rgb = value => { const parts = value.match(/[\d.]+/g)?.map(Number); return parts?.length === 3 || (parts?.length === 4 && parts[3] === 1) ? parts.slice(0, 3) : null; };
+        const luminance = values => values.map(n => { const c = n / 255; return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; }).reduce((sum, c, i) => sum + c * [0.2126, 0.7152, 0.0722][i], 0);
+        const foreground = rgb(style.color), background = rgb(style.backgroundColor);
+        const lights = foreground && background ? [luminance(foreground), luminance(background)].sort((a, b) => b - a) : null;
+        return { tag: el.tagName, enabled: !el.matches(':disabled'), color: style.color, background: style.backgroundColor,
+          opacity: style.opacity, ratio: lights ? (lights[0] + 0.05) / (lights[1] + 0.05) : null };
+      }));
+      report.controlContrast.push({ label, controls: contrast });
+      check(`${label} enabled source controls retain readable theme contrast`, contrast.length === 4
+        && contrast.every(row => row.enabled && row.opacity === '1' && row.ratio !== null && row.ratio >= 4.5));
       const heading = panel.getByRole('heading', { level: 3 }); await center(heading);
       check(`${label} review heading is visible below the fixed header`, await inViewport(heading));
       await page.screenshot({ path: resolve(output, `${label}-overview.png`) });
@@ -140,7 +152,12 @@ try {
       await fields.focus();
       if (scrolls) {
         const direction = await fields.evaluate(el => getComputedStyle(el).direction);
-        await fields.evaluate(el => { el.scrollLeft = 0; }); await page.keyboard.press(direction === 'rtl' ? 'ArrowLeft' : 'ArrowRight');
+        await fields.evaluate(async el => {
+          el.scrollTo({ left: 0, behavior: 'instant' });
+          await new Promise(requestAnimationFrame); await new Promise(requestAnimationFrame);
+        });
+        await page.waitForFunction(() => document.querySelector('[data-testid="verified-source-review"] .prism-annual-source-fields').scrollLeft === 0, null, { timeout: 3000 });
+        await fields.press(direction === 'rtl' ? 'ArrowLeft' : 'ArrowRight');
         await page.waitForFunction(() => Math.abs(document.querySelector('[data-testid="verified-source-review"] .prism-annual-source-fields').scrollLeft) > 0, null, { timeout: 3000 });
       }
       await center(coordinate);
