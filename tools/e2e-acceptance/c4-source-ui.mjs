@@ -139,11 +139,13 @@ try {
         const foreground = rgb(style.color), background = rgb(style.backgroundColor);
         const lights = foreground && background ? [luminance(foreground), luminance(background)].sort((a, b) => b - a) : null;
         return { tag: el.tagName, enabled: !el.matches(':disabled'), color: style.color, background: style.backgroundColor,
-          opacity: style.opacity, ratio: lights ? (lights[0] + 0.05) / (lights[1] + 0.05) : null };
+          opacity: style.opacity, transition: style.transitionProperty,
+          ratio: lights ? (lights[0] + 0.05) / (lights[1] + 0.05) : null };
       }));
       report.controlContrast.push({ label, controls: contrast });
       check(`${label} enabled source controls retain readable theme contrast`, contrast.length === 4
-        && contrast.every(row => row.enabled && row.opacity === '1' && row.ratio !== null && row.ratio >= 4.5));
+        && contrast.every(row => row.enabled && row.opacity === '1' && row.ratio !== null && row.ratio >= 4.5
+          && row.transition.split(',').every(property => ['border-color', 'none'].includes(property.trim()))));
       const heading = panel.getByRole('heading', { level: 3 }); await center(heading);
       check(`${label} review heading is visible below the fixed header`, await inViewport(heading));
       await page.screenshot({ path: resolve(output, `${label}-overview.png`) });
