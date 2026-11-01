@@ -69,4 +69,11 @@ describe('C3 trusted source preparation with explicit workbook coverage', () => 
     expect(await createAnnualOriginalPreparationService([layout()]).prepare(caller(rows), scope, id))
       .toEqual({ status: 'held', reason: 'evidence_limit' });
   });
+  it('also bounds declared extraction iterations for a sparse workbook', async () => {
+    const registered = layout(); registered.template.blocks = Array.from({ length: 32 }, (_, i) => ({
+      ...registered.template.blocks[0], blockId: `sparse-${i}`,
+    }));
+    expect(await createAnnualOriginalPreparationService([registered]).prepare(caller(), scope, id))
+      .toEqual({ status: 'held', reason: 'evidence_limit' });
+  });
 });

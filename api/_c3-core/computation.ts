@@ -57,12 +57,14 @@ export function createAnnualSourceComputer(registrations: readonly RegisteredAnn
         // Bound all blocks together using actual physical row extent. Never
         // truncate witnesses, or allocate 32 overlapping 10k-row projections.
         let rowSlots = 0;
+        let declaredIterations = 0;
         for (const block of registration.template.blocks) {
           const sheet = parsed.workbook.sheets.find(s => s.index === block.sheetIndex)!;
           const lastPhysicalRow = sheet.cells.reduce((max, c) => Math.max(max, c.coordinate.row), -1);
           rowSlots += Math.max(0, Math.min(block.lastRow, lastPhysicalRow) - block.firstRow + 1);
+          declaredIterations += Math.max(0, block.lastRow - block.firstRow + 1);
         }
-        if (rowSlots > 10_000) return { status: 'held', reason: 'evidence_limit' };
+        if (rowSlots > 10_000 || declaredIterations > 100_000) return { status: 'held', reason: 'evidence_limit' };
         // Shape/header recognition is only a prefilter. The accepted core
         // independently reparses, hashes and validates all candidate witnesses.
         const candidate = await engine.extract({ scope: original.scope, original,
