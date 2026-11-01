@@ -24,11 +24,24 @@ export function InventoryBatchWorkbench({ batches, lang, renderBatch }: Props) {
     if (selectedId !== null && !batches.some(batch => batch.id === selectedId)) setDetailOpen(false);
   }, [batches, selectedId]);
   useEffect(() => {
-    if (window.matchMedia?.('(max-width: 1100px)').matches) {
-      if (detailOpen) headingRef.current?.focus();
+    const media = window.matchMedia?.('(max-width: 1100px)');
+    const focusDetails = () => {
+      headingRef.current?.focus({ preventScroll: true });
+      headingRef.current?.closest('aside')?.scrollIntoView?.({ block: 'start', behavior: 'auto' });
+    };
+    if (media?.matches) {
+      if (detailOpen) focusDetails();
       else if (wasOpen.current) triggerRef.current?.focus();
     }
+    const onViewportChange = () => {
+      if (!detailOpen) return;
+      const active = document.activeElement;
+      if (media?.matches && (active === triggerRef.current || active === document.body)) focusDetails();
+      else if (!media?.matches && active?.classList.contains('prism-stock-detail__back')) headingRef.current?.focus({ preventScroll: true });
+    };
+    media?.addEventListener?.('change', onViewportChange);
     wasOpen.current = detailOpen;
+    return () => media?.removeEventListener?.('change', onViewportChange);
   }, [detailOpen, selected?.id]);
   const title = lang === 'ar' ? 'ملف المادة' : 'Material details';
   const unknown = lang === 'ar' ? 'غير مسجل' : 'Not recorded';

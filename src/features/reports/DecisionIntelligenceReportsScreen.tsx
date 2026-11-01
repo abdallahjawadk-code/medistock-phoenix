@@ -19,6 +19,7 @@
  * for the full per-section equivalence matrix that justified each move.
  */
 import { useEffect, useState, useMemo, useRef, type KeyboardEvent } from 'react';
+import '@/shared/ui/prism/prism-monitoring.css';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { useAsync } from '@/shared/lib/useAsync';

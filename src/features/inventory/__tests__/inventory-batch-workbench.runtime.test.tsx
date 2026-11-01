@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import '@testing-library/jest-dom/vitest';
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { WarehouseStockBatch } from '@/features/network/network.service';
 import { InventoryBatchWorkbench } from '../InventoryBatchWorkbench';
@@ -68,5 +68,32 @@ describe('real batch selection and read-only detail projection', () => {
     view.rerender(rows([first]));
     expect(screen.queryByRole('heading', { name: 'Paracetamol' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Back to batches' })).not.toBeInTheDocument();
+  });
+  it('keeps keyboard focus visible when resizing a selected desktop row into a narrow detail view', () => {
+    const media = Object.assign(new EventTarget(), { matches: false });
+    vi.stubGlobal('matchMedia', () => media);
+    render(rows([first, second]));
+    const trigger = screen.getByRole('button', { name: 'LOT-B' });
+    trigger.focus(); fireEvent.click(trigger);
+    act(() => { media.matches = true; media.dispatchEvent(new Event('change')); });
+    expect(screen.getByRole('heading', { name: 'Paracetamol' })).toHaveFocus();
+  });
+  it('preserves another control owner when resizing an already selected workbench', () => {
+    const media = Object.assign(new EventTarget(), { matches: false });
+    vi.stubGlobal('matchMedia', () => media);
+    render(<><input aria-label="Outside search" />{rows([first, second])}</>);
+    fireEvent.click(screen.getByRole('button', { name: 'LOT-B' }));
+    const outside = screen.getByRole('textbox', { name: 'Outside search' }); outside.focus();
+    act(() => { media.matches = true; media.dispatchEvent(new Event('change')); });
+    expect(outside).toHaveFocus();
+  });
+  it('moves focus from a narrow-only Back action when returning to desktop layout', () => {
+    const media = Object.assign(new EventTarget(), { matches: true });
+    vi.stubGlobal('matchMedia', () => media);
+    render(rows([first, second]));
+    fireEvent.click(screen.getByRole('button', { name: 'LOT-B' }));
+    screen.getByRole('button', { name: 'Back to batches' }).focus();
+    act(() => { media.matches = false; media.dispatchEvent(new Event('change')); });
+    expect(screen.getByRole('heading', { name: 'Paracetamol' })).toHaveFocus();
   });
 });
