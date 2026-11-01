@@ -160,6 +160,10 @@ BEGIN
  IF p_limit IS NULL OR p_limit NOT BETWEEN 1 AND 100
     THEN RAISE EXCEPTION 'rollover_page_limit_invalid' USING ERRCODE='23514'; END IF;
  PERFORM phoenix_private.annual_catalog_reason_v1(p_reason);
+ -- The target-version reason includes an immutable source reference prefix.
+ IF length(p_reason)>1700 THEN
+   RAISE EXCEPTION 'rollover_reason_too_long' USING ERRCODE='23514';
+ END IF;
  role_name:=phoenix_private.annual_catalog_guard_v1(p_organization_id,p_target_year,true);
  PERFORM phoenix_private.annual_catalog_guard_v1(p_organization_id,p_source_year,false);
  intent:=jsonb_build_object('organizationId',p_organization_id,'targetYear',p_target_year,
