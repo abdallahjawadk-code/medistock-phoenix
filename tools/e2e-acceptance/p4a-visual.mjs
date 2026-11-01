@@ -30,6 +30,9 @@ const out = resolve('docs/phoenix/e2e-acceptance/p4a');
 mkdirSync(out, { recursive: true });
 const report = {
   commit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
+  sourceHead: process.env.GITHUB_EVENT_PATH
+    ? JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8')).pull_request?.head?.sha ?? process.env.GITHUB_SHA
+    : execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
   recordedAt: new Date().toISOString(), base: base.href,
   database: 'disposable local Supabase; synthetic fixtures; real Auth/RLS',
   referenceParity: 'HOLD: framed concept references require separate human visual review',
@@ -71,6 +74,20 @@ async function settleView(page) {
     await Promise.all(animations.map(a => a.finished.catch(() => {})));
     await document.fonts.ready;
   });
+  // KPI counters use requestAnimationFrame rather than CSS animations. Capture
+  // their settled values, never a transient count-up presented as current stock.
+  let previous = null;
+  let stable = 0;
+  for (let sample = 0; sample < 50; sample += 1) {
+    const values = await page.locator('.rac3-kpi__value').allTextContents();
+    if (values.length === 0) return;
+    const current = JSON.stringify(values);
+    stable = current === previous ? stable + 1 : 0;
+    if (stable >= 3) return;
+    previous = current;
+    await page.waitForTimeout(120);
+  }
+  throw new Error('Statistics counters did not settle before evidence capture');
 }
 
 async function appearance(page, lang, theme) {
