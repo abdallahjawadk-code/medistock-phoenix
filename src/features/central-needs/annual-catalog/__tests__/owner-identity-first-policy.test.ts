@@ -19,7 +19,7 @@ describe('owner identity-first annual needs workflow (source-level invariants)',
     expect(annual).toContain("mt('annualIdentityFirstPolicy', lang)");
     expect(i18n).toContain('annualIdentityFirstPolicy:');
     expect(i18n).toContain('أدخل الاحتياج السنوي يدويًا');
-    expect(i18n).toContain('Excel quantities are never auto-approved as annual needs');
+    expect(i18n).toContain('source quantities are never imported automatically');
   });
 
   it('keeps the new annual workspace connected to manual quantity entry and explicit beneficiary selection', () => {
