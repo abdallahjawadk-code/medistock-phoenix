@@ -59,7 +59,7 @@ function consistentStructure(bytes: Uint8Array): void {
     }
     const directory = bytes[nameStart + nameLength - 1] === 47;
     const attributes = u32(at + 38);
-    requireValue(!directory || (compressed === 0 && expanded === 0 && !descriptor));
+    requireValue(!directory || (method === 0 && compressed === 0 && expanded === 0 && !descriptor));
     requireValue(!((attributes & 0x10) || ((attributes >>> 16) & 0xf000) === 0x4000) || directory);
     let rangeEnd = dataEnd;
     if (descriptor) {
@@ -78,7 +78,10 @@ function consistentStructure(bytes: Uint8Array): void {
 export async function preflightC3Workbook(bytes: Uint8Array): Promise<boolean> {
   if (bytes.length < 1 || bytes.length > C3_ZIP_LIMITS.maxStandaloneInputBytes) return false;
   const signature = bytes.length >= 4 ? new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(0, true) : 0;
-  if (signature === EOCD || signature === DESCRIPTOR) return false; // empty/spanned ZIP is not an XLSX source.
+  // SheetJS's ZIP dispatch is broader than CN2A's canonical magic detector:
+  // any PK followed by two bytes below 9 can reach its CFB ZIP reader.
+  const zipLike = bytes.length >= 4 && bytes[0] === 80 && bytes[1] === 75 && bytes[2] < 9 && bytes[3] < 9;
+  if (zipLike && signature !== LOCAL) return false;
   if (signature !== LOCAL) return true;
   try {
     consistentStructure(bytes);

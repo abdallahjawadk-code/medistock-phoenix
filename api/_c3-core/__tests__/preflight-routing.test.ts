@@ -26,6 +26,12 @@ describe('C3 admission precedes either accepted parser pass', () => {
     expect((await createAnnualSourceComputer([]).compute(input)).status).toBe('held');
     expect(replay).not.toHaveBeenCalled();
   });
+  it('never sends a noncanonical PK prefix to the broader SheetJS ZIP dispatch', async () => {
+    const zip = new JSZip(); zip.file('part.xml', 'synthetic');
+    const bytes = await zip.generateAsync({ type: 'uint8array' }); bytes[2] = 0; bytes[3] = 0;
+    expect((await createAnnualSourceComputer([]).compute(original(bytes, 'source.csv'))).status).toBe('held');
+    expect(replay).not.toHaveBeenCalled();
+  });
   it('parses the same captured bytes even if the caller mutates its buffer during admission', async () => {
     const bytes = new TextEncoder().encode('Name\nSynthetic'); const expected = Uint8Array.from(bytes);
     const task = createAnnualSourceComputer([]).compute(original(bytes, 'source.csv')); bytes.fill(0);

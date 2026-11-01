@@ -23,6 +23,14 @@ describe('C3 internal workbook ZIP preflight before unchanged SheetJS', () => {
   it('does not reinterpret non-ZIP workbook bytes or ordinary PK-prefixed CSV text', async () => {
     expect(await preflightC3Workbook(new TextEncoder().encode('PK,Code\nSynthetic,0007'))).toBe(true);
   });
+  it('covers every noncanonical PK dispatch which pinned SheetJS might treat as ZIP', async () => {
+    const bytes = await container();
+    for (let third = 0; third < 9; third++) for (let fourth = 0; fourth < 9; fourth++) {
+      if (third === 3 && fourth === 4) continue;
+      const changed = Uint8Array.from(bytes); changed[2] = third; changed[3] = fourth;
+      expect(await preflightC3Workbook(changed), `${third},${fourth}`).toBe(false);
+    }
+  });
   it.each(['method', 'flags', 'zip64', 'multidisk', 'count', 'overlap'] as const)(
     'refuses inconsistent or unsupported %s metadata before SheetJS can allocate', async kind => {
       const bytes = await container(); const view = new DataView(bytes.buffer); const c = central(bytes);
@@ -61,6 +69,14 @@ describe('C3 internal workbook ZIP preflight before unchanged SheetJS', () => {
   it('refuses directory payloads instead of letting an ignored entry reach SheetJS', async () => {
     const bytes = await container(); const c = central(bytes);
     bytes[30 + 7] = 47; bytes[c + 46 + 7] = 47;
+    expect(await preflightC3Workbook(bytes)).toBe(false);
+  });
+  it('refuses a zero-size DEFLATE directory with undeclared payload (negative control)', async () => {
+    const bytes = await container(); const c = central(bytes); const view = new DataView(bytes.buffer);
+    bytes[37] = 47; bytes[c + 53] = 47;
+    for (const offset of [14, 18, 22, c + 16, c + 20, c + 24]) view.setUint32(offset, 0, true);
+    // Tiny source only; never invoke the vulnerable downstream parser here.
+    expect((await readZipSafely(bytes, C3_ZIP_LIMITS, nodeInflate)).safe).toBe(true);
     expect(await preflightC3Workbook(bytes)).toBe(false);
   });
   it('refuses ZIP64 extra fields rather than relying only on version markers', async () => {
