@@ -1,0 +1,77 @@
+/* P4-A: presentation-only PRISM shell. Never style unconverted screen content. */
+@import './prism-fonts.css';
+
+.prism-shell {
+  --p4-ink: #111d42;
+  --p4-muted: #53658b;
+  --p4-line: #d5e2f5;
+  --p4-panel: #fff;
+  --p4-wash: #f2f7fe;
+  --p4-accent: #1554f5;
+  --p4-selected: #eaf1ff;
+  --p4-focus: #1554f5;
+  color: var(--p4-ink);
+}
+[data-theme='dark'] .prism-shell {
+  --p4-ink: #f0f5ff;
+  --p4-muted: #b1c5e4;
+  --p4-line: #284360;
+  --p4-panel: #0c2037;
+  --p4-wash: #071729;
+  --p4-accent: #8aaaff;
+  --p4-selected: #18375c;
+  --p4-focus: #a9bfff;
+}
+.prism-shell > .premium-sidebar {
+  background: var(--p4-panel) !important;
+  border-inline-end-color: var(--p4-line) !important;
+  color: var(--p4-ink);
+  font-family: 'Noto Sans Arabic Variable', system-ui, sans-serif;
+}
+.prism-shell > .premium-sidebar .nexus-brand-title,
+.prism-shell > .premium-sidebar .pharma-nav__section-title,
+.prism-shell > .premium-sidebar .pharma-nav__workspace {
+  color: var(--p4-ink);
+}
+.prism-shell > .premium-sidebar .premium-nav-item {
+  border-radius: 12px;
+  color: var(--p4-ink);
+  font-family: inherit;
+  transition: background-color 160ms ease, color 160ms ease;
+}
+.prism-shell > .premium-sidebar .premium-nav-item[data-active='true'] {
+  background: var(--p4-selected);
+  color: var(--p4-accent);
+}
+.prism-shell > .premium-sidebar .premium-nav-item:hover {
+  background: var(--p4-selected);
+}
+.prism-shell .premium-topbar {
+  background: var(--p4-panel) !important;
+  border-bottom-color: var(--p4-line) !important;
+  color: var(--p4-ink);
+}
+.prism-shell .premium-topbar .nexus-topbar-heading {
+  color: var(--p4-ink);
+  font-family: 'Changa', 'Noto Sans Arabic Variable', system-ui, sans-serif;
+  line-height: 1.45;
+}
+.prism-shell .premium-topbar .nexus-topbar-scope { color: var(--p4-muted); }
+.prism-shell .premium-topbar :is(button, a):focus-visible,
+.prism-shell > .premium-sidebar :is(button, a):focus-visible {
+  outline: 3px solid var(--p4-focus);
+  outline-offset: 2px;
+}
+.prism-shell[dir='ltr'] > .premium-sidebar,
+.prism-shell[dir='ltr'] .premium-topbar { font-family: 'Sora', system-ui, sans-serif; }
+.prism-shell[dir='ltr'] .premium-topbar .nexus-topbar-heading { font-family: 'Sora', system-ui, sans-serif; }
+@media (max-width: 767px) {
+  .prism-shell .premium-topbar { min-inline-size: 0; }
+  .prism-shell .premium-topbar .nexus-topbar-heading { overflow-wrap: anywhere; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .prism-shell > .premium-sidebar .premium-nav-item { transition: none; }
+}
+@media (forced-colors: active) {
+  .prism-shell > .premium-sidebar .premium-nav-item[data-active='true'] { outline: 2px solid Highlight; }
+}
