@@ -15,7 +15,7 @@ export interface MonthlyPolicyReference {
   readonly unitStep: string; readonly eligibleMonths: readonly number[];
   readonly fixedMonths: ReadonlyArray<{ readonly month: number; readonly quantity: string;
     readonly status: 'approved' | 'locked'; readonly ledgerReference: string }>;
-  readonly basis: { readonly documentReference: string; readonly documentSha256: string; readonly periodReference: string;
+  readonly basis: { readonly beneficiaryOrganizationId: string; readonly documentReference: string; readonly documentSha256: string; readonly periodReference: string;
     readonly priorAllocationStatus: 'none_verified' | 'snapshot_verified'; readonly ledgerSnapshotSha256: string;
     readonly approvedById: string; readonly approvedByName: string; readonly approvedAt: string };
 }
@@ -84,15 +84,18 @@ export function decodeMonthlyPolicyReference(value: unknown, expected: MonthlyPr
   }).sort((a, b) => a.month - b.month);
   requireValue(new Set(fixedMonths.map(row => row.month)).size === fixedMonths.length
     && fixedMonths.every(row => !eligibleMonths.includes(row.month)));
-  const basis = object(row.basis, ['documentReference','documentSha256','periodReference','priorAllocationStatus',
+  const basis = object(row.basis, ['beneficiaryOrganizationId','documentReference','documentSha256','periodReference','priorAllocationStatus',
     'ledgerSnapshotSha256','approvedById','approvedByName','approvedAt']);
   const priorAllocationStatus = fixedMonths.length ? 'snapshot_verified' : 'none_verified';
+  // General unit/period rules may be shared. Neither prior quantities nor
+  // verified absence of prior allocations can be shared between beneficiaries.
+  requireValue(uuid(basis.beneficiaryOrganizationId) === expected.beneficiaryOrganizationId);
   requireValue(basis.priorAllocationStatus === priorAllocationStatus);
   const approvedAt = text(basis.approvedAt, 64); requireValue(Number.isFinite(Date.parse(approvedAt)) && /T.*(?:Z|[+-]\d\d:\d\d)$/.test(approvedAt));
   return Object.freeze({ policyId: uuid(row.policyId), version: row.version, fingerprint: digest(row.fingerprint), status: 'approved',
     context: Object.freeze({ ...expected, beneficiaryOrganizationId: context.beneficiaryOrganizationId as string | null }),
     unitStep, eligibleMonths: Object.freeze(eligibleMonths), fixedMonths: Object.freeze(fixedMonths),
-    basis: Object.freeze({ documentReference: text(basis.documentReference), documentSha256: digest(basis.documentSha256),
+    basis: Object.freeze({ beneficiaryOrganizationId: uuid(basis.beneficiaryOrganizationId), documentReference: text(basis.documentReference), documentSha256: digest(basis.documentSha256),
       periodReference: text(basis.periodReference), priorAllocationStatus,
       ledgerSnapshotSha256: digest(basis.ledgerSnapshotSha256), approvedById: uuid(basis.approvedById),
       approvedByName: text(basis.approvedByName, 4000), approvedAt }) });
@@ -122,14 +125,17 @@ export function reviewMonthlyDraft(annual: string, context: MonthlyProposalConte
   edits: readonly { month: number; quantity: string }[], reason: string) {
   const proposed = proposeFromMonthlyPolicy(annual, context, reference); if (proposed.status !== 'ready') return proposed;
   const policy = decodeMonthlyPolicyReference(reference, context);
-  if (!Array.isArray(edits) || edits.length !== policy.eligibleMonths.length || new Set(edits.map(row => row.month)).size !== edits.length
+  if (!Array.isArray(edits) || edits.length !== policy.eligibleMonths.length
+    || edits.some(row => !row || typeof row !== 'object' || Array.isArray(row)
+      || Object.keys(row).length !== 2 || !Object.hasOwn(row, 'month') || !Object.hasOwn(row, 'quantity'))
+    || new Set(edits.map(row => row.month)).size !== edits.length
     || edits.some(row => !policy.eligibleMonths.includes(row.month) || !checkManualQuantityText(row.quantity).ok || !multiple(row.quantity, policy.unitStep))) {
     return { status: 'held' as const, reason: 'invalid_edits' };
   }
   const total = sum([...policy.fixedMonths.map(row => row.quantity), ...edits.map(row => row.quantity)]);
   if (!sameQuantity(total, annual)) return { status: 'held' as const, reason: 'sum_mismatch' };
   const changed = edits.some(row => !sameQuantity(row.quantity, proposed.rows.find(previous => previous.month === row.month)!.quantity));
-  if (changed && (!reason.trim() || reason.length > 2000 || CONTROL.test(reason))) return { status: 'held' as const, reason: 'reason_required' };
+  if (changed && (typeof reason !== 'string' || !reason.trim() || reason.length > 2000 || CONTROL.test(reason))) return { status: 'held' as const, reason: 'reason_required' };
   return { status: 'ready' as const, annualQuantity: annual, policyFingerprint: policy.fingerprint, total, changed,
     requiresEmployeeJournal: true as const, effectiveAllocation: false as const,
     rows: [...proposed.rows.filter(row => row.kind === 'fixed'), ...edits.map(row => ({ ...row, kind: 'suggested' as const }))].sort((a, b) => a.month - b.month),

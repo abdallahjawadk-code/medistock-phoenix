@@ -7,7 +7,7 @@ const context = { ownerOrgId: id(1), planningYear: 2026, annualItemId: id(2), fi
 const policy = () => ({ policyId: id(6), version: 1, fingerprint: 'a'.repeat(64), status: 'approved',
   context: { ...context, beneficiaryOrganizationId: null as string | null }, unitStep: '0.25', eligibleMonths: [6, 2, 4],
   fixedMonths: [{ month: 1, quantity: '2.5', status: 'approved', ledgerReference: 'synthetic-prior-allocation' }],
-  basis: { documentReference: 'Synthetic approved unit policy', documentSha256: 'b'.repeat(64),
+  basis: { beneficiaryOrganizationId: context.beneficiaryOrganizationId, documentReference: 'Synthetic approved unit policy', documentSha256: 'b'.repeat(64),
     periodReference: 'Synthetic eligible-period decision', priorAllocationStatus: 'snapshot_verified',
     ledgerSnapshotSha256: 'c'.repeat(64), approvedById: id(7), approvedByName: 'Synthetic reviewer', approvedAt: '2026-01-01T10:00:00.000Z' } });
 
@@ -32,6 +32,11 @@ describe('documented monthly proposal reference; no defaults, approval or persis
   it('requires an exact beneficiary match for a beneficiary-specific policy', () => {
     const p = policy(); p.context.beneficiaryOrganizationId = id(9);
     expect(proposeFromMonthlyPolicy('10', context, p)).toMatchObject({ status: 'held', reason: 'invalid_policy' });
+  });
+  it.each([true, false])('never reuses a populated or empty ledger snapshot for another beneficiary: populated=%s', populated => {
+    const p = policy();
+    if (!populated) { p.fixedMonths = []; p.basis.priorAllocationStatus = 'none_verified'; }
+    expect(proposeFromMonthlyPolicy('10', { ...context, beneficiaryOrganizationId: id(9) }, p)).toMatchObject({ status: 'held', reason: 'invalid_policy' });
   });
   it.each([undefined, '0', '0.00', '1e-3'])('does not infer or coerce an invalid documented step %s', unitStep => {
     expect(proposeFromMonthlyPolicy('10', context, { ...policy(), unitStep })).toMatchObject({ status: 'held', reason: 'invalid_policy' });
@@ -64,5 +69,9 @@ describe('documented monthly proposal reference; no defaults, approval or persis
       changed: true, requiresEmployeeJournal: true, effectiveAllocation: false, total: '10.25' });
     expect(reviewMonthlyDraft('10.25', context, policy(), [...changed, { month: 1, quantity: '0' }], 'Change')).toMatchObject({ status: 'held', reason: 'invalid_edits' });
     expect(reviewMonthlyDraft('10.25', context, policy(), changed.map(row => ({ ...row, quantity: '1' })), 'Change')).toMatchObject({ status: 'held', reason: 'sum_mismatch' });
+  });
+  it('refuses malformed runtime edits without throwing or ignoring extra fields', () => {
+    expect(reviewMonthlyDraft('10.25', context, policy(), [null as unknown as { month: number; quantity: string }], 'Change'))
+      .toMatchObject({ status: 'held', reason: 'invalid_edits' });
   });
 });
