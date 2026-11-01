@@ -149,7 +149,8 @@ try {
       check(`${name} no document overflow`, await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
       const names = await page.locator('.prism-annual-picker .prism-annual-result .prism-material-identity__name').evaluateAll(elements => elements.map(el => {
         const box = el.getBoundingClientRect(), line = Number.parseFloat(getComputedStyle(el).lineHeight);
-        return box.width >= 80 && box.height <= line * 3 + 1;
+        const actions = el.closest('.prism-annual-result').querySelector('.prism-annual-result__actions').getBoundingClientRect();
+        return box.width >= 80 && box.height <= line * 3 + 1 && actions.height <= 120;
       }));
       check(`${name} short material names remain readable beside their actions`, names.length === 2 && names.every(Boolean));
       check(`${name} labelled table and keyboard scroll region`, await panel.getByRole('table', { name: lang === 'ar' ? 'اقتراح التحصيص الشهري' : 'Monthly distribution proposal' }).count() === 1
