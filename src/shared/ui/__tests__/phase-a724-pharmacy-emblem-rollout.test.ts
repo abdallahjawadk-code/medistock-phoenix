@@ -87,6 +87,9 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
     const C4_CANDIDATE='supabase/candidates/P3C4_verified_membership_NOT_APPLIED.sql';
     const C4_PROOF='supabase/candidates/__tests__/p3c4-verified-membership.dynamic.test.ts';
     const C4_SHA256='0e6112b48e26ce35681970a1765f333efb1bab33f1ab679ec8194c55840130a7';
+    const MONTHLY_CANDIDATE='supabase/candidates/R2B_monthly_policy_reference_NOT_APPLIED.sql';
+    const MONTHLY_PROOF='supabase/candidates/__tests__/r2b-monthly-policy.dynamic.test.ts';
+    const MONTHLY_SHA256='6db1e13411f5773c0f7ff281a2bbbc76154acdde1eaa8b4eb642d73ef72f44c6';
     const WATCHED=['package.json','package-lock.json','supabase','src/shared/supabase','src/shared/authz','src/app','.env','.env.local'] as const;
     const EXCLUDED:string[]=[
       'src/app/AppContext.tsx','src/app/AuthenticatedApp.tsx','src/app/__tests__/auth-resilience-context.runtime.test.tsx','src/app/__tests__/auth-dead-end-screens.runtime.test.tsx','src/app/__tests__/auth-session-race.runtime.test.tsx','src/app/__tests__/db-pressure-quick-wins.test.ts','src/app/__tests__/auth-cold-start-deadline.runtime.test.tsx','src/app/screen-continuity.ts','src/app/__tests__/phase-b45-screen-continuity.runtime.test.ts','src/shared/supabase/services/auth.service.ts','src/shared/supabase/services/availability.service.ts','src/shared/supabase/services/__tests__/frontend-live-removed-at-filters.test.ts','src/shared/supabase/services/__tests__/auth-signout.runtime.test.ts','src/shared/supabase/__tests__/permission-persistence.test.ts','src/shared/supabase/__tests__/permission-matrix-readiness.test.ts','src/shared/supabase/__tests__/permission-save-diagnostics.test.ts','src/shared/authz/__tests__/screen-access.test.ts',
@@ -885,6 +888,8 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
       R2A_PROOF,
       C4_CANDIDATE,
       C4_PROOF,
+      MONTHLY_CANDIDATE,
+      MONTHLY_PROOF,
       'supabase/candidates/__tests__/ff1-forward-fix.dynamic.test.ts',
       'supabase/migrations/__tests__/w0-central-needs-excel-path-authority.dynamic.test.ts',
       'supabase/candidates/__tests__/functional-journey.dynamic.test.ts',
@@ -977,6 +982,17 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
       'supabase/migrations/236_phoenix_verified_membership.sql'];
     expect(flag(c4NearMisses)).toEqual(c4NearMisses);
     expect(acceptsC4Candidate(c4NearMisses[0],c4Bytes)).toBe(false);
+    const acceptsMonthlyCandidate=(path:string,bytes:Uint8Array)=>path===MONTHLY_CANDIDATE
+      && EXCLUDED.includes(path) && createHash('sha256').update(bytes).digest('hex')===MONTHLY_SHA256;
+    const monthlyBytes=readFileSync(join(ROOT,MONTHLY_CANDIDATE));
+    expect(flag([MONTHLY_CANDIDATE,MONTHLY_PROOF])).toEqual([]);
+    expect(acceptsMonthlyCandidate(MONTHLY_CANDIDATE,monthlyBytes)).toBe(true);
+    expect(acceptsMonthlyCandidate(MONTHLY_CANDIDATE,Buffer.concat([monthlyBytes,Buffer.from('\nSELECT 1;')]))).toBe(false);
+    const monthlyNearMisses=[`${MONTHLY_CANDIDATE}.bak`,`${MONTHLY_PROOF}.orig`,
+      'supabase/candidates/R2B_monthly_policy_reference_NOT_APPLIED_v2.sql',
+      'supabase/migrations/236_phoenix_monthly_policy.sql'];
+    expect(flag(monthlyNearMisses)).toEqual(monthlyNearMisses);
+    expect(acceptsMonthlyCandidate(monthlyNearMisses[0],monthlyBytes)).toBe(false);
     expect(acceptsC2Candidate(P3C2_CANDIDATE,Buffer.concat([c2Bytes,Buffer.from('\nSELECT 1; -- unreviewed change\n')]))).toBe(false);
     const c2NearMisses=[`${P3C2_CANDIDATE}.unreviewed`,
       'supabase/candidates/P3C2_annual_originals_NOT_APPLIED_v2.sql',

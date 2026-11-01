@@ -533,6 +533,11 @@ jobs:
           SUPABASE_ANON_KEY: ${{ steps.sb.outputs.anon_key }}
         run: node tools/e2e-acceptance/c4-verified-membership.mjs e2e-seed.json
 
+      - name: Verify documented monthly policy reference (disposable only)
+        env:
+          SUPABASE_ANON_KEY: ${{ steps.sb.outputs.anon_key }}
+        run: node tools/e2e-acceptance/monthly-policy-reference.mjs e2e-seed.json
+
       - name: Stop preview server
         if: always()
         run: kill "$(cat /tmp/vite-preview.pid)" 2>/dev/null || true
