@@ -54,6 +54,12 @@ name: E2E authenticated acceptance
 # ============================================================================
 on:
   workflow_dispatch:
+    inputs:
+      owner_preview:
+        description: 'Run all gates, then serve the protected, temporary r18 owner preview'
+        required: false
+        default: false
+        type: boolean
   pull_request:
     branches:
       - master
@@ -67,15 +73,18 @@ concurrency:
 
 jobs:
   authenticated-acceptance:
-    name: Authenticated browser acceptance (disposable local Supabase)
+    # Manual owner serving must not leave the required PR check pending for an hour.
+    # Every PR still emits the exact unconditional acceptance context.
+    name: ${{ github.event_name == 'workflow_dispatch' && inputs.owner_preview == true && 'Owner preview acceptance and bounded serving' || 'Authenticated browser acceptance (disposable local Supabase)' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: ${{ inputs.owner_preview == true && 110 || 30 }}
 
     steps:
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
+          fetch-depth: ${{ inputs.owner_preview == true && '0' || '1' }}
 
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -558,6 +567,60 @@ jobs:
         env:
           SUPABASE_ANON_KEY: ${{ steps.sb.outputs.anon_key }}
         run: node tools/e2e-acceptance/monthly-proposal-ui.mjs http://127.0.0.1:4173 e2e-seed.json
+
+      - name: Start protected owner preview after all acceptance gates
+        if: github.event_name == 'workflow_dispatch' && inputs.owner_preview == true
+        env:
+          SUPABASE_ANON_KEY: ${{ steps.sb.outputs.anon_key }}
+          PHOENIX_R18_OWNER_GATE: ${{ secrets.PHOENIX_R18_OWNER_GATE }}
+          PHOENIX_R18_OWNER_PASSWORD: ${{ secrets.PHOENIX_R18_OWNER_PASSWORD }}
+        run: |
+          set -euo pipefail
+          export PHOENIX_CLOUDFLARED="$RUNNER_TEMP/phoenix-cloudflared"
+          curl --fail --silent --show-error --location --retry 3 https://github.com/cloudflare/cloudflared/releases/download/2026.10.7/cloudflared-linux-amd64 --output "$PHOENIX_CLOUDFLARED"
+          echo "1f99fb518b83dec2ba8d870a7cc991d82a77e6196295a3d2754ba17ab9f91872  $PHOENIX_CLOUDFLARED" | sha256sum --check
+          chmod 700 "$PHOENIX_CLOUDFLARED"
+          node tools/owner-preview/serve.mjs > "$RUNNER_TEMP/phoenix-owner-preview.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/phoenix-owner-preview.pid"
+          for i in $(seq 1 360); do
+            test -f docs/phoenix/e2e-acceptance/owner-preview/ready.json && exit 0
+            if ! kill -0 "$(cat "$RUNNER_TEMP/phoenix-owner-preview.pid")" 2>/dev/null; then
+              echo '::error::Owner preview failed; inspect the sanitized proof artifact.'
+              exit 1
+            fi
+            sleep 2
+          done
+          echo '::error::Owner preview did not pass its public-browser proof in time.'
+          exit 1
+
+      - name: Upload verified owner preview while it is serving
+        if: always() && github.event_name == 'workflow_dispatch' && inputs.owner_preview == true
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: owner-preview-evidence
+          path: docs/phoenix/e2e-acceptance/owner-preview/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Keep the verified owner preview available until its bounded expiry
+        if: github.event_name == 'workflow_dispatch' && inputs.owner_preview == true
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+          const ready=JSON.parse(readFileSync('docs/phoenix/e2e-acceptance/owner-preview/ready.json','utf8'));
+          if(!ready.passed)throw Error('Preview proof is not accepted');
+          const pid=Number(readFileSync(process.env.RUNNER_TEMP+'/phoenix-owner-preview.pid','utf8'));
+          while(Date.now()<Date.parse(ready.expiresAt)){
+            process.kill(pid,0);
+            await new Promise(done=>setTimeout(done,Math.min(30000,Math.max(0,Date.parse(ready.expiresAt)-Date.now()))));
+          }
+          NODE
+
+      - name: Stop protected owner preview
+        if: always() && github.event_name == 'workflow_dispatch' && inputs.owner_preview == true
+        run: |
+          test ! -f "$RUNNER_TEMP/phoenix-owner-preview.pid" || kill "$(cat "$RUNNER_TEMP/phoenix-owner-preview.pid")" 2>/dev/null || true
 
       - name: Stop preview server
         if: always()

@@ -52,7 +52,10 @@ const REQUIRED_CONTEXT = 'Authenticated browser acceptance (disposable local Sup
 
 describe('authenticated acceptance — required-check compatibility', () => {
   it('emits the EXACT context string the master ruleset requires', () => {
-    expect(E2E_YML).toContain(`name: ${REQUIRED_CONTEXT}`);
+    const name = code(E2E_YML).split('\n').find(line => /^\s+name:/.test(line) && line.includes(REQUIRED_CONTEXT));
+    expect(name).toBeDefined();
+    expect(name).toContain("github.event_name == 'workflow_dispatch' && inputs.owner_preview == true");
+    expect(name).toContain(`|| '${REQUIRED_CONTEXT}'`);
   });
 
   it('carries NO pull_request paths filter — a required check must be unconditional', () => {
