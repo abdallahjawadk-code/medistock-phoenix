@@ -219,6 +219,17 @@ try {
       await page.locator('.nexus-it-context-bar select').selectOption(seed.stageE.whA);
       await page.getByRole('tab', { name: lang === 'ar' ? 'رصيد المخزن' : 'Warehouse stock', exact: true }).click();
       await settleView(page);
+      const inventoryPaint = await page.locator('[data-prism-surface="inventory"]').evaluate(el => {
+        const header = el.querySelector('.nexus-it-header');
+        const tab = el.querySelector('.nexus-it-tab[aria-selected="true"]');
+        return { font: getComputedStyle(el).fontFamily,
+          headerBackground: getComputedStyle(header).backgroundColor,
+          activeBackground: getComputedStyle(tab).backgroundColor,
+          activeForeground: getComputedStyle(tab).color };
+      });
+      check(`${id} real inventory uses PRISM surface`, inventoryPaint.headerBackground === (theme === 'dark' ? 'rgb(12, 32, 55)' : 'rgb(255, 255, 255)'), inventoryPaint);
+      check(`${id} inventory uses approved font`, inventoryPaint.font.includes(lang === 'ar' ? 'Noto Sans Arabic' : 'Sora'), inventoryPaint.font);
+      check(`${id} active inventory tab contrast`, contrast(inventoryPaint.activeForeground, inventoryPaint.activeBackground) >= 4.5, inventoryPaint);
       await page.locator('.nexus-it-stock-list').getByText('E2E Initial Provisioning Material', { exact: true }).waitFor();
       const materialButton = page.locator('.prism-stock-batch-select').filter({ hasText: 'E2E Initial Provisioning Material' });
       await materialButton.focus();
