@@ -75,3 +75,38 @@
 @media (forced-colors: active) {
   .prism-shell > .premium-sidebar .premium-nav-item[data-active='true'] { outline: 2px solid Highlight; }
 }
+
+/* The mobile drawer is a sibling of the app column, not a child of the desktop
+   sidebar. Keep its PRISM styling explicit so 320–390px navigation does not
+   silently retain the Molecular palette while desktop switches. */
+.prism-shell > .premium-mobile-drawer {
+  background: var(--p4-panel) !important;
+  color: var(--p4-ink);
+  border-inline-end: 1px solid var(--p4-line);
+  font-family: 'Noto Sans Arabic Variable', system-ui, sans-serif;
+}
+.prism-shell > .premium-mobile-drawer :is(.nexus-brand-title, .pharma-nav__section-title, .pharma-nav__workspace) {
+  color: var(--p4-ink);
+}
+.prism-shell > .premium-mobile-drawer .premium-nav-item {
+  color: var(--p4-ink);
+  border-radius: 12px;
+  font-family: inherit;
+}
+.prism-shell > .premium-mobile-drawer .premium-nav-item[data-active='true'],
+.prism-shell > .premium-mobile-drawer .premium-nav-item:hover {
+  color: var(--p4-accent);
+  background: var(--p4-selected);
+}
+.prism-shell > .premium-mobile-drawer :is(button, a):focus-visible {
+  outline: 3px solid var(--p4-focus);
+  outline-offset: 2px;
+}
+.prism-shell[dir='ltr'] > .premium-mobile-drawer {
+  font-family: 'Sora', system-ui, sans-serif;
+}
+@media (forced-colors: active) {
+  .prism-shell > .premium-mobile-drawer .premium-nav-item[data-active='true'] {
+    outline: 2px solid Highlight;
+  }
+}
