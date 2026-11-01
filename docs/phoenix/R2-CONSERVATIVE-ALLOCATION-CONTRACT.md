@@ -13,10 +13,11 @@ Every calculation binds one owner organization, planning year, beneficiary, lega
 |---|---|
 | A | The effective approved annual quantity for the exact scope and reference. |
 | C | The sum of effective approved operational allocations charged to that reference. Exclude drafts, cancelled allocations and replaced versions. Count a corrected allocation's effective successor once. |
-| D | Execution legally charged to those allocations, including only explicitly authorized cancellation/return settlements. The event binding is a separate implementation prerequisite below. |
+| D | Final authorized dispatch execution to the allocation's beneficiary, charged once, less only separately approved eligible R2 settlements. Dispatch binding requirements below are owner-adopted; their operational implementation is not complete. |
 | Remaining to allocate | A − C. |
 | Remaining to fulfill | C − D. |
 | Received | Valid receipt documents, shown separately. Do not subtract sending and receiving as two executions of the same quantity. |
+| Reserved | The canonical stock engine's reservation state, shown independently. It is neither an approved allocation nor execution or receipt. |
 | Stock balance | The canonical inventory/lot ledger's answer. Never infer it from A, C or D. |
 
 If a reference is missing, a read fails, or scopes/units do not agree, return an explicit unavailable/conflict state. Do not substitute zero. Preserve a negative result as an overage requiring resolution; do not clamp it to zero or silently rewrite its inputs.
@@ -33,6 +34,18 @@ Example: A=12,000, C=3,000 and D=2,200 gives 9,000 remaining to allocate and 800
 6. Bind an idempotency key to the actor, action, full scope, expected version and payload. An unchanged authorized retry returns the original receipt; a changed intent under that key is refused. A client timeout is an unknown outcome requiring reconciliation, not an automatic new attempt.
 
 Approving an annual need or allocation does not reserve, issue or decrement physical inventory by itself. Keep planning approval and inventory movements separate.
+
+## Owner-adopted execution point
+
+The owner subsequently adopted final legal sending as the R2 execution point on 2026-11-01. Charge the actual authorized quantity once when the canonical final dispatch to the allocation's beneficiary commits. Drafts, failed operations, duplicate requests and intermediate or downstream movement of the same quantity do not create another charge. Receipt, including partial receipt, is a separate measured fact and never a second execution.
+
+Bind the effective allocation/version and its complete accounting scope explicitly to the canonical dispatch line and movement. Verify the actual destination, legal identity, unit, reference and eligible remaining quantity on the server. The stock movement and R2 charge must commit or roll back together in the legal send transaction. A successful historical or unlinked stock movement is not eligible for automatic retrospective quota attribution. The UI may not fabricate a successful charge from a send request, timeout or receipt.
+
+Differences, shortages and returns have their own immutable settlement history, retaining the reason, trusted actor identity/name/role, server timestamp and related legal document. Observing a difference or physical return does not restore capacity. A capacity-restoring settlement requires explicit authorized approval, bound to the original allocation/execution and eligible confirmed document quantity; exact retries and concurrent partial settlements cannot exceed that quantity. Preserve creation and approval as separate acts. Do not inherit the R1 same-actor exception.
+
+Expose annual need, approved allocation, physical reservation, charged execution, actual receipt and their named remainders separately. A refusal or unavailable read must not be rendered as a successful zero balance. The existing conservative ceiling and floor remain binding.
+
+Acceptance must exercise actual canonical send, partial receipt, differences, returns, request replay and concurrent operations in a disposable database with real authorization. Pure arithmetic tests alone do not satisfy these execution cases. Operational SQL remains separate from design and cannot be applied to Production through a design merge.
 
 ## Returns and cancellation
 
@@ -64,7 +77,7 @@ Rejected and unknown-outcome operations must retain an auditable correlation ide
 
 Before operational R2 writes, specify and independently verify:
 
-- The exact existing canonical events/states that charge D, including in-transit sending, full/partial receipt, cancellation, rejection and return. Identify the legal point of charge and prove that receipt does not double-count sending.
+- The exact canonical corridor implementations that atomically bind the adopted final-send point to D, including in-transit sending, full/partial receipt, cancellation, rejection and return. Prove that receipt does not double-count sending.
 - Effective-version selection, lock ordering, compare-and-swap conflicts, legal quantity steps and bounded restoration across partial events.
 - The exact new permission keys, role defaults and server checks, without broadening previous domain authority.
 - A separate reviewed SQL candidate, disposable low-privilege/native tests and real Auth/PostgREST acceptance. Preserve immutable historical migrations and prove compatibility with accepted R1 and inventory behavior.
