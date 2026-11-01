@@ -420,7 +420,7 @@ export function AnnualNeedsWorkspace({ lang, scope, actorId, revision, capabilit
             onPick={(item) => void previewExisting(item.id)} onRemove={() => undefined} onRequestRegistration={() => setRegistration(true)} />
           <button type="button" onClick={() => { setRegistration(true); setRegistrationPrefill(null); }}>{mt('annualNewRegistration', lang)}</button>
         </fieldset>
-        {registration && <fieldset disabled={catalogBusy || manualLocked || originalsLocked || unknown || pendingReadId !== null}>
+        {registration && <fieldset disabled={catalogBusy || manualLocked || originalsLocked || sourceReviewLocked || unknown || pendingReadId !== null}>
           <MaterialRegistrationPanel key={`${contextKey}:registration`} lang={lang} organizationId={scope.ownerOrgId} actorId={actorId} planRevisionId={null}
             scopeKey={contextKey} onScopeLockChange={registrationLockChanged}
             prefill={registrationPrefill} api={registrationApi} nationalCodeEnabled={nationalCodeEnabled} sameActorEnabled={sameActorEnabled}
@@ -432,11 +432,11 @@ export function AnnualNeedsWorkspace({ lang, scope, actorId, revision, capabilit
           <p><bdi>{addition.preview.canonicalSnapshot.scientificName}</bdi> · <bdi dir="ltr">{addition.preview.canonicalSnapshot.nationalCode ?? '—'}</bdi> · <bdi>{manualUnitText(addition.preview.canonicalSnapshot.unit, lang)}</bdi></p>
           {!addition.preview.eligible && <p className="prism-notice prism-notice--warning">{mt('annualAdditionPreparing', lang)}</p>}
           <label>{mt('annualMembershipReason', lang)}<textarea value={additionReason} maxLength={2000} disabled={scopeLocked} onChange={(event) => setAdditionReason(event.target.value)} /></label>
-          <button type="button" disabled={catalogBusy || manualLocked || registrationLocked || originalsLocked || pendingReadId !== null || !additionReason.trim()} onClick={addToYear}>{mt('annualConfirmMembership', lang)}</button>
+          <button type="button" disabled={catalogBusy || manualLocked || registrationLocked || originalsLocked || sourceReviewLocked || pendingReadId !== null || !additionReason.trim()} onClick={addToYear}>{mt('annualConfirmMembership', lang)}</button>
         </div>}
       </section>}
       {inspected && <AnnualCatalogEditor key={`${inspected.membership.annualItemId}:${editorReset}`} lang={lang} contextKey={contextKey} item={inspected}
-        changes={changes} canEdit={canManage} busy={catalogBusy || manualLocked || registrationLocked || originalsLocked || pendingReadId !== null} outcomeUnknown={unknown}
+        changes={changes} canEdit={canManage} busy={catalogBusy || manualLocked || registrationLocked || originalsLocked || sourceReviewLocked || pendingReadId !== null} outcomeUnknown={unknown}
         sourcePanel={<AnnualCatalogSources lang={lang} contextKey={contextKey} scope={scope} annualItemId={inspected.membership.annualItemId} reader={api.listAnnualCatalogOccurrences} />}
         historyBusy={historyBusy} historyFailed={historyFailed} hasMoreHistory={historyCursor !== null} canonicalPreview={canonicalPreview}
         onSave={saveEdit} onRefreshCanonical={refreshCanonical} onPreviewCanonical={() => void previewCurrentCanonical()}

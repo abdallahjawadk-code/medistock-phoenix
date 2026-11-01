@@ -18,6 +18,34 @@ it('opens review from the saved original identity, preserving its first filename
   expect(review).toHaveBeenCalledWith(record.original, trigger); expect(api.downloadAnnualOriginal).not.toHaveBeenCalled();
 });
 
+it('locks an already open registration and material editor during source review, then restores closing focus', async () => {
+  const api = fixture(), annual = annualFixture(); api.listAnnualOriginalUploads.mockResolvedValue(page([receipt(intent())]));
+  const discovery = deferred<unknown>();
+  render(<AnnualNeedsWorkspace lang="en" scope={SCOPE} actorId={ID.actor} revision={null} capabilities={CAPS} beneficiaries={[]}
+    searchRegisteredMaterials={async () => []} api={annual.api} manualApi={annual.manualApi} originalsApi={api}
+    sourceReviewApi={{ discover: () => discovery.promise } as never} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Search this year' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Material details and history' }));
+  fireEvent.change(await screen.findByLabelText('Arabic display name'), { target: { value: 'تصحيح مقترح' } });
+  fireEvent.change(screen.getByLabelText('Reason for changing material information'), { target: { value: 'Reviewed identity' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Add a material to this year’s catalog' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Request registration of a missing material' }));
+  const registration = within(screen.getByRole('region', { name: 'Add a material to this year’s catalog' }));
+  fireEvent.change(await registration.findByLabelText('Scientific name'), { target: { value: 'Another new identity' } });
+  fireEvent.change(registration.getByLabelText('Unit'), { target: { value: 'box' } });
+  await waitFor(() => expect(registration.getByRole('button', { name: 'Save request as draft' })).toBeEnabled());
+  expect(screen.getByRole('button', { name: 'Save the new field version' })).toBeEnabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Year files' }));
+  const trigger = await screen.findByRole('button', { name: `Review material identity: ${FILE}` }); fireEvent.click(trigger);
+  await waitFor(() => expect(screen.getByLabelText('Beneficiary institution')).toBeDisabled());
+  expect(registration.getByRole('button', { name: 'Save request as draft' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Save the new field version' })).toBeDisabled();
+  expect(annual.registrationApi.createMaterialRequestDraft).not.toHaveBeenCalled(); expect(annual.api.editAnnualCatalogItem).not.toHaveBeenCalled();
+  await act(async () => discovery.resolve({ version: 1, scope: SCOPE, readAvailable: false, commitState: 'unavailable_registry', profiles: [], maxPageRows: 50, maxRequestBytes: 16384 }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Close source review' }));
+  await waitFor(() => expect(trigger).toHaveFocus());
+});
+
 const CONTRACT = { version: 1 as const, scope: 'owner_year' as const, maxFileBytes: 3145728 as const,
   extensions: ['xls', 'xlsx', 'csv'] as ['xls', 'xlsx', 'csv'], attestation: 'server_received_original' as const,
   atomicReceipt: true as const, intentBoundReplay: true as const };
