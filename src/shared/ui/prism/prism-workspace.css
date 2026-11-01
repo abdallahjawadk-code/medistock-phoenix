@@ -206,8 +206,9 @@ html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-vis
 .prism-loading { display: flex; align-items: center; gap: 10px; color: var(--prism-muted); }
 .prism-loading__dot { inline-size: 8px; block-size: 8px; border-radius: 50%; background: var(--prism-accent); animation: prism-pulse 1.2s ease-in-out infinite; }
 .prism-annual-picker > .prism-search-hint { margin-block-end: 12px; }
-.prism-annual-result__identity { min-inline-size: 0; flex: 1; }
-.prism-annual-result__actions { display: grid; gap: 6px; flex: 0 0 auto; }
+.prism-annual-result { flex-wrap: wrap; }
+.prism-annual-result__identity { min-inline-size: 0; flex: 1 1 12rem; }
+.prism-annual-result__actions { display: grid; gap: 6px; flex: 1 1 10rem; }
 .prism-annual-blockers { margin-block: 8px 0; padding-inline-start: 20px; color: var(--prism-warning); font-size: 12px; }
 .prism-annual-more, .prism-annual-add { margin-block-start: 12px; margin-inline-end: 8px; }
 .prism-annual-editor { min-inline-size: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; padding: 16px; border: 1px solid var(--prism-line); border-radius: 14px; background: var(--prism-soft); }

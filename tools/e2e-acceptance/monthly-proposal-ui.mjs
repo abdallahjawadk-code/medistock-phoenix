@@ -147,6 +147,11 @@ try {
       check(`${name} actual bound proposal and fixed allocation`, await panel.locator('tr[data-month="1"] td').first().textContent() === '2.5'
         && await panel.locator('tr[data-month="2"] td').first().textContent() === '2.75' && await panel.locator('tfoot td').first().textContent() === '10.25');
       check(`${name} no document overflow`, await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+      const names = await page.locator('.prism-annual-picker .prism-annual-result .prism-material-identity__name').evaluateAll(elements => elements.map(el => {
+        const box = el.getBoundingClientRect(), line = Number.parseFloat(getComputedStyle(el).lineHeight);
+        return box.width >= 80 && box.height <= line * 3 + 1;
+      }));
+      check(`${name} short material names remain readable beside their actions`, names.length === 2 && names.every(Boolean));
       check(`${name} labelled table and keyboard scroll region`, await panel.getByRole('table', { name: lang === 'ar' ? 'اقتراح التحصيص الشهري' : 'Monthly distribution proposal' }).count() === 1
         && await panel.getByRole('region').getAttribute('tabindex') === '0');
       check(`${name} no effective approval control`, await panel.getByRole('button', { name: /اعتماد|Approve/ }).count() === 0);
@@ -196,7 +201,7 @@ try {
     writeFileSync(resolve(output, 'failure-visible-text.txt'), await page.locator('body').innerText().catch(() => 'Unavailable')); }
 } finally {
   if (browser) await browser.close(); await employee.auth.signOut(); await db.end();
-  report.passed = report.checks.length === 105 && report.checks.every(row => row.passed) && report.errors.length === 0;
+  report.passed = report.checks.length === 121 && report.checks.every(row => row.passed) && report.errors.length === 0;
   writeFileSync(resolve(output, 'report.json'), JSON.stringify(report, null, 2));
   console.log(JSON.stringify({ phase: 'monthly_ui', passed: report.passed, checks: report.checks.length, errors: report.errors }));
   if (!report.passed) process.exitCode = 1;
