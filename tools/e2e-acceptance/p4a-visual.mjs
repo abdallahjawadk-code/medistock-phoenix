@@ -36,7 +36,7 @@ const report = {
   recordedAt: new Date().toISOString(), base: base.href,
   database: 'disposable local Supabase; synthetic fixtures; real Auth/RLS',
   referenceParity: 'HOLD: framed concept references require separate human visual review',
-  checks: [], matrix: [], errors: [],
+  checks: [], matrix: [], annualMatrix: [], errors: [],
 };
 const check = (name, passed, detail = null) => {
   report.checks.push({ name, passed, detail });
@@ -213,12 +213,34 @@ try {
     if (tier === 'L3') check('L3 institution administration hidden', await s.page.locator('nav').getByRole('button', { name: /^(Institutions|إدارة المؤسسات)$/ }).count() === 0);
     await s.context.close();
   }
+  const annual = await login(seed.centralNeeds.editor);
+  if (await annual.page.locator('.prism-shell').getAttribute('data-pharma-screen') !== '23') {
+    await navigate(annual.page, 'الاحتياج السنوي', false);
+  }
+  await annual.page.locator('[data-pharma-screen="23"]').waitFor();
+  for (const width of [1366, 1024, 390, 320]) {
+    await annual.page.setViewportSize({ width, height: 900 });
+    for (const lang of ['ar', 'en']) for (const theme of ['light', 'dark']) {
+      await appearance(annual.page, lang, theme);
+      await settleView(annual.page);
+      const id = `${width}-${lang}-${theme}`;
+      await annual.page.screenshot({ path: resolve(out, `${id}-annual-needs.png`), fullPage: true });
+      const state = await annual.page.locator('#phoenix-main').evaluate(el => ({
+        headings: [...el.querySelectorAll('h1,h2,h3')].map(h => h.textContent),
+        formControls: el.querySelectorAll('input,select,textarea').length,
+        documentOverflow: document.documentElement.scrollWidth - innerWidth,
+      }));
+      check(`${id} real annual-needs route and viewport`, state.headings.length > 0 && state.documentOverflow <= 1, state);
+      report.annualMatrix.push({ id, ...state });
+    }
+  }
+  await annual.context.close();
   check('No runtime/network/server errors', report.errors.length === 0, report.errors);
 } catch (e) {
   check('capture completed', false, e.message);
 } finally {
   await browser.close();
-  report.passed = report.checks.every(c => c.passed) && report.matrix.length === 16;
+  report.passed = report.checks.every(c => c.passed) && report.matrix.length === 16 && report.annualMatrix.length === 16;
   writeFileSync(resolve(out, 'report.json'), JSON.stringify(report, null, 2));
   console.log(`P4-A matrix ${report.matrix.length}/16; ${report.checks.filter(c => !c.passed).length} failed checks; reference parity remains HOLD`);
   if (!report.passed) process.exitCode = 1;
