@@ -81,6 +81,9 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
     const P3C2_CANDIDATE='supabase/candidates/P3C2_annual_originals_NOT_APPLIED.sql';
     const P3C2_PROOF='supabase/candidates/__tests__/p3c2-annual-originals.dynamic.test.ts';
     const P3C2_SHA256='17cd88fa51492c9b5722c4ae95a31275976360205f82584f46c676b65522f600';
+    const R2A_CANDIDATE='supabase/candidates/R2A_authority_NOT_APPLIED.sql';
+    const R2A_PROOF='supabase/candidates/__tests__/r2a-authority.dynamic.test.ts';
+    const R2A_SHA256='a48040a57082fd2519661c755f87c7d2f32c2e8efc351a120308e65b03c56d71';
     const WATCHED=['package.json','package-lock.json','supabase','src/shared/supabase','src/shared/authz','src/app','.env','.env.local'] as const;
     const EXCLUDED:string[]=[
       'src/app/AppContext.tsx','src/app/AuthenticatedApp.tsx','src/app/__tests__/auth-resilience-context.runtime.test.tsx','src/app/__tests__/auth-dead-end-screens.runtime.test.tsx','src/app/__tests__/auth-session-race.runtime.test.tsx','src/app/__tests__/db-pressure-quick-wins.test.ts','src/app/__tests__/auth-cold-start-deadline.runtime.test.tsx','src/app/screen-continuity.ts','src/app/__tests__/phase-b45-screen-continuity.runtime.test.ts','src/shared/supabase/services/auth.service.ts','src/shared/supabase/services/availability.service.ts','src/shared/supabase/services/__tests__/frontend-live-removed-at-filters.test.ts','src/shared/supabase/services/__tests__/auth-signout.runtime.test.ts','src/shared/supabase/__tests__/permission-persistence.test.ts','src/shared/supabase/__tests__/permission-matrix-readiness.test.ts','src/shared/supabase/__tests__/permission-save-diagnostics.test.ts','src/shared/authz/__tests__/screen-access.test.ts',
@@ -874,6 +877,9 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
       // C2: exact candidate/proof verified with 53 native cases; no hosted SQL or sibling exemption.
       P3C2_CANDIDATE,
       P3C2_PROOF,
+      // R2-A: exact inert authority candidate/proof; no operational writer or hosted SQL.
+      R2A_CANDIDATE,
+      R2A_PROOF,
       'supabase/candidates/__tests__/ff1-forward-fix.dynamic.test.ts',
       'supabase/migrations/__tests__/w0-central-needs-excel-path-authority.dynamic.test.ts',
       'supabase/candidates/__tests__/functional-journey.dynamic.test.ts',
@@ -963,6 +969,17 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
       `${P3C2_PROOF}.unreviewed`, 'supabase/candidates/__tests__/p3c2-annual-originals-extra.dynamic.test.ts'];
     expect(flag(c2NearMisses)).toEqual(c2NearMisses);
     for(const path of c2NearMisses) expect(acceptsC2Candidate(path,c2Bytes),path).toBe(false);
+    const acceptsR2ACandidate=(path:string,bytes:Uint8Array)=>path===R2A_CANDIDATE
+      && EXCLUDED.includes(path) && createHash('sha256').update(bytes).digest('hex')===R2A_SHA256;
+    const r2aBytes=readFileSync(join(ROOT,R2A_CANDIDATE));
+    expect(flag([R2A_CANDIDATE,R2A_PROOF])).toEqual([]);
+    expect(acceptsR2ACandidate(R2A_CANDIDATE,r2aBytes)).toBe(true);
+    expect(acceptsR2ACandidate(R2A_CANDIDATE,Buffer.concat([r2aBytes,Buffer.from('\nSELECT 1; -- unreviewed change\n')]))).toBe(false);
+    const r2aNearMisses=[`${R2A_CANDIDATE}.unreviewed`, 'supabase/candidates/R2A_authority_NOT_APPLIED_v2.sql',
+      'supabase/candidates/R2B_authority_NOT_APPLIED.sql', 'supabase/migrations/236_phoenix_r2_authority.sql',
+      `${R2A_PROOF}.unreviewed`, 'supabase/candidates/__tests__/r2a-authority-extra.dynamic.test.ts'];
+    expect(flag(r2aNearMisses)).toEqual(r2aNearMisses);
+    for(const path of r2aNearMisses) expect(acceptsR2ACandidate(path,r2aBytes),path).toBe(false);
     expect(flag(['supabase/candidates/staging-baseline/hosted-adapter/hosted-adapter.mjs','supabase/candidates/__tests__/hosted-adapter.dynamic.test.ts'])).toEqual([]);
     const unregistered=['supabase/candidates/staging-baseline/hosted-adapter/hosted-adapter.mjs.bak','supabase/candidates/staging-baseline/hosted-adapter/other.mjs','supabase/candidates/staging-baseline/hosted-adapter.mjs',
       'supabase/candidates/__tests__/hosted-adapter.dynamic.test.ts.orig','supabase/candidates/__tests__/hosted-adapter-extra.dynamic.test.ts','supabase/candidates/hosted-adapter/hosted-adapter.mjs'];
