@@ -265,6 +265,20 @@ try {
         await detail.getByRole('button', { name: lang === 'ar' ? 'العودة إلى الدفعات' : 'Back to batches', exact: true }).click();
         check(`${id} narrow detail return restores row focus`, await materialButton.isVisible()
           && await materialButton.evaluate(el => el === document.activeElement));
+        const restoredRow = await materialButton.boundingBox();
+        check(`${id} restored batch focus is inside the viewport`, restoredRow !== null
+          && restoredRow.y >= 0 && restoredRow.y + restoredRow.height <= 900);
+        await materialButton.press('Enter');
+        const stockSearch = page.locator('.nexus-it-stock-list input[type="search"]');
+        await stockSearch.fill('E2E deliberately unmatched batch filter');
+        await page.locator('.prism-stock-workbench[data-detail-open="false"]').waitFor();
+        check(`${id} removing selected batch preserves search focus`, await stockSearch.evaluate(el => el === document.activeElement));
+        check(`${id} removed selection leaves a visible batch group`, await page.getByRole('group', {
+          name: lang === 'ar' ? 'دفعات المخزن' : 'Warehouse batches', exact: true,
+        }).isVisible());
+        check(`${id} removed selection has no stale detail`, await detail.count() === 0);
+        await stockSearch.fill('');
+        await materialButton.waitFor();
       }
       const stockOverflow = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, width: innerWidth }));
       check(`${id} material detail has no document overflow`, stockOverflow.scroll <= stockOverflow.width + 1, stockOverflow);

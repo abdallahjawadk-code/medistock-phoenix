@@ -17,12 +17,19 @@ export function InventoryBatchWorkbench({ batches, lang, renderBatch }: Props) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const headingRef = useRef<HTMLHeadingElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
+  const restoreFocus = useRef(true);
   const wasOpen = useRef(false);
   const selected = batches.find(batch => batch.id === selectedId) ?? batches[0];
+  const selectionRemoved = selectedId !== null && !batches.some(batch => batch.id === selectedId);
   useEffect(() => {
-    if (selectedId !== null && !batches.some(batch => batch.id === selectedId)) setDetailOpen(false);
-  }, [batches, selectedId]);
+    if (detailOpen && selectionRemoved) {
+      const active = document.activeElement;
+      restoreFocus.current = active === document.body || Boolean(headingRef.current?.closest('aside')?.contains(active));
+      setDetailOpen(false);
+    }
+  }, [detailOpen, selectionRemoved]);
   useEffect(() => {
     const media = window.matchMedia?.('(max-width: 1100px)');
     const focusDetails = () => {
@@ -30,8 +37,10 @@ export function InventoryBatchWorkbench({ batches, lang, renderBatch }: Props) {
       headingRef.current?.closest('aside')?.scrollIntoView?.({ block: 'start', behavior: 'auto' });
     };
     if (media?.matches) {
-      if (detailOpen) focusDetails();
-      else if (wasOpen.current) triggerRef.current?.focus();
+      if (detailOpen && !selectionRemoved) focusDetails();
+      else if (!detailOpen && wasOpen.current && restoreFocus.current) {
+        (triggerRef.current?.isConnected ? triggerRef.current : listRef.current)?.focus();
+      }
     }
     const onViewportChange = () => {
       if (!detailOpen) return;
@@ -42,15 +51,16 @@ export function InventoryBatchWorkbench({ batches, lang, renderBatch }: Props) {
     media?.addEventListener?.('change', onViewportChange);
     wasOpen.current = detailOpen;
     return () => media?.removeEventListener?.('change', onViewportChange);
-  }, [detailOpen, selected?.id]);
+  }, [detailOpen, selected?.id, selectionRemoved]);
   const title = lang === 'ar' ? 'ملف المادة' : 'Material details';
   const unknown = lang === 'ar' ? 'غير مسجل' : 'Not recorded';
   const field = (value: string | null) => <bdi>{value || unknown}</bdi>;
   return (
     <div className="prism-stock-workbench" data-detail-open={detailOpen} lang={lang} dir={lang === 'ar' ? 'rtl' : 'ltr'}>
-      <div className="nexus-it-batch-list prism-stock-workbench__list">
+      <div ref={listRef} role="group" aria-label={lang === 'ar' ? 'دفعات المخزن' : 'Warehouse batches'} tabIndex={-1} className="nexus-it-batch-list prism-stock-workbench__list">
         {batches.map(batch => renderBatch(batch, { selected: batch.id === selected?.id, onSelect: trigger => {
           triggerRef.current = trigger ?? null;
+          restoreFocus.current = true;
           setSelectedId(batch.id);
           setDetailOpen(true);
         } }))}
