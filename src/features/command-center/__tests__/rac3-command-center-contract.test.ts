@@ -503,6 +503,15 @@ describe('RAC-3 · I) no backend or migration change', () => {
     const r2aTampered = Buffer.from(r2aBytes); r2aTampered[0] ^= 1;
     expect(isReviewedR2A(R2A, r2aTampered)).toBe(false);
     expect(isReviewedR2A(`${R2A}.bak`, r2aBytes)).toBe(false);
+    const P3C4 = 'supabase/candidates/P3C4_verified_membership_NOT_APPLIED.sql';
+    const P3C4_PROOF = 'supabase/candidates/__tests__/p3c4-verified-membership.dynamic.test.ts';
+    const isReviewedP3C4 = (path: string, bytes: Uint8Array) => path === P3C4
+      && createHash('sha256').update(bytes).digest('hex') === '0e6112b48e26ce35681970a1765f333efb1bab33f1ab679ec8194c55840130a7';
+    const c4Bytes = readFileSync(join(process.cwd(), P3C4));
+    expect(isReviewedP3C4(P3C4, c4Bytes)).toBe(true);
+    const c4Tampered = Buffer.from(c4Bytes); c4Tampered[0] ^= 1;
+    expect(isReviewedP3C4(P3C4, c4Tampered)).toBe(false);
+    expect(isReviewedP3C4(`${P3C4}.bak`, c4Bytes)).toBe(false);
     // R1 (staging release candidate): the un-numbered SQL CANDIDATES and their tooling/tests under supabase/candidates/ (never in the numbered
     // chain, never applied outside a disposable database) are registered by EXACT filename, exactly as M200-M222 were; no wildcard and no
     // directory exemption, so every other supabase/ file still fails this guard closed. They touch no command-centre object.
@@ -521,6 +530,7 @@ describe('RAC-3 · I) no backend or migration change', () => {
       'supabase/candidates/__tests__/p3b-annual-needs-audit.dynamic.test.ts',
       P3C2, P3C2_PROOF,
       R2A, R2A_PROOF,
+      P3C4, P3C4_PROOF,
       'supabase/candidates/__tests__/ff2-dossiers-forward-fix.dynamic.test.ts',
       'supabase/candidates/R1a_01_manual_source_schema_inert.sql',
       'supabase/candidates/R1a_02_authorization_closure.sql',
@@ -582,6 +592,11 @@ describe('RAC-3 · I) no backend or migration change', () => {
     const flag = (files: string[]) => files.filter(f => f.startsWith('supabase/') && !f.startsWith('supabase/migrations/__tests__/') && !ALLOWED_SQL.includes(f));
     expect(flag([P3C2, P3C2_PROOF])).toEqual([]);
     expect(flag([R2A, R2A_PROOF])).toEqual([]);
+    expect(flag([P3C4, P3C4_PROOF])).toEqual([]);
+    const c4NearMisses = [`${P3C4}.bak`, `${P3C4_PROOF}.orig`,
+      'supabase/candidates/P3C4_verified_membership_NOT_APPLIED_v2.sql',
+      'supabase/migrations/236_phoenix_verified_membership.sql'];
+    expect(flag(c4NearMisses)).toEqual(c4NearMisses);
     const r2aNearMisses = ['supabase/candidates/R2A_authority_NOT_APPLIED_v2.sql',
       'supabase/candidates/R2B_authority_NOT_APPLIED.sql', 'supabase/migrations/236_phoenix_r2_authority.sql',
       `${R2A}.bak`, `${R2A_PROOF}.orig`, 'supabase/candidates/__tests__/r2a-authority-extra.dynamic.test.ts'];
