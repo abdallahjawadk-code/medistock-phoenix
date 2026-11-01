@@ -993,7 +993,7 @@ function StockList({ state, lang, canAdjust, canCorrect, isInstitutionWarehouse,
 interface BatchRowProps {
   batch: WarehouseStockBatch;
   selected: boolean;
-  onSelect: () => void;
+  onSelect: (trigger?: HTMLElement) => void;
   /** INTERACTIVE-GUIDE-IG3 — this is the ONE row the frozen example points at. */
   guideAnchored: boolean;
   lang: 'ar' | 'en';
@@ -1099,7 +1099,7 @@ function BatchRow({ batch, selected, onSelect, guideAnchored, lang, canAdjust, c
     <PhoenixCard className="nexus-it-batch-row">
       <div className="nexus-it-batch-row__head" style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'baseline', justifyContent: 'space-between' }}>
         <div className="nexus-it-batch-row__id">
-          <button type="button" className="nexus-it-batch-row__name prism-stock-batch-select" aria-pressed={selected} onClick={onSelect}>
+          <button type="button" className="nexus-it-batch-row__name prism-stock-batch-select" aria-pressed={selected} onClick={event => onSelect(event.currentTarget)}>
             <PhoenixIcon name="medical" size={24} /><bdi>{batch.scientificName}</bdi>
           </button>
           <div className="nexus-it-batch-row__meta" style={{ fontSize: '11.5px', color: 'var(--t2)', marginTop: '2px' }}>
