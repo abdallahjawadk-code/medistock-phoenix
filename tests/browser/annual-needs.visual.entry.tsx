@@ -26,12 +26,14 @@ import '@/shared/lib/phase-a-visual-convergence.css';
 import '@/shared/lib/phase-a-auth-welcome-signature.css';
 import { PrismWorkspace } from '@/shared/ui/prism/PrismWorkspace';
 import { AnnualNeedsWorkspace, type AnnualNeedsUiApi } from '@/features/central-needs/annual-catalog/AnnualNeedsWorkspace';
+import type { AnnualOriginalsUiApi } from '@/features/central-needs/annual-catalog/AnnualOriginalFiles';
+import type { AnnualOriginalIntent, AnnualOriginalUploadRecord, AnnualOriginalWriteResult } from '@/features/central-needs/annual-catalog/annual-originals.contract';
 import { ANNUAL_IDENTITY_FIELDS, SOURCE_IDENTITY_FIELDS, type AnnualFieldVersion, type AnnualSourceOccurrence } from '@/features/central-needs/annual-catalog/annual-catalog.contract';
 import type { AnnualCatalogItemResult, AnnualCanonicalPreview } from '@/features/central-needs/annual-catalog/annual-catalog-server.contract';
 import { editableAnnualFields, type AnnualCatalogChange, type AnnualEditableFields, type AnnualNeedEvent,
   type AnnualNeedBinding, type AnnualNeedWriteInput, type AnnualNeedVoidInput } from '@/features/central-needs/annual-catalog/annual-needs.contract';
 import type { ManualNeedsApi } from '@/features/central-needs/manual/ManualNeedsWorkspace';
-import type { RegistrationApi } from '@/features/central-needs/manual/MaterialRegistrationPanel';
+import { MATERIAL_UNITS } from '@/features/central-needs/manual/material-registration.service';
 
 const params = new URLSearchParams(location.search);
 const lang = params.get('lang') === 'en' ? 'en' : 'ar';
@@ -97,7 +99,8 @@ let events: AnnualNeedEvent[] = [{ id: id(40), planRevisionId: REVISION, benefic
   actorName: 'موظف تجريبي', fromTrustedProfile: true, createdAt: time, annualBinding: toBinding(catalog[0]) }];
 const changes = new Map<string, AnnualCatalogChange[]>();
 const notExercised = async (): Promise<never> => { throw new Error('Outside this synthetic rendering scenario'); };
-const registration: RegistrationApi = {
+const registration: ReturnType<AnnualNeedsUiApi['createAnnualRegistrationApi']> = {
+  MATERIAL_UNITS,
   getMaterialCapabilities: async () => ({ canRequest: false, canReview: false, canLink: false }),
   listMaterialRequests: async () => [], listMaterialRequestEvents: async () => [], listMaterialRequestCandidates: async () => [],
   createMaterialRequestDraft: notExercised, updateMaterialRequestDraft: notExercised, submitMaterialRequest: notExercised,
@@ -169,12 +172,54 @@ const annualApi: AnnualNeedsUiApi = {
 };
 const manualApi: ManualNeedsApi = { getManualCapabilities: async () => caps, listManualNeedEvents: async () => events,
   newManualIdempotencyKey: newSyntheticId, addManualNeedLine: notExercised, correctManualNeedLine: notExercised, voidManualNeedLine: notExercised };
+// C2 visual fixtures are entirely synthetic. No server receipt or SQL execution is implied.
+const syntheticOriginalText = 'national_code,name\nDEMO-001,Synthetic medicine\n';
+const syntheticOriginalHash = '3abdedd31d3f17069b29b2f8698936f45067c038949536a355e79dfcfdc5f15e';
+const firstOriginal = { originalId: id(500), sha256: syntheticOriginalHash, byteSize: 47,
+  firstFilename: 'قائمة-الأدوية-2026-نسخة-تجريبية.csv', createdBy: ACTOR, createdByName: 'موظف تجريبي — أول استلام',
+  createdByRole: 'warehouse_employee', createdAt: time, attestation: 'server_received_original' as const };
+const originalRows: AnnualOriginalUploadRecord[] = [
+  { original: firstOriginal, upload: { uploadId: id(501), originalId: firstOriginal.originalId, filename: firstOriginal.firstFilename,
+    actorId: ACTOR, actorName: firstOriginal.createdByName, actorRole: firstOriginal.createdByRole, createdAt: time } },
+  { original: firstOriginal, upload: { uploadId: id(502), originalId: firstOriginal.originalId,
+    filename: 'مراجعة-قائمة-الأدوية-2026-نسخة-أخرى-بالاسم-English-National-Catalog.csv', actorId: ACTOR,
+    actorName: 'موظف تجريبي — إعادة رفع باسم آخر', actorRole: firstOriginal.createdByRole, createdAt: '2026-10-31T11:00:00.123456+00:00' } },
+];
+const originalReceipts = new Map<string, AnnualOriginalWriteResult>();
+let loseOriginalReply = params.get('originals') === 'lost-response';
+const originalIntent = (input: AnnualOriginalIntent) => ({ filename: input.filename, sha256: input.sha256,
+  byteSize: input.byteSize, idempotencyKey: input.idempotencyKey });
+const originalsApi: AnnualOriginalsUiApi = {
+  getAnnualOriginalsContract: async () => params.get('originals') === 'absent' ? null : ({ version: 1, scope: 'owner_year', maxFileBytes: 3145728,
+    extensions: ['xls', 'xlsx', 'csv'], attestation: 'server_received_original', atomicReceipt: true, intentBoundReplay: true }),
+  prepareAnnualOriginalFile: async ({ file, idempotencyKey }) => {
+    const text = new TextDecoder().decode(await file.arrayBuffer());
+    if (file.name !== 'synthetic-annual-source.csv' || text !== syntheticOriginalText) throw new Error('Only the explicit synthetic fixture file is accepted here');
+    return { scope, actorId: ACTOR, filename: file.name, sha256: syntheticOriginalHash, byteSize: 47,
+      base64: btoa(syntheticOriginalText), idempotencyKey };
+  },
+  storeAnnualOriginal: async (input) => {
+    const previous = originalReceipts.get(input.idempotencyKey);
+    if (previous) return { ...previous, idempotentReplay: true };
+    const upload = { uploadId: newSyntheticId(), originalId: firstOriginal.originalId, filename: input.filename,
+      actorId: ACTOR, actorName: 'موظف الرفع التجريبي', actorRole: 'warehouse_employee', createdAt: new Date().toISOString() };
+    const result = { scope, idempotencyKey: input.idempotencyKey, original: firstOriginal, upload, deduplicated: true, idempotentReplay: false };
+    originalRows.push({ original: firstOriginal, upload }); originalReceipts.set(input.idempotencyKey, result);
+    if (loseOriginalReply) { loseOriginalReply = false; throw new Error('Synthetic lost reply after in-memory capture'); }
+    return result;
+  },
+  getAnnualOriginalReceipt: async (input) => ({ scope, intent: originalIntent(input),
+    result: originalReceipts.has(input.idempotencyKey) ? { ...originalReceipts.get(input.idempotencyKey)!, idempotentReplay: true } : null }),
+  listAnnualOriginalUploads: async () => ({ scope, uploads: structuredClone(originalRows), nextAfterUploadId: null }),
+  downloadAnnualOriginal: async () => ({ scope, original: firstOriginal, blob: new Blob([syntheticOriginalText], { type: 'application/octet-stream' }) }),
+  newIdempotencyKey: newSyntheticId,
+};
 const width = params.get('viewport');
 const embedded = new URL(location.href); embedded.searchParams.delete('viewport');
-if (width === '390') {
+if (width && ['320', '390', '430'].includes(width)) {
   createRoot(document.getElementById('root')!).render(<main style={{ padding: 16 }}>
-    <p>390 px viewport · actual responsive component · synthetic data</p>
-    <iframe title="Annual needs mobile viewport" src={embedded.href} style={{ width: 390, height: 1300, border: '1px solid #92a8bd', display: 'block', margin: 'auto' }} />
+    <p>{width} px viewport · actual responsive component · synthetic data</p>
+    <iframe title="Annual needs mobile viewport" src={embedded.href} style={{ width: Number(width), height: 1300, border: '1px solid #92a8bd', display: 'block', margin: 'auto' }} />
   </main>);
 } else {
   createRoot(document.getElementById('root')!).render(<>
@@ -186,7 +231,7 @@ if (width === '390') {
         description={lang === 'ar' ? 'البحث عن المواد وتوثيق تعديلاتها وإعداد الاحتياج السنوي' : 'Find materials, record attributed edits and prepare annual quantities'} context={<bdi>2026 · DEMO</bdi>}>
         <AnnualNeedsWorkspace lang={lang} scope={scope} actorId={ACTOR} revision={{ id: REVISION, revisionNumber: 1, status: 'draft', sourceMode: 'manual', createdBy: ACTOR }}
           capabilities={caps} beneficiaries={[{ id: BENEFICIARY, name: 'Demo beneficiary', nameAr: 'مؤسسة مستفيدة تجريبية' }]}
-          searchRegisteredMaterials={async () => []} nationalCodeEnabled sameActorEnabled api={annualApi} manualApi={manualApi} />
+          searchRegisteredMaterials={async () => []} nationalCodeEnabled sameActorEnabled api={annualApi} manualApi={manualApi} originalsApi={originalsApi} />
       </PrismWorkspace>
     </main>
   </>);
