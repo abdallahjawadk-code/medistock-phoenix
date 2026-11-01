@@ -27,6 +27,25 @@ export type R2MonthlyProposalResult = {
   readonly reason: 'invalid_quantity' | 'invalid_step' | 'invalid_periods' | 'not_multiple_of_step';
 };
 
+export interface R2AllocationChangeInput {
+  readonly annual: string | null;
+  readonly allocatedTotal: string | null;
+  readonly replacedAllocation: string | null;
+  readonly chargedExecution: string | null;
+  readonly proposedAllocation: string | null;
+}
+
+export type R2AllocationChangeResult = {
+  readonly status: 'compatible';
+  readonly nextAllocatedTotal: string;
+} | {
+  readonly status: 'conflict';
+  readonly reason: 'annual_ceiling' | 'below_charged_execution';
+} | {
+  readonly status: 'unavailable';
+  readonly reason: 'missing_quantity' | 'invalid_quantity' | 'inconsistent_total';
+};
+
 interface ExactQuantity { readonly coefficient: bigint; readonly scale: number }
 
 /** Reuse R1's public input grammar without changing its raw quantity contract. */
@@ -69,6 +88,27 @@ export function calculateR2Capacity(input: R2CapacityInput): R2CapacityResult {
     overAllocated: c > a,
     overExecuted: d > c,
   };
+}
+
+/** Assess ONE effective replacement under the owner-approved policy. This is
+ * arithmetic compatibility, never authorization, approval or concurrency
+ * protection. The future authoritative transaction must select the effective
+ * scope/version, lock it and repeat these constraints before any mutation. */
+export function assessR2AllocationChange(input: R2AllocationChangeInput): R2AllocationChangeResult {
+  if ([input.annual, input.allocatedTotal, input.replacedAllocation, input.chargedExecution, input.proposedAllocation]
+    .some(value => value === null)) return { status: 'unavailable', reason: 'missing_quantity' };
+  const annual = readQuantity(input.annual), total = readQuantity(input.allocatedTotal);
+  const previous = readQuantity(input.replacedAllocation), executed = readQuantity(input.chargedExecution);
+  const proposed = readQuantity(input.proposedAllocation);
+  if (!annual || !total || !previous || !executed || !proposed) return { status: 'unavailable', reason: 'invalid_quantity' };
+  const scale = Math.max(annual.scale, total.scale, previous.scale, executed.scale, proposed.scale);
+  const a = atScale(annual, scale), c = atScale(total, scale), old = atScale(previous, scale);
+  const d = atScale(executed, scale), next = atScale(proposed, scale);
+  if (old > c) return { status: 'unavailable', reason: 'inconsistent_total' };
+  if (next < d) return { status: 'conflict', reason: 'below_charged_execution' };
+  const nextTotal = c - old + next;
+  if (nextTotal > a) return { status: 'conflict', reason: 'annual_ceiling' };
+  return { status: 'compatible', nextAllocatedTotal: formatQuantity(nextTotal, scale) };
 }
 
 /** Propose an exact quantity over explicitly selected UNAPPROVED months.
