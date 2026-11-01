@@ -58,7 +58,8 @@ async function selectAnnualMaterial() {
 }
 it('reads the proposal for the chosen annual version without blocking the independent annual save', async () => {
   const f = fixture(), readReference = vi.fn(async () => null);
-  mount({ ...f, manualApi: { ...f.manualApi, getMonthlyPolicyReference: readReference } });
+  const withReference = { ...f, manualApi: { ...f.manualApi, getMonthlyPolicyReference: readReference } };
+  mount(withReference);
   await openYear(); await selectAnnualMaterial();
   expect(await screen.findByText('Awaiting distribution policy')).toBeVisible();
   expect(screen.getByLabelText('Annual quantity')).toHaveValue('');
