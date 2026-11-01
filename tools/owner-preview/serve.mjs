@@ -30,8 +30,11 @@ async function main(){
   const runner=realpathSync(process.env.RUNNER_TEMP),scratch=mkdtempSync(join(runner,'phoenix-owner-preview-'));
   const binary=realpathSync(process.env.PHOENIX_CLOUDFLARED);assert(binary.startsWith(runner+sep));assert.equal(sha(readFileSync(binary)),CF_SHA);
   const browserHome=join(scratch,'browser-home'),cloudHome=join(scratch,'cloud-home');mkdirSync(browserHome);mkdirSync(cloudHome);
+  stage='tool_preflight';
   assert(execFileSync(binary,['--version'],{encoding:'utf8',env:publicEnvironment(cloudHome)}).includes('2026.10.7'));
-  const help=execFileSync(binary,['tunnel','--help'],{encoding:'utf8',env:publicEnvironment(cloudHome)});assert(help.includes('--url') && help.includes('--protocol'));
+  // The pinned release accepts --protocol but hides it from help output.
+  // Parse the exact command instead of requiring hidden flags in the help text.
+  const help=execFileSync(binary,['tunnel','--no-autoupdate','--protocol','http2','--url','http://127.0.0.1:4174','--help'],{encoding:'utf8',env:publicEnvironment(cloudHome)});assert(help.includes('--url'));
   stage='synthetic_seed';const fixture=await seedOwnerPreview('e2e-seed.json',password);
   const seed=JSON.parse(readFileSync('e2e-seed.json','utf8')),anon=process.env.SUPABASE_ANON_KEY;
   const serviceKey=readFileSync('/tmp/sb-service-role-key.txt','utf8').trim();
@@ -86,4 +89,10 @@ async function main(){
 }
 async function stop(){stopping=true;if(expiry)clearTimeout(expiry);if(gateway)await gateway.close().catch(()=>{});if(cloudflared)cloudflared.kill('SIGTERM');}
 process.once('SIGTERM',async()=>{await stop();process.exit(0);});process.once('SIGINT',async()=>{await stop();process.exit(0);});
-main().catch(async()=>{console.error(`Owner preview failed at ${stage}; no credentials are printed.`);await stop();process.exitCode=1;});
+main().catch(async error=>{
+  const output=resolve('docs/phoenix/e2e-acceptance/owner-preview');mkdirSync(output,{recursive:true});
+  const location=String(error?.stack||'').match(/tools\/owner-preview\/([a-z-]+\.mjs):(\d+):(\d+)/);
+  writeFileSync(join(output,'startup-failure.json'),JSON.stringify({passed:false,stage,code:/^[A-Z0-9_]+$/.test(error?.code||'')?error.code:'preview_startup_error',
+    location:location?`${location[1]}:${location[2]}:${location[3]}`:null,productionSqlApplied:false},null,2));
+  console.error(`Owner preview failed at ${stage}; no credentials are printed.`);await stop();process.exitCode=1;
+});
