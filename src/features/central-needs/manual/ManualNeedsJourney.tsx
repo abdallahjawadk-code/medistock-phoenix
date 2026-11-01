@@ -135,9 +135,11 @@ export function ManualNeedsJourney({ lang, organizationId, actorId, api = realJo
       let annual: AnnualNeedRow[] = [];
       let id = selectedDossierRef.current;
       if (f?.dossiers && api.listDossiers && api.listDossierRevisions && api.annualSummary) {
-        [ds, annual] = await Promise.all([api.listDossiers(organizationId,y), api.annualSummary(organizationId,y)]);
+        [ds, annual] = nextAnnualMode === 'annual'
+          ? await Promise.all([api.listDossiers(organizationId,y,true), api.annualSummary(organizationId,y,true)])
+          : await Promise.all([api.listDossiers(organizationId,y), api.annualSummary(organizationId,y)]);
         if (!ds.some((d) => d.id===id)) id=ds.find((d)=>d.key==='')?.id ?? ds[0]?.id ?? '';
-        revs=id ? await api.listDossierRevisions(id) : [];
+        revs=id ? await (nextAnnualMode === 'annual' ? api.listDossierRevisions(id,true) : api.listDossierRevisions(id)) : [];
       } else revs = await api.listYearRevisions(organizationId, y);
       const c = await api.getCaps(organizationId, revs[0]?.id ?? null);
       if (epoch.current !== mine) return;
@@ -146,7 +148,7 @@ export function ManualNeedsJourney({ lang, organizationId, actorId, api = realJo
       setAnnualMode(nextAnnualMode);
     } catch {
       if (epoch.current !== mine) return;
-      setLoadFailed(true);
+      setAnnualMode(nextAnnualMode === 'annual' ? 'unavailable' : 'legacy'); setLoadFailed(true);
     }
   }, [api, organizationId]);
 

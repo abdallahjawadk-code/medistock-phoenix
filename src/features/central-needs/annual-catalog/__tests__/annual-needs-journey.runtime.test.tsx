@@ -56,6 +56,21 @@ async function selectAnnualMaterial() {
   await screen.findByRole('button', { name: 'Remove selection Amoxicillin' });
   fireEvent.change(screen.getByLabelText('Item'), { target: { value: ID.canonical } });
 }
+it('reads the proposal for the chosen annual version without blocking the independent annual save', async () => {
+  const f = fixture(), readReference = vi.fn(async () => null);
+  const withReference = { ...f, manualApi: { ...f.manualApi, getMonthlyPolicyReference: readReference } };
+  mount(withReference);
+  await openYear(); await selectAnnualMaterial();
+  expect(await screen.findByText('Awaiting distribution policy')).toBeVisible();
+  expect(screen.getByLabelText('Annual quantity')).toHaveValue('');
+  expect(readReference).toHaveBeenCalledWith({ ...SCOPE, annualItemId: ID.annual, fieldVersionId: ID.version,
+    canonicalItemId: ID.canonical, unit: 'box', beneficiaryOrganizationId: ID.beneficiary });
+  fireEvent.change(screen.getByLabelText('Annual quantity'), { target: { value: '10.25' } });
+  fireEvent.change(screen.getByLabelText('Reason'), { target: { value: 'Manual annual need only' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Add line' }));
+  await waitFor(() => expect(f.api.addAnnualNeedLine).toHaveBeenCalledWith(expect.objectContaining({ quantityText: '10.25', annualItemId: ID.annual, fieldVersionId: ID.version })));
+  expect(f.manualApi.addManualNeedLine).not.toHaveBeenCalled();
+});
 function historicalEvent(unbound = false): AnnualNeedEvent {
   return { id: ID.event, planRevisionId: ID.revision, beneficiaryOrganizationId: ID.beneficiary, centralItemId: ID.canonical,
     targetWarehouseId: null, eventSeq: 1, eventKind: 'add', quantityText: '23', approvedUnit: 'box', reason: 'Original need', reference: null,
@@ -73,6 +88,19 @@ function fillEdit() {
 }
 
 describe('annual capability and complete employee journey', () => {
+  it('opts all three dossier reads into transaction-safe RPCs only after verifying the annual contract', async () => {
+    const f = fixture();
+    f.journeyApi.features = vi.fn(async () => ({ nationalCode: true, sameActorManual: true, dossiers: true, workbookIntake: false }));
+    f.journeyApi.listDossiers = vi.fn(async () => [{ id: 'annual-plan', key: '', name: 'General', latestRevisionId: REV.id,
+      latestStatus: 'draft', latestNumber: 1, approvedRevisionId: null, approvedNumber: null }]);
+    f.journeyApi.annualSummary = vi.fn(async () => []);
+    f.journeyApi.listDossierRevisions = vi.fn(async () => [REV]);
+    mount(f); await openYear();
+    expect(f.journeyApi.listDossiers).toHaveBeenCalledWith(ID.owner, 2026, true);
+    expect(f.journeyApi.annualSummary).toHaveBeenCalledWith(ID.owner, 2026, true);
+    expect(f.journeyApi.listDossierRevisions).toHaveBeenCalledWith('annual-plan', true);
+    expect(f.journeyApi.listYearRevisions).not.toHaveBeenCalled();
+  });
   it('retains the institution read when the employee opens a year before that read finishes', async () => {
     const f = fixture(); const institutions = deferred<Awaited<ReturnType<JourneyApi['listBeneficiaries']>>>();
     vi.mocked(f.journeyApi.listBeneficiaries).mockReturnValue(institutions.promise);
@@ -135,6 +163,13 @@ describe('annual capability and complete employee journey', () => {
     expect(screen.queryByTestId('manual-needs-workspace')).toBeNull();
     expect(f.journeyApi.searchCatalog).not.toHaveBeenCalled(); expect(f.manualApi.addManualNeedLine).not.toHaveBeenCalled();
     expect(f.journeyApi.listYearRevisions).not.toHaveBeenCalled();
+  });
+  it('ends checking when a later year preparation read fails, without enabling a fallback', async () => {
+    const f = fixture(); vi.mocked(f.journeyApi.features!).mockRejectedValueOnce(new Error('network'));
+    mount(f); fireEvent.click(screen.getByRole('button', { name: 'Open year' }));
+    await screen.findByText('Could not load. Nothing was changed.');
+    expect(screen.queryByText('Checking annual workflow capability…')).toBeNull();
+    expect(screen.queryByTestId('manual-needs-workspace')).toBeNull(); expect(f.manualApi.addManualNeedLine).not.toHaveBeenCalled();
   });
 
   it('selects from the year, leaves the quantity blank, and writes exact annual references through the connected journey', async () => {

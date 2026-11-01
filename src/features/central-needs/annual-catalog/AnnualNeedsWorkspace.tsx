@@ -327,6 +327,7 @@ export function AnnualNeedsWorkspace({ lang, scope, actorId, revision, capabilit
       throw new AnnualCatalogContractError('input', 'annualNeeds.binding.required');
     };
     return {
+      getMonthlyPolicyReference: manualApi.getMonthlyPolicyReference,
       getManualCapabilities: manualApi.getManualCapabilities,
       getManualCatalogLabels: manualApi.getManualCatalogLabels ?? getManualCatalogLabels,
       newManualIdempotencyKey: manualApi.newManualIdempotencyKey,

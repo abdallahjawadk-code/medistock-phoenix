@@ -34,7 +34,7 @@ export interface JourneyApi {
   openDossier?: typeof openNeedsDossier;
   openDossierCorrection?: typeof openNeedsDossierCorrection;
   annualSummary?: typeof readAnnualNeeds;
-  listDossierRevisions?: (planId: string) => Promise<YearRevision[]>;
+  listDossierRevisions?: (planId: string, transactionSafe?: boolean) => Promise<YearRevision[]>;
   listYearRevisions(organizationId: string, year: number): Promise<YearRevision[]>;
   listBeneficiaries(): Promise<BeneficiaryOption[]>;
   searchCatalog(query: string): Promise<CatalogOption[]>;
@@ -65,8 +65,8 @@ async function listPlanRevisions(planId: string): Promise<YearRevision[]> {
   }));
 }
 
-async function listDossierRevisions(planId: string): Promise<YearRevision[]> {
-  const { data, error } = await supabase.rpc('phoenix_central_needs_dossier_revisions', { p_plan_id: planId });
+async function listDossierRevisions(planId: string, transactionSafe = false): Promise<YearRevision[]> {
+  const { data, error } = await supabase.rpc(transactionSafe ? 'phoenix_manual_read_dossier_revisions_v1' : 'phoenix_central_needs_dossier_revisions', { p_plan_id: planId });
   if (error) throw centralNeedsErrorFromPostgrest(error);
   return ((data ?? []) as Array<Record<string, unknown>>).map((r) => ({ id:r.id as string, revisionNumber:r.revision_number as number,
     status:r.status as string, sourceMode:r.source_mode as 'manual'|'excel', createdBy:r.created_by as string|null }));

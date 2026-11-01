@@ -1,0 +1,7 @@
+# Automatic monthly proposal in manual annual entry
+
+The existing Screen-3 annual journey remains beneficiary-first with multiple annual material choices and a blank annual quantity. Selecting a current annual material version loads its documented policy using the employee's RPC. The proposed rows recalculate immediately as the annual text changes. A separate explicit read refreshes the reference; typing does not issue another policy request.
+
+No reference produces **بانتظار تحديد سياسة التوزيع** / **Awaiting distribution policy**, without inferred step, months or monthly quantities. Permission, session, transport and malformed responses remain distinct read failures. Annual entry and its existing immutable version/employee binding remain available independently of policy readiness. Fixed approved months remain fixed; incompatible quantities remain held. Old-scope asynchronous responses never populate another beneficiary/material.
+
+This slice is read-only monthly display. It creates no quota, approval, employee monthly draft journal, SEND, RECEIVE or stock movement. The existing independent draft-journal gate still governs manual monthly edits. Production has no candidate SQL application or build-flag activation. Only the disposable CI build explicitly enables the existing manual-needs tab to test the real route; a fresh synthetic PDA/maker/checker avoids converting the legacy Excel fixture.
