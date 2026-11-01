@@ -90,3 +90,9 @@ The owner-approved policy is binding within this scope. The event schema, API si
 | A former approver becomes inactive or loses scope | Re-check current authority before any new mutation or receipt replay. |
 
 Policy adoption alone does not mark these execution tests PASS. Their results must identify the tested source, database and actor.
+
+## Bounded arithmetic implementation
+
+`src/features/central-needs/allocation/conservative-policy.ts` implements the pure A−C/C−D calculation and equal monthly proposal in exact decimal text using BigInt coefficients. It reuses the existing R1 quantity-input grammar, keeps missing input unavailable and preserves signed overages. Proposal inputs include an explicit lawful step and only the caller's selected unapproved months; remainders follow chronological order.
+
+The module has no UI imports, network access, authorization decisions, persistence or inventory effects. It is not connected to an operational writer. The caller must first establish a single authoritative accounting scope, effective versions, legal unit/step and period eligibility. The separate implementation and activation prerequisites above still apply.
