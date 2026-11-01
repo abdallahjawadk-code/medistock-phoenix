@@ -129,6 +129,16 @@ export function ManualNeedsJourney({ lang, organizationId, actorId, api = realJo
       }
     }
     try {
+      if (nextAnnualMode === 'annual' && api.listAnnualBeneficiaries) {
+        const beneficiaryRequest = ++beneficiaryEpoch.current;
+        setBeneficiaries(null); setBenefFailed(false);
+        // Independent of catalog preparation: C4 remains usable if this lookup fails.
+        void api.listAnnualBeneficiaries(organizationId).then(list => {
+          if (epoch.current === mine && beneficiaryEpoch.current === beneficiaryRequest) setBeneficiaries(list);
+        }).catch(() => {
+          if (epoch.current === mine && beneficiaryEpoch.current === beneficiaryRequest) { setBeneficiaries([]); setBenefFailed(true); }
+        });
+      }
       const f = api.features ? await api.features() : null;
       let revs: YearRevision[];
       let ds: NeedsDossier[] = [];

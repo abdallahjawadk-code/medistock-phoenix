@@ -528,11 +528,19 @@ describe('RAC-3 · I) no backend or migration change', () => {
     expect(isReviewedAdapter(READ_ADAPTER, adapterBytes)).toBe(true);
     expect(isReviewedAdapter(READ_ADAPTER, Buffer.concat([adapterBytes, Buffer.from('\nSELECT 1;')]))).toBe(false);
     expect(isReviewedAdapter(`${READ_ADAPTER}.bak`, adapterBytes)).toBe(false);
+    const BENEFICIARY_READER = 'supabase/candidates/R1_beneficiary_catalog_read_NOT_APPLIED.sql';
+    const isReviewedBeneficiaries = (path: string, bytes: Uint8Array) => path === BENEFICIARY_READER
+      && createHash('sha256').update(bytes).digest('hex') === '2fd7c4865afe7b02481219793a30bb8703ec0c48b79fa976aaa5ba47f0b1d572';
+    const beneficiaryBytes = readFileSync(join(process.cwd(), BENEFICIARY_READER));
+    expect(isReviewedBeneficiaries(BENEFICIARY_READER, beneficiaryBytes)).toBe(true);
+    expect(isReviewedBeneficiaries(BENEFICIARY_READER, Buffer.concat([beneficiaryBytes, Buffer.from('\nSELECT 1;')]))).toBe(false);
+    expect(isReviewedBeneficiaries(`${BENEFICIARY_READER}.bak`, beneficiaryBytes)).toBe(false);
     // R1 (staging release candidate): the un-numbered SQL CANDIDATES and their tooling/tests under supabase/candidates/ (never in the numbered
     // chain, never applied outside a disposable database) are registered by EXACT filename, exactly as M200-M222 were; no wildcard and no
     // directory exemption, so every other supabase/ file still fails this guard closed. They touch no command-centre object.
     const R1_CANDIDATES = [
       READ_ADAPTER,
+      BENEFICIARY_READER,
       // D18: the unnumbered, unapplied R1 forward-fix candidate (exact filename).
       'supabase/candidates/FF1_r1_forward_fix_NOT_APPLIED.sql',
       // Current dossier kill switch, exact names only; historical FF1 remains immutable.
@@ -616,6 +624,9 @@ describe('RAC-3 · I) no backend or migration change', () => {
     const adapterNearMisses = [`${READ_ADAPTER}.bak`, 'supabase/candidates/R1_read_transaction_adapters_NOT_APPLIED_v2.sql',
       'supabase/migrations/236_phoenix_manual_read_adapters.sql'];
     expect(flag(adapterNearMisses)).toEqual(adapterNearMisses);
+    const beneficiaryNearMisses = [`${BENEFICIARY_READER}.bak`, 'supabase/candidates/R1_beneficiary_catalog_read_NOT_APPLIED_v2.sql',
+      'supabase/migrations/236_phoenix_annual_beneficiaries.sql'];
+    expect(flag([BENEFICIARY_READER])).toEqual([]); expect(flag(beneficiaryNearMisses)).toEqual(beneficiaryNearMisses);
     const monthlyNearMisses = [`${R2B_POLICY}.bak`, `${R2B_PROOF}.orig`,
       'supabase/candidates/R2B_monthly_policy_reference_NOT_APPLIED_v2.sql',
       'supabase/migrations/236_phoenix_monthly_policy.sql'];
