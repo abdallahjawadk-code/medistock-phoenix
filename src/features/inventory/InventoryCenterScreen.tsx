@@ -353,14 +353,14 @@ export function InventoryCenterScreen({
 
   if (!activeOrgId) {
     return (
-      <div data-prism-surface="inventory" dir={dir} className="nexus-inventory-transfers nexus-inventory-transfers--center">
+      <div dir={dir} className="nexus-inventory-transfers nexus-inventory-transfers--center">
         {header}
         <PhoenixEmptyState icon="hospital" title={t('no_org_scope', lang)} description={t('empty_hint', lang)} />
       </div>
     );
   }
 
-  if (scopes.loading) return <div data-prism-surface="inventory" dir={dir} className="nexus-inventory-transfers nexus-inventory-transfers--center">{header}<PhoenixLoadingState /></div>;
+  if (scopes.loading) return <div dir={dir} className="nexus-inventory-transfers nexus-inventory-transfers--center">{header}<PhoenixLoadingState /></div>;
 
   // UAT-DEFECT-005 — a FAILED scope read is not a permission answer.
   // Without this branch the next test (`manageableWarehouses.length === 0`)
@@ -370,7 +370,7 @@ export function InventoryCenterScreen({
   // hook's own reload, with no page reload.
   if (scopes.error) {
     return (
-      <div data-prism-surface="inventory" dir={dir} className="nexus-inventory-transfers nexus-inventory-transfers--center">
+      <div dir={dir} className="nexus-inventory-transfers nexus-inventory-transfers--center">
         {header}
         <PhoenixErrorState title={t('load_error', lang)} message={t('inv_scope_read_failed', lang)} onRetry={scopes.reload} />
       </div>
@@ -382,7 +382,7 @@ export function InventoryCenterScreen({
     // still reaches it. Every other tab needs a warehouse and stays denied; with the gate off this branch is exactly the old one.
     if (needsGate === 'on') {
       return (
-        <div data-prism-surface="inventory" dir={dir} className="nexus-inventory-transfers nexus-inventory-transfers--center">
+        <div dir={dir} className="nexus-inventory-transfers nexus-inventory-transfers--center">
           {header}
           <div role="tablist" className="nexus-it-tabs" style={{ display: 'flex', gap: '6px', margin: '16px 0' }}>
             <button role="tab" aria-selected="true" className="nexus-it-tab" style={{ padding: '8px 14px', minHeight: '44px', borderRadius: 'var(--r3)', border: '1px solid var(--brd)', fontSize: '12.5px', fontWeight: 600, background: 'var(--p2)', color: 'var(--pd)' }}>
@@ -394,7 +394,7 @@ export function InventoryCenterScreen({
       );
     }
     return (
-      <div data-prism-surface="inventory" dir={dir} className="nexus-inventory-transfers nexus-inventory-transfers--center">
+      <div dir={dir} className="nexus-inventory-transfers nexus-inventory-transfers--center">
         {header}
         <PhoenixEmptyState icon="🔒" title={t('inv_center_denied', lang)} />
       </div>
@@ -419,7 +419,7 @@ export function InventoryCenterScreen({
   const reloadCanonicalStock = () => setReloadKey(k => k + 1);
 
   return (
-    <div data-prism-surface="inventory" dir={dir} className="nexus-inventory-transfers nexus-inventory-transfers--center">
+    <div dir={dir} className="nexus-inventory-transfers nexus-inventory-transfers--center">
       {header}
 
       <PhoenixCard className="nexus-it-context-bar">

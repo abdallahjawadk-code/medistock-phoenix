@@ -5,7 +5,7 @@ html[data-pharma-design][data-phoenix-ui-phase][data-phoenix-visual] .prism-shel
     background: var(--p4-wash) !important;
     border-start-start-radius: 0;
   }
-  & [data-prism-surface='inventory'] {
+  & .nexus-inventory-transfers--center {
     --s: var(--p4-panel); --s2: var(--p4-wash); --surface: var(--p4-panel); --surface2: var(--p4-wash);
     --t: var(--p4-ink); --t2: var(--p4-muted); --text: var(--p4-ink); --muted: var(--p4-muted);
     --brd: var(--p4-line); --line: var(--p4-line); --line2: var(--p4-line); --field: var(--p4-panel);
@@ -67,12 +67,12 @@ html[data-pharma-design][data-phoenix-ui-phase][data-phoenix-visual] .prism-shel
     }
   }
 }
-html[data-theme='dark'][data-pharma-design][data-phoenix-ui-phase][data-phoenix-visual] .prism-shell[data-pharma-screen='3'] [data-prism-surface='inventory'] {
+html[data-theme='dark'][data-pharma-design][data-phoenix-ui-phase][data-phoenix-visual] .prism-shell[data-pharma-screen='3'] .nexus-inventory-transfers--center {
   --inventory-on-accent: #07162e;
 }
 @media (prefers-reduced-motion: reduce) {
-  html[data-pharma-design][data-phoenix-ui-phase][data-phoenix-visual] [data-prism-surface='inventory'] :is(.nexus-it-tab, .phoenix-button) { transition: none !important; }
+  html[data-pharma-design][data-phoenix-ui-phase][data-phoenix-visual] .nexus-inventory-transfers--center :is(.nexus-it-tab, .phoenix-button) { transition: none !important; }
 }
 @media (forced-colors: active) {
-  [data-prism-surface='inventory'] .nexus-it-tab[aria-selected='true'] { outline: 2px solid Highlight; }
+  .nexus-inventory-transfers--center .nexus-it-tab[aria-selected='true'] { outline: 2px solid Highlight; }
 }

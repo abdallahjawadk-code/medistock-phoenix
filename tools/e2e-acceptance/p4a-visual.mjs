@@ -219,7 +219,7 @@ try {
       await page.locator('.nexus-it-context-bar select').selectOption(seed.stageE.whA);
       await page.getByRole('tab', { name: lang === 'ar' ? 'رصيد المخزن' : 'Warehouse stock', exact: true }).click();
       await settleView(page);
-      const inventoryPaint = await page.locator('[data-prism-surface="inventory"]').evaluate(el => {
+      const inventoryPaint = await page.locator('.nexus-inventory-transfers--center').evaluate(el => {
         const header = el.querySelector('.nexus-it-header');
         const tab = el.querySelector('.nexus-it-tab[aria-selected="true"]');
         return { font: getComputedStyle(el).fontFamily,
