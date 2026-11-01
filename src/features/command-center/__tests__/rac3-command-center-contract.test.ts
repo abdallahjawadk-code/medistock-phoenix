@@ -512,6 +512,15 @@ describe('RAC-3 · I) no backend or migration change', () => {
     const c4Tampered = Buffer.from(c4Bytes); c4Tampered[0] ^= 1;
     expect(isReviewedP3C4(P3C4, c4Tampered)).toBe(false);
     expect(isReviewedP3C4(`${P3C4}.bak`, c4Bytes)).toBe(false);
+    const R2B_POLICY = 'supabase/candidates/R2B_monthly_policy_reference_NOT_APPLIED.sql';
+    const R2B_PROOF = 'supabase/candidates/__tests__/r2b-monthly-policy.dynamic.test.ts';
+    const isReviewedR2B = (path: string, bytes: Uint8Array) => path === R2B_POLICY
+      && createHash('sha256').update(bytes).digest('hex') === '6fa6b74b0662003609ef8119a1fbb0f60002a456254045d3f6f95f463bece0b4';
+    const monthlyBytes = readFileSync(join(process.cwd(), R2B_POLICY));
+    expect(isReviewedR2B(R2B_POLICY, monthlyBytes)).toBe(true);
+    const monthlyTampered = Buffer.from(monthlyBytes); monthlyTampered[0] ^= 1;
+    expect(isReviewedR2B(R2B_POLICY, monthlyTampered)).toBe(false);
+    expect(isReviewedR2B(`${R2B_POLICY}.bak`, monthlyBytes)).toBe(false);
     // R1 (staging release candidate): the un-numbered SQL CANDIDATES and their tooling/tests under supabase/candidates/ (never in the numbered
     // chain, never applied outside a disposable database) are registered by EXACT filename, exactly as M200-M222 were; no wildcard and no
     // directory exemption, so every other supabase/ file still fails this guard closed. They touch no command-centre object.
@@ -531,6 +540,7 @@ describe('RAC-3 · I) no backend or migration change', () => {
       P3C2, P3C2_PROOF,
       R2A, R2A_PROOF,
       P3C4, P3C4_PROOF,
+      R2B_POLICY, R2B_PROOF,
       'supabase/candidates/__tests__/ff2-dossiers-forward-fix.dynamic.test.ts',
       'supabase/candidates/R1a_01_manual_source_schema_inert.sql',
       'supabase/candidates/R1a_02_authorization_closure.sql',
@@ -593,6 +603,11 @@ describe('RAC-3 · I) no backend or migration change', () => {
     expect(flag([P3C2, P3C2_PROOF])).toEqual([]);
     expect(flag([R2A, R2A_PROOF])).toEqual([]);
     expect(flag([P3C4, P3C4_PROOF])).toEqual([]);
+    expect(flag([R2B_POLICY, R2B_PROOF])).toEqual([]);
+    const monthlyNearMisses = [`${R2B_POLICY}.bak`, `${R2B_PROOF}.orig`,
+      'supabase/candidates/R2B_monthly_policy_reference_NOT_APPLIED_v2.sql',
+      'supabase/migrations/236_phoenix_monthly_policy.sql'];
+    expect(flag(monthlyNearMisses)).toEqual(monthlyNearMisses);
     const c4NearMisses = [`${P3C4}.bak`, `${P3C4_PROOF}.orig`,
       'supabase/candidates/P3C4_verified_membership_NOT_APPLIED_v2.sql',
       'supabase/migrations/236_phoenix_verified_membership.sql'];
