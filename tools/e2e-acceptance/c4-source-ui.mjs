@@ -118,7 +118,7 @@ try {
       await appearance(lang, theme); await page.evaluate(() => document.fonts.ready); const label = `${width}-${lang}-${theme}`;
       check(`${label} source witnesses and explicit reviewed canonical`, (await panel.textContent()).includes(code) && await confirm().isEnabled());
       check(`${label} no document overflow`, await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
-      check(`${label} review direction and accessible heading`, await panel.getAttribute('dir') === (lang === 'ar' ? 'rtl' : 'ltr') && await panel.getByRole('heading').count() === 1);
+      check(`${label} review direction and accessible heading`, await panel.getAttribute('dir') === (lang === 'ar' ? 'rtl' : 'ltr') && await panel.getByRole('heading', { level: 3 }).count() === 1);
       check(`${label} no quantity or approval editor in identity review`, await panel.getByLabel(/^(Annual quantity|الكمية السنوية)$/).count() === 0);
       await panel.screenshot({ path: resolve(output, `${label}.png`) });
     }
