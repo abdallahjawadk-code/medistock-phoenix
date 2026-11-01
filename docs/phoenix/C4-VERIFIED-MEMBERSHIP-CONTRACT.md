@@ -1,0 +1,19 @@
+# C4 first verified membership slice — r16
+
+Scope: one retained C2 original, one bounded C3 page, at most50 selected occurrences, one explicitly selected active canonical material, and a NEW membership in an existing active owner/year catalog. No beneficiary or quantity is accepted. Existing memberships remain held rather than refreshed merely to attach a source. ZIP/multi-file intake and attach-only/CAS are subsequent slices.
+
+The trusted Node boundary must verify the employee JWT, re-read C2 with that employee client, select a reviewed server registration, run the admitted terminating worker again and compare expected source/registration/parser identity. The browser supplies only review choices and references, never authoritative occurrences, actor names or mappings. Empty deployed registries remain unavailable.
+
+Two identities are deliberately separate. A service-only seal RPC stores a bounded immutable proof containing verified actorUUID, owner/year, C2 original metadata, registration/core-template/parser/worker hashes, selected occurrences, canonicalUUID/fingerprint, explicit reason and requestUUID. This is prepared evidence, not permission or committed membership. The server then calls a commit RPC with the ORIGINAL employee client/JWT. No service impersonation or request-GUC identity switching is used.
+
+Commit reuses the unchanged annual write guard, year lock, original-download RPC, canonical lock/fingerprint, annual writer, replay and receipt helpers. It revalidates the actual C2 metadata and current authority. Source name/code/unit must be explicitly observed and exactly compatible with the selected canonical identity; required canonical clinical discriminators cannot be silently absent, and observed optional identity conflicts remain held. Source classifications remain original or missing, never inferred from filenames. A1/C1 witnesses stay `client_attested`; a separate C4 receipt records server verification without relabelling history.
+
+Membership, its field version, old receipt/audit and the C4 completion link commit atomically. A prepared proof may remain after a failed commit; it creates no membership or planning quantity. The same requestUUID and full intent replay safely; changed intent conflicts. Readback is caller-scoped and distinguishes missing/prepared/committed outcomes. A saved annual need is unaffected by source selection.
+
+The candidate uses a new private `phoenix_c4` namespace, forced RLS, no direct API-role table/schema privileges, append-only proof/link/activation history and a separate capability seal. It preserves all earlier SQL and seals. No activation event is inserted by installation. Existing `central_needs.view/edit` authority is reused; no default staff grants or R2 approval rights are added.
+
+Activation has an explicit transaction boundary: an admitted seal/commit holds a SHARE lock on the activation append table until its transaction ends. A later owner deactivation waits for admitted transactions; after it commits, subsequent writes refuse. Deactivation does not cancel an already admitted transaction. Read-only receipt recovery remains available while inactive. A barrier-controlled native test proves this ordering.
+
+Required proof: service cannot commit; employee/anonymous cannot seal or read private tables; owner/year/actor/source/hash/unit/canonical drift and revoked permission refuse; duplicate/repeated/competing commands do not duplicate membership; rollback and readback preserve history; old and new seals stay closed; no canonical, need, allocation or stock writes occur. Native PostgreSQL and disposable realAuth/PostgREST are separate gates.
+
+Production SQL and platform roles remain HOLD at M231. Local/CI execution is only for explicitly pinned disposable targets and synthetic workbooks. A successful merge does not activate this candidate or approve real material identities.
