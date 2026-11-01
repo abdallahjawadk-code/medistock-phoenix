@@ -22,7 +22,7 @@ const head = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).tr
 const prerequisite = JSON.parse(readFileSync('docs/phoenix/e2e-acceptance/c4-verified-membership.json', 'utf8'));
 assert.equal(prerequisite.passed, true); assert.equal(prerequisite.commit, head);
 const candidate = readFileSync(resolve('supabase/candidates/R2B_monthly_policy_reference_NOT_APPLIED.sql'));
-const candidateSha256 = '6fa6b74b0662003609ef8119a1fbb0f60002a456254045d3f6f95f463bece0b4';
+const candidateSha256 = '6db1e13411f5773c0f7ff281a2bbbc76154acdde1eaa8b4eb642d73ef72f44c6';
 assert.equal(createHash('sha256').update(candidate).digest('hex'), candidateSha256);
 const anonKey = process.env.SUPABASE_ANON_KEY; assert(anonKey);
 const options = { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } };
@@ -107,6 +107,9 @@ try {
   await publish({ ...specific, policyId: randomUUID(), version: 2 }, specific.policyId, false); response = await read();
   check('ambiguity stays held until an explicit owner withdrawal, without first-match selection', !response.error && response.data.status === 'ready');
   stage = 'current_authority';
+  await db.query("UPDATE public.profile_permission_overrides SET allowed=false WHERE profile_id=$1 AND permission_key='central_needs.allocation.view'", [actor]);
+  try { const denied = await read(); check('annual view alone cannot disclose allocation quantities to the same JWT', denied.error?.message === 'r2_permission_denied'); }
+  finally { await db.query("UPDATE public.profile_permission_overrides SET allowed=true WHERE profile_id=$1 AND permission_key='central_needs.allocation.view'", [actor]); }
   await db.query("UPDATE public.profile_permission_overrides SET allowed=false WHERE profile_id=$1 AND permission_key='central_needs.view'", [actor]);
   try { check('the same employee JWT observes current view revocation', Boolean((await read()).error)); }
   finally { await db.query("UPDATE public.profile_permission_overrides SET allowed=true WHERE profile_id=$1 AND permission_key='central_needs.view'", [actor]); }
@@ -121,7 +124,7 @@ try {
   report.errors.push(`monthly_reference_acceptance_failed_at_${stage}`); check('integration completed', false);
 } finally {
   await editor.auth.signOut(); await outsider.auth.signOut(); await db.end();
-  report.passed = report.checks.length === 10 && report.checks.every(item => item.passed) && report.errors.length === 0;
+  report.passed = report.checks.length === 11 && report.checks.every(item => item.passed) && report.errors.length === 0;
   const output = resolve('docs/phoenix/e2e-acceptance'); mkdirSync(output, { recursive: true });
   writeFileSync(join(output, 'monthly-policy-reference.json'), JSON.stringify(report, null, 2));
   if (!report.passed) process.exitCode = 1;

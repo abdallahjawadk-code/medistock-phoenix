@@ -210,6 +210,8 @@ LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,pg_temp AS $$
 DECLARE binding jsonb; ctx jsonb; candidates jsonb; policy jsonb;
 BEGIN
   PERFORM phoenix_r2.owner_guard(p_organization_id); PERFORM phoenix_monthly.ready_v1();
+  IF NOT phoenix_r2.has_explicit_key(p_organization_id,'central_needs.allocation.view') THEN
+    RAISE EXCEPTION 'r2_permission_denied' USING ERRCODE='42501'; END IF;
   binding:=phoenix_private.annual_needs_reference_v1(p_organization_id,p_planning_year,p_annual_item_id,p_field_version_id,p_canonical_id,'selection');
   PERFORM 1 FROM public.organizations WHERE id=p_beneficiary_id FOR SHARE;
   PERFORM phoenix_private.central_needs_manual_scope_v1(p_beneficiary_id,p_canonical_id,NULL);

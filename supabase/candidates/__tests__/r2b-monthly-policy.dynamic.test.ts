@@ -88,7 +88,7 @@ run('R2-B owner-published metadata; restricted native roles, not JWT acceptance'
       'P3B_annual_needs_audit_NOT_APPLIED.sql': 'a761e97aa8c2c37ed1790d645d55ec26e1945c887f6402f9179d72e6a5d41074',
       'P3C2_annual_originals_NOT_APPLIED.sql': '17cd88fa51492c9b5722c4ae95a31275976360205f82584f46c676b65522f600',
       'R2A_authority_NOT_APPLIED.sql': 'a48040a57082fd2519661c755f87c7d2f32c2e8efc351a120308e65b03c56d71',
-      'R2B_monthly_policy_reference_NOT_APPLIED.sql': '6fa6b74b0662003609ef8119a1fbb0f60002a456254045d3f6f95f463bece0b4',
+      'R2B_monthly_policy_reference_NOT_APPLIED.sql': '6db1e13411f5773c0f7ff281a2bbbc76154acdde1eaa8b4eb642d73ef72f44c6',
     };
     const programs = Object.entries(pinned).map(([file, expected]) => {
       const bytes = readFileSync(new URL(`../${file}`, import.meta.url)); expect(sha(bytes)).toBe(expected); return bytes.toString('utf8');
@@ -106,7 +106,7 @@ run('R2-B owner-published metadata; restricted native roles, not JWT acceptance'
       ($4,'Hospital B','مستشفى ب','monthly-ben-b','care_institution','hospital','active')`, [F.org, F.other, F.ben, F.otherBen]);
     await admin('INSERT INTO auth.users(id,email) VALUES($1,$2)', [F.actor, 'monthly-native@fixture.invalid']);
     await admin("UPDATE public.profiles SET organization_id=$2,role='warehouse_officer',status='active',full_name='Synthetic monthly reviewer' WHERE id=$1", [F.actor, F.org]);
-    for (const key of ['view', 'edit']) await admin('INSERT INTO public.profile_permission_overrides(profile_id,permission_key,allowed) VALUES($1,$2,true)', [F.actor, `central_needs.${key}`]);
+    for (const key of ['view', 'edit', 'allocation.view']) await admin('INSERT INTO public.profile_permission_overrides(profile_id,permission_key,allowed) VALUES($1,$2,true)', [F.actor, `central_needs.${key}`]);
     canonical = (await admin("INSERT INTO public.central_items(name,name_ar,unit,national_code,status) VALUES('Synthetic monthly','مادة اصطناعية','box','MONTHLY-NATIVE','active') RETURNING id"))[0].id;
     await user('SELECT public.phoenix_central_needs_open_catalog_year($1,2026,$2) r', [F.org, `open-${randomUUID()}`]);
     const preview = await user<{ canonicalFingerprint: string }>('SELECT public.phoenix_central_needs_preview_annual_canonical($1,2026,$2) r', [F.org, canonical]);
@@ -164,6 +164,12 @@ run('R2-B owner-published metadata; restricted native roles, not JWT acceptance'
     const next = { ...generic, policyId: randomUUID(), version: 2 };
     await expect(publish(next)).rejects.toThrow('monthly_policy_stale');
     await expect(publish({ ...next, eligibleMonths: [1, 2] }, generic.policyId)).rejects.toThrow('monthly_policy_invalid');
+    expect(await read()).toMatchObject({ status: 'ready' });
+  });
+  it('refuses allocation data when only allocation view is revoked, retaining annual view', async () => {
+    await admin("UPDATE public.profile_permission_overrides SET allowed=false WHERE profile_id=$1 AND permission_key='central_needs.allocation.view'", [F.actor]);
+    try { await expect(read()).rejects.toThrow('r2_permission_denied'); }
+    finally { await admin("UPDATE public.profile_permission_overrides SET allowed=true WHERE profile_id=$1 AND permission_key='central_needs.allocation.view'", [F.actor]); }
     expect(await read()).toMatchObject({ status: 'ready' });
   });
   it('observes current view revocation and preserves history and all business counts', async () => {

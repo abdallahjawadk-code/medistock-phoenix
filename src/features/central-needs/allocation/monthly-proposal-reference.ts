@@ -31,7 +31,7 @@ function requireValue(value: unknown): asserts value { if (!value) throw new Err
 function object(value: unknown, fields: readonly string[]): Record<string, unknown> {
   requireValue(value && typeof value === 'object' && !Array.isArray(value));
   const row = value as Record<string, unknown>;
-  requireValue(Object.keys(row).length === fields.length && fields.every(key => Object.hasOwn(row, key))); return row;
+  requireValue(Object.keys(row).length === fields.length && fields.every(key => Object.prototype.hasOwnProperty.call(row, key))); return row;
 }
 function text(value: unknown, max = 2000): string {
   requireValue(typeof value === 'string' && value.length > 0 && value.length <= max && value.trim().length > 0 && !CONTROL.test(value)); return value;
@@ -127,7 +127,7 @@ export function reviewMonthlyDraft(annual: string, context: MonthlyProposalConte
   const policy = decodeMonthlyPolicyReference(reference, context);
   if (!Array.isArray(edits) || edits.length !== policy.eligibleMonths.length
     || edits.some(row => !row || typeof row !== 'object' || Array.isArray(row)
-      || Object.keys(row).length !== 2 || !Object.hasOwn(row, 'month') || !Object.hasOwn(row, 'quantity'))
+      || Object.keys(row).length !== 2 || !Object.prototype.hasOwnProperty.call(row, 'month') || !Object.prototype.hasOwnProperty.call(row, 'quantity'))
     || new Set(edits.map(row => row.month)).size !== edits.length
     || edits.some(row => !policy.eligibleMonths.includes(row.month) || !checkManualQuantityText(row.quantity).ok || !multiple(row.quantity, policy.unitStep))) {
     return { status: 'held' as const, reason: 'invalid_edits' };

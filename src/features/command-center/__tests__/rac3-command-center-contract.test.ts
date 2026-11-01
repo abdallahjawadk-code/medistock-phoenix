@@ -515,7 +515,7 @@ describe('RAC-3 · I) no backend or migration change', () => {
     const R2B_POLICY = 'supabase/candidates/R2B_monthly_policy_reference_NOT_APPLIED.sql';
     const R2B_PROOF = 'supabase/candidates/__tests__/r2b-monthly-policy.dynamic.test.ts';
     const isReviewedR2B = (path: string, bytes: Uint8Array) => path === R2B_POLICY
-      && createHash('sha256').update(bytes).digest('hex') === '6fa6b74b0662003609ef8119a1fbb0f60002a456254045d3f6f95f463bece0b4';
+      && createHash('sha256').update(bytes).digest('hex') === '6db1e13411f5773c0f7ff281a2bbbc76154acdde1eaa8b4eb642d73ef72f44c6';
     const monthlyBytes = readFileSync(join(process.cwd(), R2B_POLICY));
     expect(isReviewedR2B(R2B_POLICY, monthlyBytes)).toBe(true);
     const monthlyTampered = Buffer.from(monthlyBytes); monthlyTampered[0] ^= 1;

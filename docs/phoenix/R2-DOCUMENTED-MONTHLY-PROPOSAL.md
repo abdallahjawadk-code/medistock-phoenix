@@ -6,6 +6,8 @@ The reference binds owner/year, annual membership/current field version, canonic
 
 Policy publication is owner-controlled from independently approved data. There is no employee/browser API for inventing a policy, no default reference, new permission key or default grant. Production publication/application remains a separate authorized SQL gate.
 
+Reading the resolved reference requires current annual view AND the existing explicit `central_needs.allocation.view` permission, because fixed approved quantities and ledger evidence are allocation data. R2 operational activation is not required for this read-only path. Annual view alone cannot disclose the reference; no production grant is introduced.
+
 `remaining = manual annual quantity − sum(fixed approved/locked months)`. Existing fixed months remain unchanged. The accepted exact R2 calculator proposes the remainder only over explicit eligible months at the documented step, assigning remainders in calendar order. The union of fixed and proposed rows must sum EXACTLY to the annual quantity. Unlisted months are not invented as zero. Annual below fixed, non-multiple step, stale identity/version or missing ledger evidence remains held.
 
 Manual edits affect eligible months only and must retain the exact annual sum and legal step. Changed drafts require a reason. A saved draft must journal the original proposal, edits/difference, current employee identity/name and server time, with full-intent idempotency and a previous-version fence. Shape validation or a browser fingerprint never establishes approval or authority. Effective quotas, approvals, charged SEND, RECEIVE, settlement and stock/FEFO are separate operations.
