@@ -3,6 +3,7 @@ import { useApp } from '@/app/AppContext';
 import { useIsMobileViewport } from '@/shared/ui/useResponsiveViewport';
 import { t } from '@/shared/i18n/strings';
 import { PhoenixSidebar } from './PhoenixSidebar';
+import './prism/prism-shell.css';
 import { PhoenixMobileDrawer } from './PhoenixMobileDrawer';
 import { PhoenixTopbar } from './PhoenixTopbar';
 import { PwaInstallPrompt } from '@/shared/pwa/PwaInstallPrompt';
@@ -67,6 +68,7 @@ export function PhoenixAppShell(props: Props) {
 function PhoenixAppShellInner({ children, currentScreen, onNavigate, onLogout }: Props) {
   const { lang, dir } = useApp();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [searchRequest, setSearchRequest] = useState(0);
   const isMobile = useIsMobileViewport();
   const closeSidebar = useCallback(() => setSidebarOpen(false), []);
   const toggleSidebar = useCallback(() => setSidebarOpen(open => !open), []);
@@ -88,7 +90,7 @@ function PhoenixAppShellInner({ children, currentScreen, onNavigate, onLogout }:
   const title = t(SCREEN_TITLE_KEYS[currentScreen] ?? 'nav_decision_reports', lang);
 
   return (
-    <div dir={dir} data-pharma-screen={currentScreen} className="premium-shell nexus-shell" style={{
+    <div dir={dir} data-pharma-screen={currentScreen} className="premium-shell nexus-shell prism-shell" style={{
       display: 'flex',
       flexDirection: 'row',
       minHeight: '100dvh',
@@ -121,6 +123,7 @@ function PhoenixAppShellInner({ children, currentScreen, onNavigate, onLogout }:
           isMobile={isMobile}
           menuOpen={sidebarOpen}
           onMenuClick={toggleSidebar}
+          onSearchClick={() => setSearchRequest(request => request + 1)}
         />
 
         <main
@@ -154,7 +157,7 @@ function PhoenixAppShellInner({ children, currentScreen, onNavigate, onLogout }:
       {/* UX-COMMAND-CENTER-SMART-A: global Ctrl+K/Cmd+K command palette —
           navigates via the same onNavigate screen-switch already passed
           down; no new routes, no new backend reads. */}
-      <CommandPalette onNavigate={onNavigate} />
+      <CommandPalette onNavigate={onNavigate} openRequest={searchRequest} />
 
       {/* PHASE3-PLATFORM-BROADCAST-NOTICES-A: institution-level broadcast
           popup. Self-gates on authReady/session/profile/activeOrgId and

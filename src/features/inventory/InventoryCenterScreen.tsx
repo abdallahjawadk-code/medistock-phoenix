@@ -53,6 +53,8 @@ import {
   requestWarehouseStockCorrection,
 } from './warehouse-intake.service';
 import type { SuggestionDocumentTarget } from './suggestion-document-navigation';
+import { InventoryBatchWorkbench } from './InventoryBatchWorkbench';
+import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 
 /**
  * INVENTORY-CENTER-INTAKE-A — the Inventory Management & Intake Center,
@@ -968,8 +970,7 @@ function StockList({ state, lang, canAdjust, canCorrect, isInstitutionWarehouse,
         style={{ width: '100%', padding: '10px 12px', borderRadius: 'var(--r2)', border: '1px solid var(--brd)', background: 'var(--s)', color: 'var(--t)', fontSize: '13px' }}
       />
       {batches.length === 0 && <PhoenixEmptyState icon="search" title={t('cc_palette_no_results', lang)} />}
-      <div className="nexus-it-batch-list">
-      {batches.map(b => (
+      <InventoryBatchWorkbench batches={batches} lang={lang} renderBatch={(b, selection) => (
         <BatchRow
           key={b.id}
           batch={b}
@@ -981,15 +982,18 @@ function StockList({ state, lang, canAdjust, canCorrect, isInstitutionWarehouse,
           onSuccess={onSuccess}
           onError={onError}
           onConflictReload={onConflictReload}
+          selected={selection.selected}
+          onSelect={selection.onSelect}
         />
-      ))}
-      </div>
+      )} />
     </div>
   );
 }
 
 interface BatchRowProps {
   batch: WarehouseStockBatch;
+  selected: boolean;
+  onSelect: (trigger?: HTMLElement) => void;
   /** INTERACTIVE-GUIDE-IG3 — this is the ONE row the frozen example points at. */
   guideAnchored: boolean;
   lang: 'ar' | 'en';
@@ -1002,7 +1006,7 @@ interface BatchRowProps {
   onConflictReload: () => void;
 }
 
-function BatchRow({ batch, guideAnchored, lang, canAdjust, canCorrect, isInstitutionWarehouse, onSuccess, onError, onConflictReload }: BatchRowProps) {
+function BatchRow({ batch, selected, onSelect, guideAnchored, lang, canAdjust, canCorrect, isInstitutionWarehouse, onSuccess, onError, onConflictReload }: BatchRowProps) {
   const [open, setOpen] = useState(false);
   const [requestId, setRequestId] = useState(newRequestId);
   const [movementType, setMovementType] = useState<WarehouseStockMovementType>('add');
@@ -1095,7 +1099,9 @@ function BatchRow({ batch, guideAnchored, lang, canAdjust, canCorrect, isInstitu
     <PhoenixCard className="nexus-it-batch-row">
       <div className="nexus-it-batch-row__head" style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'baseline', justifyContent: 'space-between' }}>
         <div className="nexus-it-batch-row__id">
-          <div className="nexus-it-batch-row__name" style={{ fontSize: '13.5px', fontWeight: 700 }}>{batch.scientificName}</div>
+          <button type="button" className="nexus-it-batch-row__name prism-stock-batch-select" aria-pressed={selected} onClick={event => onSelect(event.currentTarget)}>
+            <PhoenixIcon name="medical" size={24} /><bdi>{batch.scientificName}</bdi>
+          </button>
           <div className="nexus-it-batch-row__meta" style={{ fontSize: '11.5px', color: 'var(--t2)', marginTop: '2px' }}>
             {[batch.batchNumber, batch.nationalCode, batch.expiryDate].filter(Boolean).join(' · ') || '—'}
           </div>
