@@ -1,7 +1,8 @@
 /* Existing annual workflow only. Source evidence and human decisions retain
    their owners, order and gates; this bridge changes presentation. */
 html[data-pharma-design][data-phoenix-ui-phase][data-phoenix-visual] .prism-shell[data-pharma-screen='23'] {
-  & #phoenix-main { background: var(--p4-wash) !important; border-start-start-radius: 0; }
+  & .nexus-app-column { background: var(--p4-wash) !important; }
+  & #phoenix-main { background: var(--p4-wash) !important; border-start-start-radius: 0; border-start-end-radius: 0; }
   & [data-prism-surface='annual'] {
     --s: var(--p4-panel); --s2: var(--p4-wash); --surface: var(--p4-panel); --surface2: var(--p4-wash);
     --t: var(--p4-ink); --t2: var(--p4-muted); --fg: var(--p4-ink); --fg-muted: var(--p4-muted);
