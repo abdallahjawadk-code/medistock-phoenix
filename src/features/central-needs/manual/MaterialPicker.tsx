@@ -16,9 +16,10 @@ interface Props {
   onPick: (item: CatalogOption) => void;
   onRemove: (itemId: string) => void;
   onRequestRegistration?: () => void;
+  selectionText?: { searchHint: string; title: string; hint: string };
 }
 
-export function MaterialPicker({ lang, scopeKey, search, selected, onPick, onRemove, onRequestRegistration }: Props) {
+export function MaterialPicker({ lang, scopeKey, search, selected, onPick, onRemove, onRequestRegistration, selectionText }: Props) {
   const [query, setQuery] = useState('');
   const [hits, setHits] = useState<CatalogOption[] | null>(null);
   const [failed, setFailed] = useState(false);
@@ -62,7 +63,7 @@ export function MaterialPicker({ lang, scopeKey, search, selected, onPick, onRem
         </label>
         <button type="submit" disabled={busy || query.trim().length < 2} aria-busy={busy}>{jt('material_search_btn', lang)}</button>
       </form>
-      <p id={`${searchId}-hint`} className="prism-search-hint">{jt('material_search_hint', lang)}</p>
+      <p id={`${searchId}-hint`} className="prism-search-hint">{selectionText?.searchHint ?? jt('material_search_hint', lang)}</p>
       <div role="status" aria-live="polite" className="prism-live-region">
         {busy && <p className="prism-search-state prism-loading"><span className="prism-loading__dot" aria-hidden="true" />{jt('material_search_loading', lang)}</p>}
         {hits !== null && hits.length === 0 && !failed && (
@@ -91,12 +92,12 @@ export function MaterialPicker({ lang, scopeKey, search, selected, onPick, onRem
         </ul>
       )}
       {selected.length > 0 && (
-        <section className="prism-selection" aria-label={jt('material_working', lang)}>
+        <section className="prism-selection" aria-label={selectionText?.title ?? jt('material_working', lang)}>
           <div className="prism-selection__header">
-            <h4>{jt('material_working', lang)}</h4>
+            <h4>{selectionText?.title ?? jt('material_working', lang)}</h4>
             <span className="prism-selection__count" role="status" aria-live="polite"><PhoenixIcon name="check" size={15} aria-hidden="true" /><bdi>{selected.length}</bdi> {jt('material_selected', lang)}</span>
           </div>
-          <p className="prism-search-hint">{jt('material_selection_hint', lang)}</p>
+          <p className="prism-search-hint">{selectionText?.hint ?? jt('material_selection_hint', lang)}</p>
           <ul className="prism-selected-list">
             {selected.map((s) => (
               <li key={s.id} className="prism-selected-row">

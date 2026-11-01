@@ -81,10 +81,17 @@ describe('actual source-review component; explicit choices and unknown outcomes'
     expect(screen.queryByRole('button', { name: 'Confirm annual membership' })).toBeNull();
     expect(screen.getByLabelText('Select source row 2')).not.toBeChecked();
   });
+  it.each(['ar','en'] as const)('describes one identity-review choice without promising a need-line selection: %s', async lang => {
+    const f = fixture(), shown = render(view(f)); await choose(f); shown.rerender(view(f,lang));
+    expect(screen.getByRole('region', { name: lang === 'ar' ? 'المادة المختارة للمراجعة' : 'Material chosen for review' })).toBeVisible();
+    expect(screen.queryByText(/Quantities are saved when you add a line/)).toBeNull();
+    expect(screen.queryByText(/يمكنك اختيار أكثر من مادة/)).toBeNull();
+  });
   it('reads receipt first after an unknown result and permits only explicit same-intent retry', async () => {
     const f = fixture(); f.api.commit.mockRejectedValueOnce(new VerifiedSourceError('c4_commit_outcome_unknown', true, ID.request)); render(view(f));
     await choose(f); fireEvent.click(screen.getByRole('button', { name: 'Confirm annual membership' }));
     await screen.findByRole('button', { name: 'Check operation receipt' }); expect(f.api.receipt).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Check operation receipt' })).toHaveFocus();
     expect(screen.getByRole('button', { name: 'Close source review' })).toBeDisabled(); expect(screen.queryByRole('button', { name: 'Retry the same operation' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Check operation receipt' })); await screen.findByRole('button', { name: 'Retry the same operation' });
     expect(f.api.commit).toHaveBeenCalledTimes(1); fireEvent.click(screen.getByRole('button', { name: 'Retry the same operation' }));
@@ -93,8 +100,10 @@ describe('actual source-review component; explicit choices and unknown outcomes'
   it('retries only the current read after an acknowledged save followed by read failure', async () => {
     const f = fixture(); f.api.current.mockRejectedValueOnce(new Error('network')); render(view(f)); await choose(f);
     fireEvent.click(screen.getByRole('button', { name: 'Confirm annual membership' })); await screen.findByRole('button', { name: 'Reload current membership' });
+    expect(screen.getByRole('button', { name: 'Reload current membership' })).toHaveFocus();
     expect(f.onFresh).not.toHaveBeenCalled(); expect(f.api.commit).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole('button', { name: 'Reload current membership' })); await waitFor(() => expect(f.onFresh).toHaveBeenCalled()); expect(f.api.commit).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('heading', { name: 'Review material identity from original' })).toHaveFocus();
   });
   it('retains the original uncertain intent when a later retry is refused', async () => {
     const f = fixture(); f.api.commit.mockRejectedValueOnce(new VerifiedSourceError('c4_commit_outcome_unknown', true, ID.request))
@@ -113,6 +122,15 @@ describe('actual source-review component; explicit choices and unknown outcomes'
     await waitFor(() => expect(f.api.receipt).toHaveBeenCalledTimes(1));
     expect(screen.getByRole('button', { name: 'Close source review' })).toBeDisabled(); expect(f.api.commit).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole('button', { name: 'Retry the same operation' })).toBeNull();
+  });
+  it('does not steal focus if the employee moves outside while a write finishes', async () => {
+    const f = fixture(); let fail!: (error: unknown) => void;
+    f.api.commit.mockImplementationOnce(() => new Promise((_, reject) => { fail = reject; }));
+    render(<><button type="button">Outside control</button>{view(f)}</>); await choose(f);
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm annual membership' }));
+    const outside = screen.getByRole('button', { name: 'Outside control' }); outside.focus();
+    await act(async () => fail(new VerifiedSourceError('c4_commit_outcome_unknown', true, ID.request)));
+    await screen.findByRole('button', { name: 'Check operation receipt' }); expect(outside).toHaveFocus(); expect(f.api.receipt).not.toHaveBeenCalled();
   });
   it('recovers a committed receipt through a current read without another write', async () => {
     const f = fixture(); f.api.commit.mockRejectedValueOnce(new VerifiedSourceError('c4_commit_outcome_unknown', true, ID.request));

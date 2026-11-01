@@ -25,6 +25,7 @@ interface Props {
 }
 function ScopedReview({ lang, scope, actorId, original, canWrite, disabled = false, search, api = realApi, onFresh, onScopeLockChange, onClose }: Props) {
   const titleId = useId(), title = useRef<HTMLHeadingElement | null>(null), live = useRef(false), running = useRef(false);
+  const root = useRef<HTMLElement | null>(null), receiptControl = useRef<HTMLButtonElement | null>(null), currentControl = useRef<HTMLButtonElement | null>(null);
   const [caps, setCaps] = useState<SourceCapabilities | null>(null), [profile, setProfile] = useState('');
   const [read, setRead] = useState<{ input: SourcePageInput; page: VerifiedSourcePage } | null>(null);
   const [keys, setKeys] = useState<string[]>([]), [choice, setChoice] = useState<CatalogOption | null>(null);
@@ -35,6 +36,12 @@ function ScopedReview({ lang, scope, actorId, original, canWrite, disabled = fal
   const [saved, setSaved] = useState(false);
   const locked = busy || pending !== null || currentId !== null;
   useEffect(() => { onScopeLockChange?.(locked); return () => onScopeLockChange?.(false); }, [locked, onScopeLockChange]);
+  useEffect(() => {
+    if (busy || !root.current || document.activeElement !== document.body && !root.current.contains(document.activeElement)) return;
+    if (currentId) currentControl.current?.focus();
+    else if (pending) receiptControl.current?.focus();
+    else if (saved) title.current?.focus();
+  }, [busy, currentId, pending, saved]);
   const owner = scope.ownerOrgId, year = scope.planningYear;
   useEffect(() => {
     let current = true;
@@ -96,7 +103,7 @@ function ScopedReview({ lang, scope, actorId, original, canWrite, disabled = fal
     if (result.status === 'committed') await fresh(result.result); else setRetry(true);
   });
   const reread = () => void operate(async () => { if (verified && currentId) await fresh(verified); });
-  return <section className="prism-verified-source" aria-labelledby={titleId} lang={lang} dir={lang === 'ar' ? 'rtl' : 'ltr'} data-testid="verified-source-review">
+  return <section ref={root} className="prism-verified-source" aria-labelledby={titleId} lang={lang} dir={lang === 'ar' ? 'rtl' : 'ltr'} data-testid="verified-source-review">
     <header className="prism-annual-editor__header"><h3 id={titleId} ref={title} tabIndex={-1}>{vt('title', lang)}</h3><button type="button" disabled={locked || disabled} onClick={onClose}>{vt('close', lang)}</button></header>
     <p><bdi>{original.firstFilename}</bdi> · <bdi>{year}</bdi></p><p className="prism-search-hint">{vt('hint', lang)}</p>
     {busy && <p role="status">{vt('loading', lang)}</p>}
@@ -124,9 +131,10 @@ function ScopedReview({ lang, scope, actorId, original, canWrite, disabled = fal
         })}
       </fieldset>
       {read.page.nextCursor && <button type="button" disabled={locked || disabled} onClick={() => readPage(read.page.nextCursor)}>{vt('next', lang)}</button>}
-      {keys.length > 0 && committable && <fieldset disabled={locked || disabled}>
+      {keys.length > 0 && committable && <fieldset className="prism-source-canonical-review" disabled={locked || disabled}>
         <MaterialPicker lang={lang} scopeKey={JSON.stringify([actorId, owner, year, original.originalId, profile, read.input.cursor, keys])}
-          search={search} selected={choice ? [choice] : []} onPick={pick} onRemove={() => { setChoice(null); setPreview(null); }} />
+          search={search} selected={choice ? [choice] : []} onPick={pick} onRemove={() => { setChoice(null); setPreview(null); }}
+          selectionText={{ searchHint: vt('pickerHint', lang), title: vt('selectionTitle', lang), hint: vt('selectionHint', lang) }} />
         {preview && <section aria-label={vt('canonical', lang)}><PrismMaterialIdentity name={(lang === 'ar' ? preview.canonicalSnapshot.nameAr : null) ?? preview.canonicalSnapshot.scientificName ?? ''}
           nationalCode={preview.canonicalSnapshot.nationalCode} concentration={preview.canonicalSnapshot.concentration} dosageForm={preview.canonicalSnapshot.dosageForm} unit={preview.canonicalSnapshot.unit} />
           {!matches && <p role="alert" className="prism-notice prism-notice--warning">{vt('conflict', lang)}</p>}
@@ -136,10 +144,10 @@ function ScopedReview({ lang, scope, actorId, original, canWrite, disabled = fal
       </fieldset>}
     </>}
     {pending && currentId === null && !busy && <div className="prism-notice prism-notice--warning"><p role="status">{vt(retry ? 'retryNote' : 'unknown', lang)}</p>
-      <button type="button" disabled={busy || disabled} onClick={receipt}>{vt('receipt', lang)}</button>
+      <button ref={receiptControl} type="button" disabled={busy || disabled} onClick={receipt}>{vt('receipt', lang)}</button>
       {retry && <button type="button" disabled={busy || disabled || !committable} onClick={() => send(true)}>{vt('retry', lang)}</button>}
     </div>}
-    {currentId && !busy && <div className="prism-notice prism-notice--warning"><p role="status">{vt('currentFailed', lang)}</p><button type="button" disabled={busy || disabled} onClick={reread}>{vt('current', lang)}</button></div>}
+    {currentId && !busy && <div className="prism-notice prism-notice--warning"><p role="status">{vt('currentFailed', lang)}</p><button ref={currentControl} type="button" disabled={busy || disabled} onClick={reread}>{vt('current', lang)}</button></div>}
     {saved && verified && <div className="prism-notice prism-notice--success"><p role="status">{vt('saved', lang)}</p>
       <p>{vt('verified', lang)} · {vt('employee', lang)}: <bdi>{verified.c4Verification.reviewedByName}</bdi> · <time dateTime={verified.c4Verification.reviewedAt}>{new Date(verified.c4Verification.reviewedAt).toLocaleString(lang === 'ar' ? 'ar-IQ' : 'en-GB')}</time></p>
     </div>}

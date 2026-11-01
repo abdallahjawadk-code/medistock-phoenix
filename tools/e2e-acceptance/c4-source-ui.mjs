@@ -29,6 +29,7 @@ const db = new pg.Client({ connectionString: database.href, connectionTimeoutMil
 const output = resolve('docs/phoenix/e2e-acceptance/c4-source-ui'); mkdirSync(output, { recursive: true });
 const report = { commit: head, sourceHead: prerequisite.sourceHead, environment: 'fresh synthetic PDA; actual Auth/C2/Node C3/C4 handlers and browser UI',
   productionSqlApplied: false, hostedCompatibility: prerequisite.hostedCompatibility, realWorkbookUsed: false,
+  matrixCaptureMode: 'three actual viewport positions per combination; no element stitching',
   completed: false, checks: [], errors: [], counters: null };
 const check = (name, passed) => { report.checks.push({ name, passed: Boolean(passed) }); console.log(`${passed ? 'PASS' : 'FAIL'} C4 UI ${name}`); assert(passed, name); };
 const sha = value => createHash('sha256').update(value).digest('hex');
@@ -105,14 +106,23 @@ try {
   stage = 'browser_source_page'; await profileChoice.selectOption('0');
   await panel.getByRole('button', { name: 'Read source witnesses', exact: true }).click();
   await panel.getByLabel('Select source row 2', { exact: true }).check();
-  check('actual C2 and worker witnesses exclude historical quantity', (await panel.textContent()).includes(code)
-    && !(await panel.textContent()).includes('987654') && proxy.counters.workers === 1);
+  const sourceRecord = panel.locator('.prism-annual-source-record').first();
+  await sourceRecord.locator(':scope > summary').click();
+  const witnesses = sourceRecord.locator('.prism-annual-source-witness');
+  for (let n = 0; n < await witnesses.count(); n += 1) await witnesses.nth(n).locator(':scope > summary').click();
+  check('visible actual C2 and worker witnesses exclude historical quantity', (await sourceRecord.innerText()).includes(code)
+    && (await sourceRecord.innerText()).includes(name) && !(await sourceRecord.innerText()).includes('987654') && proxy.counters.workers === 1);
   stage = 'browser_registered_canonical'; await panel.getByLabel('Search a registered material', { exact: true }).fill(name);
   await panel.getByRole('button', { name: 'Search', exact: true }).click(); await panel.getByRole('button', { name: 'Use', exact: true }).click();
   const confirm = () => panel.getByRole('button', { name: /^(Confirm annual membership|تأكيد عضوية المادة في فهرس السنة)$/ });
   await panel.getByLabel('Membership review reason', { exact: true }).waitFor();
   check('registered canonical preview still requires a reason', await confirm().isDisabled());
   await panel.getByLabel('Membership review reason', { exact: true }).fill('Reviewed the exact synthetic source identity');
+  const center = target => target.evaluate(el => el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' }));
+  const inViewport = target => target.evaluate(el => {
+    const box = el.getBoundingClientRect(), header = document.querySelector('.premium-topbar')?.getBoundingClientRect();
+    return box.left >= -1 && box.right <= innerWidth + 1 && box.top >= (header?.bottom ?? 0) - 1 && box.bottom <= innerHeight + 1;
+  });
   stage = 'matrix';
   for (const width of [1366, 1024, 390, 320]) {
     await page.setViewportSize({ width, height: 900 });
@@ -122,7 +132,24 @@ try {
       check(`${label} no document overflow`, await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
       check(`${label} review direction and accessible heading`, await panel.getAttribute('dir') === (lang === 'ar' ? 'rtl' : 'ltr') && await panel.getByRole('heading', { level: 3 }).count() === 1);
       check(`${label} no quantity or approval editor in identity review`, await panel.getByLabel(/^(Annual quantity|الكمية السنوية)$/).count() === 0);
-      await panel.screenshot({ path: resolve(output, `${label}.png`) });
+      const heading = panel.getByRole('heading', { level: 3 }); await center(heading);
+      check(`${label} review heading is visible below the fixed header`, await inViewport(heading));
+      await page.screenshot({ path: resolve(output, `${label}-overview.png`) });
+      const fields = sourceRecord.getByRole('region'), coordinate = witnesses.first().locator('summary bdi');
+      const scrolls = await fields.evaluate(el => el.scrollWidth > el.clientWidth + 1);
+      await fields.focus();
+      if (scrolls) {
+        const direction = await fields.evaluate(el => getComputedStyle(el).direction);
+        await fields.evaluate(el => { el.scrollLeft = 0; }); await page.keyboard.press(direction === 'rtl' ? 'ArrowLeft' : 'ArrowRight');
+        await page.waitForFunction(() => Math.abs(document.querySelector('[data-testid="verified-source-review"] .prism-annual-source-fields').scrollLeft) > 0, null, { timeout: 3000 });
+      }
+      await center(coordinate);
+      check(`${label} source coordinate is visible and witness scroll region accepts keyboard focus`, await inViewport(coordinate)
+        && await fields.getAttribute('tabindex') === '0' && await fields.evaluate(el => el === document.activeElement));
+      await page.screenshot({ path: resolve(output, `${label}-source-witness.png`) });
+      await center(confirm());
+      check(`${label} confirmation remains fully visible and reachable`, await inViewport(confirm()));
+      await page.screenshot({ path: resolve(output, `${label}-confirmation.png`) });
     }
   }
   stage = 'lost_acknowledgement';
@@ -130,15 +157,16 @@ try {
   const receipt = panel.getByRole('button', { name: 'Check operation receipt', exact: true }); await receipt.waitFor();
   check('unknown successful acknowledgement keeps scope locked with exactly one POST', proxy.counters.commits === 1 && proxy.counters.lostAcknowledgements === 1
     && await panel.getByRole('button', { name: 'Close source review', exact: true }).isDisabled()
-    && await page.getByLabel('Plan year', { exact: true }).isDisabled());
-  await receipt.focus(); await page.keyboard.press('Enter');
+    && await page.getByLabel('Plan year', { exact: true }).isDisabled() && await receipt.evaluate(el => el === document.activeElement));
+  await page.keyboard.press('Enter');
   await panel.getByRole('button', { name: 'Close source review', exact: true }).waitFor({ state: 'visible' });
   await page.waitForFunction(() => !document.querySelector('[data-testid="verified-source-review"] header button')?.disabled);
   check('committed receipt requires fresh current read and sends no second write', proxy.counters.commits === 1 && proxy.counters.workers === 2
     && await panel.getByRole('button', { name: 'Check operation receipt', exact: true }).count() === 0
-    && (await panel.textContent()).includes('Synthetic source reviewer'));
+    && (await panel.textContent()).includes('Synthetic source reviewer') && await panel.getByRole('heading', { level: 3 }).evaluate(el => el === document.activeElement));
   check('completed review clears stale confirmation', await confirm().count() === 0 && !await panel.getByLabel('Select source row 2', { exact: true }).isChecked());
-  await panel.screenshot({ path: resolve(output, 'receipt-recovered-en-light.png') });
+  await center(panel.locator('.prism-notice--success'));
+  await page.screenshot({ path: resolve(output, 'receipt-recovered-en-light.png') });
   await panel.getByRole('button', { name: 'Close source review', exact: true }).focus(); await page.keyboard.press('Enter');
   check('keyboard close restores the original history trigger focus', await trigger.evaluate(el => el === document.activeElement));
   const after = await counts();

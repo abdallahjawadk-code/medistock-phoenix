@@ -313,6 +313,7 @@ html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-vis
 }
 .prism-verified-source { min-inline-size: 0; margin-block: 16px; padding: 16px; border: 1px solid var(--prism-line); border-radius: var(--prism-radius); background: var(--prism-surface); overflow-wrap: anywhere; }
 .prism-verified-source fieldset { min-inline-size: 0; }
+.prism-verified-source > .prism-source-canonical-review { border: 0; margin: 0; padding: 0; }
 .prism-source-profile { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; }
 .prism-source-profile label { flex: 1 1 12rem; min-inline-size: 0; }
 .prism-source-review-row { margin-block: 12px; padding: 12px; border: 1px solid var(--prism-line); border-radius: 10px; }

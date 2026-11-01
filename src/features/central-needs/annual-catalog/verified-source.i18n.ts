@@ -1,4 +1,7 @@
 const words = {
+  pickerHint: ['اكتب حرفين على الأقل، ثم اختر مادة مسجلة واحدة لمطابقة صفوف المصدر المحددة.', 'Enter at least two characters, then choose one registered material to match the selected source rows.'],
+  selectionTitle: ['المادة المختارة للمراجعة', 'Material chosen for review'],
+  selectionHint: ['اختيار لمراجعة الهوية. تظل إضافة المادة إلى بند احتياج وإدخال كميته خطوتين مستقلتين.', 'This choice reviews identity. Selecting a need-line material and entering its quantity are separate steps.'],
   title: ['مراجعة هوية المواد من الأصل', 'Review material identity from original'], close: ['إغلاق مراجعة المصدر', 'Close source review'],
   hint: ['اختر قالبًا مراجعًا صراحةً ثم راجع الشواهد. هذه الخطوة لا تستورد كميات احتياج ولا تعتمد هوية تلقائيًا.', 'Choose a reviewed profile explicitly, then inspect its witnesses. This step imports no need quantities and does not approve identity automatically.'],
   waiting: ['بانتظار تهيئة القوالب المراجعة', 'Awaiting reviewed source profiles'], loading: ['جارٍ التحقق…', 'Checking…'],
