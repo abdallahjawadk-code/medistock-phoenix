@@ -521,10 +521,18 @@ describe('RAC-3 · I) no backend or migration change', () => {
     const monthlyTampered = Buffer.from(monthlyBytes); monthlyTampered[0] ^= 1;
     expect(isReviewedR2B(R2B_POLICY, monthlyTampered)).toBe(false);
     expect(isReviewedR2B(`${R2B_POLICY}.bak`, monthlyBytes)).toBe(false);
+    const READ_ADAPTER = 'supabase/candidates/R1_read_transaction_adapters_NOT_APPLIED.sql';
+    const isReviewedAdapter = (path: string, bytes: Uint8Array) => path === READ_ADAPTER
+      && createHash('sha256').update(bytes).digest('hex') === '5cc3b4c072acfe4cbf09a1d16a10d3f8739b5e286ebfe6aa38078affc122358d';
+    const adapterBytes = readFileSync(join(process.cwd(), READ_ADAPTER));
+    expect(isReviewedAdapter(READ_ADAPTER, adapterBytes)).toBe(true);
+    expect(isReviewedAdapter(READ_ADAPTER, Buffer.concat([adapterBytes, Buffer.from('\nSELECT 1;')]))).toBe(false);
+    expect(isReviewedAdapter(`${READ_ADAPTER}.bak`, adapterBytes)).toBe(false);
     // R1 (staging release candidate): the un-numbered SQL CANDIDATES and their tooling/tests under supabase/candidates/ (never in the numbered
     // chain, never applied outside a disposable database) are registered by EXACT filename, exactly as M200-M222 were; no wildcard and no
     // directory exemption, so every other supabase/ file still fails this guard closed. They touch no command-centre object.
     const R1_CANDIDATES = [
+      READ_ADAPTER,
       // D18: the unnumbered, unapplied R1 forward-fix candidate (exact filename).
       'supabase/candidates/FF1_r1_forward_fix_NOT_APPLIED.sql',
       // Current dossier kill switch, exact names only; historical FF1 remains immutable.
@@ -604,6 +612,10 @@ describe('RAC-3 · I) no backend or migration change', () => {
     expect(flag([R2A, R2A_PROOF])).toEqual([]);
     expect(flag([P3C4, P3C4_PROOF])).toEqual([]);
     expect(flag([R2B_POLICY, R2B_PROOF])).toEqual([]);
+    expect(flag([READ_ADAPTER])).toEqual([]);
+    const adapterNearMisses = [`${READ_ADAPTER}.bak`, 'supabase/candidates/R1_read_transaction_adapters_NOT_APPLIED_v2.sql',
+      'supabase/migrations/236_phoenix_manual_read_adapters.sql'];
+    expect(flag(adapterNearMisses)).toEqual(adapterNearMisses);
     const monthlyNearMisses = [`${R2B_POLICY}.bak`, `${R2B_PROOF}.orig`,
       'supabase/candidates/R2B_monthly_policy_reference_NOT_APPLIED_v2.sql',
       'supabase/migrations/236_phoenix_monthly_policy.sql'];
