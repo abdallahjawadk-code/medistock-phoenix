@@ -57,6 +57,7 @@ export async function proveOwnerPreview(config){
     await beforeContext.close();
     stage='current_primary_route';const context=await browser.newContext({viewport:{width:1366,height:900}});page=await context.newPage();observe(page);
     await signIn(page);await page.getByTestId('annual-needs-entry').waitFor({timeout:30000});
+    await page.getByTestId('manual-needs-journey').waitFor({timeout:30000});
     check('the ordinary Annual Needs navigation opens the verified journey',await page.getByTestId('manual-needs-journey').count()===1&&await page.locator('.cn2b').count()===0);
     const auth=await context.request.post(publicOrigin+'/__supabase/auth/v1/token?grant_type=password',{
       headers:{apikey:config.anonKey},data:{email:fixture.email,password:config.password}});assert.equal(auth.status(),200);const issued=await auth.json();
