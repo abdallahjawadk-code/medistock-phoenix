@@ -73,7 +73,9 @@ concurrency:
 
 jobs:
   authenticated-acceptance:
-    name: Authenticated browser acceptance (disposable local Supabase)
+    # Manual owner serving must not leave the required PR check pending for an hour.
+    # Every PR still emits the exact unconditional acceptance context.
+    name: ${{ github.event_name == 'workflow_dispatch' && inputs.owner_preview == true && 'Owner preview acceptance and bounded serving' || 'Authenticated browser acceptance (disposable local Supabase)' }}
     runs-on: ubuntu-24.04
     timeout-minutes: ${{ inputs.owner_preview == true && 110 || 30 }}
 
