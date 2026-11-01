@@ -88,6 +88,19 @@ function fillEdit() {
 }
 
 describe('annual capability and complete employee journey', () => {
+  it('opts all three dossier reads into transaction-safe RPCs only after verifying the annual contract', async () => {
+    const f = fixture();
+    f.journeyApi.features = vi.fn(async () => ({ nationalCode: true, sameActorManual: true, dossiers: true, workbookIntake: false }));
+    f.journeyApi.listDossiers = vi.fn(async () => [{ id: 'annual-plan', key: '', name: 'General', latestRevisionId: REV.id,
+      latestStatus: 'draft', latestNumber: 1, approvedRevisionId: null, approvedNumber: null }]);
+    f.journeyApi.annualSummary = vi.fn(async () => []);
+    f.journeyApi.listDossierRevisions = vi.fn(async () => [REV]);
+    mount(f); await openYear();
+    expect(f.journeyApi.listDossiers).toHaveBeenCalledWith(ID.owner, 2026, true);
+    expect(f.journeyApi.annualSummary).toHaveBeenCalledWith(ID.owner, 2026, true);
+    expect(f.journeyApi.listDossierRevisions).toHaveBeenCalledWith('annual-plan', true);
+    expect(f.journeyApi.listYearRevisions).not.toHaveBeenCalled();
+  });
   it('retains the institution read when the employee opens a year before that read finishes', async () => {
     const f = fixture(); const institutions = deferred<Awaited<ReturnType<JourneyApi['listBeneficiaries']>>>();
     vi.mocked(f.journeyApi.listBeneficiaries).mockReturnValue(institutions.promise);

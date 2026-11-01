@@ -81,9 +81,9 @@ try {
     && (await rpc('phoenix_r2_capabilities', { p_organization_id: owner })).operationalWritesImplemented === false);
   stage = 'real_employee_journey_prerequisites';
   for (const [name, args] of [['annual_needs_contract', {}], ['feature_contract', {}],
-    ['list_dossiers', { p_organization_id: owner, p_plan_year: year }], ['annual_summary', { p_organization_id: owner, p_plan_year: year }],
+    ['phoenix_manual_read_dossiers_v1', { p_organization_id: owner, p_plan_year: year }], ['phoenix_manual_read_annual_summary_v1', { p_organization_id: owner, p_plan_year: year }],
     ['my_capabilities', { p_organization_id: owner, p_plan_revision_id: null }]]) {
-    const result = await employee.rpc(`phoenix_central_needs_${name}`, args);
+    const result = await employee.rpc(name.startsWith('phoenix_') ? name : `phoenix_central_needs_${name}`, args);
     report.setupReads.push({ name, passed: !result.error, code: result.error?.code ?? null, message: result.error?.message?.slice(0, 160) ?? null });
   }
   check('same employee real Auth can read every actual journey prerequisite', report.setupReads.every(row => row.passed));
