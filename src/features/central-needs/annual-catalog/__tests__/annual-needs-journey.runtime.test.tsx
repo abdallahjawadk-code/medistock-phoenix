@@ -88,6 +88,19 @@ function fillEdit() {
 }
 
 describe('annual capability and complete employee journey', () => {
+  it('locks catalog preparation while opening the first need revision', async () => {
+    const f = fixture(), pending = deferred<void>(); let opened = false;
+    f.journeyApi.listYearRevisions = vi.fn(async () => opened ? [REV] : []);
+    f.journeyApi.openPlan = vi.fn(async () => { await pending.promise; opened = true; return { planRevisionId: ID.revision }; });
+    mount(f); fireEvent.click(screen.getByRole('button', { name: 'Open year' }));
+    const start = await screen.findByRole('button', { name: 'Start a new plan' });
+    await waitFor(() => expect(screen.getByLabelText('Beneficiary institution')).toBeEnabled());
+    fireEvent.click(start);
+    try { await waitFor(() => expect(screen.getByLabelText('Beneficiary institution')).toBeDisabled()); }
+    finally { await act(async () => pending.resolve()); }
+    await screen.findByText('Revision 1 — draft');
+    await waitFor(() => expect(screen.getByLabelText('Beneficiary institution')).toBeEnabled());
+  });
   it('opts all three dossier reads into transaction-safe RPCs only after verifying the annual contract', async () => {
     const f = fixture();
     f.journeyApi.features = vi.fn(async () => ({ nationalCode: true, sameActorManual: true, dossiers: true, workbookIntake: false }));
