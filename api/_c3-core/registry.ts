@@ -13,7 +13,7 @@ export function snapshotReviewedLayouts(registrations: readonly RegisteredAnnual
     if (Buffer.byteLength(serialized) > 65536) throw new Error('invalid_server_configuration');
     const manifest = JSON.parse(serialized) as RegisteredAnnualLayout;
     const key = JSON.stringify([manifest.template.id, manifest.template.version]);
-    if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,99}$/.test(manifest.template.id)
+    if (typeof manifest.template.id !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,99}$/.test(manifest.template.id)
       || !Number.isSafeInteger(manifest.template.version) || manifest.template.version < 1 || seen.has(key)) {
       throw new Error('invalid_server_configuration');
     }

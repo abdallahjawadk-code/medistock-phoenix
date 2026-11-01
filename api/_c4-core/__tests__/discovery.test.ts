@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { AuthenticatedCaller } from '../../_lib/supabase.ts';
 import { createAnnualSourceDiscoveryHandler } from '../discovery.ts';
+import { snapshotReviewedLayouts } from '../../_c3-core/registry.ts';
 
 const org = '11111111-1111-4111-8111-111111111111';
 const request = (query = `ownerOrgId=${org}&planningYear=2026`) => new Request(`http://localhost/api/central-needs/annual-source-capabilities?${query}`);
@@ -15,6 +16,11 @@ function setup(available = true) {
   return { handler, rpc, authenticate, authorized, registration };
 }
 describe('scoped source-profile discovery, no automatic recognition or source read', () => {
+  it.each([123, true, null, ['reviewed']])('rejects a non-string configured profile ID %#', id => {
+    const registration = { workbookSheets: [{ index: 0, name: 'Identity' }], template: { id: id as unknown as string,
+      version: 1, reviewReference: 'synthetic', parserContractVersion: '1.2.0', classificationCells: [], blocks: [] } };
+    expect(() => snapshotReviewedLayouts([registration])).toThrow('invalid_server_configuration');
+  });
   it('authenticates before parsing scope', async () => {
     const f = setup(); f.authenticate.mockResolvedValue(null); expect((await f.handler(request('bad'))).status).toBe(401);
     expect(f.rpc).not.toHaveBeenCalled(); expect(f.authorized).not.toHaveBeenCalled();
