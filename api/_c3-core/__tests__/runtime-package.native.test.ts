@@ -1,24 +1,30 @@
 import { execFileSync } from 'node:child_process';
-import { beforeAll, afterEach, describe, expect, it, vi } from 'vitest';
-import { GET } from '../../central-needs/c3-runtime-check.ts';
+import { Worker } from 'node:worker_threads';
+import { pathToFileURL } from 'node:url';
+import { resolve } from 'node:path';
+import { beforeAll, describe, expect, it } from 'vitest';
+import { POST } from '../../central-needs/extract-original.ts';
 
 describe('private worker deployment packaging, no workbook or database', () => {
   beforeAll(() => execFileSync(process.execPath, ['scripts/c3-worker-assets.mjs']), 30000);
-  afterEach(() => vi.unstubAllEnvs());
-  it('refuses Production and unrelated Preview branches', async () => {
-    vi.stubEnv('VERCEL_ENV', 'production');
-    vi.stubEnv('VERCEL_GIT_COMMIT_REF', 'feat/c3-hosted-worker-20261101');
-    expect((await GET()).status).toBe(404);
-    vi.stubEnv('VERCEL_ENV', 'preview'); vi.stubEnv('VERCEL_GIT_COMMIT_REF', 'master');
-    expect((await GET()).status).toBe(404);
+  it('the deployed business route refuses anonymous input without configuration or database reads', async () => {
+    const response = await POST(new Request('http://localhost/api/central-needs/extract-original', { method: 'POST' }));
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({ ok: false, error: 'not_authenticated' });
   });
   it('loads the generated worker and waits for its actual termination', async () => {
-    vi.stubEnv('VERCEL_ENV', 'preview');
-    vi.stubEnv('VERCEL_GIT_COMMIT_REF', 'feat/c3-hosted-worker-20261101');
-    const response = await GET();
-    expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({ loaded: true, terminated: true,
-      parserEvaluated: false, businessDataRead: false });
-    expect(response.headers.get('cache-control')).toBe('no-store');
+    const worker = new Worker(pathToFileURL(resolve('.c3-runtime/worker.mjs')), {
+      env: {}, workerData: { requestId: 'package-check' },
+      resourceLimits: { maxOldGenerationSizeMb: 128, maxYoungGenerationSizeMb: 16, stackSizeMb: 4 },
+    });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const message = await new Promise((accept, reject) => {
+        timer = setTimeout(() => reject(new Error('timeout')), 10000);
+        worker.once('message', accept); worker.once('error', reject);
+        worker.once('exit', () => reject(new Error('early_exit')));
+      });
+      expect(message).toEqual({ type: 'c3-worker-error', requestId: 'package-check', code: 'rejected' });
+    } finally { clearTimeout(timer); await worker.terminate(); }
   }, 15000);
 });

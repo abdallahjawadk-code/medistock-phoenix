@@ -4,9 +4,9 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "functions": {
-    "api/central-needs/c3-runtime-check.ts": {
+    "api/central-needs/extract-original.ts": {
       "includeFiles": ".c3-runtime/worker.mjs",
-      "maxDuration": 15
+      "maxDuration": 30
     }
   },
   "headers": [
