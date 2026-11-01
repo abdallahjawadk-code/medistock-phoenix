@@ -10,6 +10,8 @@ import { build } from 'esbuild';
 import { createClient } from '@supabase/supabase-js';
 import pg from 'pg';
 import * as XLSX from 'xlsx';
+import { createServer } from 'node:http';
+import { Readable } from 'node:stream';
 
 const seed = JSON.parse(readFileSync(process.argv[2] || 'e2e-seed.json', 'utf8'));
 const api = new URL(seed.supabaseUrl), database = new URL(seed.databaseUrl);
@@ -30,10 +32,11 @@ const editor = createClient(api.href, anonKey, options), outsider = createClient
 const db = new pg.Client({ connectionString: database.href, connectionTimeoutMillis: 5000 });
 const output = resolve('docs/phoenix/e2e-acceptance');
 const scratch = mkdtempSync(join(process.env.RUNNER_TEMP, 'c3-actual-worker-'));
-const report = { phase: 'C3 read-only caller and actual worker integration; HTTP/hosted activation unimplemented',
+const report = { phase: 'C3 read-only HTTP, caller and actual worker integration; hosted business activation unavailable',
   commit: prerequisite.commit, sourceHead: prerequisite.sourceHead, environment: 'hardened disposable local Supabase; synthetic workbook',
   checks: [], errors: [], productionSqlApplied: false, hostedCompatibility: prerequisite.platformProfile.productionCompatibility };
 let stage = 'verify_target';
+let server;
 const check = (name, passed) => { report.checks.push({ name, passed: Boolean(passed) }); console.log(`${passed ? 'PASS' : 'FAIL'} C3 ${name}`); };
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const businessCounts = async () => (await db.query(`SELECT
@@ -52,11 +55,12 @@ try {
   const bridge = join(scratch, 'bridge.mjs'), worker = join(scratch, 'worker.mjs');
   const shared = { bundle: true, platform: 'node', target: 'node22', format: 'esm', logLevel: 'silent',
     banner: { js: "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);" } };
-  await build({ ...shared, stdin: { contents: `export {authenticate} from './api/_lib/supabase.ts';
+  await build({ ...shared, stdin: { contents: `export {authenticate,callerHasCentralNeedsAuthority} from './api/_lib/supabase.ts';
     export {readAuthorizedAnnualC3Original} from './api/_cn2b-core/annual-c3-authorized-source.ts';
-    export {runC3IsolatedWorker} from './api/_cn2b-core/annual-c3-worker-boundary.ts';`, resolveDir: process.cwd() }, outfile: bridge });
+    export {runC3IsolatedWorker} from './api/_cn2b-core/annual-c3-worker-boundary.ts';
+    export {createC3ReadHandler} from './api/_c3-core/http.ts';`, resolveDir: process.cwd() }, outfile: bridge });
   await build({ ...shared, entryPoints: ['api/_c3-core/worker-entry.ts'], outfile: worker });
-  const { authenticate, readAuthorizedAnnualC3Original, runC3IsolatedWorker } = await import(pathToFileURL(bridge).href);
+  const { authenticate, callerHasCentralNeedsAuthority, readAuthorizedAnnualC3Original, runC3IsolatedWorker, createC3ReadHandler } = await import(pathToFileURL(bridge).href);
   stage = 'authenticate_editor';
   const signed = await editor.auth.signInWithPassword({ email: seed.centralNeeds.editor.email, password: seed.password });
   assert(!signed.error && signed.data.user?.id === seed.centralNeeds.editor.id && signed.data.session);
@@ -91,6 +95,29 @@ try {
       mappingReference: 'synthetic-only', columns: { scientificName: { column: 0, expectedHeaderText: 'Name' },
         nationalCode: { column: 1, expectedHeaderText: 'Code' }, unit: { column: 2, expectedHeaderText: 'Unit' } } }] } };
   const input = { source, template: { manifest, expectedSha256: sha(JSON.stringify(manifest)) }, pageSize: 1, cursor: null };
+  const handler = createC3ReadHandler({ registrations: [manifest], workerEntry: pathToFileURL(worker),
+    authenticate, authorized: callerHasCentralNeedsAuthority, read: readAuthorizedAnnualC3Original, run: runC3IsolatedWorker });
+  server = createServer(async (req, res) => {
+    try {
+      const request = new Request('http://127.0.0.1/central-needs/extract-original', { method: req.method,
+        headers: Object.fromEntries(Object.entries(req.headers).map(([key, value]) => [key, Array.isArray(value) ? value.join(',') : value ?? ''])),
+        body: Readable.toWeb(req), duplex: 'half' });
+      const response = await handler(request);
+      res.writeHead(response.status, Object.fromEntries(response.headers)); res.end(await response.text());
+    } catch { res.writeHead(500); res.end(); }
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const endpoint = `http://127.0.0.1:${server.address().port}/central-needs/extract-original`;
+  const httpInput = { scope, originalId, templateId: manifest.template.id, templateVersion: 1, cursor: null, pageSize: 1 };
+  const send = (token, body = httpInput) => fetch(endpoint, { method: 'POST',
+    headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify(body) });
+  stage = 'http_authorized_evidence';
+  const httpResponse = await send(signed.data.session.access_token);
+  const httpPage = await httpResponse.json();
+  check('actual loopback HTTP returns bounded worker evidence with no shared cache', httpResponse.status === 200
+    && httpResponse.headers.get('cache-control') === 'no-store' && httpPage.evidence.rows[0].fields.nationalCode.text === '0007'
+    && !JSON.stringify(httpPage).includes('987654'));
+  check('anonymous HTTP is refused before source access', (await send(null)).status === 401);
   stage = 'run_actual_worker';
   const page = await runC3IsolatedWorker(pathToFileURL(worker), input);
   const second = await runC3IsolatedWorker(pathToFileURL(worker), { ...input, cursor: page.nextCursor });
@@ -105,6 +132,7 @@ try {
   assert.equal(foreign?.userId, seed.users.institutionAdminA.id);
   let denied = false; try { await readAuthorizedAnnualC3Original(foreign, scope, originalId); } catch { denied = true; }
   check('another institution JWT cannot read the retained original', denied);
+  check('foreign institution HTTP cannot request another owner evidence', (await send(other.data.session.access_token)).status === 403);
   stage = 'verify_read_only_effects';
   check('reading and parsing leave catalog membership, quantities, stock and audit unchanged',
     JSON.stringify(await businessCounts()) === JSON.stringify(baseline));
@@ -113,11 +141,13 @@ try {
     VALUES($1,'central_needs.view',false) ON CONFLICT(profile_id,permission_key) DO UPDATE SET allowed=false`, [caller.userId]);
   denied = false; try { await readAuthorizedAnnualC3Original(caller, scope, originalId); } catch { denied = true; }
   check('the same JWT observes current annual-view revocation', denied);
+  check('the same JWT is refused by HTTP after view revocation', (await send(signed.data.session.access_token)).status === 403);
 } catch {
   report.errors.push(`c3_disposable_integration_failed_at_${stage}`); check('integration completed', false);
 } finally {
+  if (server) { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
   await editor.auth.signOut(); await outsider.auth.signOut(); await db.end();
-  report.passed = report.checks.length === 8 && report.checks.every(c => c.passed) && report.errors.length === 0;
+  report.passed = report.checks.length === 12 && report.checks.every(c => c.passed) && report.errors.length === 0;
   mkdirSync(output, { recursive: true }); writeFileSync(join(output, 'c3-read-worker.json'), JSON.stringify(report, null, 2));
   if (!report.passed) process.exitCode = 1;
 }
