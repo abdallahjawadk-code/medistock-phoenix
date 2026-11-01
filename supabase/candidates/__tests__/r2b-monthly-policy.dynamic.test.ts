@@ -179,4 +179,33 @@ run('R2-B owner-published metadata; restricted native roles, not JWT acceptance'
     await expect(admin('UPDATE phoenix_monthly.policy_references SET published_at=clock_timestamp()')).rejects.toThrow('monthly_history_immutable');
     expect(await counts()).toEqual(before); await seals();
   });
+  it('reproduces PostgREST read-only failures and adds invoker transaction adapters without changing prior contracts', async () => {
+    for (const name of ['list_dossiers', 'annual_summary']) await rig.asAdmin(async (c: PoolClient) => {
+      await c.query('BEGIN READ ONLY');
+      try {
+        await c.query('SET LOCAL ROLE authenticated');
+        await c.query("SELECT set_config('request.jwt.claim.sub',$1,true)", [F.actor]);
+        await expect(c.query(`SELECT * FROM public.phoenix_central_needs_${name}($1,2026)`, [F.org]))
+          .rejects.toMatchObject({ code: '25006' });
+      } finally { await c.query('ROLLBACK'); }
+    });
+    const routines = () => admin(`SELECT p.oid,pg_get_functiondef(p.oid) definition,p.proacl,p.proowner
+      FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE (n.nspname='public' OR n.nspname LIKE 'phoenix%')
+      AND p.prokind IN ('f','p') AND p.proname !~ '^phoenix_manual_read_' ORDER BY p.oid`);
+    const original = await routines();
+    await admin(readFileSync(resolve('supabase/candidates/R1_read_transaction_adapters_NOT_APPLIED.sql'), 'utf8'));
+    expect(await routines()).toEqual(original);
+    for (const name of ['dossiers', 'annual_summary']) {
+      expect(await user(`SELECT jsonb_agg(x) r FROM public.phoenix_manual_read_${name}_v1($1,2026) x`, [F.org])).toBeNull();
+      for (const role of ['anon', 'service_role']) await expect(user(
+        `SELECT jsonb_agg(x) r FROM public.phoenix_manual_read_${name}_v1($1,2026) x`, [F.org], role)).rejects.toThrow(/permission denied/);
+      await expect(user(`SELECT jsonb_agg(x) r FROM public.phoenix_manual_read_${name}_v1($1,2026) x`, [F.other])).rejects.toThrow(/forbidden/);
+    }
+    const metadata = await admin("SELECT p.proname,p.provolatile,p.prosecdef FROM pg_proc p WHERE p.pronamespace='public'::regnamespace AND p.proname~'^phoenix_manual_read_' ORDER BY p.proname");
+    expect(metadata).toHaveLength(3); expect(metadata.every(r => r.provolatile === 'v' && r.prosecdef === false)).toBe(true);
+    await admin("UPDATE public.profile_permission_overrides SET allowed=false WHERE profile_id=$1 AND permission_key='central_needs.view'", [F.actor]);
+    try { await expect(user('SELECT jsonb_agg(x) r FROM public.phoenix_manual_read_dossiers_v1($1,2026) x', [F.org])).rejects.toThrow(/forbidden/); }
+    finally { await admin("UPDATE public.profile_permission_overrides SET allowed=true WHERE profile_id=$1 AND permission_key='central_needs.view'", [F.actor]); }
+    expect(await counts()).toEqual(before); await seals();
+  });
 });

@@ -90,6 +90,7 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
     const MONTHLY_CANDIDATE='supabase/candidates/R2B_monthly_policy_reference_NOT_APPLIED.sql';
     const MONTHLY_PROOF='supabase/candidates/__tests__/r2b-monthly-policy.dynamic.test.ts';
     const MONTHLY_SHA256='6db1e13411f5773c0f7ff281a2bbbc76154acdde1eaa8b4eb642d73ef72f44c6';
+    const READ_ADAPTER='supabase/candidates/R1_read_transaction_adapters_NOT_APPLIED.sql';
     const WATCHED=['package.json','package-lock.json','supabase','src/shared/supabase','src/shared/authz','src/app','.env','.env.local'] as const;
     const EXCLUDED:string[]=[
       'src/app/AppContext.tsx','src/app/AuthenticatedApp.tsx','src/app/__tests__/auth-resilience-context.runtime.test.tsx','src/app/__tests__/auth-dead-end-screens.runtime.test.tsx','src/app/__tests__/auth-session-race.runtime.test.tsx','src/app/__tests__/db-pressure-quick-wins.test.ts','src/app/__tests__/auth-cold-start-deadline.runtime.test.tsx','src/app/screen-continuity.ts','src/app/__tests__/phase-b45-screen-continuity.runtime.test.ts','src/shared/supabase/services/auth.service.ts','src/shared/supabase/services/availability.service.ts','src/shared/supabase/services/__tests__/frontend-live-removed-at-filters.test.ts','src/shared/supabase/services/__tests__/auth-signout.runtime.test.ts','src/shared/supabase/__tests__/permission-persistence.test.ts','src/shared/supabase/__tests__/permission-matrix-readiness.test.ts','src/shared/supabase/__tests__/permission-save-diagnostics.test.ts','src/shared/authz/__tests__/screen-access.test.ts',
@@ -890,6 +891,7 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
       C4_PROOF,
       MONTHLY_CANDIDATE,
       MONTHLY_PROOF,
+      READ_ADAPTER,
       'supabase/candidates/__tests__/ff1-forward-fix.dynamic.test.ts',
       'supabase/migrations/__tests__/w0-central-needs-excel-path-authority.dynamic.test.ts',
       'supabase/candidates/__tests__/functional-journey.dynamic.test.ts',
@@ -993,6 +995,15 @@ describe('A7.2.4 preservation and fail-closed boundaries',()=>{
       'supabase/migrations/236_phoenix_monthly_policy.sql'];
     expect(flag(monthlyNearMisses)).toEqual(monthlyNearMisses);
     expect(acceptsMonthlyCandidate(monthlyNearMisses[0],monthlyBytes)).toBe(false);
+    const acceptsReadAdapter=(path:string,bytes:Uint8Array)=>path===READ_ADAPTER && EXCLUDED.includes(path)
+      && createHash('sha256').update(bytes).digest('hex')==='5cc3b4c072acfe4cbf09a1d16a10d3f8739b5e286ebfe6aa38078affc122358d';
+    const adapterBytes=readFileSync(join(ROOT,READ_ADAPTER));
+    expect(acceptsReadAdapter(READ_ADAPTER,adapterBytes)).toBe(true);
+    expect(acceptsReadAdapter(READ_ADAPTER,Buffer.concat([adapterBytes,Buffer.from('\nSELECT 1;')]))).toBe(false);
+    const adapterNearMisses=[`${READ_ADAPTER}.bak`,'supabase/candidates/R1_read_transaction_adapters_NOT_APPLIED_v2.sql',
+      'supabase/migrations/236_phoenix_manual_read_adapters.sql'];
+    expect(flag(adapterNearMisses)).toEqual(adapterNearMisses);
+    expect(acceptsReadAdapter(adapterNearMisses[0],adapterBytes)).toBe(false);
     expect(acceptsC2Candidate(P3C2_CANDIDATE,Buffer.concat([c2Bytes,Buffer.from('\nSELECT 1; -- unreviewed change\n')]))).toBe(false);
     const c2NearMisses=[`${P3C2_CANDIDATE}.unreviewed`,
       'supabase/candidates/P3C2_annual_originals_NOT_APPLIED_v2.sql',
