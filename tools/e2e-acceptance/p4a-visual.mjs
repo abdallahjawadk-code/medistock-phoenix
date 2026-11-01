@@ -238,9 +238,19 @@ try {
       await detail.getByRole('heading', { name: 'E2E Initial Provisioning Material', exact: true }).waitFor();
       check(`${id} real batch detail keyboard selection`, await materialButton.getAttribute('aria-pressed') === 'true');
       check(`${id} exactly one selected batch`, await page.locator('.prism-stock-batch-select[aria-pressed="true"]').count() === 1);
+      if (width === 1366 && lang === 'ar' && theme === 'light') {
+        await page.setViewportSize({ width: 390, height: 900 });
+        await page.waitForFunction(() => document.querySelector('.prism-stock-detail h3') === document.activeElement);
+        check('Selected batch focus survives desktop-to-phone resize', await detail.getByRole('button', { name: 'العودة إلى الدفعات', exact: true }).isVisible());
+        await page.setViewportSize({ width: 1366, height: 900 });
+        await materialButton.focus();
+        await settleView(page);
+      }
       if (width <= 1100) {
         check(`${id} narrow detail opens directly with focus`, !(await materialButton.isVisible())
           && await detail.getByRole('heading').evaluate(el => el === document.activeElement));
+        const top = await detail.evaluate(el => el.getBoundingClientRect().top);
+        check(`${id} narrow detail starts in the visible workspace`, top >= 0 && top <= 240, top);
         await page.screenshot({ path: resolve(out, `${id}-material-detail.png`), fullPage: true });
         await detail.getByRole('button', { name: lang === 'ar' ? 'العودة إلى الدفعات' : 'Back to batches', exact: true }).click();
         check(`${id} narrow detail return restores row focus`, await materialButton.isVisible()

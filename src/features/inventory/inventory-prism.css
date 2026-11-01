@@ -10,7 +10,7 @@ html[data-pharma-design][data-phoenix-ui-phase][data-phoenix-visual] .prism-shel
     --t: var(--p4-ink); --t2: var(--p4-muted); --text: var(--p4-ink); --muted: var(--p4-muted);
     --brd: var(--p4-line); --line: var(--p4-line); --line2: var(--p4-line); --field: var(--p4-panel);
     --p: var(--p4-accent); --pd: var(--p4-ink); --p2: var(--p4-selected); --chip: var(--p4-selected);
-    --teal: var(--p4-accent); --cyan: var(--p4-accent); --gold: var(--p4-accent);
+    --teal: var(--p4-accent); --cyan: var(--p4-accent);
     --focus-ring: var(--p4-focus); --pharma-brass: var(--p4-accent); --pharma-selected: var(--p4-selected);
     --phase-a-it-hairline: var(--p4-line); --phase-a-it-central: var(--p4-accent);
     --inventory-on-accent: #fff;
@@ -34,6 +34,9 @@ html[data-pharma-design][data-phoenix-ui-phase][data-phoenix-visual] .prism-shel
       box-shadow: 0 6px 24px rgb(38 68 122 / 5%) !important;
     }
     & .nexus-it-context-bar::before { background: var(--p4-accent) !important; }
+    & .nexus-it-stat--reserved { color: var(--warn); background: var(--warn2); border-color: color-mix(in srgb, var(--warn) 35%, transparent); }
+    & .nexus-it-stat--available { color: var(--ok); background: var(--ok2); border-color: color-mix(in srgb, var(--ok) 35%, transparent); }
+    & .nexus-it-stat--available.nexus-it-stat--zero { color: var(--err); background: var(--err2); border-color: color-mix(in srgb, var(--err) 40%, transparent); }
     & .nexus-it-tabs {
       background: var(--p4-panel) !important; border: 1px solid var(--p4-line) !important;
       border-radius: 12px !important; box-shadow: none !important; mask-image: none;
