@@ -79,9 +79,10 @@ try {
   const initialStock = await stock();
   check('setup has no annual quantities or effective R2 writer', (await db.query('SELECT count(*)::int n FROM public.central_needs_manual_need_events WHERE organization_id=$1', [owner])).rows[0].n === 0
     && (await rpc('phoenix_r2_capabilities', { p_organization_id: owner })).operationalWritesImplemented === false);
-  stage = 'browser_manual_entry';
-  try { browser = await chromium.launch({ headless: true, channel: 'chromium' }); } catch { browser = await chromium.launch({ headless: true }); }
+  stage = 'browser_launch';
+  try { browser = await chromium.launch({ headless: true, channel: 'chrome' }); } catch { browser = await chromium.launch({ headless: true }); }
   const session = await browser.newContext({ viewport: { width: 1366, height: 900 } }); page = await session.newPage();
+  stage = 'browser_manual_entry';
   page.on('pageerror', () => report.errors.push('browser_page_error'));
   await page.goto(base.href); await page.locator('#login-email').fill(maker.email); await page.locator('#login-password').fill(seed.password);
   await page.locator('button[type=submit]').click(); await page.locator('#phoenix-main').waitFor({ timeout: 30000 });
