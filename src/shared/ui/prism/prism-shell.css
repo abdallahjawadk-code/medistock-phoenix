@@ -215,6 +215,9 @@ html[data-pharma-design][data-phoenix-ui-phase][data-phoenix-visual] .prism-shel
       color: var(--p4-ink) !important; background: var(--p4-wash) !important;
       border: 1px solid var(--p4-line) !important; box-shadow: none;
       min-inline-size: 44px; min-block-size: 44px; border-radius: 10px;
+      /* Theme foreground/background change as one readable pair. The legacy
+         all-property transition briefly painted light controls with pale ink. */
+      transition: box-shadow 160ms ease !important;
     }
     & :is(button, a):focus-visible { outline: 3px solid var(--p4-focus) !important; outline-offset: 2px; }
   }
@@ -244,6 +247,7 @@ html[data-pharma-design][data-phoenix-ui-phase][data-phoenix-visual] .prism-shel
 }
 @media (prefers-reduced-motion: reduce) {
   html[data-pharma-design][data-phoenix-ui-phase][data-phoenix-visual] .prism-shell .premium-sidebar[data-pharma-nav] .premium-nav-item { transition: none !important; }
+  html[data-pharma-design][data-phoenix-ui-phase][data-phoenix-visual] .prism-shell .premium-topbar .nexus-control { transition: none !important; }
 }
 @media (forced-colors: active) {
   html[data-pharma-design][data-phoenix-ui-phase][data-phoenix-visual] .prism-shell .premium-sidebar[data-pharma-nav] .premium-nav-item[aria-current='page'] { outline: 2px solid Highlight !important; }

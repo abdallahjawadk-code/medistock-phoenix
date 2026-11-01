@@ -152,7 +152,8 @@ try {
           sidebarWidth: sidebar?.getBoundingClientRect().width ?? null,
           activeBackground: active ? getComputedStyle(active).backgroundColor : null,
           controlSizes: controls.map(el => ({ label: el.getAttribute('aria-label'), width: el.getBoundingClientRect().width, height: el.getBoundingClientRect().height,
-            foreground: getComputedStyle(el).color, background: getComputedStyle(el).backgroundColor })),
+            foreground: getComputedStyle(el).color, background: getComputedStyle(el).backgroundColor,
+            transitionProperty: getComputedStyle(el).transitionProperty, transitionDuration: getComputedStyle(el).transitionDuration })),
         };
       });
       check(`${id} direction`, measured.dir === (lang === 'ar' ? 'rtl' : 'ltr'));
@@ -163,6 +164,9 @@ try {
       check(`${id} touch controls`, measured.controlSizes.every(s => s.width >= 43.5 && s.height >= 43.5), measured.controlSizes);
       const controlContrast = measured.controlSizes.map(s => ({ label: s.label, ratio: contrast(s.foreground, s.background) }));
       check(`${id} settled control contrast`, controlContrast.every(c => c.ratio !== null && c.ratio >= 4.5), controlContrast);
+      check(`${id} theme controls avoid unreadable color transitions`, measured.controlSizes.every(s =>
+        s.transitionDuration.split(',').every(d => parseFloat(d) === 0)
+        || !s.transitionProperty.split(',').some(p => ['all', 'background', 'background-color', 'color'].includes(p.trim()))));
       if (width >= 768) {
         check(`${id} compact reference rail`, Math.abs(measured.sidebarWidth - 88) <= 1, measured.sidebarWidth);
         const beforeLabels = await page.locator('#phoenix-desktop-navigation .premium-nav-item').allTextContents();
@@ -224,7 +228,7 @@ try {
   const transition = await page.locator('.premium-sidebar .premium-nav-item').first().evaluate(el => getComputedStyle(el).transitionDuration);
   check('Reduced motion removes rail transitions', transition.split(',').every(v => parseFloat(v) === 0), transition);
   await context.close();
-  for (const [tier, user] of [['L1', seed.users.fixtureAdmin], ['L3', seed.users.outletOfficerA]]) {
+  for (const [tier, user] of [['platform-admin', seed.users.fixtureAdmin], ['L3', seed.users.outletOfficerA]]) {
     const s = await login(user);
     check(`${tier} real UI sign-in`, true);
     await s.page.screenshot({ path: resolve(out, `${tier}-landing.png`), fullPage: true });
@@ -232,6 +236,7 @@ try {
     await s.context.close();
   }
   const annual = await login(seed.centralNeeds.editor);
+  check('L1 pharmacy-department annual-needs editor real UI sign-in', true);
   if (await annual.page.locator('.prism-shell').getAttribute('data-pharma-screen') !== '23') {
     await navigate(annual.page, 'الاحتياج السنوي', false);
   }
