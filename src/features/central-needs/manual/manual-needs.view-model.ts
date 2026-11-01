@@ -15,6 +15,8 @@ export interface ManualNeedRow {
   live: boolean;
   quantityText: string | null;
   approvedUnit: string | null;
+  /** Identity pinned to the latest event, not resolved from the mutable canonical label. */
+  annualBinding?: ManualNeedEvent['annualBinding'];
   history: ManualNeedEvent[];
 }
 
@@ -43,6 +45,7 @@ export function foldManualEvents(events: readonly ManualNeedEvent[]): ManualNeed
       live,
       quantityText: live ? last.quantityText : null,
       approvedUnit: live ? last.approvedUnit : null,
+      ...(last.annualBinding !== undefined ? { annualBinding: last.annualBinding } : {}),
       history,
     });
   }
