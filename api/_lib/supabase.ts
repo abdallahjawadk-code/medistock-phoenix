@@ -8,8 +8,8 @@
  * `phoenix_status_center_authorized` exactly as the database already does.
  *
  * TRUSTED (`serviceClient`) carries the service-role key. It is used for
- * exactly three things: private Storage operations, the M210 authoritative
- * replay, and the M211 batch registration — the operations the database itself
+ * private Storage operations, the M210 authoritative replay, the M211 batch
+ * registration, and C4's private evidence seal — operations the database itself
  * refuses to expose to `authenticated`. It is never used to perform an action
  * on a user's behalf that the user could not have authorized themselves; every
  * such action is gated by a prior user-scoped authorization check.
