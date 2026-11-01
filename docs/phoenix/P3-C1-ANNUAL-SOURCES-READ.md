@@ -75,3 +75,7 @@ excluded from the review commit and is not a wildcard or authentication change.
 Hosted database behavior, authentication, RLS and persistent writes are not
 established by these synthetic browser checks. C2 must provide a separately
 reviewed contract for stored originals before the product offers that capability.
+
+## Master integration gate — 2026-11-01
+
+PR #263 was merged into `master` at `5415e3d74318e69d1491df37320ae53763e23d2a` after completed-success CI and authenticated E2E on its reviewed head. PR #264 has been retargeted to `master`. This documentation-only update requests fresh CI and authenticated E2E for the actual new composition. No application behavior, SQL candidate, migration, authorization, source witness or visual implementation is changed by this note. Prior parent-branch CI is historical evidence, not a substitute for the master-based gate. Hosted annual catalog activation and SQL recovery remain separate.
