@@ -5,6 +5,15 @@ import { randomUUID, randomBytes, createHash } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import pg from 'pg';
 
+export function buildOwnerPreviewPolicy(context,reviewer,approvedAt=new Date().toISOString()) {
+  const sha=value=>createHash('sha256').update(value).digest('hex');
+  return {policyId:randomUUID(),version:1,fingerprint:'a'.repeat(64),status:'approved',context,
+    unitStep:'0.25',eligibleMonths:[1,2,3,4,5,6,7,8,9,10,11,12],fixedMonths:[],basis:{beneficiaryOrganizationId:context.beneficiaryOrganizationId,
+      documentReference:'Isolated test policy: quarter-box steps across all twelve test months',documentSha256:sha('r18 synthetic documented test policy'),
+      periodReference:'Twelve explicitly eligible synthetic months',priorAllocationStatus:'none_verified',ledgerSnapshotSha256:sha('r18 verified empty synthetic allocation snapshot'),
+      approvedById:reviewer,approvedByName:'ignored input; snapshot comes from the server',approvedAt}};
+}
+
 export function assertOwnerPreviewTarget(seed) {
   assert(process.env.CI==='true' && process.env.GITHUB_ACTIONS==='true');
   assert.equal(process.env.GITHUB_REPOSITORY,'abdallahjawadk-code/medistock-phoenix');
@@ -59,13 +68,9 @@ export async function seedOwnerPreview(seedPath,password) {
         p_occurrences:[],p_reason:'Explicit synthetic identity for the isolated owner preview',p_idempotency_key:`r18-member-${randomUUID()}`});
       materials.push({canonical,name,nationalCode,annualItemId:result.membership.annualItemId,fieldVersionId:result.fieldVersion.fieldVersionId});
     }
-    const first=materials[0],sha=value=>createHash('sha256').update(value).digest('hex');
-    await db.query('SELECT phoenix_monthly.publish_reference_v1($1::jsonb,NULL,true)',[JSON.stringify({policyId:randomUUID(),version:1,fingerprint:'a'.repeat(64),status:'approved',
-      context:{ownerOrgId:owner,planningYear:year,annualItemId:first.annualItemId,fieldVersionId:first.fieldVersionId,canonicalItemId:first.canonical,unit:'box',beneficiaryOrganizationId:beneficiary},
-      unitStep:'0.25',eligibleMonths:[1,2,3,4,5,6,7,8,9,10,11,12],fixedMonths:[],basis:{beneficiaryOrganizationId:beneficiary,
-        documentReference:'Isolated test policy: quarter-box steps across all twelve test months',documentSha256:sha('r18 synthetic documented test policy'),
-        periodReference:'Twelve explicitly eligible synthetic months',priorAllocationStatus:'snapshot_verified',ledgerSnapshotSha256:sha('r18 verified empty synthetic allocation snapshot'),
-        approvedById:reviewer,approvedByName:'ignored input; snapshot comes from the server',approvedAt:new Date().toISOString()}})]);
+    const first=materials[0];
+    await db.query('SELECT phoenix_monthly.publish_reference_v1($1::jsonb,NULL,true)',[JSON.stringify(buildOwnerPreviewPolicy(
+      {ownerOrgId:owner,planningYear:year,annualItemId:first.annualItemId,fieldVersionId:first.fieldVersionId,canonicalItemId:first.canonical,unit:'box',beneficiaryOrganizationId:beneficiary},reviewer))]);
     assert.equal((await db.query('SELECT count(*)::int n FROM public.central_needs_manual_need_events WHERE organization_id=$1',[owner])).rows[0].n,0);
     assert.equal((await db.query(`SELECT * FROM phoenix_private.central_needs_capability_breaches_v1() UNION ALL SELECT * FROM phoenix_c4.capability_breaches_v1()
       UNION ALL SELECT * FROM phoenix_r2.capability_breaches() UNION ALL SELECT * FROM phoenix_monthly.capability_breaches_v1()`)).rowCount,0);
