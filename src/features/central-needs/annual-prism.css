@@ -67,8 +67,8 @@ html[data-theme='dark'][data-pharma-design][data-phoenix-ui-phase][data-phoenix-
   --annual-on-accent: #07162e;
 }
 @media (max-width: 760px) {
-  html[data-pharma-design][data-phoenix-ui-phase][data-phoenix-visual] [data-prism-surface='annual'] .cn2b-simple-card--review { grid-template-columns: minmax(0, 1fr); }
+  html[data-pharma-design][data-phoenix-ui-phase][data-phoenix-visual] .prism-shell[data-pharma-screen='23'] [data-prism-surface='annual'] .cn2b-simple-card--review { grid-template-columns: minmax(0, 1fr); }
 }
 @media (prefers-reduced-motion: reduce) {
-  html[data-pharma-design][data-phoenix-ui-phase][data-phoenix-visual] [data-prism-surface='annual'] .phoenix-button { transition: none !important; }
+  html[data-pharma-design][data-phoenix-ui-phase][data-phoenix-visual] .prism-shell[data-pharma-screen='23'] [data-prism-surface='annual'] .phoenix-button { transition: none !important; }
 }
