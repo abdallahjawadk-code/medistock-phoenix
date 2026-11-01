@@ -10,6 +10,14 @@ import { annualFixture, CAPS, ID, SCOPE } from './annual-ui-fixtures';
 vi.mock('@/shared/supabase/client', () => ({ supabase: { rpc: vi.fn(() => { throw new Error('Unexpected real RPC'); }) } }));
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
+it('opens review from the saved original identity, preserving its first filename and trigger focus target', async () => {
+  const api = fixture(), record = receipt(intent()); record.upload.filename = 'another-upload-name.xlsx';
+  api.listAnnualOriginalUploads.mockResolvedValue(page([record])); const review = vi.fn();
+  render(<AnnualOriginalFiles lang="en" scope={SCOPE} actorId={ID.actor} canWrite api={api} onReviewOriginal={review} />);
+  const trigger = await screen.findByRole('button', { name: 'Review material identity: another-upload-name.xlsx' }); fireEvent.click(trigger);
+  expect(review).toHaveBeenCalledWith(record.original, trigger); expect(api.downloadAnnualOriginal).not.toHaveBeenCalled();
+});
+
 const CONTRACT = { version: 1 as const, scope: 'owner_year' as const, maxFileBytes: 3145728 as const,
   extensions: ['xls', 'xlsx', 'csv'] as ['xls', 'xlsx', 'csv'], attestation: 'server_received_original' as const,
   atomicReceipt: true as const, intentBoundReplay: true as const };

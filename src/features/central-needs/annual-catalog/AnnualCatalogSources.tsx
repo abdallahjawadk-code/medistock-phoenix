@@ -49,7 +49,7 @@ function SourceWitness({ observation, lang }: { observation: SourceIdentityObser
   </details>;
 }
 
-function SourceRecord({ occurrence, lang }: { occurrence: AnnualSourceOccurrence; lang: ManualLang }) {
+export function SourceRecord({ occurrence, lang }: { occurrence: AnnualSourceOccurrence; lang: ManualLang }) {
   const { source, classification } = occurrence;
   return <li><details className="prism-annual-source-record">
     <summary>

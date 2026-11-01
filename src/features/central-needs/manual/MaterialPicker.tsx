@@ -15,7 +15,7 @@ interface Props {
   selected: CatalogOption[];
   onPick: (item: CatalogOption) => void;
   onRemove: (itemId: string) => void;
-  onRequestRegistration: () => void;
+  onRequestRegistration?: () => void;
 }
 
 export function MaterialPicker({ lang, scopeKey, search, selected, onPick, onRemove, onRequestRegistration }: Props) {
@@ -68,7 +68,7 @@ export function MaterialPicker({ lang, scopeKey, search, selected, onPick, onRem
         {hits !== null && hits.length === 0 && !failed && (
           <div className="prism-search-state">
             <p>{jt('material_none', lang)}</p>
-            <button type="button" onClick={onRequestRegistration}><PhoenixIcon name="editor" size={16} aria-hidden="true" />{jt('reg_title', lang)}</button>
+            {onRequestRegistration && <button type="button" onClick={onRequestRegistration}><PhoenixIcon name="editor" size={16} aria-hidden="true" />{jt('reg_title', lang)}</button>}
           </div>
         )}
       </div>
