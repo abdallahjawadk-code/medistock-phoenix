@@ -159,10 +159,11 @@ export async function runC3IsolatedWorker(
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      // Always stop a worker after the single response; ignore late messages.
-      void worker.terminate().catch(() => {});
-      if (errorCode) reject(new Error('annual_c3_worker_' + errorCode));
-      else resolve(result!);
+      // Completion includes actual termination, not just requesting it.
+      void worker.terminate().then(() => {
+        if (errorCode) reject(new Error('annual_c3_worker_' + errorCode));
+        else resolve(result!);
+      }).catch(() => reject(new Error('annual_c3_worker_termination_failed')));
     };
     const timer = setTimeout(() => settle('timeout'), C3_WORKER_BOUNDARY.timeoutMs);
     worker.on('message', (message: unknown) => {
