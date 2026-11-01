@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import '@/shared/ui/prism/prism-monitoring.css';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { roleLandingScreen } from '@/shared/authz/screen-access';

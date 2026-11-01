@@ -1,0 +1,65 @@
+@import './prism-fonts.css';
+/* Existing statistics and canonical reporting owners only. Preserve every
+   authorized tab, loading/error state, read contract and report/export value. */
+html[data-pharma-design][data-phoenix-ui-phase][data-phoenix-visual] .prism-shell:is([data-pharma-screen='22'], [data-pharma-screen='21'], [data-pharma-screen='9'], [data-pharma-screen='12'], [data-pharma-screen='20']) {
+  & #phoenix-main { background: var(--p4-wash) !important; border-start-start-radius: 0; }
+  & :is(.nexus-command-center.rac3, .nexus-command-center--reports) {
+    --s: var(--p4-panel); --s2: var(--p4-wash); --surface: var(--p4-panel); --surface2: var(--p4-wash);
+    --t: var(--p4-ink); --t2: var(--p4-muted); --text: var(--p4-ink); --muted: var(--p4-muted);
+    --brd: var(--p4-line); --line: var(--p4-line); --line2: var(--p4-line); --field: var(--p4-panel);
+    --p: var(--p4-accent); --p2: var(--p4-selected); --teal: var(--p4-accent); --cyan: var(--p4-accent);
+    --chip: var(--p4-selected); --hover: var(--p4-selected); --on-accent: #fff;
+    --phase-a-cc-hairline: var(--p4-line); --phase-a-cc-table-head: var(--p4-selected);
+    --phase-a-cc-table-stripe: var(--p4-wash); --phase-a-cc-row-hover: var(--p4-selected);
+    --rac3-seam: var(--p4-line); --rac3-panel-bg: var(--p4-panel); --rac3-glow: none;
+    --font-sans: 'Noto Sans Arabic Variable', system-ui, sans-serif;
+    --font-display: 'Changa', 'Noto Sans Arabic Variable', system-ui, sans-serif;
+    color: var(--p4-ink); font-family: var(--font-sans); line-height: 1.7; min-inline-size: 0;
+    & :is(h2, h3, h4) { font-family: var(--font-display); }
+    & :is(.rac3-header, .rac3-panel, .rac3-kpi, .phoenix-card) {
+      background: var(--p4-panel) !important; border: 1px solid var(--p4-line) !important;
+      border-radius: 16px !important; box-shadow: 0 6px 24px rgb(38 68 122 / 5%) !important;
+    }
+    & .rac3-header::after { content: none !important; }
+    & .rac3-header__title { color: var(--p4-ink) !important; }
+    & .rac3-kpi__label { font-size: 12.5px; line-height: 1.6; }
+    & .rac3-refresh { transition: box-shadow 140ms ease; }
+    & .phoenix-button {
+      min-block-size: 44px; max-inline-size: 100%; white-space: normal !important;
+      border-radius: 10px !important; transition: box-shadow 140ms ease !important;
+    }
+    & .phoenix-button[data-variant='primary'] {
+      background: var(--p4-accent) !important; color: var(--on-accent) !important;
+      border: 1px solid var(--p4-accent) !important; box-shadow: none !important;
+    }
+    & :is(input, select, textarea) { min-block-size: 44px; max-inline-size: 100%; font-family: var(--font-sans); }
+    & :is(button, input, select, textarea, a, summary, [role='tabpanel']):focus-visible {
+      outline: 3px solid var(--p4-focus) !important; outline-offset: 3px;
+    }
+  }
+  &[dir='ltr'] :is(.nexus-command-center.rac3, .nexus-command-center--reports) {
+    --font-sans: 'Sora', system-ui, sans-serif; --font-display: 'Sora', system-ui, sans-serif;
+  }
+  & .nexus-command-center--reports {
+    & > div:first-child { background: var(--p4-panel) !important; border-color: var(--p4-line) !important; border-radius: 16px; }
+    & [role='tablist'] {
+      display: flex; flex-wrap: nowrap !important; overflow-x: auto; max-inline-size: 100%;
+      padding: 6px; border: 1px solid var(--p4-line); border-radius: 12px; background: var(--p4-panel);
+      scrollbar-width: thin; scroll-padding-inline: 6px;
+    }
+    & [role='tab'] {
+      min-block-size: 44px; flex: 0 0 auto; padding: 8px 14px !important;
+      border: 1px solid var(--p4-line) !important; border-radius: 9px !important;
+      background: var(--p4-wash) !important; color: var(--p4-ink) !important; transition: box-shadow 140ms ease;
+    }
+    & [role='tab'][aria-selected='true'] { background: var(--p4-accent) !important; color: var(--on-accent) !important; border-color: var(--p4-accent) !important; }
+    & [role='tab'][aria-selected='true']::after { content: none; }
+    & table { font-size: max(12px, 0.8rem) !important; border-color: var(--p4-line); }
+    & :is(th, td) { line-height: 1.6; }
+    & th { color: var(--p4-ink); }
+  }
+}
+html[data-theme='dark'][data-pharma-design][data-phoenix-ui-phase][data-phoenix-visual] .prism-shell :is(.nexus-command-center.rac3, .nexus-command-center--reports) { --on-accent: #07162e; }
+@media (prefers-reduced-motion: reduce) {
+  html[data-pharma-design][data-phoenix-ui-phase][data-phoenix-visual] .prism-shell :is(.nexus-command-center.rac3, .nexus-command-center--reports) :is(.phoenix-button, .rac3-refresh, [role='tab']) { transition: none !important; }
+}

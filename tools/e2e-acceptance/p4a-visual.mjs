@@ -36,7 +36,7 @@ const report = {
   recordedAt: new Date().toISOString(), base: base.href,
   database: 'disposable local Supabase; synthetic fixtures; real Auth/RLS',
   referenceParity: 'HOLD: framed concept references require separate human visual review',
-  checks: [], matrix: [], annualMatrix: [], errors: [],
+  checks: [], matrix: [], annualMatrix: [], reportsMatrix: [], errors: [],
 };
 const check = (name, passed, detail = null) => {
   report.checks.push({ name, passed, detail });
@@ -160,6 +160,16 @@ try {
       check(`${id} document overflow`, measured.overflow <= 1, measured.overflow);
       check(`${id} PRISM topbar palette`, measured.topbar === (theme === 'light' ? 'rgb(255, 255, 255)' : 'rgb(12, 32, 55)'), measured.topbar);
       check(`${id} heading font`, measured.headingFont.includes(lang === 'ar' ? 'Changa' : 'Sora'), measured.headingFont);
+      const statisticsPaint = await page.locator('.rac3').evaluate(el => {
+        const header = el.querySelector('.rac3-header'), panel = el.querySelector('.rac3-panel');
+        return { font: getComputedStyle(el).fontFamily, header: getComputedStyle(header).backgroundColor,
+          panel: getComputedStyle(panel).backgroundColor, foreground: getComputedStyle(panel).color,
+          kpis: [...el.querySelectorAll('.rac3-kpi__label')].map(label => label.textContent) };
+      });
+      check(`${id} statistics PRISM surfaces and font`, statisticsPaint.header === measured.topbar
+        && statisticsPaint.panel === measured.topbar && statisticsPaint.font.includes(lang === 'ar' ? 'Noto Sans Arabic' : 'Sora'), statisticsPaint);
+      check(`${id} statistics panel contrast and labelled KPIs`, contrast(statisticsPaint.foreground, statisticsPaint.panel) >= 4.5
+        && statisticsPaint.kpis.length > 0 && statisticsPaint.kpis.every(label => label.trim().length > 0), statisticsPaint);
       check(`${id} readable title`, measured.headingWidth >= 96 && measured.headingHeight <= measured.headingLineHeight * 2 + 1, { width: measured.headingWidth, height: measured.headingHeight });
       check(`${id} touch controls`, measured.controlSizes.every(s => s.width >= 43.5 && s.height >= 43.5), measured.controlSizes);
       const controlContrast = measured.controlSizes.map(s => ({ label: s.label, ratio: contrast(s.foreground, s.background) }));
@@ -247,6 +257,40 @@ try {
   await page.setViewportSize({ width: 1366, height: 900 });
   const transition = await page.locator('.premium-sidebar .premium-nav-item').first().evaluate(el => getComputedStyle(el).transitionDuration);
   check('Reduced motion removes rail transitions', transition.split(',').every(v => parseFloat(v) === 0), transition);
+  await appearance(page, 'ar', 'light');
+  await navigate(page, 'مركز التقارير والمواقف', false);
+  for (const width of [1366, 1024, 390, 320]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const lang of ['ar', 'en']) for (const theme of ['light', 'dark']) {
+      await appearance(page, lang, theme); await settleView(page);
+      const id = `${width}-${lang}-${theme}`;
+      const tabs = page.locator('.nexus-command-center--reports [role="tab"]');
+      await tabs.first().click(); await settleView(page);
+      const paint = await page.locator('.nexus-command-center--reports').evaluate(el => {
+        const bar = el.querySelector('[role="tablist"]'), selected = bar.querySelector('[aria-selected="true"]');
+        return { font: getComputedStyle(el).fontFamily, background: getComputedStyle(bar).backgroundColor,
+          overflow: document.documentElement.scrollWidth - innerWidth, tabCount: bar.querySelectorAll('[role="tab"]').length,
+          scrollOwner: getComputedStyle(bar).overflowX, scrollWidth: bar.scrollWidth, clientWidth: bar.clientWidth,
+          selected: { foreground: getComputedStyle(selected).color, background: getComputedStyle(selected).backgroundColor,
+            height: selected.getBoundingClientRect().height },
+          panel: el.querySelector('[role="tabpanel"]')?.getAttribute('aria-labelledby') };
+      });
+      check(`${id} reporting PRISM route surface and font`, paint.background === (theme === 'dark' ? 'rgb(12, 32, 55)' : 'rgb(255, 255, 255)')
+        && paint.font.includes(lang === 'ar' ? 'Noto Sans Arabic' : 'Sora') && paint.panel, paint);
+      check(`${id} reporting owns horizontal tab overflow`, paint.overflow <= 1 && paint.scrollOwner === 'auto' && paint.tabCount > 1, paint);
+      check(`${id} reporting selected tab contrast and touch size`, contrast(paint.selected.foreground, paint.selected.background) >= 4.5 && paint.selected.height >= 44, paint.selected);
+      await page.screenshot({ path: resolve(out, `${id}-reports.png`), fullPage: true });
+      await tabs.first().press('End'); await settleView(page);
+      const last = await tabs.last().evaluate(el => {
+        const item = el.getBoundingClientRect(), bar = el.parentElement.getBoundingClientRect();
+        return { focused: document.activeElement === el, selected: el.getAttribute('aria-selected') === 'true', visible: item.left >= bar.left - 1 && item.right <= bar.right + 1 };
+      });
+      check(`${id} reporting End preserves visible selected focus`, last.focused && last.selected && last.visible, last);
+      await tabs.last().press('Home'); await settleView(page);
+      check(`${id} reporting Home restores first tab`, await tabs.first().evaluate(el => document.activeElement === el && el.getAttribute('aria-selected') === 'true'));
+      report.reportsMatrix.push({ id, ...paint });
+    }
+  }
   await context.close();
   for (const [tier, user] of [['platform-admin', seed.users.fixtureAdmin], ['L3', seed.users.outletOfficerA]]) {
     const s = await login(user);
@@ -283,7 +327,7 @@ try {
   check('capture completed', false, e.message);
 } finally {
   await browser.close();
-  report.passed = report.checks.every(c => c.passed) && report.matrix.length === 16 && report.annualMatrix.length === 16;
+  report.passed = report.checks.every(c => c.passed) && report.matrix.length === 16 && report.annualMatrix.length === 16 && report.reportsMatrix.length === 16;
   writeFileSync(resolve(out, 'report.json'), JSON.stringify(report, null, 2));
   console.log(`P4-A matrix ${report.matrix.length}/16; ${report.checks.filter(c => !c.passed).length} failed checks; reference parity remains HOLD`);
   if (!report.passed) process.exitCode = 1;
