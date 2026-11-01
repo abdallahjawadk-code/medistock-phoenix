@@ -1,5 +1,6 @@
 /** Actual annual workspace source review, synthetic fresh owner; never hosted. */
 import assert from 'node:assert/strict';
+import { verifyNativeHorizontalScroll } from './native-horizontal-scroll.mjs';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
@@ -150,18 +151,7 @@ try {
       check(`${label} review heading is visible below the fixed header`, await inViewport(heading));
       await page.screenshot({ path: resolve(output, `${label}-overview.png`) });
       const fields = sourceRecord.getByRole('region'), coordinate = witnesses.first().locator('summary bdi');
-      const scrolls = await fields.evaluate(el => el.scrollWidth > el.clientWidth + 1);
-      await fields.focus();
-      if (scrolls) {
-        const direction = await fields.evaluate(el => getComputedStyle(el).direction);
-        await fields.evaluate(async el => {
-          el.scrollTo({ left: 0, behavior: 'instant' });
-          await new Promise(requestAnimationFrame); await new Promise(requestAnimationFrame);
-        });
-        await page.waitForFunction(() => document.querySelector('[data-testid="verified-source-review"] .prism-annual-source-fields').scrollLeft === 0, null, { timeout: 3000 });
-        await fields.press(direction === 'rtl' ? 'ArrowLeft' : 'ArrowRight');
-        await page.waitForFunction(() => Math.abs(document.querySelector('[data-testid="verified-source-review"] .prism-annual-source-fields').scrollLeft) > 0, null, { timeout: 3000 });
-      }
+      await verifyNativeHorizontalScroll(fields);
       await center(coordinate);
       check(`${label} source coordinate is visible and witness scroll region accepts keyboard focus`, await inViewport(coordinate)
         && await fields.getAttribute('tabindex') === '0' && await fields.evaluate(el => el === document.activeElement));
