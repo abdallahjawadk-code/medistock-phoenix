@@ -196,9 +196,12 @@ try {
         const d = await drawer.evaluate(el => {
           const panel = el.querySelector('.premium-mobile-drawer');
           const r = panel.getBoundingClientRect();
-          return { left: r.left, right: r.right, width: innerWidth, focusInside: panel.contains(document.activeElement), inertBackground: document.querySelector('.nexus-app-column').inert };
+          const style = getComputedStyle(panel);
+          return { left: r.left, right: r.right, width: innerWidth, focusInside: panel.contains(document.activeElement), inertBackground: document.querySelector('.nexus-app-column').inert,
+            borderColor: style.borderTopColor, outlineStyle: style.outlineStyle };
         });
         check(`${id} drawer bounds/focus/inert`, d.left >= 0 && d.right <= d.width + 1 && d.focusInside && d.inertBackground, d);
+        check(`${id} drawer uses PRISM border without legacy gold outline`, d.borderColor === 'rgb(40, 66, 89)' && d.outlineStyle === 'none', d);
         await page.keyboard.press('Escape');
         await drawer.waitFor({ state: 'detached' });
         check(`${id} Escape restores trigger focus`, await trigger.evaluate(el => el === document.activeElement));
