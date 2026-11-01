@@ -54,6 +54,7 @@ import {
 } from './warehouse-intake.service';
 import type { SuggestionDocumentTarget } from './suggestion-document-navigation';
 import { InventoryBatchWorkbench } from './InventoryBatchWorkbench';
+import { handleInventoryTabKeyDown } from './inventory-tab-navigation';
 import './inventory-prism.css';
 import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 
@@ -384,12 +385,12 @@ export function InventoryCenterScreen({
       return (
         <div dir={dir} className="nexus-inventory-transfers nexus-inventory-transfers--center">
           {header}
-          <div role="tablist" className="nexus-it-tabs" style={{ display: 'flex', gap: '6px', margin: '16px 0' }}>
-            <button role="tab" aria-selected="true" className="nexus-it-tab" style={{ padding: '8px 14px', minHeight: '44px', borderRadius: 'var(--r3)', border: '1px solid var(--brd)', fontSize: '12.5px', fontWeight: 600, background: 'var(--p2)', color: 'var(--pd)' }}>
+          <div role="tablist" aria-label={lang === 'ar' ? 'أقسام مركز المخزون' : 'Inventory Center sections'} className="nexus-it-tabs" onKeyDown={handleInventoryTabKeyDown} style={{ display: 'flex', gap: '6px', margin: '16px 0' }}>
+            <button id="inventory-tab-needs" aria-controls="inventory-center-panel" role="tab" aria-selected="true" className="nexus-it-tab" style={{ padding: '8px 14px', minHeight: '44px', borderRadius: 'var(--r3)', border: '1px solid var(--brd)', fontSize: '12.5px', fontWeight: 600, background: 'var(--p2)', color: 'var(--pd)' }}>
               {needsTabCopy('tab', lang === 'ar' ? 'ar' : 'en')}
             </button>
           </div>
-          <div className="nexus-it-content"><Suspense fallback={<PhoenixLoadingState />}><ManualNeedsTab /></Suspense></div>
+          <div id="inventory-center-panel" role="tabpanel" aria-labelledby="inventory-tab-needs" tabIndex={0} className="nexus-it-content"><Suspense fallback={<PhoenixLoadingState />}><ManualNeedsTab /></Suspense></div>
         </div>
       );
     }
@@ -436,7 +437,7 @@ export function InventoryCenterScreen({
         )}
       </PhoenixCard>
 
-      <div role="tablist" className="nexus-it-tabs" style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', margin: '16px 0' }}>
+      <div role="tablist" aria-label={lang === 'ar' ? 'أقسام مركز المخزون' : 'Inventory Center sections'} className="nexus-it-tabs" onKeyDown={handleInventoryTabKeyDown} style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', margin: '16px 0' }}>
         {([
           { id: 'intake' as const, labelKey: 'inv_tab_intake' },
           { id: 'stock' as const, labelKey: 'inv_tab_stock' },
@@ -473,8 +474,11 @@ export function InventoryCenterScreen({
         ]).map(x => (
           <button
             key={x.id}
+            id={`inventory-tab-${x.id}`}
             role="tab"
             aria-selected={tab === x.id}
+            aria-controls="inventory-center-panel"
+            tabIndex={tab === x.id ? 0 : -1}
             onClick={() => setTab(x.id)}
             {...(x.id === 'quarantine' ? guideAnchor(GUIDE_ANCHORS.inventoryTabQuarantine) : {})}
             {...(x.id === 'suspensions' ? guideAnchor(GUIDE_ANCHORS.inventoryTabSuspensions) : {})}
@@ -502,7 +506,7 @@ export function InventoryCenterScreen({
         {t('inv_derived_notice', lang)}
       </div>
 
-      <div className="nexus-it-content">
+      <div id="inventory-center-panel" role="tabpanel" aria-labelledby={`inventory-tab-${tab}`} tabIndex={0} className="nexus-it-content">
       {tab === 'needs' ? (
         needsGate === 'on' ? <Suspense fallback={<PhoenixLoadingState />}><ManualNeedsTab /></Suspense> : null
       ) : !activeWarehouseId ? (
