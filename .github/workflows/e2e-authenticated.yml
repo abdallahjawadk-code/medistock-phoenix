@@ -518,6 +518,11 @@ jobs:
       - name: Run authenticated browser acceptance (including Phase 8)
         run: node tools/e2e-acceptance/run.mjs http://127.0.0.1:4173 e2e-seed.json
 
+      - name: Verify R2-A authority with real Auth and PostgREST (disposable only)
+        env:
+          SUPABASE_ANON_KEY: ${{ steps.sb.outputs.anon_key }}
+        run: node tools/e2e-acceptance/r2a-authority.mjs e2e-seed.json
+
       - name: Stop preview server
         if: always()
         run: kill "$(cat /tmp/vite-preview.pid)" 2>/dev/null || true
