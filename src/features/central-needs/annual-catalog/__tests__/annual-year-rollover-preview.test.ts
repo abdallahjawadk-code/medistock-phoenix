@@ -80,18 +80,21 @@ describe('year rollover identity-only preview (never persists)',()=>{
   });
   it('holds all rows with duplicate canonical identities instead of choosing one',()=>{
     const i=input();const row=material();
-    const other=structuredClone(row) as any;other.item.membership.annualItemId='55555555-5555-4555-8555-555555555555';
-    other.item.fieldVersion.annualItemId=other.item.membership.annualItemId;
+    const alternateAnnualId='55555555-5555-4555-8555-555555555555';
+    const other:RolloverSourceMaterial={...row,item:{...row.item,
+      membership:{...row.item.membership,annualItemId:alternateAnnualId},
+      fieldVersion:{...row.item.fieldVersion,annualItemId:alternateAnnualId}}};
     const r=previewOnly({...i,previousYears:[{...i.previousYears[0],materials:[row,other]}]});
     expect(r.carry).toHaveLength(0);expect(r.held).toHaveLength(2);
     expect(r.held.every(x=>x.reasons.includes('duplicate_source_canonical'))).toBe(true);
   });
   it('holds duplicate annual records even when canonical identities differ',()=>{
-    const i=input(),a=material(),b=structuredClone(a) as any;
+    const i=input(),a=material();
     const alternative='66666666-6666-4666-8666-666666666666';
-    b.item.membership.canonicalItemId=alternative;
-    b.targetCanonical.canonicalItemId=alternative;
-    b.targetCanonical.canonicalSnapshot.canonicalItemId=alternative;
+    const b:RolloverSourceMaterial={...a,
+      item:{...a.item,membership:{...a.item.membership,canonicalItemId:alternative}},
+      targetCanonical:{...a.targetCanonical,canonicalItemId:alternative,
+        canonicalSnapshot:{...a.targetCanonical.canonicalSnapshot,canonicalItemId:alternative}}};
     const r=previewOnly({...i,previousYears:[{...i.previousYears[0],materials:[a,b]}]});
     expect(r.carry).toHaveLength(0);
     expect(r.held.every(x=>x.reasons.includes('duplicate_source_annual_item'))).toBe(true);
@@ -113,7 +116,10 @@ describe('year rollover identity-only preview (never persists)',()=>{
   it('holds stale annual field snapshots and missing mandatory source identity',()=>{
     const m=material();
     held({...input(),previousYears:[{...input().previousYears[0],materials:[{...m,item:{...m.item,fieldVersion:{...m.item.fieldVersion,fieldVersionId:'55555555-5555-4555-8555-555555555555'}}}]}]},'source_version_stale');
-    const next=structuredClone(material()) as any;next.item.fieldVersion.fields.unit={state:'missing',reason:'unknown'};
+    const original=material();
+    const next:RolloverSourceMaterial={...original,item:{...original.item,
+      fieldVersion:{...original.item.fieldVersion,
+        fields:{...original.item.fieldVersion.fields,unit:{state:'missing',reason:'unknown'}}}}};
     held({...input(),previousYears:[{...input().previousYears[0],materials:[next]}]},'source_field_unresolved');
   });
   it('requires reviewed source classification and unchanged reference',()=>{
