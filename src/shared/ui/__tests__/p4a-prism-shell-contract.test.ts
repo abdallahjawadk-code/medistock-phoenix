@@ -25,7 +25,7 @@ describe('P4-A scoped PRISM shell safety', () => {
     expect(topbar).toContain('onClick={toggleLang}');
     expect(topbar).toContain('onClick={toggleTheme}');
     expect(topbar).toContain('<NotificationBell');
-    expect(shell).toContain('<CommandPalette onNavigate={onNavigate} />');
+    expect(shell).toContain('<CommandPalette onNavigate={onNavigate} openRequest={searchRequest} />');
   });
   it('keeps CSS reversible, locally scoped and direction/theme-aware', () => {
     expect(css).toContain(".prism-shell");

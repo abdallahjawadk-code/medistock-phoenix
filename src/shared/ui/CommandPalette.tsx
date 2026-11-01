@@ -107,9 +107,11 @@ interface OrgHit {
 
 interface Props {
   onNavigate: (screen: number) => void;
+  /** Each explicit header activation requests the existing palette once. */
+  openRequest?: number;
 }
 
-export function CommandPalette({ onNavigate }: Props) {
+export function CommandPalette({ onNavigate, openRequest = 0 }: Props) {
   const { lang, role, myPermissions, activeOrganizationKind } = useApp();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -207,6 +209,10 @@ export function CommandPalette({ onNavigate }: Props) {
     previouslyFocusedRef.current = active instanceof HTMLElement ? active : null;
     setOpen(true);
   }, []);
+
+  useEffect(() => {
+    if (openRequest > 0) openPalette();
+  }, [openRequest, openPalette]);
 
   // The context-aware `/` entry point: focus the screen's own search when one
   // exists, otherwise open the palette.

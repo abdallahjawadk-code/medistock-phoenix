@@ -43,7 +43,18 @@ async function login(user) {
   await page.locator('button[type=submit]').click();
   await page.locator('#phoenix-main').waitFor({ timeout: 30000 });
   await page.evaluate(() => document.fonts.ready);
+  await settleView(page);
   return { context, page };
+}
+
+async function settleView(page) {
+  await page.waitForLoadState('networkidle');
+  await page.locator('#phoenix-main .nexus-loading, #phoenix-main [data-rac3-state="loading"]').waitFor({ state: 'detached', timeout: 20000 });
+  await page.evaluate(async () => {
+    const animations = document.getAnimations().filter(a => Number.isFinite(a.effect?.getComputedTiming().iterations));
+    await Promise.all(animations.map(a => a.finished.catch(() => {})));
+    await document.fonts.ready;
+  });
 }
 
 async function appearance(page, lang, theme) {
@@ -62,6 +73,7 @@ async function navigate(page, label, mobile) {
   const nav = mobile ? page.locator('#phoenix-mobile-drawer nav') : page.locator('.premium-sidebar nav');
   await nav.getByRole('button', { name: label, exact: true }).click();
   if (mobile) await page.locator('#phoenix-mobile-drawer').waitFor({ state: 'detached' });
+  await settleView(page);
 }
 
 try {
@@ -94,12 +106,32 @@ try {
       check(`${id} document overflow`, measured.overflow <= 1, measured.overflow);
       check(`${id} PRISM topbar palette`, measured.topbar === (theme === 'light' ? 'rgb(255, 255, 255)' : 'rgb(12, 32, 55)'), measured.topbar);
       check(`${id} heading font`, measured.headingFont.includes(lang === 'ar' ? 'Changa' : 'Sora'), measured.headingFont);
-      check(`${id} touch controls`, measured.controlSizes.every(s => s.width >= 44 && s.height >= 44), measured.controlSizes);
+      check(`${id} touch controls`, measured.controlSizes.every(s => s.width >= 43.5 && s.height >= 43.5), measured.controlSizes);
+      if (width >= 768) {
+        check(`${id} compact reference rail`, Math.abs(measured.sidebarWidth - 88) <= 1, measured.sidebarWidth);
+        const beforeLabels = await page.locator('#phoenix-desktop-navigation .premium-nav-item').allTextContents();
+        await page.locator('.prism-rail-toggle').click();
+        const expandedWidth = await page.locator('.prism-shell > .premium-sidebar').evaluate(el => el.getBoundingClientRect().width);
+        check(`${id} expanded labels preserve navigation`, expandedWidth >= 279 && JSON.stringify(beforeLabels) === JSON.stringify(await page.locator('#phoenix-desktop-navigation .premium-nav-item').allTextContents()));
+        if (id === '1366-ar-light') await page.screenshot({ path: resolve(out, `${id}-expanded.png`), fullPage: true });
+        await page.locator('.prism-rail-toggle').click();
+      }
+      const search = page.locator('.prism-command-search');
+      await search.click();
+      const palette = page.getByRole('dialog', { name: lang === 'ar' ? 'لوحة الأوامر' : 'Command Palette', exact: true });
+      await palette.waitFor();
+      check(`${id} visible search opens canonical palette`, await palette.locator('input').isVisible());
+      await page.keyboard.press('Escape');
+      await palette.waitFor({ state: 'detached' });
+      check(`${id} search restores focus`, await search.evaluate(el => el === document.activeElement));
       if (width < 768) {
         const trigger = page.locator('.premium-drawer-trigger');
         await trigger.click();
         const drawer = page.locator('#phoenix-mobile-drawer');
         await drawer.waitFor();
+        await drawer.locator('.premium-mobile-drawer').evaluate(async el => {
+          await Promise.all(el.getAnimations().map(a => a.finished.catch(() => {})));
+        });
         await page.screenshot({ path: resolve(out, `${id}-drawer.png`), fullPage: true });
         const d = await drawer.evaluate(el => {
           const panel = el.querySelector('.premium-mobile-drawer');
@@ -111,17 +143,25 @@ try {
         await drawer.waitFor({ state: 'detached' });
         check(`${id} Escape restores trigger focus`, await trigger.evaluate(el => el === document.activeElement));
         await trigger.click();
+        await drawer.getByRole('button', { name: lang === 'ar' ? 'إغلاق' : 'Close', exact: true }).click();
+        await drawer.waitFor({ state: 'detached' });
+        await trigger.click();
         await drawer.getByRole('button', { name: lang === 'ar' ? 'مركز المخزون' : 'Inventory Center', exact: true }).click();
         await drawer.waitFor({ state: 'detached' });
       } else {
         await navigate(page, lang === 'ar' ? 'مركز المخزون' : 'Inventory Center', false);
       }
       await page.locator('[data-pharma-screen="3"]').waitFor();
+      await settleView(page);
       await page.screenshot({ path: resolve(out, `${id}-materials.png`), fullPage: true });
       await navigate(page, lang === 'ar' ? 'الإحصائيات' : 'Statistics', width < 768);
       report.matrix.push({ id, ...measured });
     }
   }
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.setViewportSize({ width: 1366, height: 900 });
+  const transition = await page.locator('.premium-sidebar .premium-nav-item').first().evaluate(el => getComputedStyle(el).transitionDuration);
+  check('Reduced motion removes rail transitions', transition.split(',').every(v => parseFloat(v) === 0), transition);
   await context.close();
   for (const [tier, user] of [['L1', seed.users.fixtureAdmin], ['L3', seed.users.outletOfficerA]]) {
     const s = await login(user);

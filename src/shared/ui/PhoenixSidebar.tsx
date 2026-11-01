@@ -1,4 +1,5 @@
 import { groupPharmaNavigation } from './pharmaNavigationGroups';
+import { useState } from 'react';
 import '@/shared/lib/pharma-navigation.css';
 import { useApp } from '@/app/AppContext';
 import { projectNavigation } from '@/shared/authz/nav-projection';
@@ -84,6 +85,7 @@ interface Props {
 
 export function PhoenixSidebar({ currentScreen, onNavigate, onLogout }: Props) {
   const { lang, role, profile, myPermissions, activeOrganizationKind } = useApp();
+  const [expanded, setExpanded] = useState(false);
   const ri = ROLE_MAP[role] ?? ROLE_MAP.viewer;
   /* R1.1-P (P1): ONE projection, shared with the drawer, the bottom bar and the
      command palette. It replaces the hand-copied users.view / users.edit_scope /
@@ -102,7 +104,7 @@ export function PhoenixSidebar({ currentScreen, onNavigate, onLogout }: Props) {
   const ns = (n: number) => ({ fontWeight: currentScreen === n ? 700 : 500 });
 
   return (
-    <aside className="premium-sidebar" data-pharma-nav="rail" style={{
+    <aside className="premium-sidebar" data-pharma-nav="rail" data-prism-expanded={expanded} style={{
       width: 'var(--sw)', flexShrink: 0, background: 'var(--surface)',
       borderInlineEnd: '1px solid var(--line)', display: 'flex', flexDirection: 'column',
       position: 'sticky', top: 0, height: '100dvh', overflowY: 'hidden', zIndex: 'var(--z-sidebar)',
@@ -115,14 +117,19 @@ export function PhoenixSidebar({ currentScreen, onNavigate, onLogout }: Props) {
               <div className="nexus-brand-subtitle">{t('shell_brand_department', lang)}</div>
             </div>
           </div></div>
+      <button type="button" className="prism-rail-toggle" onClick={() => setExpanded(value => !value)}
+        aria-expanded={expanded} aria-controls="phoenix-desktop-navigation"
+        aria-label={lang === 'ar' ? (expanded ? 'طي التنقل' : 'توسيع التنقل') : (expanded ? 'Collapse navigation' : 'Expand navigation')}>
+        <PhoenixIcon name="menu" size={20} />
+      </button>
       <div className="pharma-nav__workspace"><PhoenixIcon name="medical" size={16} /><span>{lang === 'ar' ? 'مساحة العمل الصيدلانية' : 'Pharmacy workspace'}</span><span className="pharma-nav__workspace-dot" aria-hidden="true" /></div>
-      <nav {...guideAnchor(GUIDE_ANCHORS.shellNavigationRail)} className="pharma-nav__body" aria-label={t('shell_primary_nav', lang)}>
+      <nav id="phoenix-desktop-navigation" {...guideAnchor(GUIDE_ANCHORS.shellNavigationRail)} className="pharma-nav__body" aria-label={t('shell_primary_nav', lang)}>
         {groupPharmaNavigation(primaryItems, lang).map(group => (
           <section className="pharma-nav__section" key={group.key} aria-labelledby={`pharma-rail-${group.key}`}>
             <h2 id={`pharma-rail-${group.key}`} className="pharma-nav__section-title"><span>{group.label}</span><i aria-hidden="true" /></h2>
             {group.items.map(item => (
               <button type="button" className="premium-nav-item" data-active={currentScreen === item.screen} key={item.screen}
-                onClick={() => onNavigate(item.screen)} aria-current={currentScreen === item.screen ? 'page' : undefined} style={ns(item.screen)}>
+                title={t(item.labelKey, lang)} onClick={() => onNavigate(item.screen)} aria-current={currentScreen === item.screen ? 'page' : undefined} style={ns(item.screen)}>
                 <span className="nexus-nav-icon"><PhoenixIcon name={item.icon} size={19} /></span>
                 <span className="pharma-nav__label">{t(item.labelKey, lang)}</span>
                 {currentScreen === item.screen && <span className="pharma-nav__current" aria-hidden="true"><PhoenixIcon name="check" size={14} /></span>}
@@ -134,7 +141,7 @@ export function PhoenixSidebar({ currentScreen, onNavigate, onLogout }: Props) {
           <h2 id="pharma-rail-personal" className="pharma-nav__section-title"><span>{lang === 'ar' ? 'حسابك' : 'Your account'}</span><i aria-hidden="true" /></h2>
           {secondaryItems.map(item => (
             <button type="button" className="premium-nav-item" data-active={currentScreen === item.screen} key={item.screen}
-              onClick={() => onNavigate(item.screen)} aria-current={currentScreen === item.screen ? 'page' : undefined} style={ns(item.screen)}>
+              title={t(item.labelKey, lang)} onClick={() => onNavigate(item.screen)} aria-current={currentScreen === item.screen ? 'page' : undefined} style={ns(item.screen)}>
               <span className="nexus-nav-icon"><PhoenixIcon name={item.icon} size={19} /></span>
               <span className="pharma-nav__label">{t(item.labelKey, lang)}</span>
               {currentScreen === item.screen && <span className="pharma-nav__current" aria-hidden="true"><PhoenixIcon name="check" size={14} /></span>}
@@ -147,7 +154,7 @@ export function PhoenixSidebar({ currentScreen, onNavigate, onLogout }: Props) {
           <div className="nexus-role-orb"><PhoenixIcon name={ri.icon} size={18} /></div>
           <div className="pharma-nav__identity-copy"><bdi>{profile?.full_name ?? t(roleLabelKey(role), lang)}</bdi><small>{t(roleLabelKey(role), lang)}</small></div>
         </div>
-        <button type="button" onClick={onLogout} className="pharma-nav__logout premium-focus-ring"><PhoenixIcon name="logout" size={17} /><span>{t('logout', lang)}</span></button>
+        <button type="button" onClick={onLogout} title={t('logout', lang)} className="pharma-nav__logout premium-focus-ring"><PhoenixIcon name="logout" size={17} /><span>{t('logout', lang)}</span></button>
       </div>
     </aside>
   );

@@ -68,6 +68,7 @@ export function PhoenixAppShell(props: Props) {
 function PhoenixAppShellInner({ children, currentScreen, onNavigate, onLogout }: Props) {
   const { lang, dir } = useApp();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [searchRequest, setSearchRequest] = useState(0);
   const isMobile = useIsMobileViewport();
   const closeSidebar = useCallback(() => setSidebarOpen(false), []);
   const toggleSidebar = useCallback(() => setSidebarOpen(open => !open), []);
@@ -122,6 +123,7 @@ function PhoenixAppShellInner({ children, currentScreen, onNavigate, onLogout }:
           isMobile={isMobile}
           menuOpen={sidebarOpen}
           onMenuClick={toggleSidebar}
+          onSearchClick={() => setSearchRequest(request => request + 1)}
         />
 
         <main
@@ -155,7 +157,7 @@ function PhoenixAppShellInner({ children, currentScreen, onNavigate, onLogout }:
       {/* UX-COMMAND-CENTER-SMART-A: global Ctrl+K/Cmd+K command palette —
           navigates via the same onNavigate screen-switch already passed
           down; no new routes, no new backend reads. */}
-      <CommandPalette onNavigate={onNavigate} />
+      <CommandPalette onNavigate={onNavigate} openRequest={searchRequest} />
 
       {/* PHASE3-PLATFORM-BROADCAST-NOTICES-A: institution-level broadcast
           popup. Self-gates on authReady/session/profile/activeOrgId and

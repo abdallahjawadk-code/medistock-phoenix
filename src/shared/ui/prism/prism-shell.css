@@ -109,3 +109,142 @@
     outline: 2px solid Highlight;
   }
 }
+
+/* Match the legacy theme's document context, then scope every override to the
+   real PRISM shell. This wins its !important cascade without changing tokens
+   in unconverted pages. The old Molecular header/rail otherwise wins in builds. */
+html[data-pharma-design][data-phoenix-ui-phase][data-phoenix-visual] .prism-shell {
+  --p4-rail: #071b2a;
+  --p4-rail-ink: #d6e8fc;
+  --p4-rail-muted: #adc6df;
+  --p4-rail-line: #284259;
+  --p4-rail-selected: #153453;
+
+  & aside.premium-sidebar[data-pharma-nav] {
+    --pnav-bg: var(--p4-rail);
+    --pnav-ink: var(--p4-rail-ink);
+    --pnav-muted: var(--p4-rail-muted);
+    --pnav-line: var(--p4-rail-line);
+    --pnav-soft: var(--p4-rail-selected);
+    --pnav-active: var(--p4-rail-selected);
+    --pnav-active-ink: #fff;
+    --pnav-focus: #9dbbff;
+    --pnav-logout: #ffcabd;
+    background: var(--p4-rail) !important;
+    color: var(--p4-rail-ink);
+    border-inline-end: 1px solid var(--p4-rail-line) !important;
+    font-family: 'Noto Sans Arabic Variable', system-ui, sans-serif;
+
+    & .pharma-nav__masthead {
+      background: var(--p4-rail) !important;
+      min-height: 84px !important;
+      &::after { content: none; }
+    }
+    & .nexus-brand-mark {
+      background: transparent !important;
+      border: 0 !important;
+      box-shadow: none !important;
+    }
+    & .nexus-brand-title { color: #fff !important; font-family: inherit !important; }
+    & .nexus-brand-title small, & .nexus-brand-subtitle { color: var(--p4-rail-muted) !important; }
+    & .premium-nav-item { border-radius: 8px !important; color: var(--p4-rail-ink) !important; font-family: inherit; }
+    & .premium-nav-item[data-active='true'], & .premium-nav-item:hover {
+      background: var(--p4-rail-selected) !important;
+      color: #fff !important;
+      border-color: transparent !important;
+      box-shadow: inset -3px 0 var(--p4-accent) !important;
+    }
+    & .nexus-nav-icon {
+      color: inherit !important;
+      background: transparent !important;
+      border: 0 !important;
+      box-shadow: none !important;
+    }
+    & .pharma-nav__current { color: var(--p4-rail-ink) !important; }
+    & .pharma-nav__section-title, & .pharma-nav__workspace { color: var(--p4-rail-muted) !important; }
+    & .pharma-nav__workspace, & .pharma-nav__footer { background: transparent !important; }
+    & .pharma-nav__logout { color: #ffcabd; min-inline-size: 44px; min-block-size: 44px; }
+    & .pharma-nav__identity-copy { color: var(--p4-rail-ink); }
+    & .pharma-nav__identity-copy small { color: var(--p4-rail-muted); }
+    & :is(button, a):focus-visible { outline: 3px solid #9dbbff !important; outline-offset: -3px; }
+  }
+
+  & > .premium-sidebar[data-pharma-nav='rail'][data-prism-expanded] {
+    width: 88px !important;
+    & .nexus-brand-lockup { justify-content: center; }
+    & .pharma-nav__masthead { padding: 16px 8px !important; }
+    & .pharma-nav__brand-copy, & .pharma-nav__workspace, & .pharma-nav__section-title,
+    & .pharma-nav__identity, & .pharma-nav__current { display: none !important; }
+    & .pharma-nav__label, & .pharma-nav__logout span {
+      position: absolute;
+      inline-size: 1px; block-size: 1px; padding: 0; margin: -1px;
+      overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+    }
+    & .premium-nav-item { justify-content: center; padding: 6px !important; min-height: 48px !important; }
+    & .pharma-nav__footer { justify-content: center; padding: 8px !important; }
+    & .pharma-nav__logout { justify-content: center; inline-size: 48px; }
+  }
+  & > .premium-sidebar[data-pharma-nav='rail'][data-prism-expanded='true'] {
+    width: 280px !important;
+    & .nexus-brand-lockup { justify-content: initial; }
+    & .pharma-nav__brand-copy, & .pharma-nav__workspace, & .pharma-nav__section-title,
+    & .pharma-nav__identity, & .pharma-nav__current { display: flex !important; }
+    & .pharma-nav__brand-copy { display: block !important; }
+    & .pharma-nav__label, & .pharma-nav__logout span {
+      position: static; inline-size: auto; block-size: auto; margin: 0;
+      overflow: visible; clip-path: none; white-space: normal;
+    }
+    & .premium-nav-item { justify-content: flex-start; padding: 6px 9px !important; }
+    & .pharma-nav__logout { inline-size: auto; }
+  }
+  & .prism-rail-toggle {
+    display: grid; place-items: center; align-self: center; flex-shrink: 0;
+    min-inline-size: 44px; min-block-size: 44px; margin-block-end: 8px;
+    background: transparent; color: var(--p4-rail-ink); border: 1px solid var(--p4-rail-line);
+    border-radius: 8px; cursor: pointer;
+  }
+  & #phoenix-mobile-drawer .premium-mobile-drawer { background: var(--p4-rail) !important; color: var(--p4-rail-ink); }
+  & .premium-topbar {
+    min-height: 80px !important; padding-inline: 24px !important;
+    background: var(--p4-panel) !important; color: var(--p4-ink);
+    border-bottom: 1px solid var(--p4-line) !important; gap: 16px !important;
+    & .nexus-topbar-title { min-inline-size: 0; flex: 0 1 auto; }
+    & .nexus-topbar-heading { color: var(--p4-ink) !important; font-family: 'Changa', 'Noto Sans Arabic Variable', system-ui, sans-serif !important; }
+    & .nexus-topbar-scope { color: var(--p4-muted) !important; }
+    & .nexus-control {
+      color: var(--p4-ink) !important; background: var(--p4-wash) !important;
+      border: 1px solid var(--p4-line) !important; box-shadow: none;
+      min-inline-size: 44px; min-block-size: 44px; border-radius: 10px;
+    }
+    & :is(button, a):focus-visible { outline: 3px solid var(--p4-focus) !important; outline-offset: 2px; }
+  }
+  & .prism-command-search {
+    display: flex; align-items: center; gap: 12px; min-inline-size: 44px; min-block-size: 44px;
+    flex: 1; max-inline-size: 480px; padding: 10px 16px;
+    color: var(--p4-muted); background: var(--p4-wash); border: 1px solid var(--p4-line);
+    border-radius: 10px; cursor: pointer; font: inherit; font-size: 12px;
+    & span { flex: 1; text-align: start; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    & svg { flex-shrink: 0; }
+    & kbd { font-size: 10px; white-space: nowrap; }
+  }
+  &[dir='ltr'] .premium-sidebar[data-pharma-nav], &[dir='ltr'] .premium-topbar,
+  &[dir='ltr'] .premium-topbar .nexus-topbar-heading { font-family: 'Sora', system-ui, sans-serif !important; }
+  &[dir='ltr'] .premium-nav-item[data-active='true'] { box-shadow: inset 3px 0 var(--p4-accent) !important; }
+}
+
+@media (max-width: 767px) {
+  html[data-pharma-design][data-phoenix-ui-phase][data-phoenix-visual] .prism-shell .premium-topbar {
+    flex-wrap: wrap; min-height: 0 !important;
+    padding: calc(8px + env(safe-area-inset-top, 0px)) 12px 8px !important; gap: 8px !important;
+    & .nexus-topbar-title { flex: 1 1 calc(100% - 60px); }
+    & .nexus-topbar-heading { font-size: 18px; }
+    & .prism-command-search { max-inline-size: none; min-inline-size: 44px; padding: 10px; }
+    & .prism-command-search kbd, & .prism-command-search span { display: none; }
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  html[data-pharma-design][data-phoenix-ui-phase][data-phoenix-visual] .prism-shell .premium-sidebar[data-pharma-nav] .premium-nav-item { transition: none !important; }
+}
+@media (forced-colors: active) {
+  html[data-pharma-design][data-phoenix-ui-phase][data-phoenix-visual] .prism-shell .premium-sidebar[data-pharma-nav] .premium-nav-item[aria-current='page'] { outline: 2px solid Highlight !important; }
+}
