@@ -326,10 +326,12 @@ export function ManualNeedsJourney({ lang, organizationId, actorId, api = realJo
       </section>
 
       {year !== null && revisions !== null && !latest && caps && annualMode === 'annual' && <section className="prism-panel">
+        <fieldset disabled={busy} className="prism-opened-workspace" aria-label={lang === 'ar' ? 'تهيئة فهرس السنة' : 'Annual catalog preparation'}>
         <AnnualNeedsWorkspace lang={lang} scope={{ ownerOrgId: organizationId, planningYear: year }} actorId={actorId} revision={null}
           capabilities={caps} beneficiaries={beneficiaries ?? []} searchRegisteredMaterials={api.searchCatalog}
           nationalCodeEnabled={features?.nationalCode} sameActorEnabled={features?.sameActorManual} api={annualApi} manualApi={workspaceApi}
           onIdentityReady={setIdentitiesReady} onScopeLockChange={onLineScopeLockChange} />
+        </fieldset>
       </section>}
 
       {year !== null && latest && latest.sourceMode === 'manual' && caps && (

@@ -68,7 +68,7 @@ try {
     const preview = await rpc('phoenix_central_needs_preview_annual_canonical', { ...scope, p_central_item_id: canonical });
     const member = await rpc('phoenix_central_needs_add_annual_catalog_item', { ...scope, p_central_item_id: canonical,
       p_expected_canonical_fingerprint: preview.canonicalFingerprint, p_occurrences: [], p_reason: 'Explicit synthetic UI identity', p_idempotency_key: `ui-member-${randomUUID()}` });
-    members.push({ canonical, name, ...member });
+    members.push({ canonical, name, nationalCode: preview.canonicalSnapshot.nationalCode, ...member });
   }
   const first = members[0];
   const context = { ownerOrgId: owner, planningYear: year, annualItemId: first.membership.annualItemId,
@@ -118,14 +118,25 @@ try {
   await page.locator('#inventory-tab-needs').waitFor({ timeout: 20000 }); await page.locator('#inventory-tab-needs').click();
   await page.getByLabel('Plan year', { exact: true }).fill(String(year)); await page.getByRole('button', { name: 'Open year', exact: true }).click();
   await page.getByRole('button', { name: 'Start a new plan', exact: true }).click();
+  await page.getByLabel('Annual quantity', { exact: true }).waitFor();
   await page.getByRole('combobox', { name: 'Beneficiary institution', exact: true }).selectOption(beneficiary);
-  await page.getByRole('button', { name: 'Search this year', exact: true }).click();
-  for (const member of members) {
-    const result = page.locator('.prism-result-row').filter({ hasText: member.name });
-    await result.getByRole('button', { name: 'Select material', exact: true }).click();
-  }
+  const search = page.getByRole('searchbox', { name: 'Search by material name or national code', exact: true });
+  await search.fill(first.nationalCode); await page.getByRole('button', { name: 'Search this year', exact: true }).click();
+  const firstResult = page.locator('.prism-annual-result').filter({ hasText: first.name }); await firstResult.waitFor();
+  check('national-code search returns the exact annual material identity', await page.locator('.prism-annual-result').count() === 1
+    && (await firstResult.innerText()).includes(first.nationalCode));
+  await firstResult.evaluate(el => el.scrollIntoView({ block: 'center', behavior: 'instant' }));
+  await page.screenshot({ path: resolve(output, 'national-code-search-en-light.png') });
+  await firstResult.getByRole('button', { name: 'Select material', exact: true }).click();
+  await search.fill(''); await page.getByRole('button', { name: 'Search this year', exact: true }).click();
+  await page.locator('.prism-annual-result').filter({ hasText: members[1].name }).getByRole('button', { name: 'Select material', exact: true }).click();
   await page.getByRole('combobox', { name: 'Item', exact: true }).selectOption(first.canonical);
   const quantity = () => page.getByLabel(/^(Annual quantity|الكمية السنوية)$/);
+  const filledIdentity = page.locator('.prism-line-form__identity'); await filledIdentity.getByText(first.nationalCode, { exact: true }).waitFor();
+  check('selected annual identity fills name national code and unit without copying a quantity', (await filledIdentity.innerText()).includes(first.name)
+    && (await filledIdentity.innerText()).includes('box') && await quantity().inputValue() === '');
+  await filledIdentity.evaluate(el => el.scrollIntoView({ block: 'center', behavior: 'instant' }));
+  await page.screenshot({ path: resolve(output, 'autofilled-identity-before-quantity-en-light.png') });
   check('actual quantity field starts blank after beneficiary and multiple material choices', await quantity().inputValue() === '');
   await quantity().fill('10.25');
   const panel = page.getByTestId('monthly-proposal'); await panel.getByRole('table').waitFor();
@@ -202,7 +213,7 @@ try {
     writeFileSync(resolve(output, 'failure-visible-text.txt'), await page.locator('body').innerText().catch(() => 'Unavailable')); }
 } finally {
   if (browser) await browser.close(); await employee.auth.signOut(); await db.end();
-  report.passed = report.checks.length === 121 && report.checks.every(row => row.passed) && report.errors.length === 0;
+  report.passed = report.checks.length === 123 && report.checks.every(row => row.passed) && report.errors.length === 0;
   writeFileSync(resolve(output, 'report.json'), JSON.stringify(report, null, 2));
   console.log(JSON.stringify({ phase: 'monthly_ui', passed: report.passed, checks: report.checks.length, errors: report.errors }));
   if (!report.passed) process.exitCode = 1;
