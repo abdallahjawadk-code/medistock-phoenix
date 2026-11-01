@@ -21,6 +21,8 @@ assert.equal(database.search, ''); assert.equal(database.hash, '');
 const head = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
 const prerequisite = JSON.parse(readFileSync('docs/phoenix/e2e-acceptance/monthly-policy-reference.json', 'utf8'));
 assert.equal(prerequisite.passed, true); assert.equal(prerequisite.commit, head);
+const beneficiaryProof = JSON.parse(readFileSync('docs/phoenix/e2e-acceptance/annual-beneficiaries.json', 'utf8'));
+assert(beneficiaryProof.passed && beneficiaryProof.commit === head);
 const options = { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } };
 const admin = createClient(api.href, readFileSync('/tmp/sb-service-role-key.txt', 'utf8').trim(), options);
 assert(process.env.SUPABASE_ANON_KEY);
@@ -82,7 +84,8 @@ try {
   stage = 'real_employee_journey_prerequisites';
   for (const [name, args] of [['annual_needs_contract', {}], ['feature_contract', {}],
     ['phoenix_manual_read_dossiers_v1', { p_organization_id: owner, p_plan_year: year }], ['phoenix_manual_read_annual_summary_v1', { p_organization_id: owner, p_plan_year: year }],
-    ['my_capabilities', { p_organization_id: owner, p_plan_revision_id: null }]]) {
+    ['my_capabilities', { p_organization_id: owner, p_plan_revision_id: null }],
+    ['phoenix_manual_beneficiaries_v1', { p_organization_id: owner, p_after_id: null, p_limit: 50 }]]) {
     const result = await employee.rpc(name.startsWith('phoenix_') ? name : `phoenix_central_needs_${name}`, args);
     report.setupReads.push({ name, passed: !result.error, code: result.error?.code ?? null, message: result.error?.message?.slice(0, 160) ?? null });
   }
@@ -113,13 +116,13 @@ try {
   await page.locator('#inventory-tab-needs').waitFor({ timeout: 20000 }); await page.locator('#inventory-tab-needs').click();
   await page.getByLabel('Plan year', { exact: true }).fill(String(year)); await page.getByRole('button', { name: 'Open year', exact: true }).click();
   await page.getByRole('button', { name: 'Start a new plan', exact: true }).click();
-  await page.getByLabel('Beneficiary institution', { exact: true }).selectOption(beneficiary);
+  await page.getByRole('combobox', { name: 'Beneficiary institution', exact: true }).selectOption(beneficiary);
   await page.getByRole('button', { name: 'Search this year', exact: true }).click();
   for (const member of members) {
     const result = page.locator('.prism-result-row').filter({ hasText: member.name });
     await result.getByRole('button', { name: 'Select material', exact: true }).click();
   }
-  await page.getByLabel('Item', { exact: true }).selectOption(first.canonical);
+  await page.getByRole('combobox', { name: 'Item', exact: true }).selectOption(first.canonical);
   const quantity = () => page.getByLabel(/^(Annual quantity|الكمية السنوية)$/);
   check('actual quantity field starts blank after beneficiary and multiple material choices', await quantity().inputValue() === '');
   await quantity().fill('10.25');
@@ -144,11 +147,11 @@ try {
     }
   }
   stage = 'missing_policy_and_save'; await appearance('ar', 'light');
-  await page.getByLabel('المادة', { exact: true }).selectOption(members[1].canonical); assert.equal(await quantity().inputValue(), '');
+  await page.getByRole('combobox', { name: 'المادة', exact: true }).selectOption(members[1].canonical); assert.equal(await quantity().inputValue(), '');
   await quantity().fill('10.25'); await panel.getByText('بانتظار تحديد سياسة التوزيع', { exact: true }).waitFor();
   check('second material without a policy stays waiting without fabricated month rows', await panel.getByRole('table').count() === 0);
   await panel.screenshot({ path: resolve(output, 'missing-policy-ar-light.png') });
-  await appearance('en', 'light'); await page.getByLabel('Item', { exact: true }).selectOption(first.canonical);
+  await appearance('en', 'light'); await page.getByRole('combobox', { name: 'Item', exact: true }).selectOption(first.canonical);
   assert.equal(await quantity().inputValue(), ''); await quantity().fill('10.25');
   await page.getByLabel('Reason', { exact: true }).fill('Manual annual quantity entered by employee, proposal is nonbinding');
   await page.getByRole('button', { name: 'Add line', exact: true }).click();
@@ -167,7 +170,7 @@ try {
   }
   await page.locator('#inventory-tab-needs').click();
   await page.getByLabel('Plan year', { exact: true }).fill(String(year)); await page.getByRole('button', { name: 'Open year', exact: true }).click();
-  await page.getByLabel('Beneficiary institution', { exact: true }).selectOption(beneficiary);
+  await page.getByRole('combobox', { name: 'Beneficiary institution', exact: true }).selectOption(beneficiary);
   await page.getByRole('table', { name: 'Recorded need lines', exact: true }).getByText('10.25', { exact: true }).waitFor();
   check('reload preserves saved annual quantity without stock changes or effective activation', JSON.stringify(await stock()) === JSON.stringify(initialStock)
     && (await rpc('phoenix_r2_capabilities', { p_organization_id: owner })).operationalWritesImplemented === false);

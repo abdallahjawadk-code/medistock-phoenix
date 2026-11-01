@@ -101,6 +101,32 @@ describe('annual capability and complete employee journey', () => {
     expect(f.journeyApi.listDossierRevisions).toHaveBeenCalledWith('annual-plan', true);
     expect(f.journeyApi.listYearRevisions).not.toHaveBeenCalled();
   });
+  it('uses the governed annual beneficiary list and discards a late general-directory result', async () => {
+    const f = fixture(), legacy = deferred<Awaited<ReturnType<JourneyApi['listBeneficiaries']>>>();
+    vi.mocked(f.journeyApi.listBeneficiaries).mockReturnValue(legacy.promise);
+    f.journeyApi.listAnnualBeneficiaries = vi.fn(async () => [{ id: ID.beneficiary, name: 'Governed hospital', nameAr: 'مستشفى موثق' }]);
+    mount(f); await openYear(); await screen.findByRole('option', { name: 'Governed hospital' });
+    await act(async () => legacy.resolve([{ id: ID.otherBeneficiary, name: 'Late directory hospital', nameAr: 'دليل قديم' }]));
+    expect(screen.queryByRole('option', { name: 'Late directory hospital' })).toBeNull();
+    expect(f.journeyApi.listAnnualBeneficiaries).toHaveBeenCalledWith(ID.owner);
+  });
+  it('keeps catalog preparation available after the annual beneficiary reader fails, without directory fallback', async () => {
+    const f = fixture(); f.journeyApi.listAnnualBeneficiaries = vi.fn(async () => { throw new Error('Unavailable'); });
+    mount(f); await openYear(); await waitFor(() => expect(f.journeyApi.listAnnualBeneficiaries).toHaveBeenCalled());
+    expect(await screen.findByRole('button', { name: 'Year files' })).toBeEnabled();
+    expect(screen.queryByRole('option', { name: 'Hospital A' })).toBeNull();
+    expect(f.journeyApi.listBeneficiaries).toHaveBeenCalledTimes(1);
+    expect(f.api.addAnnualNeedLine).not.toHaveBeenCalled();
+  });
+  it('discards an earlier annual beneficiary response after a newer current read', async () => {
+    const f = fixture(), older = deferred<Awaited<ReturnType<JourneyApi['listBeneficiaries']>>>();
+    f.journeyApi.listAnnualBeneficiaries = vi.fn().mockReturnValueOnce(older.promise)
+      .mockResolvedValue([{ id: ID.otherBeneficiary, name: 'Newer current hospital', nameAr: 'مستشفى حالي' }]);
+    mount(f); await openYear(); fireEvent.click(screen.getByRole('button', { name: 'Open year' }));
+    await screen.findByRole('option', { name: 'Newer current hospital' });
+    await act(async () => older.resolve([{ id: ID.beneficiary, name: 'Older current hospital', nameAr: 'مستشفى سابق' }]));
+    expect(screen.queryByRole('option', { name: 'Older current hospital' })).toBeNull();
+  });
   it('retains the institution read when the employee opens a year before that read finishes', async () => {
     const f = fixture(); const institutions = deferred<Awaited<ReturnType<JourneyApi['listBeneficiaries']>>>();
     vi.mocked(f.journeyApi.listBeneficiaries).mockReturnValue(institutions.promise);
