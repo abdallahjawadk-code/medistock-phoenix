@@ -10,6 +10,8 @@ import { build } from 'esbuild';
 import { createClient } from '@supabase/supabase-js';
 import pg from 'pg';
 import * as XLSX from 'xlsx';
+import { createServer } from 'node:http';
+import { Readable } from 'node:stream';
 
 const seed = JSON.parse(readFileSync(process.argv[2] || 'e2e-seed.json', 'utf8'));
 const api = new URL(seed.supabaseUrl), database = new URL(seed.databaseUrl);
@@ -34,13 +36,14 @@ const editor = createClient(api.href, anonKey, options), outsider = createClient
 const service = createClient(api.href, serviceKey, options), anonymous = createClient(api.href, anonKey, options);
 const db = new pg.Client({ connectionString: database.href, connectionTimeoutMillis: 5000 });
 const output = resolve('docs/phoenix/e2e-acceptance');
-const report = { phase: 'C4 inert SQL contract; employee HTTP/UI unavailable', commit: head, sourceHead: prerequisite.sourceHead,
+const report = { phase: 'C4 inert SQL and trusted HTTP; employee review UI unavailable', commit: head, sourceHead: prerequisite.sourceHead,
   environment: 'hardened disposable local Supabase; synthetic workbook; real Auth/PostgREST', candidateSha256,
   checks: [], errors: [], productionSqlApplied: false, hostedCompatibility: prerequisite.hostedCompatibility };
 const check = (name, passed) => { report.checks.push({ name, passed: Boolean(passed) }); console.log(`${passed ? 'PASS' : 'FAIL'} C4 ${name}`); };
 const scope = { ownerOrgId: seed.centralNeeds.owningOrganization, planningYear: 2099 };
 const actor = seed.centralNeeds.editor.id;
 let stage = 'target_proof';
+let server;
 const rpc = async (client, name, args) => client.rpc(`phoenix_c4_${name}`, args);
 const scopeArgs = { p_organization_id: scope.ownerOrgId, p_planning_year: scope.planningYear };
 const counts = async () => (await db.query(`SELECT
@@ -51,6 +54,7 @@ const counts = async () => (await db.query(`SELECT
   (SELECT count(*) FROM public.central_needs_annual_receipts)::int receipts,
   (SELECT count(*) FROM public.audit_logs)::int audit,
   (SELECT count(*) FROM phoenix_c4.commits)::int commits,
+  (SELECT count(*) FROM phoenix_c4.proofs)::int proofs,
   (SELECT count(*) FROM public.central_needs_need_lines)::int needs,
   (SELECT count(*) FROM public.warehouse_stock_movements)::int stock,
   (SELECT count(*) FROM public.outlet_stock_movements)::int outlet`)).rows[0];
@@ -81,9 +85,11 @@ try {
     banner: { js: "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);" } };
   await build({ ...shared, stdin: { contents: `export {authenticate} from './api/_lib/supabase.ts';
     export {readAuthorizedAnnualC3Original} from './api/_cn2b-core/annual-c3-authorized-source.ts';
-    export {runC3IsolatedWorker} from './api/_cn2b-core/annual-c3-worker-boundary.ts';`, resolveDir: process.cwd() }, outfile: bridge });
+    export {runC3IsolatedWorker} from './api/_cn2b-core/annual-c3-worker-boundary.ts';
+    export {callerHasCentralNeedsAuthority} from './api/_lib/supabase.ts';
+    export {createC4MembershipHandler} from './api/_c4-core/http.ts';`, resolveDir: process.cwd() }, outfile: bridge });
   await build({ ...shared, entryPoints: ['api/_c3-core/worker-entry.ts'], outfile: worker });
-  const { authenticate, readAuthorizedAnnualC3Original, runC3IsolatedWorker } = await import(pathToFileURL(bridge).href);
+  const { authenticate, readAuthorizedAnnualC3Original, runC3IsolatedWorker, callerHasCentralNeedsAuthority, createC4MembershipHandler } = await import(pathToFileURL(bridge).href);
   const caller = await authenticate(new Request('http://127.0.0.1/c4-test', { headers: { authorization: `Bearer ${signed.data.session.access_token}` } }));
   assert.equal(caller?.userId, actor);
   const code = `00-${randomUUID()}`, name = 'Synthetic C4 actual Auth identity';
@@ -126,9 +132,37 @@ try {
   assert(!foreign.error && foreign.data.session);
   check('another institution JWT cannot commit the proof', Boolean((await rpc(outsider, 'commit', commitArgs)).error));
   const before = await counts();
+  const handler = createC4MembershipHandler({ registrations: [manifest], workerEntry: pathToFileURL(worker),
+    authenticate, authorized: callerHasCentralNeedsAuthority, read: readAuthorizedAnnualC3Original,
+    run: runC3IsolatedWorker, service: () => service, workerSha256: async () => sha(readFileSync(worker)) });
+  server = createServer(async (req, res) => {
+    try {
+      const response = await handler(new Request('http://127.0.0.1/central-needs/commit-verified-membership', {
+        method: req.method, headers: Object.fromEntries(Object.entries(req.headers).map(([key, value]) => [key, Array.isArray(value) ? value.join(',') : value ?? ''])),
+        body: Readable.toWeb(req), duplex: 'half' }));
+      res.writeHead(response.status, Object.fromEntries(response.headers)); res.end(await response.text());
+    } catch { res.writeHead(500); res.end(); }
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const endpoint = `http://127.0.0.1:${server.address().port}/central-needs/commit-verified-membership`;
+  const httpInput = { scope, requestId: args.p_request_id, originalId: source.original.originalId,
+    expectedOriginalSha256: source.original.sha256, templateId: manifest.template.id, templateVersion: 1,
+    expectedTemplateSha256: sha(JSON.stringify(manifest)), cursor: null, pageSize: 50,
+    occurrenceKeys: page.rows.map(row => row.occurrenceKey), canonicalItemId: canonical,
+    expectedCanonicalFingerprint: preview.data.canonicalFingerprint, reason: args.p_reason };
+  const send = (token, body = httpInput) => fetch(endpoint, { method: 'POST', headers: { 'content-type': 'application/json',
+    ...(token ? { authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify(body) });
+  check('anonymous HTTP cannot prepare or commit', (await send(null)).status === 401);
+  check('foreign institution HTTP is refused before preparing evidence', (await send(foreign.data.session.access_token)).status === 403);
+  check('HTTP rejects browser quantities and stale source identity without effects',
+    (await send(signed.data.session.access_token, { ...httpInput, annualQuantity: 987654 })).status === 400
+    && (await send(signed.data.session.access_token, { ...httpInput, expectedOriginalSha256: 'f'.repeat(64) })).status === 409
+    && JSON.stringify(await counts()) === JSON.stringify(before));
   stage = 'employee_commit';
-  response = await rpc(caller.client, 'commit', commitArgs); assert(!response.error);
-  const saved = response.data, after = await counts();
+  const httpResponse = await send(signed.data.session.access_token); const body = await httpResponse.json();
+  assert.equal(httpResponse.status, 200); assert.equal(body.ok, true);
+  check('actual HTTP reruns C2 and the compiled worker before committing with the employee JWT', httpResponse.headers.get('cache-control') === 'no-store');
+  const saved = body.result, after = await counts();
   check('original employee JWT commits one membership and preserves the old source attestation', saved.idempotentReplay === false
     && saved.sourceAttestation === 'client_attested' && saved.c4Verification.reviewedById === actor
     && saved.c4Verification.attestation === 'server_verified_c2_extraction_v1'
@@ -142,6 +176,8 @@ try {
   await db.query("UPDATE public.profile_permission_overrides SET allowed=false WHERE profile_id=$1 AND permission_key='central_needs.edit'", [actor]);
   check('the same employee JWT observes current edit revocation', Boolean((await rpc(caller.client, 'commit', commitArgs)).error)
     && JSON.stringify(await counts()) === JSON.stringify(after));
+  check('HTTP observes the same JWT revocation without new effects', (await send(signed.data.session.access_token)).status === 403
+    && JSON.stringify(await counts()) === JSON.stringify(after));
   check('no canonical, need quantity or stock change; all capability seals stay closed', after.canonical === before.canonical
     && after.needs === before.needs && after.stock === before.stock && after.outlet === before.outlet
     && (await db.query('SELECT * FROM phoenix_private.central_needs_capability_breaches_v1()')).rowCount === 0
@@ -150,8 +186,9 @@ try {
 } catch {
   report.errors.push(`c4_disposable_integration_failed_at_${stage}`); check('integration completed', false);
 } finally {
+  if (server) { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
   await editor.auth.signOut(); await outsider.auth.signOut(); await db.end();
-  report.passed = report.checks.length === 12 && report.checks.every(c => c.passed) && report.errors.length === 0;
+  report.passed = report.checks.length === 17 && report.checks.every(c => c.passed) && report.errors.length === 0;
   mkdirSync(output, { recursive: true }); writeFileSync(join(output, 'c4-verified-membership.json'), JSON.stringify(report, null, 2));
   if (!report.passed) process.exitCode = 1;
 }

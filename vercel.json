@@ -7,6 +7,10 @@
     "api/central-needs/extract-original.ts": {
       "includeFiles": ".c3-runtime/worker.mjs",
       "maxDuration": 30
+    },
+    "api/central-needs/commit-verified-membership.ts": {
+      "includeFiles": ".c3-runtime/worker.mjs",
+      "maxDuration": 30
     }
   },
   "headers": [
