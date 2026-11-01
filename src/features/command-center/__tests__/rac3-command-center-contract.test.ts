@@ -681,12 +681,13 @@ describe('RAC-3 · I) no backend or migration change', () => {
       eslint: { minimatch: minimatchSecurityOverride },
       'readdir-glob': { minimatch: minimatchSecurityOverride },
     });
-    // CN-2B: the lint script gains the `api` root alongside `src`, reviewed as
-    // the one approved scripts delta. Every other script stays byte-identical
-    // to the baseline — this is not a broad exemption, only this exact line.
+    // Exact reviewed script deltas: CN-2B adds API lint; C3 builds its private
+    // code-only worker after the existing OCR assets. Keep all other scripts
+    // and the complete dependency/lock graph pinned to the reviewed baseline.
     expect(head.scripts).toEqual({
       ...base.scripts,
       lint: 'eslint src api --report-unused-disable-directives --max-warnings 0',
+      prebuild: 'node scripts/ocr-assets.mjs && node scripts/c3-worker-assets.mjs',
     });
     expect(head.name).toBe(base.name);
 
