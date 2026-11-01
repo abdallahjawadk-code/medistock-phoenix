@@ -1,12 +1,12 @@
 /** One verified NEW catalog membership. No legacy writer, automatic canonical
  * registration, annual quantity or stock operation is exposed here. */
-import { createHash } from 'node:crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { AuthenticatedCaller } from '../_lib/supabase.ts';
 import { errorResponse, jsonResponse } from '../_lib/http.ts';
 import type { readAuthorizedAnnualC3Original } from '../_cn2b-core/annual-c3-authorized-source.ts';
 import type { runC3IsolatedWorker } from '../_cn2b-core/annual-c3-worker-boundary.ts';
 import type { RegisteredAnnualLayout } from '../_c3-core/computation.ts';
+import { snapshotReviewedLayouts } from '../_c3-core/registry.ts';
 import { C4_SHA, C4_UUID, c4Record, readC4MembershipInput, type C4MembershipInput } from './input.ts';
 
 interface Dependencies {
@@ -32,15 +32,8 @@ async function permitted(deps: Dependencies, caller: AuthenticatedCaller, input:
 }
 export function createC4MembershipHandler(deps: Dependencies) {
   if (deps.workerEntry.protocol !== 'file:' || deps.registrations.length > 100) throw new Error('invalid_server_configuration');
-  const workerEntry = new URL(deps.workerEntry.href), seen = new Set<string>();
-  const registrations = deps.registrations.map(registration => {
-    const serialized = JSON.stringify(registration);
-    if (Buffer.byteLength(serialized) > 65536) throw new Error('invalid_server_configuration');
-    const manifest = JSON.parse(serialized) as RegisteredAnnualLayout;
-    const key = JSON.stringify([manifest.template.id, manifest.template.version]);
-    if (seen.has(key)) throw new Error('invalid_server_configuration'); seen.add(key);
-    return { manifest, expectedSha256: createHash('sha256').update(serialized).digest('hex') };
-  });
+  const workerEntry = new URL(deps.workerEntry.href);
+  const registrations = snapshotReviewedLayouts(deps.registrations);
   return async function handle(request: Request): Promise<Response> {
     if (request.method !== 'POST') return errorResponse(405, 'method_not_allowed');
     let commitStarted = false, input: C4MembershipInput | undefined;

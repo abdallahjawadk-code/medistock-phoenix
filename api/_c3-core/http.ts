@@ -1,11 +1,11 @@
 /** Read-only HTTP orchestration. CPU parsing runs solely in the bounded worker.
  * Registrations and the worker URL are server dependencies, never request data. */
-import { createHash } from 'node:crypto';
 import type { AuthenticatedCaller } from '../_lib/supabase.ts';
 import { errorResponse, jsonResponse } from '../_lib/http.ts';
 import { C3_WORKER_BOUNDARY, type runC3IsolatedWorker } from '../_cn2b-core/annual-c3-worker-boundary.ts';
 import type { readAuthorizedAnnualC3Original } from '../_cn2b-core/annual-c3-authorized-source.ts';
 import type { RegisteredAnnualLayout } from './computation.ts';
+import { snapshotReviewedLayouts } from './registry.ts';
 
 interface Dependencies {
   registrations: readonly RegisteredAnnualLayout[];
@@ -58,15 +58,7 @@ async function inputFrom(request: Request): Promise<Input> {
 export function createC3ReadHandler(deps: Dependencies) {
   if (deps.workerEntry.protocol !== 'file:' || deps.registrations.length > 100) throw new Error('invalid_server_configuration');
   const workerEntry = new URL(deps.workerEntry.href);
-  const seen = new Set<string>();
-  const registrations = deps.registrations.map(registration => {
-    const serialized = JSON.stringify(registration);
-    if (Buffer.byteLength(serialized) > C3_WORKER_BOUNDARY.maxTemplateBytes) throw new Error('invalid_server_configuration');
-    const manifest = JSON.parse(serialized) as RegisteredAnnualLayout;
-    const key = JSON.stringify([manifest.template.id, manifest.template.version]);
-    if (seen.has(key)) throw new Error('invalid_server_configuration'); seen.add(key);
-    return { manifest, expectedSha256: createHash('sha256').update(serialized).digest('hex') };
-  });
+  const registrations = snapshotReviewedLayouts(deps.registrations);
   return async function handle(request: Request): Promise<Response> {
     if (request.method !== 'POST') return errorResponse(405, 'method_not_allowed');
     try {
