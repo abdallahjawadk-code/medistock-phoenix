@@ -180,11 +180,48 @@ export function InventoryCenterScreen({
   // visible basis of the tab.
   const canViewCorrections = canApproveAnyCorrection || hasInventoryReadAffordance;
 
-  const [tab, setTab] = useState<Tab>(opensDispatch ? 'dispatch' : 'intake');
+  const [requestedTab, setTab] = useState<Tab>(opensDispatch ? 'dispatch' : 'intake');
   // R1-A4 — inactive by default and fail-closed: 'off' unless the build flag, role, home PDA organization and the server's manual capability all hold.
   // With the flag off this performs no request at all. It is org-level: independent of the warehouse selected below.
   const needsGate = useManualNeedsTabGate();
-  useEffect(() => { if (tab === 'needs' && needsGate !== 'on') setTab('intake'); }, [tab, needsGate]);
+  const visibleTabs = [
+    { id: 'intake' as const, labelKey: 'inv_tab_intake' },
+    { id: 'stock' as const, labelKey: 'inv_tab_stock' },
+    { id: 'ledger' as const, labelKey: 'inv_tab_ledger' },
+    // Shown only to holders of the receive permission — the authoritative
+    // institution incoming-supplies receipt entry.
+    ...(canReceive ? [{ id: 'incoming' as const, labelKey: 'inv_tab_incoming' }] : []),
+    // §2 — institution-warehouse → outlet dispatch, for dispatch authorizers.
+    ...(canDispatch ? [{ id: 'dispatch' as const, labelKey: 'inv_tab_dispatch' }] : []),
+    // §071 — outlet-return receipts into this warehouse. VISIBLE to anyone
+    // who may read the rows (RLS decides); the receive CONTROLS inside stay
+    // gated on the scoped outlet_stock.return_receive key.
+    ...(canViewReturns ? [{ id: 'returns' as const, labelKey: 'inv_tab_return_receipts' }] : []),
+    // OUTLET-RETURN-EXCEPTION-RESOLUTION-157 — resolving stuck
+    // exception_pending lines, for holders of the scoped
+    // outlet_stock.resolve_return_exception permission on it.
+    ...(canResolveExceptions ? [{ id: 'return_exceptions' as const, labelKey: 'inv_tab_return_exceptions' }] : []),
+    // QUARANTINE-DISPOSITION — VISIBLE to anyone who may read the rows;
+    // release/destroy stay gated on the scoped
+    // warehouse_transfer.return_request key (099/105).
+    ...(canViewQuarantine ? [{ id: 'quarantine' as const, labelKey: 'inv_tab_quarantine' }] : []),
+    // MATERIAL-DISPENSING-SUSPENSION (203) — a SEPARATE tab from
+    // quarantine above, never a mode of it. Visible only to
+    // material_dispensing_suspension.view holders (administrative
+    // roles by this domain's default matrix) — front-line roles still
+    // see the موقوف الصرف badge wherever dispensing itself is blocked.
+    ...(canViewSuspensions ? [{ id: 'suspensions' as const, labelKey: 'mds_badge' }] : []),
+    // SECOND-PERSON-CORRECTION-APPROVAL — VISIBLE to anyone who may read
+    // either scope's history; approve/reject stay gated per scope on
+    // outlet_stock.approve_correction / warehouse_stock.approve_correction (098/101).
+    ...(canViewCorrections ? [{ id: 'corrections' as const, labelKey: 'cor_pending_title' }] : []),
+    // R1-A4 — الاحتياجات والتحصيص: present only while the activation gate is 'on' (label comes from the feature's own copy).
+    ...(needsGate === 'on' ? [{ id: 'needs' as const, labelKey: 'inv_tab_stock' }] : []),
+  ];
+  // Select and label an available panel immediately; a later permission refresh
+  // must not silently reactivate a previously removed tab.
+  const tab: Tab = visibleTabs.some(option => option.id === requestedTab) ? requestedTab : 'intake';
+  useEffect(() => { if (tab !== requestedTab) setTab(tab); }, [tab, requestedTab]);
 
   /**
    * INTERACTIVE-GUIDE-IG2 — tell the guide which screen and tab are open.
@@ -438,40 +475,7 @@ export function InventoryCenterScreen({
       </PhoenixCard>
 
       <div role="tablist" aria-label={lang === 'ar' ? 'أقسام مركز المخزون' : 'Inventory Center sections'} className="nexus-it-tabs" onKeyDown={handleInventoryTabKeyDown} style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', margin: '16px 0' }}>
-        {([
-          { id: 'intake' as const, labelKey: 'inv_tab_intake' },
-          { id: 'stock' as const, labelKey: 'inv_tab_stock' },
-          { id: 'ledger' as const, labelKey: 'inv_tab_ledger' },
-          // Shown only to holders of the receive permission — the authoritative
-          // institution incoming-supplies receipt entry.
-          ...(canReceive ? [{ id: 'incoming' as const, labelKey: 'inv_tab_incoming' }] : []),
-          // §2 — institution-warehouse → outlet dispatch, for dispatch authorizers.
-          ...(canDispatch ? [{ id: 'dispatch' as const, labelKey: 'inv_tab_dispatch' }] : []),
-          // §071 — outlet-return receipts into this warehouse. VISIBLE to anyone
-          // who may read the rows (RLS decides); the receive CONTROLS inside stay
-          // gated on the scoped outlet_stock.return_receive key.
-          ...(canViewReturns ? [{ id: 'returns' as const, labelKey: 'inv_tab_return_receipts' }] : []),
-          // OUTLET-RETURN-EXCEPTION-RESOLUTION-157 — resolving stuck
-          // exception_pending lines, for holders of the scoped
-          // outlet_stock.resolve_return_exception permission on it.
-          ...(canResolveExceptions ? [{ id: 'return_exceptions' as const, labelKey: 'inv_tab_return_exceptions' }] : []),
-          // QUARANTINE-DISPOSITION — VISIBLE to anyone who may read the rows;
-          // release/destroy stay gated on the scoped
-          // warehouse_transfer.return_request key (099/105).
-          ...(canViewQuarantine ? [{ id: 'quarantine' as const, labelKey: 'inv_tab_quarantine' }] : []),
-          // MATERIAL-DISPENSING-SUSPENSION (203) — a SEPARATE tab from
-          // quarantine above, never a mode of it. Visible only to
-          // material_dispensing_suspension.view holders (administrative
-          // roles by this domain's default matrix) — front-line roles still
-          // see the موقوف الصرف badge wherever dispensing itself is blocked.
-          ...(canViewSuspensions ? [{ id: 'suspensions' as const, labelKey: 'mds_badge' }] : []),
-          // SECOND-PERSON-CORRECTION-APPROVAL — VISIBLE to anyone who may read
-          // either scope's history; approve/reject stay gated per scope on
-          // outlet_stock.approve_correction / warehouse_stock.approve_correction (098/101).
-          ...(canViewCorrections ? [{ id: 'corrections' as const, labelKey: 'cor_pending_title' }] : []),
-          // R1-A4 — الاحتياجات والتحصيص: present only while the activation gate is 'on' (label comes from the feature's own copy).
-          ...(needsGate === 'on' ? [{ id: 'needs' as const, labelKey: 'inv_tab_stock' }] : []),
-        ]).map(x => (
+        {visibleTabs.map(x => (
           <button
             key={x.id}
             id={`inventory-tab-${x.id}`}
