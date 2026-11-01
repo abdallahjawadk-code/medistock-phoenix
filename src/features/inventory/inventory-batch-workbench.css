@@ -8,7 +8,7 @@ html[data-pharma-design][data-phoenix-ui-phase][data-phoenix-visual] .prism-stoc
   color: var(--stock-ink); font-family: 'Noto Sans Arabic Variable', system-ui, sans-serif;
   &[lang='en'] { font-family: 'Sora', system-ui, sans-serif; }
   & .prism-stock-workbench__list {
-    min-inline-size: 0; grid-area: list;
+    min-inline-size: 0; min-block-size: 44px; grid-area: list;
     &:focus-visible { outline: 3px solid var(--stock-accent); outline-offset: 3px; }
   }
   & .nexus-it-batch-row {
