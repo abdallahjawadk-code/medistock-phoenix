@@ -265,7 +265,7 @@ describe('Safety guards', () => {
   });
 
   it('PhoenixAppShell preserves palette and side navigation after owner retires the bottom bar', () => {
-    expect(shell).toContain('<CommandPalette onNavigate={onNavigate} />');
+    expect(shell).toContain('<CommandPalette onNavigate={onNavigate} openRequest={searchRequest} />');
     expect(shell).toContain('<PhoenixSidebar');
     expect(shell).toContain('<PhoenixTopbar');
     expect(shell).toContain('<PhoenixMobileDrawer');

@@ -2,7 +2,6 @@ import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { PhoenixIcon } from './PhoenixIcon';
 import { NotificationBell } from './NotificationBell';
-import { PharmaSculpture } from './PharmaSculpture';
 import { GUIDE_ANCHORS, guideAnchor } from '@/features/guide/guide.anchors';
 
 interface Props {
@@ -10,9 +9,10 @@ interface Props {
   isMobile: boolean;
   menuOpen: boolean;
   onMenuClick: () => void;
+  onSearchClick?: () => void;
 }
 
-export function PhoenixTopbar({ title, isMobile, menuOpen, onMenuClick }: Props) {
+export function PhoenixTopbar({ title, isMobile, menuOpen, onMenuClick, onSearchClick }: Props) {
   const { lang, toggleLang, toggleTheme, theme } = useApp();
 
   return (
@@ -48,7 +48,6 @@ export function PhoenixTopbar({ title, isMobile, menuOpen, onMenuClick }: Props)
       {/* The design source leads with the screen title and sets the scope line
           beneath it, and drops the scope line on phones where the row has to
           stay one line tall. */}
-      <PharmaSculpture className="pharma-topbar-sculpture" />
       <div className="nexus-topbar-title">
         <h1 className="nexus-topbar-heading">{title}</h1>
         {!isMobile && (
@@ -57,6 +56,13 @@ export function PhoenixTopbar({ title, isMobile, menuOpen, onMenuClick }: Props)
           </span>
         )}
       </div>
+
+      {onSearchClick && <button type="button" className="prism-command-search" onClick={onSearchClick}
+        aria-label={t('cc_palette_title', lang)} aria-haspopup="dialog">
+        <PhoenixIcon name="search" size={20} />
+        <span>{t('cc_palette_placeholder', lang)}</span>
+        <kbd dir="ltr">Ctrl K</kbd>
+      </button>}
 
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0, marginInlineStart: 'auto' }}>
         <span {...guideAnchor(GUIDE_ANCHORS.shellTopbarNotifications)} style={{ display: 'inline-flex' }}>
