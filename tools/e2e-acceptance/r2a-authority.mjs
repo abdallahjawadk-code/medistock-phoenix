@@ -7,6 +7,7 @@ import { execFileSync } from 'node:child_process';
 import assert from 'node:assert/strict';
 import pg from 'pg';
 import { createClient } from '@supabase/supabase-js';
+import { prepareDisposablePlatformReadProfile } from './disposable-platform-read-profile.mjs';
 
 const seed = JSON.parse(readFileSync(process.argv[2] || 'e2e-seed.json', 'utf8'));
 const api = new URL(seed.supabaseUrl), database = new URL(seed.databaseUrl);
@@ -55,6 +56,8 @@ try {
     pg_get_userbyid(datdba) database_owner FROM pg_database WHERE datname=current_database()`);
   report.diagnostics.push({ kind: 'disposable_target_identity', identity: targetIdentity.rows[0] });
   report.diagnostics.push({ kind: 'prior_seal_before_candidates', breaches: (await db.query('SELECT * FROM phoenix_private.central_needs_capability_breaches_v1()')).rows });
+  const systemIdentifier = (await db.query('SELECT system_identifier::text id FROM pg_control_system()')).rows[0].id;
+  report.platformProfile = await prepareDisposablePlatformReadProfile(database.href, systemIdentifier);
   for (const [index, program] of programs.entries()) {
     try { await db.query(program); }
     catch (error) {

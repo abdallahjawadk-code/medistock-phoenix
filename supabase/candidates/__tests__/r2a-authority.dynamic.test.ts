@@ -134,6 +134,28 @@ run('R2-A authority foundation / restricted native callers', () => {
     expect((await admin("SELECT pg_get_functiondef('phoenix_cn_policy.actor_scope_org(text)'::regprocedure) body"))[0].body).toBe(annualPredicate);
     expect(await admin('SELECT * FROM phoenix_private.central_needs_capability_breaches_v1()')).toEqual([]); expect(await seal()).toEqual([]);
   });
+  it('detects inherited platform-wide reading and closes only after its explicit removal', async () => {
+    expect((await admin("SELECT count(*)::int n FROM pg_roles WHERE rolname='r2_test_platform_reader'"))[0].n).toBe(0);
+    await admin('CREATE ROLE r2_test_platform_reader NOLOGIN BYPASSRLS');
+    try {
+      await admin('GRANT pg_read_all_data TO r2_test_platform_reader');
+      const breaches = await admin('SELECT * FROM phoenix_private.central_needs_capability_breaches_v1()');
+      expect(breaches.some(row => JSON.stringify(row).includes('r2_test_platform_reader holds SELECT on RPC-only annual relation'))).toBe(true);
+      await rig.asAdmin(async (c: PoolClient) => {
+        await c.query('BEGIN');
+        try {
+          await c.query('SET LOCAL ROLE r2_test_platform_reader');
+          expect((await c.query('SELECT count(*) FROM public.central_needs_catalog_years')).rowCount).toBe(1);
+        } finally { await c.query('ROLLBACK'); }
+      });
+      await admin('REVOKE pg_read_all_data FROM r2_test_platform_reader');
+      expect(await admin('SELECT * FROM phoenix_private.central_needs_capability_breaches_v1()')).toEqual([]);
+      expect(await seal()).toEqual([]);
+    } finally {
+      await admin('REVOKE pg_read_all_data FROM r2_test_platform_reader');
+      await admin('DROP ROLE r2_test_platform_reader');
+    }
+  });
   it('detects API-grant and unexpected public-writer tampering', async () => {
     await admin('GRANT USAGE ON SCHEMA phoenix_r2 TO authenticated'); expect((await seal()).length).toBeGreaterThan(0);
     await admin('REVOKE USAGE ON SCHEMA phoenix_r2 FROM authenticated'); expect(await seal()).toEqual([]);
