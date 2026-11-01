@@ -7,7 +7,10 @@ html[data-pharma-design][data-phoenix-ui-phase][data-phoenix-visual] .prism-stoc
   align-items: start; gap: 18px; min-inline-size: 0;
   color: var(--stock-ink); font-family: 'Noto Sans Arabic Variable', system-ui, sans-serif;
   &[lang='en'] { font-family: 'Sora', system-ui, sans-serif; }
-  & .prism-stock-workbench__list { min-inline-size: 0; grid-area: list; }
+  & .prism-stock-workbench__list {
+    min-inline-size: 0; min-block-size: 44px; grid-area: list;
+    &:focus-visible { outline: 3px solid var(--stock-accent); outline-offset: 3px; }
+  }
   & .nexus-it-batch-row {
     background: var(--stock-panel) !important; border: 1px solid var(--stock-line) !important;
     border-radius: 16px !important; box-shadow: 0 6px 24px rgb(38 68 122 / 5%) !important;
