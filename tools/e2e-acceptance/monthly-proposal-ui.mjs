@@ -155,7 +155,13 @@ try {
       const region = panel.getByRole('region'); await region.focus();
       if (await region.evaluate(el => el.scrollWidth > el.clientWidth + 1)) {
         const direction = await region.evaluate(el => getComputedStyle(el).direction);
-        await region.evaluate(el => { el.scrollLeft = 0; }); await page.keyboard.press(direction === 'rtl' ? 'ArrowLeft' : 'ArrowRight');
+        // Cancel the previous native key-scroll animation before testing another theme.
+        await region.evaluate(async el => {
+          el.scrollTo({ left: 0, behavior: 'instant' });
+          await new Promise(requestAnimationFrame); await new Promise(requestAnimationFrame);
+        });
+        await page.waitForFunction(() => document.querySelector('[data-testid="monthly-proposal"] [role="region"]').scrollLeft === 0, null, { timeout: 3000 });
+        await region.press(direction === 'rtl' ? 'ArrowLeft' : 'ArrowRight');
         await page.waitForFunction(() => Math.abs(document.querySelector('[data-testid="monthly-proposal"] [role="region"]').scrollLeft) > 0, null, { timeout: 3000 });
       }
       const total = panel.locator('tfoot td').first(); await center(total);
