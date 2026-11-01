@@ -20,7 +20,7 @@ const registration: RegisteredAnnualLayout = { workbookSheets: [{ index: 0, name
       unit: { column: 2, expectedHeaderText: 'Unit' },
     } }],
 } };
-function request(format: 'xlsx' | 'csv' = 'xlsx', extraSheet = false): C3WorkerRequest {
+function request(format: 'xlsx' | 'xls' | 'csv' = 'xlsx', extraSheet = false): C3WorkerRequest {
   const book = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([
     ['Name', 'Code', 'Unit', 'Quantity'], ...Array.from({ length: 3 }, (_, i) => [`Synthetic ${i}`, `000${i}`, 'Box', 987654]),
   ]), 'Identity');
@@ -47,7 +47,7 @@ describe('C3 actual compiled Node worker — synthetic sources, no Auth claim', 
   afterAll(() => {
     if (directory && resolve(directory).startsWith(artifacts + sep)) rmSync(directory, { recursive: true, force: true });
   });
-  it.each(['xlsx', 'csv'] as const)('parses real %s bytes, pages deterministically and excludes quantity cells', async format => {
+  it.each(['xlsx', 'xls', 'csv'] as const)('parses real %s bytes, pages deterministically and excludes quantity cells', async format => {
     const input = request(format);
     const first = await runC3IsolatedWorker(entry, input);
     expect(first.rows).toHaveLength(2); expect(first.totalRows).toBe(3); expect(first.nextCursor).not.toBeNull();
