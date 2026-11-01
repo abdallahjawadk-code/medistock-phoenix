@@ -1,5 +1,6 @@
 /** Actual Screen-3 manual annual entry, synthetic policies only. Never hosted. */
 import assert from 'node:assert/strict';
+import { verifyNativeHorizontalScroll } from './native-horizontal-scroll.mjs';
 import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -152,18 +153,7 @@ try {
       const heading = panel.getByRole('heading', { level: 4 }); await center(heading);
       check(`${name} policy heading is visible below the fixed header`, await inViewport(heading));
       await page.screenshot({ path: resolve(output, `${name}-policy.png`) });
-      const region = panel.getByRole('region'); await region.focus();
-      if (await region.evaluate(el => el.scrollWidth > el.clientWidth + 1)) {
-        const direction = await region.evaluate(el => getComputedStyle(el).direction);
-        // Cancel the previous native key-scroll animation before testing another theme.
-        await region.evaluate(async el => {
-          el.scrollTo({ left: 0, behavior: 'instant' });
-          await new Promise(requestAnimationFrame); await new Promise(requestAnimationFrame);
-        });
-        await page.waitForFunction(() => document.querySelector('[data-testid="monthly-proposal"] [role="region"]').scrollLeft === 0, null, { timeout: 3000 });
-        await region.press(direction === 'rtl' ? 'ArrowLeft' : 'ArrowRight');
-        await page.waitForFunction(() => Math.abs(document.querySelector('[data-testid="monthly-proposal"] [role="region"]').scrollLeft) > 0, null, { timeout: 3000 });
-      }
+      const region = panel.getByRole('region'); await verifyNativeHorizontalScroll(region);
       const total = panel.locator('tfoot td').first(); await center(total);
       check(`${name} exact total is visible and the table region keeps keyboard focus`, await inViewport(total) && await region.evaluate(el => el === document.activeElement));
       await page.screenshot({ path: resolve(output, `${name}-monthly-total.png`) });
