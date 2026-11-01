@@ -32,7 +32,7 @@ import { OutletOperationsScreen } from '@/features/outlet/OutletOperationsScreen
 import { LocalProcurementScreen } from '@/features/procurement/LocalProcurementScreen';
 import { DecisionIntelligenceReportsScreen } from '@/features/reports/DecisionIntelligenceReportsScreen';
 import { CommandCenterScreen } from '@/features/command-center/CommandCenterScreen';
-import { CentralNeedsScreen } from '@/features/central-needs/CentralNeedsScreen';
+import { AnnualNeedsEntryScreen } from '@/features/central-needs/AnnualNeedsEntryScreen';
 import { ScreenAuthzGuard } from '@/shared/authz/ScreenAuthzGuard';
 import {
   suggestionDocumentScreen,
@@ -382,7 +382,7 @@ export function AuthenticatedApp() {
       // an actor holding central_needs.view; migrations 209/210/211 re-prove
       // that authority on every read and every write, so this route is a UX
       // gate over a boundary the database already enforces.
-      case 23: return <CentralNeedsScreen />;
+      case 23: return <AnnualNeedsEntryScreen />;
       // Central dashboard (former screen 2) and any unknown screen number
       // safely redirect to the unified shell — the real-data landing screen.
       default: return <DecisionIntelligenceReportsScreen onNavigate={setScreen} onOpenSuggestionDocument={openSuggestionDocument} />;

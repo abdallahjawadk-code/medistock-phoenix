@@ -114,6 +114,8 @@
 .prism-workspace :where(button[type='submit']), .prism-needs-workspace :where(button[type='submit']), .prism-material-picker :where(button[type='submit']),
 .prism-workspace .prism-button--primary, .prism-needs-workspace .prism-button--primary { color: var(--prism-on-accent); background: var(--prism-accent); border-color: var(--prism-accent); }
 .prism-workspace :where(button):disabled, .prism-needs-workspace :where(button):disabled, .prism-material-picker :where(button):disabled { opacity: .57; cursor: not-allowed; box-shadow: none; }
+/* A theme switch must change text and its control background together. */
+.prism-workspace :where(button, input, select, textarea), .prism-needs-workspace :where(button, input, select, textarea), .prism-material-picker :where(button, input, select, textarea) { transition: border-color 140ms ease, box-shadow 140ms ease; }
 .prism-workspace :where(button, input, select, textarea, summary, a, [tabindex]):focus-visible,
 .prism-needs-workspace :where(button, input, select, textarea, [tabindex]):focus-visible,
 .prism-material-picker :where(button, input):focus-visible { outline: 3px solid var(--prism-accent); outline-offset: 3px; box-shadow: 0 0 0 5px var(--prism-surface); }

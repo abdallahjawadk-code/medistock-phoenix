@@ -1,0 +1,4 @@
+.annual-entry { display: grid; gap: 20px; min-inline-size: 0; }
+.annual-entry-notice { margin-block: 12px; padding: 12px 16px; border: 1px solid var(--brd); border-radius: 12px; color: var(--t); background: var(--s2); overflow-wrap: anywhere; }
+.annual-entry-history > button, .annual-entry-notice > button { min-block-size: 44px; padding: 10px 16px; border: 1px solid var(--brd); border-radius: 10px; background: var(--s2); color: var(--t); font: inherit; }
+.annual-entry-history > button { inline-size: 100%; text-align: start; }

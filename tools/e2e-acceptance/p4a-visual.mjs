@@ -364,6 +364,12 @@ try {
     await navigate(annual.page, 'الاحتياج السنوي', false);
   }
   await annual.page.locator('[data-pharma-screen="23"]').waitFor();
+  // Preserve the accepted history-surface matrix after the primary entry route moves.
+  // The new journey has its own real monthly and public-owner acceptance matrices.
+  await annual.page.locator('[data-testid="annual-needs-entry"], .cn2b').first().waitFor();
+  if (await annual.page.getByTestId('annual-needs-entry').count()) {
+    await annual.page.getByRole('button', { name: /^(Show previous files and history|عرض الملفات والسجل السابق)$/ }).click();
+  }
   for (const width of [1366, 1024, 390, 320]) {
     await annual.page.setViewportSize({ width, height: 900 });
     for (const lang of ['ar', 'en']) for (const theme of ['light', 'dark']) {
