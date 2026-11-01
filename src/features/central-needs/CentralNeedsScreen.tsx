@@ -40,6 +40,8 @@
  *     fact — readiness still comes from the server, as it always did.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import '@/shared/ui/prism/prism-fonts.css';
+import './annual-prism.css';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
@@ -2064,7 +2066,7 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
   };
 
   return (
-    <div className="cn2b" dir={dir} data-mode={mode}>
+    <div className="cn2b" dir={dir} data-mode={mode} data-prism-surface="annual">
       {mode === 'simple' ? (
         /*
           SIMPLE MODE — the default product experience and, since CN-UI-S1,

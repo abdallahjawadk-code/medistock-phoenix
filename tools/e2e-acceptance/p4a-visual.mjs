@@ -298,9 +298,32 @@ try {
         documentOverflow: document.documentElement.scrollWidth - innerWidth,
       }));
       check(`${id} real annual-needs route and viewport`, state.headings.length > 0 && state.documentOverflow <= 1, state);
+      const review = await annual.page.locator('[data-testid="cn2b-simple-institution-card"]').evaluate(card => {
+        const source = card.querySelector('.cn2b-simple-evidence');
+        const decision = card.querySelector('.cn2b-simple-review-decision');
+        const action = card.querySelector('button[data-variant="primary"]');
+        const rect = el => { const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; };
+        return { cardBackground: getComputedStyle(card).backgroundColor, font: getComputedStyle(card).fontFamily,
+          source: rect(source), decision: rect(decision),
+          sourceForeground: getComputedStyle(source).color, sourceBackground: getComputedStyle(source).backgroundColor,
+          sourceFirst: !!(source.compareDocumentPosition(decision) & Node.DOCUMENT_POSITION_FOLLOWING),
+          action: { ...rect(action), foreground: getComputedStyle(action).color, background: getComputedStyle(action).backgroundColor },
+          stepCount: document.querySelectorAll('.cn2b-simple-stepper__item').length,
+        };
+      });
+      check(`${id} annual review PRISM surface and font`, review.cardBackground === (theme === 'dark' ? 'rgb(12, 32, 55)' : 'rgb(255, 255, 255)') && review.font.includes(lang === 'ar' ? 'Noto Sans Arabic' : 'Sora'), review);
+      check(`${id} annual source remains before human decision`, review.sourceFirst && review.stepCount === 6, review.stepCount);
+      check(`${id} annual review responsive panes`, width <= 760
+        ? review.decision.y >= review.source.y + review.source.height - 1
+        : Math.abs(review.decision.y - review.source.y) <= 1 && Math.abs(review.decision.x - review.source.x) > 100, review);
+      check(`${id} annual source evidence contrast`, contrast(review.sourceForeground, review.sourceBackground) >= 4.5, review);
+      check(`${id} annual primary action contrast and touch size`, contrast(review.action.foreground, review.action.background) >= 4.5 && review.action.height >= 44 && review.action.width >= 44, review.action);
       report.annualMatrix.push({ id, ...state });
     }
   }
+  await annual.page.emulateMedia({ reducedMotion: 'reduce' });
+  const annualMotion = await annual.page.locator('.cn2b-simple-card button').evaluateAll(elements => elements.map(el => getComputedStyle(el).transitionDuration));
+  check('Reduced motion removes annual review action transitions', annualMotion.length > 0 && annualMotion.every(value => value.split(',').every(v => parseFloat(v) === 0)), annualMotion);
   await annual.context.close();
   check('No runtime/network/server errors', report.errors.length === 0, report.errors);
 } catch (e) {
