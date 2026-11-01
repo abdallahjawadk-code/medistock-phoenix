@@ -311,3 +311,14 @@ html[data-pharma-design='molecular'][data-phoenix-ui-phase='a'][data-phoenix-vis
 @media (prefers-reduced-motion: reduce) {
   .prism-workspace *, .prism-material-picker *, .prism-needs-workspace * { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }
+.prism-monthly-proposal {
+  min-inline-size: 0; padding: 16px; border: 1px solid var(--prism-line);
+  border-radius: 12px; background: var(--prism-soft); overflow-wrap: anywhere;
+}
+.prism-monthly-proposal > h4 { margin: 0 0 8px; color: var(--prism-ink); }
+.prism-monthly-proposal__basis { display: flex; flex-wrap: wrap; gap: 12px 24px; margin: 12px 0; }
+.prism-monthly-proposal__basis > div { flex: 1 1 10rem; min-inline-size: 0; }
+.prism-monthly-proposal__basis dt { color: var(--prism-muted); font-size: .875rem; }
+.prism-monthly-proposal__basis dd { margin: 4px 0 0; color: var(--prism-ink); }
+.prism-monthly-proposal .prism-table-scroll { margin-block: 12px; max-inline-size: 100%; }
+.prism-monthly-proposal tfoot { font-weight: 700; background: var(--prism-selection); }

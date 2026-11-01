@@ -56,6 +56,20 @@ async function selectAnnualMaterial() {
   await screen.findByRole('button', { name: 'Remove selection Amoxicillin' });
   fireEvent.change(screen.getByLabelText('Item'), { target: { value: ID.canonical } });
 }
+it('reads the proposal for the chosen annual version without blocking the independent annual save', async () => {
+  const f = fixture(), readReference = vi.fn(async () => null);
+  mount({ ...f, manualApi: { ...f.manualApi, getMonthlyPolicyReference: readReference } });
+  await openYear(); await selectAnnualMaterial();
+  expect(await screen.findByText('Awaiting distribution policy')).toBeVisible();
+  expect(screen.getByLabelText('Annual quantity')).toHaveValue('');
+  expect(readReference).toHaveBeenCalledWith({ ...SCOPE, annualItemId: ID.annual, fieldVersionId: ID.version,
+    canonicalItemId: ID.canonical, unit: 'box', beneficiaryOrganizationId: ID.beneficiary });
+  fireEvent.change(screen.getByLabelText('Annual quantity'), { target: { value: '10.25' } });
+  fireEvent.change(screen.getByLabelText('Reason'), { target: { value: 'Manual annual need only' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Add line' }));
+  await waitFor(() => expect(f.api.addAnnualNeedLine).toHaveBeenCalledWith(expect.objectContaining({ quantityText: '10.25', annualItemId: ID.annual, fieldVersionId: ID.version })));
+  expect(f.manualApi.addManualNeedLine).not.toHaveBeenCalled();
+});
 function historicalEvent(unbound = false): AnnualNeedEvent {
   return { id: ID.event, planRevisionId: ID.revision, beneficiaryOrganizationId: ID.beneficiary, centralItemId: ID.canonical,
     targetWarehouseId: null, eventSeq: 1, eventKind: 'add', quantityText: '23', approvedUnit: 'box', reason: 'Original need', reference: null,
