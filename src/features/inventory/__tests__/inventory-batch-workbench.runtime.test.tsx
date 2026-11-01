@@ -96,4 +96,25 @@ describe('real batch selection and read-only detail projection', () => {
     act(() => { media.matches = false; media.dispatchEvent(new Event('change')); });
     expect(screen.getByRole('heading', { name: 'Paracetamol' })).toHaveFocus();
   });
+  it.each([{ remaining: [first] }, { remaining: [] }])('returns focus to the visible batch group when narrow selection disappears: $remaining.length rows', ({ remaining }) => {
+    vi.stubGlobal('matchMedia', () => ({ matches: true }));
+    const view = render(rows([first, second]));
+    fireEvent.click(screen.getByRole('button', { name: 'LOT-B' }));
+    expect(screen.getByRole('heading', { name: 'Paracetamol' })).toHaveFocus();
+    view.rerender(rows(remaining));
+    expect(screen.queryByRole('button', { name: 'Back to batches' })).not.toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Warehouse batches' })).toHaveFocus();
+    view.rerender(rows([]));
+    expect(screen.getByRole('group', { name: 'Warehouse batches' })).toHaveFocus();
+  });
+  it('preserves an outside filter focus when the selected narrow batch is removed', () => {
+    vi.stubGlobal('matchMedia', () => ({ matches: true }));
+    const content = (batches: WarehouseStockBatch[]) => <><input aria-label="Outside search" />{rows(batches)}</>;
+    const view = render(content([first, second]));
+    fireEvent.click(screen.getByRole('button', { name: 'LOT-B' }));
+    const outside = screen.getByRole('textbox', { name: 'Outside search' }); outside.focus();
+    view.rerender(content([first]));
+    expect(outside).toHaveFocus();
+    expect(screen.queryByRole('button', { name: 'Back to batches' })).not.toBeInTheDocument();
+  });
 });
