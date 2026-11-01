@@ -217,6 +217,14 @@ try {
       await page.getByRole('tab', { name: lang === 'ar' ? 'رصيد المخزن' : 'Warehouse stock', exact: true }).click();
       await settleView(page);
       await page.locator('.nexus-it-stock-list').getByText('E2E Initial Provisioning Material', { exact: true }).waitFor();
+      const materialButton = page.locator('.prism-stock-batch-select').filter({ hasText: 'E2E Initial Provisioning Material' });
+      await materialButton.focus();
+      await materialButton.press('Enter');
+      const detail = page.getByRole('complementary', { name: lang === 'ar' ? 'ملف المادة' : 'Material details', exact: true });
+      await detail.getByRole('heading', { name: 'E2E Initial Provisioning Material', exact: true }).waitFor();
+      check(`${id} real batch detail keyboard selection`, await materialButton.getAttribute('aria-pressed') === 'true');
+      const stockOverflow = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, width: innerWidth }));
+      check(`${id} material detail has no document overflow`, stockOverflow.scroll <= stockOverflow.width + 1, stockOverflow);
       await page.screenshot({ path: resolve(out, `${id}-materials.png`), fullPage: true });
       check(`${id} real warehouse material workspace`, true);
       await navigate(page, lang === 'ar' ? 'الإحصائيات' : 'Statistics', width < 768);

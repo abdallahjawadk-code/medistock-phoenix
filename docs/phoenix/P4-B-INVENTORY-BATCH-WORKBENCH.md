@@ -1,0 +1,9 @@
+# P4-B — real inventory batch workbench, first surface
+
+This successor to P4-A implements the reference's list/detail relationship in the actual warehouse-stock tab. It retains the existing canonical batch read, query, scope, loading/error/empty branches, guide anchors and permission-gated correction/movement components. A keyboard-operable material button selects a visible batch; a dark read-only panel projects that batch's recorded identity, batch/expiry and on-hand/reserved/available values. The panel explicitly labels its quantities as one selected warehouse batch, not an aggregate material balance or an inferred supply-chain total.
+
+Selection is in-memory view state. Removed/filtered results cannot remain in the detail projection; an empty result set has no detail panel. Missing identity is “Not recorded” rather than guessed text, while actual zero quantities remain zero. There are no new reads, writes, SQL, role defaults, inventory calculations or automatic FEFO choices. Existing correction forms retain their original owner and handlers.
+
+The CSS is confined to this workbench and uses the approved white/cobalt and dark-navy reference language, existing self-hosted fonts, logical positioning, minimum 44px selection controls, visible keyboard focus and a single column below 1100px. The remaining inventory header, intake/ledger/dispatch/return forms and other screens are subsequent P4-B/C/D surfaces. No complete reference parity or percentage is claimed.
+
+Acceptance requires focused selection/filter/scope tests, preservation tests, TypeScript/lint/build, current-head CI and PostgreSQL gates, the real authenticated 16-combination matrix (including Enter selection and overflow), manual review of its original screenshots, and the existing functional acceptance suite. P4-A evidence is the before comparison. No fixture content is bundled into the product.
