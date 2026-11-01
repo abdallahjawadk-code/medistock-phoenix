@@ -361,6 +361,7 @@ export function AnnualNeedsWorkspace({ lang, scope, actorId, revision, capabilit
 
   return <section className="prism-annual-needs" aria-label={mt('annualJourneyTitle', lang)} lang={lang} dir={lang === 'ar' ? 'rtl' : 'ltr'}>
     <p className="prism-search-hint">{mt('annualScopePolicy', lang)}</p>
+    <p role="note" className="prism-search-hint" data-testid="annual-identity-first-policy">{mt('annualIdentityFirstPolicy', lang)}</p>
     {notice && <p role="status" className={`prism-notice ${pendingReadId ? 'prism-notice--warning' : 'prism-notice--success'}`}>{notice}</p>}
     {errorText && <p role="alert" className="prism-notice prism-notice--error">{errorText}</p>}
     {unknown && <div className="prism-notice prism-notice--warning"><p>{mt('annualPendingOperation', lang)}</p>

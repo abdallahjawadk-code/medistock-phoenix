@@ -1,0 +1,13 @@
+# C3 read-only HTTP boundary
+
+`POST /api/central-needs/extract-original` verifies the employee bearer token with the existing Auth helper. It accepts only owner/year, retained C2 original ID, server-reviewed template ID/integer version, continuation cursor and page size. The request is capped at 16 KiB while streaming; page size is 1–50. Source bytes, template mappings, actor claims, service keys and worker URLs are not request fields.
+
+The server snapshots reviewed registrations, checks current annual-view authority, obtains and rehashes the retained source with that same caller's JWT, and invokes the terminating worker. It checks authority again before delivery and limits the entire JSON response to 256 KiB. Evidence is unpersisted and still requires material/legal review. This route writes no catalog membership, annual quantity, allocation, dispatch, receipt, settlement, stock or audit event. C4 must independently reverify before any future catalog write.
+
+The deployed registry is deliberately empty: no real corpus definition or synthetic business layout is activated. A verified caller receives `503 c3_reviewed_layouts_unavailable` without downloading source bytes. Anonymous calls receive 401. No employee evidence UI is enabled by this batch, and no hosted SQL or role change is included. Hosted C2/annual activation retains its separate platform-policy HOLD.
+
+`scripts/c3-worker-assets.mjs` builds code only into the ignored `.c3-runtime/worker.mjs`, outside public/dist. Existing OCR prebuild remains, followed by the worker build. The route's explicit `includeFiles` ships this private file with a 30-second function budget; the worker's independent 10-second/128 MiB transport limit stays unchanged. Server code owns the fixed file URL. No environment values are compiled into it.
+
+The earlier source `9a69bee0` proved private worker load and actual termination inside protected Vercel Preview deployment `dpl_2fXX5SYW86VrAZYjXMMhD2PWU8LL`, with no business bytes or database. The temporary branch-only check was removed. That component proof does not establish hosted Auth/C2 parsing or acceptance of a later source. Final-source CI separately exercises actual HTTP on loopback with disposable Auth/C2 and an explicitly synthetic server registration. Its source has to pass before merge.
+
+The packaging follows [Vercel Node functions](https://vercel.com/docs/functions/runtimes/node-js), [custom function build steps](https://vercel.com/docs/functions/runtimes/node-js/advanced-node-configuration), and [explicit function file inclusion](https://vercel.com/docs/project-configuration/vercel-json#functions). Hosted runtime proof, exact source acceptance and Production smoke are distinct evidence gates.
