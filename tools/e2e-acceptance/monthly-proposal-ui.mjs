@@ -31,6 +31,7 @@ const db = new pg.Client({ connectionString: database.href, connectionTimeoutMil
 const output = resolve('docs/phoenix/e2e-acceptance/monthly-ui'); mkdirSync(output, { recursive: true });
 const report = { commit: head, sourceHead: prerequisite.sourceHead, environment: 'disposable loopback Supabase; synthetic fresh PDA and real maker/checker Auth',
   hostedCompatibility: prerequisite.hostedCompatibility, productionSqlApplied: false, effectiveAllocationsCreated: false,
+  matrixCaptureMode: 'two actual viewport positions per combination; no element stitching',
   employeeMonthlyJournalImplemented: false, setupReads: [], rpcFailures: [], checks: [], errors: [] };
 const check = (name, passed) => { report.checks.push({ name, passed: Boolean(passed) }); console.log(`${passed ? 'PASS' : 'FAIL'} Monthly UI ${name}`); assert(passed, name); };
 const owner = randomUUID(), maker = { id: randomUUID(), email: `monthly-ui-maker-${randomUUID()}@phoenix.local` }, checker = { id: randomUUID(), email: `monthly-ui-checker-${randomUUID()}@phoenix.local` };
@@ -131,6 +132,11 @@ try {
     await panel.locator('tr[data-month="1"] td').first().textContent() === '2.5'
     && await panel.locator('tr[data-month="2"] td').first().textContent() === '2.75'
     && await panel.locator('tfoot td').first().textContent() === '10.25');
+  const center = target => target.evaluate(el => el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' }));
+  const inViewport = target => target.evaluate(el => {
+    const box = el.getBoundingClientRect(), header = document.querySelector('.premium-topbar')?.getBoundingClientRect();
+    return box.left >= -1 && box.right <= innerWidth + 1 && box.top >= (header?.bottom ?? 0) - 1 && box.bottom <= innerHeight + 1;
+  });
   stage = 'real_ui_matrix';
   for (const width of [1366, 1024, 390, 320]) {
     await page.setViewportSize({ width, height: 900 });
@@ -143,25 +149,37 @@ try {
       check(`${name} labelled table and keyboard scroll region`, await panel.getByRole('table', { name: lang === 'ar' ? 'اقتراح التحصيص الشهري' : 'Monthly distribution proposal' }).count() === 1
         && await panel.getByRole('region').getAttribute('tabindex') === '0');
       check(`${name} no effective approval control`, await panel.getByRole('button', { name: /اعتماد|Approve/ }).count() === 0);
-      await panel.screenshot({ path: resolve(output, `${name}.png`) });
+      const heading = panel.getByRole('heading', { level: 4 }); await center(heading);
+      check(`${name} policy heading is visible below the fixed header`, await inViewport(heading));
+      await page.screenshot({ path: resolve(output, `${name}-policy.png`) });
+      const region = panel.getByRole('region'); await region.focus();
+      if (await region.evaluate(el => el.scrollWidth > el.clientWidth + 1)) {
+        const direction = await region.evaluate(el => getComputedStyle(el).direction);
+        await region.evaluate(el => { el.scrollLeft = 0; }); await page.keyboard.press(direction === 'rtl' ? 'ArrowLeft' : 'ArrowRight');
+        await page.waitForFunction(() => Math.abs(document.querySelector('[data-testid="monthly-proposal"] [role="region"]').scrollLeft) > 0, null, { timeout: 3000 });
+      }
+      const total = panel.locator('tfoot td').first(); await center(total);
+      check(`${name} exact total is visible and the table region keeps keyboard focus`, await inViewport(total) && await region.evaluate(el => el === document.activeElement));
+      await page.screenshot({ path: resolve(output, `${name}-monthly-total.png`) });
     }
   }
   stage = 'missing_policy_and_save'; await appearance('ar', 'light');
   await page.getByRole('combobox', { name: 'المادة', exact: true }).selectOption(members[1].canonical); assert.equal(await quantity().inputValue(), '');
   await quantity().fill('10.25'); await panel.getByText('بانتظار تحديد سياسة التوزيع', { exact: true }).waitFor();
   check('second material without a policy stays waiting without fabricated month rows', await panel.getByRole('table').count() === 0);
-  await panel.screenshot({ path: resolve(output, 'missing-policy-ar-light.png') });
+  await center(panel.getByRole('heading', { level: 4 })); await page.screenshot({ path: resolve(output, 'missing-policy-ar-light.png') });
   await appearance('en', 'light'); await page.getByRole('combobox', { name: 'Item', exact: true }).selectOption(first.canonical);
   assert.equal(await quantity().inputValue(), ''); await quantity().fill('10.25');
   await page.getByLabel('Reason', { exact: true }).fill('Manual annual quantity entered by employee, proposal is nonbinding');
   await page.getByRole('button', { name: 'Add line', exact: true }).click();
-  await page.getByRole('table', { name: 'Recorded need lines', exact: true }).getByText('10.25', { exact: true }).waitFor();
+  stage = 'annual_save_readback';
+  await page.getByRole('table', { name: 'Recorded need lines', exact: true }).getByRole('cell', { name: '10.25', exact: true }).waitFor();
   const stored = (await db.query(`SELECT e.quantity_text,e.beneficiary_organization_id,e.actor_id,b.annual_item_id,b.field_version_id,b.actor_name
     FROM public.central_needs_manual_need_events e JOIN public.central_needs_annual_need_bindings b ON b.event_id=e.id WHERE e.organization_id=$1`, [owner])).rows;
   check('annual save creates exactly one event and immutable annual identity binding with trusted employee snapshot', stored.length === 1
     && stored[0].quantity_text === '10.25' && stored[0].beneficiary_organization_id === beneficiary && stored[0].actor_id === maker.id
     && stored[0].annual_item_id === first.membership.annualItemId && stored[0].field_version_id === first.fieldVersion.fieldVersionId && stored[0].actor_name === 'Synthetic monthly maker');
-  await page.reload(); await page.locator('#phoenix-main').waitFor();
+  stage = 'annual_reload'; await page.reload(); await page.locator('#phoenix-main').waitFor();
   // Navigation state may reset; explicitly return to the same manual year.
   await appearance('en', 'light');
   if (await page.locator('#inventory-tab-needs').count() === 0) {
@@ -171,7 +189,7 @@ try {
   await page.locator('#inventory-tab-needs').click();
   await page.getByLabel('Plan year', { exact: true }).fill(String(year)); await page.getByRole('button', { name: 'Open year', exact: true }).click();
   await page.getByRole('combobox', { name: 'Beneficiary institution', exact: true }).selectOption(beneficiary);
-  await page.getByRole('table', { name: 'Recorded need lines', exact: true }).getByText('10.25', { exact: true }).waitFor();
+  await page.getByRole('table', { name: 'Recorded need lines', exact: true }).getByRole('cell', { name: '10.25', exact: true }).waitFor();
   check('reload preserves saved annual quantity without stock changes or effective activation', JSON.stringify(await stock()) === JSON.stringify(initialStock)
     && (await rpc('phoenix_r2_capabilities', { p_organization_id: owner })).operationalWritesImplemented === false);
   check('all prior authority seals remain intact', (await db.query('SELECT * FROM phoenix_private.central_needs_capability_breaches_v1()')).rowCount === 0
@@ -182,7 +200,7 @@ try {
     writeFileSync(resolve(output, 'failure-visible-text.txt'), await page.locator('body').innerText().catch(() => 'Unavailable')); }
 } finally {
   if (browser) await browser.close(); await employee.auth.signOut(); await db.end();
-  report.passed = report.checks.length === 73 && report.checks.every(row => row.passed) && report.errors.length === 0;
+  report.passed = report.checks.length === 105 && report.checks.every(row => row.passed) && report.errors.length === 0;
   writeFileSync(resolve(output, 'report.json'), JSON.stringify(report, null, 2));
   console.log(JSON.stringify({ phase: 'monthly_ui', passed: report.passed, checks: report.checks.length, errors: report.errors }));
   if (!report.passed) process.exitCode = 1;
