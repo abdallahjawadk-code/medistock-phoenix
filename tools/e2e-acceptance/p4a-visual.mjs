@@ -229,6 +229,23 @@ try {
       await page.locator('.nexus-it-context-bar select').selectOption(seed.stageE.whA);
       await page.getByRole('tab', { name: lang === 'ar' ? 'رصيد المخزن' : 'Warehouse stock', exact: true }).click();
       await settleView(page);
+      const inventoryTabs = page.locator('.nexus-it-tabs > [role="tab"]');
+      const stockTab = page.getByRole('tab', { name: lang === 'ar' ? 'رصيد المخزن' : 'Warehouse stock', exact: true });
+      await stockTab.focus(); await page.keyboard.press('End');
+      check(`${id} inventory End moves focus without changing content`,
+        await inventoryTabs.last().evaluate(el => el === document.activeElement)
+        && await stockTab.getAttribute('aria-selected') === 'true');
+      await page.keyboard.press('Home');
+      check(`${id} inventory Home respects first visible tab`, await inventoryTabs.first().evaluate(el => el === document.activeElement));
+      await page.keyboard.press(lang === 'ar' ? 'ArrowLeft' : 'ArrowRight');
+      check(`${id} inventory arrows follow reading direction`, await inventoryTabs.nth(1).evaluate(el => el === document.activeElement));
+      await page.keyboard.press('Home'); await page.keyboard.press('Enter');
+      check(`${id} inventory manual keyboard activation works`, await inventoryTabs.first().getAttribute('aria-selected') === 'true');
+      const inventoryPanel = page.locator('#inventory-center-panel');
+      check(`${id} inventory panel is linked to its selected tab`, await inventoryPanel.getAttribute('role') === 'tabpanel'
+        && await inventoryPanel.getAttribute('aria-labelledby') === await inventoryTabs.first().getAttribute('id')
+        && await inventoryTabs.first().getAttribute('aria-controls') === 'inventory-center-panel');
+      await stockTab.click(); await settleView(page);
       const inventoryPaint = await page.locator('.nexus-inventory-transfers--center').evaluate(el => {
         const header = el.querySelector('.nexus-it-header');
         const tab = el.querySelector('.nexus-it-tab[aria-selected="true"]');
