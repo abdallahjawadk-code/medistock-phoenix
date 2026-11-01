@@ -539,6 +539,11 @@ jobs:
           SUPABASE_ANON_KEY: ${{ steps.sb.outputs.anon_key }}
         run: node tools/e2e-acceptance/monthly-policy-reference.mjs e2e-seed.json
 
+      - name: Verify caller-preserving manual read transaction adapters (disposable only)
+        env:
+          SUPABASE_ANON_KEY: ${{ steps.sb.outputs.anon_key }}
+        run: node tools/e2e-acceptance/manual-read-adapters.mjs e2e-seed.json
+
       - name: Verify the actual annual-entry monthly proposal UI (disposable only)
         env:
           SUPABASE_ANON_KEY: ${{ steps.sb.outputs.anon_key }}
