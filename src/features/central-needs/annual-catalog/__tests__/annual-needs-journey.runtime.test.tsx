@@ -151,6 +151,13 @@ describe('annual capability and complete employee journey', () => {
     expect(f.journeyApi.searchCatalog).not.toHaveBeenCalled(); expect(f.manualApi.addManualNeedLine).not.toHaveBeenCalled();
     expect(f.journeyApi.listYearRevisions).not.toHaveBeenCalled();
   });
+  it('ends checking when a later year preparation read fails, without enabling a fallback', async () => {
+    const f = fixture(); vi.mocked(f.journeyApi.features!).mockRejectedValueOnce(new Error('network'));
+    mount(f); fireEvent.click(screen.getByRole('button', { name: 'Open year' }));
+    await screen.findByText('Could not load. Nothing was changed.');
+    expect(screen.queryByText('Checking annual workflow capability…')).toBeNull();
+    expect(screen.queryByTestId('manual-needs-workspace')).toBeNull(); expect(f.manualApi.addManualNeedLine).not.toHaveBeenCalled();
+  });
 
   it('selects from the year, leaves the quantity blank, and writes exact annual references through the connected journey', async () => {
     const f = fixture(); mount(f); await openYear(); await selectAnnualMaterial();

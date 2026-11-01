@@ -146,7 +146,7 @@ export function ManualNeedsJourney({ lang, organizationId, actorId, api = realJo
       setAnnualMode(nextAnnualMode);
     } catch {
       if (epoch.current !== mine) return;
-      setLoadFailed(true);
+      setAnnualMode('unavailable'); setLoadFailed(true);
     }
   }, [api, organizationId]);
 

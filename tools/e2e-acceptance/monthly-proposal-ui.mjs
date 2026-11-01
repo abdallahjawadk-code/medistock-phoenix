@@ -29,7 +29,7 @@ const db = new pg.Client({ connectionString: database.href, connectionTimeoutMil
 const output = resolve('docs/phoenix/e2e-acceptance/monthly-ui'); mkdirSync(output, { recursive: true });
 const report = { commit: head, sourceHead: prerequisite.sourceHead, environment: 'disposable loopback Supabase; synthetic fresh PDA and real maker/checker Auth',
   hostedCompatibility: prerequisite.hostedCompatibility, productionSqlApplied: false, effectiveAllocationsCreated: false,
-  employeeMonthlyJournalImplemented: false, checks: [], errors: [] };
+  employeeMonthlyJournalImplemented: false, setupReads: [], rpcFailures: [], checks: [], errors: [] };
 const check = (name, passed) => { report.checks.push({ name, passed: Boolean(passed) }); console.log(`${passed ? 'PASS' : 'FAIL'} Monthly UI ${name}`); assert(passed, name); };
 const owner = randomUUID(), maker = { id: randomUUID(), email: `monthly-ui-maker-${randomUUID()}@phoenix.local` }, checker = { id: randomUUID(), email: `monthly-ui-checker-${randomUUID()}@phoenix.local` };
 const beneficiary = seed.centralNeeds.beneficiaryOrganization, year = 2026;
@@ -79,11 +79,28 @@ try {
   const initialStock = await stock();
   check('setup has no annual quantities or effective R2 writer', (await db.query('SELECT count(*)::int n FROM public.central_needs_manual_need_events WHERE organization_id=$1', [owner])).rows[0].n === 0
     && (await rpc('phoenix_r2_capabilities', { p_organization_id: owner })).operationalWritesImplemented === false);
+  stage = 'real_employee_journey_prerequisites';
+  for (const [name, args] of [['annual_needs_contract', {}], ['feature_contract', {}],
+    ['list_dossiers', { p_organization_id: owner, p_plan_year: year }], ['annual_summary', { p_organization_id: owner, p_plan_year: year }],
+    ['my_capabilities', { p_organization_id: owner, p_plan_revision_id: null }]]) {
+    const result = await employee.rpc(`phoenix_central_needs_${name}`, args);
+    report.setupReads.push({ name, passed: !result.error, code: result.error?.code ?? null, message: result.error?.message?.slice(0, 160) ?? null });
+  }
+  check('same employee real Auth can read every actual journey prerequisite', report.setupReads.every(row => row.passed));
   stage = 'browser_launch';
   try { browser = await chromium.launch({ headless: true, channel: 'chrome' }); } catch { browser = await chromium.launch({ headless: true }); }
   const session = await browser.newContext({ viewport: { width: 1366, height: 900 } }); page = await session.newPage();
   stage = 'browser_manual_entry';
   page.on('pageerror', () => report.errors.push('browser_page_error'));
+  page.on('response', async response => {
+    const url = new URL(response.url());
+    if (url.origin === api.origin && url.pathname.startsWith('/rest/v1/rpc/') && response.status() >= 400) {
+      const failure = await response.json().catch(() => ({}));
+      report.rpcFailures.push({ function: url.pathname.split('/').at(-1), status: response.status(),
+        code: typeof failure.code === 'string' ? failure.code.slice(0, 40) : null,
+        message: typeof failure.message === 'string' ? failure.message.slice(0, 160) : null });
+    }
+  });
   await page.goto(base.href); await page.locator('#login-email').fill(maker.email); await page.locator('#login-password').fill(seed.password);
   await page.locator('button[type=submit]').click(); await page.locator('#phoenix-main').waitFor({ timeout: 30000 });
   const appearance = async (lang, theme) => {
@@ -162,7 +179,7 @@ try {
     writeFileSync(resolve(output, 'failure-visible-text.txt'), await page.locator('body').innerText().catch(() => 'Unavailable')); }
 } finally {
   if (browser) await browser.close(); await employee.auth.signOut(); await db.end();
-  report.passed = report.checks.length === 72 && report.checks.every(row => row.passed) && report.errors.length === 0;
+  report.passed = report.checks.length === 73 && report.checks.every(row => row.passed) && report.errors.length === 0;
   writeFileSync(resolve(output, 'report.json'), JSON.stringify(report, null, 2));
   console.log(JSON.stringify({ phase: 'monthly_ui', passed: report.passed, checks: report.checks.length, errors: report.errors }));
   if (!report.passed) process.exitCode = 1;
