@@ -268,6 +268,9 @@ try {
   await page.setViewportSize({ width: 1366, height: 900 });
   const transition = await page.locator('.premium-sidebar .premium-nav-item').first().evaluate(el => getComputedStyle(el).transitionDuration);
   check('Reduced motion removes rail transitions', transition.split(',').every(v => parseFloat(v) === 0), transition);
+  await navigate(page, 'Inventory Center', false);
+  const inventoryMotion = await page.locator('.nexus-inventory-transfers--center .nexus-it-tab').evaluateAll(elements => elements.map(el => getComputedStyle(el).transitionDuration));
+  check('Reduced motion removes inventory tab transitions', inventoryMotion.length > 0 && inventoryMotion.every(value => value.split(',').every(v => parseFloat(v) === 0)), inventoryMotion);
   await context.close();
   for (const [tier, user] of [['platform-admin', seed.users.fixtureAdmin], ['L3', seed.users.outletOfficerA]]) {
     const s = await login(user);
