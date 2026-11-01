@@ -24,3 +24,7 @@ The owner requires the real React application to match the approved PRISM refere
 ## Execution status
 
 This is the committed P4-A acceptance/implementation contract, **not a claim that shell code has been converted**. Next engineering commit must implement the scoped real-shell presentation and test it against the reference screenshots. Do not merge this documentation-only branch as a completed visual redesign.
+
+## Integration refresh after #265 — 2026-11-01
+
+PR #265 was merged into master at `afb817a87d7294e02145683db2f11f638be0e290` following successful CI and E2E. PR #268 is now explicitly based on master including that merge. Its current CSS is a **first bounded visual implementation only**, not complete PRISM parity; no visual screenshot comparison is yet accepted. Re-run CI and E2E for the new merge composition. This documentation-only update is intentionally not a visual acceptance or production-release authorization.
