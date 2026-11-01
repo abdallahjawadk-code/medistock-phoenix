@@ -132,10 +132,10 @@ try {
   await page.locator('.prism-annual-result').filter({ hasText: members[1].name }).getByRole('button', { name: 'Select material', exact: true }).click();
   await page.getByRole('combobox', { name: 'Item', exact: true }).selectOption(first.canonical);
   const quantity = () => page.getByLabel(/^(Annual quantity|الكمية السنوية)$/);
-  const identity = page.locator('.prism-line-form__identity'); await identity.getByText(first.nationalCode, { exact: true }).waitFor();
-  check('selected annual identity fills name national code and unit without copying a quantity', (await identity.innerText()).includes(first.name)
-    && (await identity.innerText()).includes('box') && await quantity().inputValue() === '');
-  await identity.evaluate(el => el.scrollIntoView({ block: 'center', behavior: 'instant' }));
+  const filledIdentity = page.locator('.prism-line-form__identity'); await filledIdentity.getByText(first.nationalCode, { exact: true }).waitFor();
+  check('selected annual identity fills name national code and unit without copying a quantity', (await filledIdentity.innerText()).includes(first.name)
+    && (await filledIdentity.innerText()).includes('box') && await quantity().inputValue() === '');
+  await filledIdentity.evaluate(el => el.scrollIntoView({ block: 'center', behavior: 'instant' }));
   await page.screenshot({ path: resolve(output, 'autofilled-identity-before-quantity-en-light.png') });
   check('actual quantity field starts blank after beneficiary and multiple material choices', await quantity().inputValue() === '');
   await quantity().fill('10.25');
