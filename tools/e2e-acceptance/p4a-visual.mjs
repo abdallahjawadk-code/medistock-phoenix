@@ -257,6 +257,8 @@ try {
   await page.setViewportSize({ width: 1366, height: 900 });
   const transition = await page.locator('.premium-sidebar .premium-nav-item').first().evaluate(el => getComputedStyle(el).transitionDuration);
   check('Reduced motion removes rail transitions', transition.split(',').every(v => parseFloat(v) === 0), transition);
+  const statisticsMotion = await page.locator('.rac3-refresh').evaluate(el => getComputedStyle(el).transitionDuration);
+  check('Reduced motion removes statistics refresh transition', statisticsMotion.split(',').every(v => parseFloat(v) === 0), statisticsMotion);
   await appearance(page, 'ar', 'light');
   await navigate(page, 'مركز التقارير والمواقف', false);
   for (const width of [1366, 1024, 390, 320]) {
@@ -291,6 +293,8 @@ try {
       report.reportsMatrix.push({ id, ...paint });
     }
   }
+  const reportingMotion = await page.locator('.nexus-command-center--reports [role="tab"]').evaluateAll(elements => elements.map(el => getComputedStyle(el).transitionDuration));
+  check('Reduced motion removes reporting tab transitions', reportingMotion.length > 0 && reportingMotion.every(value => value.split(',').every(v => parseFloat(v) === 0)), reportingMotion);
   await context.close();
   for (const [tier, user] of [['platform-admin', seed.users.fixtureAdmin], ['L3', seed.users.outletOfficerA]]) {
     const s = await login(user);

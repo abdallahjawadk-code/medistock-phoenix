@@ -61,5 +61,5 @@ html[data-pharma-design][data-phoenix-ui-phase][data-phoenix-visual] .prism-shel
 }
 html[data-theme='dark'][data-pharma-design][data-phoenix-ui-phase][data-phoenix-visual] .prism-shell :is(.nexus-command-center.rac3, .nexus-command-center--reports) { --on-accent: #07162e; }
 @media (prefers-reduced-motion: reduce) {
-  html[data-pharma-design][data-phoenix-ui-phase][data-phoenix-visual] .prism-shell :is(.nexus-command-center.rac3, .nexus-command-center--reports) :is(.phoenix-button, .rac3-refresh, [role='tab']) { transition: none !important; }
+  html[data-pharma-design][data-phoenix-ui-phase][data-phoenix-visual] .prism-shell:is([data-pharma-screen='22'], [data-pharma-screen='21'], [data-pharma-screen='9'], [data-pharma-screen='12'], [data-pharma-screen='20']) :is(.nexus-command-center.rac3, .nexus-command-center--reports) :is(.phoenix-button, .rac3-refresh, [role='tab']) { transition: none !important; }
 }
