@@ -1,0 +1,11 @@
+# R2-A — inert authority foundation
+
+`R2A_authority_NOT_APPLIED.sql` is an independent, unapplied candidate for the R2 owner/key boundary. It does not create an allocation, dispatch, receipt or settlement writer and does not change an existing routine or numbered migration. The capability response explicitly reports `operationalWritesImplemented: false`, even after a disposable authority activation.
+
+Six exact allocation keys have no role defaults or profile grants. An existing annual-view membership check remains final for the home pharmacy department; a separate R2 predicate requires an explicit owner-compatible matrix grant and the R2 view key. A platform-administrator role alone is not an R2 grant. Existing cross-owner permission-scope checks remain intact. The original R1 key whitelist and same-actor exceptions are unchanged.
+
+Authority defaults off. Activation/deactivation are immutable administrator-owned release events in a private schema with forced RLS and no API access. A caller-settable flag cannot activate it. Every protected attempt rechecks the current actor, owner, exact keys and activation before capturing the current trusted employee name/role. A private capability seal detects API access, disabled history protection and unregistered R2 routines; the accepted prior seal is preserved.
+
+Native verification uses a pinned disposable PostgreSQL target before rebuilding only its named scratch database. The suite applies immutable 001–235 and accepted P1/P3-A/P3-B/C2 candidates, then tests real restricted callers, no implicit grants, cross-owner refusals, direct private access, missing view/activation, ignored caller flags, employee snapshots, permission loss, suspension, deactivation/history and seal tampering. It also compares the prior R1 predicate body before/after. The test-only guard probe is created inside that disposable suite and is absent from the candidate and hosting.
+
+This is the authority prerequisite for the separately specified final-send contract. Annual-reference continuation, allocation/version approval, proposer/approver separation at the actual transition, atomic canonical sending, actual receipt, approved settlement and concurrency remain required next implementation work. These execution gates are not accepted by authority tests. No SQL is applied to Production or through the design branch.
