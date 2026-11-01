@@ -35,6 +35,14 @@ describe('C3/C4 browser evidence boundary, separate from persisted A1', () => {
         readAvailable: true, commitState, profiles: [profile], maxPageRows: 50, maxRequestBytes: 16384 } }, SCOPE).commitState).toBe(commitState);
     }
   });
+  it('refuses a non-string commit-state enum rather than coercing JSON arrays', () => {
+    expect(() => decodeSourceCapabilities({ ok: true, capabilities: { version: 1, scope: SCOPE, selectionMode: 'explicit_reviewed_profile',
+      readAvailable: true, commitState: ['ready'], profiles: [profile], maxPageRows: 50, maxRequestBytes: 16384 } }, SCOPE)).toThrow();
+  });
+  it('refuses a non-string held-reason enum rather than coercing JSON arrays', () => {
+    const prepared = page(), held = Object.fromEntries(Object.entries(prepared).filter(([key]) => !['coreTemplate','parser','registrySha256','classifications'].includes(key)));
+    expect(() => decodeSourcePage({ ok: true, evidence: { ...held, preparationStatus: 'held', heldReason: ['layout_unavailable'], rows: [], totalRows: 0 } }, expected)).toThrow();
+  });
   it('accepts server C3 deterministic keys and preserves the stricter persisted UUID contract', () => {
     const evidence = page(); expect(decodeSourcePage({ ok: true, evidence }, expected).rows).toHaveLength(1);
     expect(() => validateAnnualOccurrences(evidence.rows, SCOPE, 'response')).toThrow();

@@ -12,6 +12,7 @@ import pg from 'pg';
 import * as XLSX from 'xlsx';
 import { createServer } from 'node:http';
 import { Readable } from 'node:stream';
+import { buildVerifiedSourceClientModel } from './verified-source-client-model.mjs';
 
 const seed = JSON.parse(readFileSync(process.argv[2] || 'e2e-seed.json', 'utf8'));
 const api = new URL(seed.supabaseUrl), database = new URL(seed.databaseUrl);
@@ -80,6 +81,7 @@ try {
   assert(!response.error); check('real employee Auth sees an installed but inactive C4 contract', response.data.enabled === false);
   stage = 'actual_worker_evidence';
   const scratch = mkdtempSync(join(process.env.RUNNER_TEMP, 'c4-actual-worker-'));
+  const clientModel = await buildVerifiedSourceClientModel(join(scratch, 'client-decoder.mjs'));
   const bridge = join(scratch, 'bridge.mjs'), worker = join(scratch, 'worker.mjs');
   const shared = { bundle: true, platform: 'node', target: 'node22', format: 'esm', logLevel: 'silent',
     banner: { js: "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);" } };
@@ -116,6 +118,11 @@ try {
   const page = await runC3IsolatedWorker(pathToFileURL(worker), { source,
     template: { manifest, expectedSha256: sha(JSON.stringify(manifest)) }, pageSize: 50, cursor: null });
   assert.equal(page.preparationStatus, 'prepared'); assert(!JSON.stringify(page).includes('987654'));
+  const clientSource = { scope, original: { originalId: source.original.originalId, sha256: source.original.sha256,
+    byteSize: source.original.byteSize, firstFilename: source.original.firstFilename },
+    profile: { id: manifest.template.id, version: manifest.template.version, sha256: sha(JSON.stringify(manifest)) }, cursor: null, pageSize: 50 };
+  check('actual compiled worker page passes the real browser decoder without persisted-key relaxation',
+    clientModel.decodeSourcePage({ ok: true, evidence: page }, clientSource).rows.length === page.rows.length);
   const evidence = { scope: page.scope, original: { ...page.original, firstFilename: source.original.firstFilename },
     template: page.template, coreTemplate: page.coreTemplate, parser: page.parser, registrySha256: page.registrySha256,
     classifications: page.classifications, rows: page.rows, workerSha256: sha(readFileSync(worker)) };
@@ -156,12 +163,18 @@ try {
     expectedCanonicalFingerprint: preview.data.canonicalFingerprint, reason: args.p_reason };
   const send = (token, body = httpInput) => fetch(endpoint, { method: 'POST', headers: { 'content-type': 'application/json',
     ...(token ? { authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify(body) });
+  const clientIntent = clientModel.freezeVerifiedIntent({ actorId: actor, request: httpInput });
+  response = await rpc(caller.client, 'receipt', { ...scopeArgs, p_request_id: args.p_request_id }); assert(!response.error);
+  check('actual prepared employee receipt passes the browser decoder without sending another commit',
+    clientModel.decodeVerifiedReceipt(response.data, clientIntent).status === 'prepared');
   const discoverUrl = new URL('/central-needs/annual-source-capabilities', endpoint);
   discoverUrl.search = new URLSearchParams({ ownerOrgId: scope.ownerOrgId, planningYear: String(scope.planningYear) }).toString();
   const availability = token => fetch(discoverUrl, { headers: token ? { authorization: `Bearer ${token}` } : {} });
   check('anonymous discovery reveals no profile metadata', (await availability(null)).status === 401);
   check('foreign institution cannot discover another owner profiles', (await availability(foreign.data.session.access_token)).status === 403);
   const discoveredResponse = await availability(signed.data.session.access_token); const discovered = await discoveredResponse.json();
+  check('actual discovery response passes the browser decoder with explicit profile choice',
+    clientModel.decodeSourceCapabilities(discovered, scope).profiles[0].sha256 === clientSource.profile.sha256);
   check('actual HTTP discovery advertises only explicitly reviewed profile identity', discoveredResponse.status === 200
     && discoveredResponse.headers.get('cache-control') === 'no-store' && discovered.capabilities.commitState === 'ready'
     && discovered.capabilities.selectionMode === 'explicit_reviewed_profile'
@@ -178,14 +191,20 @@ try {
   assert.equal(httpResponse.status, 200); assert.equal(body.ok, true);
   check('actual HTTP reruns C2 and the compiled worker before committing with the employee JWT', httpResponse.headers.get('cache-control') === 'no-store');
   const saved = body.result, after = await counts();
+  check('actual employee HTTP acknowledgement passes the browser membership decoder',
+    clientModel.decodeVerifiedMembership(saved, clientIntent).c4Verification.reviewedById === actor);
   check('original employee JWT commits one membership and preserves the old source attestation', saved.idempotentReplay === false
     && saved.sourceAttestation === 'client_attested' && saved.c4Verification.reviewedById === actor
     && saved.c4Verification.attestation === 'server_verified_c2_extraction_v1'
     && after.members === before.members + 1 && after.versions === before.versions + 1 && after.commits === before.commits + 1);
   response = await rpc(caller.client, 'commit', commitArgs);
+  assert(!response.error); const decodedReplay = clientModel.decodeVerifiedMembership(response.data, clientIntent);
   check('repeated delivery does not duplicate effects', !response.error && response.data.idempotentReplay === true
     && JSON.stringify(await counts()) === JSON.stringify(after));
   response = await rpc(caller.client, 'receipt', { ...scopeArgs, p_request_id: args.p_request_id });
+  assert(!response.error);
+  check('actual idempotent delivery and committed receipt require fresh selection in the browser decoder',
+    decodedReplay.selectable === false && clientModel.decodeVerifiedReceipt(response.data, clientIntent).status === 'committed');
   check('readback resolves a lost response and requires fresh selection', !response.error && response.data.status === 'committed'
     && response.data.result.selectable === false && response.data.result.idempotentReplay === true);
   await db.query("UPDATE public.profile_permission_overrides SET allowed=false WHERE profile_id=$1 AND permission_key='central_needs.edit'", [actor]);
@@ -207,7 +226,7 @@ try {
 } finally {
   if (server) { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
   await editor.auth.signOut(); await outsider.auth.signOut(); await db.end();
-  report.passed = report.checks.length === 21 && report.checks.every(c => c.passed) && report.errors.length === 0;
+  report.passed = report.checks.length === 26 && report.checks.every(c => c.passed) && report.errors.length === 0;
   mkdirSync(output, { recursive: true }); writeFileSync(join(output, 'c4-verified-membership.json'), JSON.stringify(report, null, 2));
   if (!report.passed) process.exitCode = 1;
 }

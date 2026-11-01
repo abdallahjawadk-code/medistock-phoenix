@@ -65,7 +65,7 @@ export function decodeSourceCapabilities(value: unknown, scope: AnnualCatalogSco
   check(Array.isArray(c.profiles) && c.profiles.length <= 100, 'profiles'); const profiles = c.profiles.map(profile);
   check(new Set(profiles.map(p => JSON.stringify([p.id, p.version]))).size === profiles.length, 'profiles.duplicate');
   catalogBoolean(c.readAvailable, 'readAvailable'); check(c.readAvailable === (profiles.length > 0), 'readAvailable');
-  check(profiles.length ? ['forbidden','missing_candidate','inactive','ready'].includes(String(c.commitState)) : c.commitState === 'unavailable_registry', 'commitState');
+  check(typeof c.commitState === 'string' && (profiles.length ? ['forbidden','missing_candidate','inactive','ready'].includes(c.commitState) : c.commitState === 'unavailable_registry'), 'commitState');
   return snapshot(c as unknown as SourceCapabilities);
 }
 export function decodeSourcePage(value: unknown, expected: SourcePageInput): VerifiedSourcePage {
@@ -88,7 +88,7 @@ export function decodeSourcePage(value: unknown, expected: SourcePageInput): Ver
   const base = ['scope','original','template','status','preparationStatus','persisted','rows','totalRows','nextCursor'];
   if (raw.preparationStatus === 'held') {
     catalogObject(raw, [...base, 'heldReason'], 'held');
-    check(['layout_unavailable','layout_ambiguous','parse_rejected','evidence_limit'].includes(String(raw.heldReason))
+    check(typeof raw.heldReason === 'string' && ['layout_unavailable','layout_ambiguous','parse_rejected','evidence_limit'].includes(raw.heldReason)
       && raw.rows.length === 0 && raw.totalRows === 0 && raw.nextCursor === null, 'held');
   } else {
     check(raw.preparationStatus === 'prepared', 'preparationStatus'); catalogObject(raw, [...base, 'coreTemplate','parser','registrySha256','classifications'], 'prepared');
