@@ -63,7 +63,7 @@ html[data-theme='dark'][data-pharma-design][data-phoenix-ui-phase][data-phoenix-
     & .prism-stock-detail { display: none; }
     &[data-detail-open='true'] .prism-stock-workbench__list { display: none; }
     &[data-detail-open='true'] .prism-stock-detail { display: block; }
-    & .prism-stock-detail__back { display: inline-flex; align-items: center; }
+    & .prism-stock-detail .prism-stock-detail__back { display: inline-flex; align-items: center; }
   }
 }
 @media (forced-colors: active) {
