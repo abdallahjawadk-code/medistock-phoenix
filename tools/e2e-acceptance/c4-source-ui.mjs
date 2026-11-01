@@ -96,16 +96,18 @@ try {
   await page.getByRole('button', { name: 'Year files', exact: true }).click();
   const trigger = page.getByRole('button', { name: `Review material identity: ${filename}`, exact: true });
   await trigger.focus(); await page.keyboard.press('Enter');
+  stage = 'browser_source_review';
   const panel = page.getByTestId('verified-source-review');
-  await panel.getByLabel('Reviewed profile', { exact: true }).waitFor();
+  const profileChoice = panel.getByRole('combobox', { name: 'Reviewed profile', exact: true });
+  await profileChoice.waitFor();
   check('keyboard opens review with heading focus and explicit empty profile selection', await panel.getByRole('heading').evaluate(el => el === document.activeElement)
-    && await panel.getByLabel('Reviewed profile', { exact: true }).inputValue() === '' && proxy.counters.sourceReads === 0);
-  await panel.getByLabel('Reviewed profile', { exact: true }).selectOption('0');
+    && await profileChoice.inputValue() === '' && proxy.counters.sourceReads === 0);
+  stage = 'browser_source_page'; await profileChoice.selectOption('0');
   await panel.getByRole('button', { name: 'Read source witnesses', exact: true }).click();
   await panel.getByLabel('Select source row 2', { exact: true }).check();
   check('actual C2 and worker witnesses exclude historical quantity', (await panel.textContent()).includes(code)
     && !(await panel.textContent()).includes('987654') && proxy.counters.workers === 1);
-  await panel.getByLabel('Search a registered material', { exact: true }).fill(name);
+  stage = 'browser_registered_canonical'; await panel.getByLabel('Search a registered material', { exact: true }).fill(name);
   await panel.getByRole('button', { name: 'Search', exact: true }).click(); await panel.getByRole('button', { name: 'Use', exact: true }).click();
   const confirm = () => panel.getByRole('button', { name: /^(Confirm annual membership|تأكيد عضوية المادة في فهرس السنة)$/ });
   await panel.getByLabel('Membership review reason', { exact: true }).waitFor();
