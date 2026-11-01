@@ -14,6 +14,8 @@ import { AnnualCatalogPicker, annualFieldText } from './AnnualCatalogPicker';
 import { AnnualCatalogEditor, type AnnualEditorSubmission } from './AnnualCatalogEditor';
 import { AnnualCatalogSources } from './AnnualCatalogSources';
 import { AnnualOriginalFiles, type AnnualOriginalsUiApi } from './AnnualOriginalFiles';
+import type { AnnualOriginal } from './annual-originals.contract';
+import { VerifiedSourceReview, type VerifiedSourceReviewApi } from './VerifiedSourceReview';
 import { ot } from './annual-originals.i18n';
 import type { AnnualCatalogScope } from './annual-catalog.contract';
 import { AnnualCatalogContractError, type AnnualCanonicalPreview, type AnnualCatalogItemResult, type AnnualCatalogWriteResult,
@@ -52,6 +54,7 @@ interface Props {
   api?: AnnualNeedsUiApi;
   manualApi?: ManualNeedsApi;
   originalsApi?: AnnualOriginalsUiApi;
+  sourceReviewApi?: VerifiedSourceReviewApi;
   onIdentityReady?: (ready: boolean) => void;
   onScopeLockChange?: (locked: boolean) => void;
 }
@@ -69,7 +72,7 @@ function outcomeUnknown(error: unknown): boolean {
 /** A single owner/year journey; quantity parsing, event folding and writes remain in the existing manual workspace. */
 export function AnnualNeedsWorkspace({ lang, scope, actorId, revision, capabilities, beneficiaries, searchRegisteredMaterials,
   nationalCodeEnabled = false, sameActorEnabled = false, api = realAnnualNeedsUiApi, manualApi = defaultManualApi,
-  originalsApi, onIdentityReady, onScopeLockChange }: Props) {
+  originalsApi, sourceReviewApi, onIdentityReady, onScopeLockChange }: Props) {
   const [yearState, setYearState] = useState<YearState>('loading');
   const [beneficiary, setBeneficiary] = useState('');
   const [selected, setSelected] = useState<AnnualCatalogItemResult[]>([]);
@@ -90,6 +93,9 @@ export function AnnualNeedsWorkspace({ lang, scope, actorId, revision, capabilit
   const [registrationLocked, setRegistrationLocked] = useState(false);
   const [originalsOpen, setOriginalsOpen] = useState(false);
   const [originalsLocked, setOriginalsLocked] = useState(false);
+  const [reviewOriginal, setReviewOriginal] = useState<AnnualOriginal | null>(null);
+  const [sourceReviewLocked, setSourceReviewLocked] = useState(false);
+  const sourceReviewTrigger = useRef<HTMLButtonElement | null>(null);
   const [unknown, setUnknown] = useState(false);
   const [pendingReadId, setPendingReadId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -104,7 +110,8 @@ export function AnnualNeedsWorkspace({ lang, scope, actorId, revision, capabilit
   const inspectedRef = useRef(inspected); inspectedRef.current = inspected;
   const identity = `${scope.ownerOrgId}:${scope.planningYear}:${actorId}:${revision?.id ?? 'catalog'}`;
   const contextKey = `${identity}:${beneficiary}`;
-  const otherOperationLocked = catalogBusy || manualLocked || registrationLocked || unknown || pendingReadId !== null;
+  const baseOperationLocked = catalogBusy || manualLocked || registrationLocked || unknown || pendingReadId !== null;
+  const otherOperationLocked = baseOperationLocked || sourceReviewLocked;
   const scopeLocked = otherOperationLocked || originalsLocked;
   const canManage = capabilities.view && capabilities.edit && yearState === 'active';
 
@@ -134,6 +141,7 @@ export function AnnualNeedsWorkspace({ lang, scope, actorId, revision, capabilit
     setHistoryBusy(false); setCanonicalPreview(null); setAdding(false); setRegistration(false); setRegistrationPrefill(null);
     setAddition(null); setAdditionReason(''); setCatalogBusy(false); setManualLocked(false); setRegistrationLocked(false); setUnknown(false); setPendingReadId(null);
     setOriginalsOpen(false); setOriginalsLocked(false);
+    setReviewOriginal(null); setSourceReviewLocked(false);
     setNotice(null); setErrorText(null); intent.current = null; eventRef.current = [];
     void loadYear(mine);
     return () => { epoch.current += 1; };
@@ -190,7 +198,7 @@ export function AnnualNeedsWorkspace({ lang, scope, actorId, revision, capabilit
   };
 
   const runCatalog = async (kind: string, execute: () => Promise<CatalogReceipt>): Promise<AnnualCatalogItemResult | null> => {
-    if (catalogBusy || manualLocked || registrationLocked || originalsLocked || pendingReadId) return null;
+    if (catalogBusy || manualLocked || registrationLocked || originalsLocked || sourceReviewLocked || pendingReadId) return null;
     if (intent.current && intent.current.kind !== kind) { setErrorText(mt('annualPendingOperation', lang)); return null; }
     const operation = intent.current ?? { kind, execute };
     intent.current = operation;
@@ -359,6 +367,7 @@ export function AnnualNeedsWorkspace({ lang, scope, actorId, revision, capabilit
   const manualLockChanged = useCallback((locked: boolean) => setManualLocked(locked), []);
   const registrationLockChanged = useCallback((locked: boolean) => setRegistrationLocked(locked), []);
   const originalsLockChanged = useCallback((locked: boolean) => setOriginalsLocked(locked), []);
+  const sourceReviewLockChanged = useCallback((locked: boolean) => setSourceReviewLocked(locked), []);
 
   return <section className="prism-annual-needs" aria-label={mt('annualJourneyTitle', lang)} lang={lang} dir={lang === 'ar' ? 'rtl' : 'ltr'}>
     <p className="prism-search-hint">{mt('annualScopePolicy', lang)}</p>
@@ -380,8 +389,12 @@ export function AnnualNeedsWorkspace({ lang, scope, actorId, revision, capabilit
     {(yearState === 'active' || yearState === 'archived') && <div className="prism-originals-disclosure">
       <button type="button" aria-expanded={originalsOpen} disabled={scopeLocked} onClick={() => setOriginalsOpen((open) => !open)}>{ot(originalsOpen ? 'close' : 'open', lang)}</button>
       {originalsOpen && <AnnualOriginalFiles lang={lang} scope={scope} actorId={actorId} canWrite={canManage} disabled={otherOperationLocked}
-        api={originalsApi} onScopeLockChange={originalsLockChanged} />}
+        api={originalsApi} onScopeLockChange={originalsLockChanged} onReviewOriginal={(original, trigger) => { if (!scopeLocked) { sourceReviewTrigger.current = trigger; setReviewOriginal(original); } }} />}
     </div>}
+    {reviewOriginal && <VerifiedSourceReview lang={lang} scope={scope} actorId={actorId} original={reviewOriginal} canWrite={canManage}
+      disabled={baseOperationLocked || originalsLocked} search={searchRegisteredMaterials} api={sourceReviewApi}
+      onFresh={fresh => { acceptFresh(fresh); setNotice(mt('annualCatalogSaved', lang)); }} onScopeLockChange={sourceReviewLockChanged}
+      onClose={() => { if (!sourceReviewLocked) { setReviewOriginal(null); queueMicrotask(() => { if (sourceReviewTrigger.current?.isConnected) sourceReviewTrigger.current.focus(); }); } }} />}
     <>
       <label className="prism-annual-beneficiary">{mt('beneficiary', lang)}<select value={beneficiary} disabled={scopeLocked || yearState === 'loading'} onChange={(event) => chooseBeneficiary(event.target.value)}>
         <option value="">{mt('choose', lang)}</option>{beneficiaryOptions.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}
@@ -394,7 +407,7 @@ export function AnnualNeedsWorkspace({ lang, scope, actorId, revision, capabilit
             onRequestAddition={canManage ? () => { setAdding(true); setRegistration(false); setRegistrationPrefill(null); } : undefined}
             onInspect={(item) => void inspect(item)} />
         </div>}
-        {revision?.sourceMode === 'manual' ? <fieldset className="prism-annual-quantity" disabled={catalogBusy || registrationLocked || originalsLocked || unknown || pendingReadId !== null}>
+        {revision?.sourceMode === 'manual' ? <fieldset className="prism-annual-quantity" disabled={catalogBusy || registrationLocked || originalsLocked || sourceReviewLocked || unknown || pendingReadId !== null}>
           <ManualNeedsWorkspace key={`${identity}:${beneficiary}`} lang={lang} organizationId={scope.ownerOrgId} planRevisionId={revision.id}
             revisionStatus={revision.status} sourceMode={revision.sourceMode} beneficiaries={beneficiaryOptions} items={itemOptions}
             api={boundManualApi} annualMode annualEntryEnabled={yearState === 'active'} beneficiaryId={beneficiary} onIdentityReady={onIdentityReady} onScopeLockChange={manualLockChanged} />
@@ -408,7 +421,7 @@ export function AnnualNeedsWorkspace({ lang, scope, actorId, revision, capabilit
             onPick={(item) => void previewExisting(item.id)} onRemove={() => undefined} onRequestRegistration={() => setRegistration(true)} />
           <button type="button" onClick={() => { setRegistration(true); setRegistrationPrefill(null); }}>{mt('annualNewRegistration', lang)}</button>
         </fieldset>
-        {registration && <fieldset disabled={catalogBusy || manualLocked || originalsLocked || unknown || pendingReadId !== null}>
+        {registration && <fieldset disabled={catalogBusy || manualLocked || originalsLocked || sourceReviewLocked || unknown || pendingReadId !== null}>
           <MaterialRegistrationPanel key={`${contextKey}:registration`} lang={lang} organizationId={scope.ownerOrgId} actorId={actorId} planRevisionId={null}
             scopeKey={contextKey} onScopeLockChange={registrationLockChanged}
             prefill={registrationPrefill} api={registrationApi} nationalCodeEnabled={nationalCodeEnabled} sameActorEnabled={sameActorEnabled}
@@ -420,11 +433,11 @@ export function AnnualNeedsWorkspace({ lang, scope, actorId, revision, capabilit
           <p><bdi>{addition.preview.canonicalSnapshot.scientificName}</bdi> · <bdi dir="ltr">{addition.preview.canonicalSnapshot.nationalCode ?? '—'}</bdi> · <bdi>{manualUnitText(addition.preview.canonicalSnapshot.unit, lang)}</bdi></p>
           {!addition.preview.eligible && <p className="prism-notice prism-notice--warning">{mt('annualAdditionPreparing', lang)}</p>}
           <label>{mt('annualMembershipReason', lang)}<textarea value={additionReason} maxLength={2000} disabled={scopeLocked} onChange={(event) => setAdditionReason(event.target.value)} /></label>
-          <button type="button" disabled={catalogBusy || manualLocked || registrationLocked || originalsLocked || pendingReadId !== null || !additionReason.trim()} onClick={addToYear}>{mt('annualConfirmMembership', lang)}</button>
+          <button type="button" disabled={catalogBusy || manualLocked || registrationLocked || originalsLocked || sourceReviewLocked || pendingReadId !== null || !additionReason.trim()} onClick={addToYear}>{mt('annualConfirmMembership', lang)}</button>
         </div>}
       </section>}
       {inspected && <AnnualCatalogEditor key={`${inspected.membership.annualItemId}:${editorReset}`} lang={lang} contextKey={contextKey} item={inspected}
-        changes={changes} canEdit={canManage} busy={catalogBusy || manualLocked || registrationLocked || originalsLocked || pendingReadId !== null} outcomeUnknown={unknown}
+        changes={changes} canEdit={canManage} busy={catalogBusy || manualLocked || registrationLocked || originalsLocked || sourceReviewLocked || pendingReadId !== null} outcomeUnknown={unknown}
         sourcePanel={<AnnualCatalogSources lang={lang} contextKey={contextKey} scope={scope} annualItemId={inspected.membership.annualItemId} reader={api.listAnnualCatalogOccurrences} />}
         historyBusy={historyBusy} historyFailed={historyFailed} hasMoreHistory={historyCursor !== null} canonicalPreview={canonicalPreview}
         onSave={saveEdit} onRefreshCanonical={refreshCanonical} onPreviewCanonical={() => void previewCurrentCanonical()}
