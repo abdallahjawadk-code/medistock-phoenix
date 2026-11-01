@@ -27,7 +27,7 @@ const sourceHead = process.env.GITHUB_EVENT_PATH
 const report = { phase: 'R2-A authority foundation; operational writers unimplemented',
   commit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(), sourceHead,
   recordedAt: new Date().toISOString(), environment: 'disposable local Supabase; synthetic fixtures; real Auth/PostgREST',
-  candidates: [], checks: [], errors: [] };
+  candidates: [], checks: [], errors: [], diagnostics: [] };
 const check = (name, passed) => { report.checks.push({ name, passed: Boolean(passed) }); console.log(`${passed ? 'PASS' : 'FAIL'} R2-A ${name}`); };
 const candidates = {
   'P1_dossier_workbook_reservation_NOT_APPLIED.sql': 'd0f914e47b559fa027e9372beb17dc5cc4fe46affee29b480149b5a3be9440ff',
@@ -51,8 +51,28 @@ try {
   [seed.centralNeeds.editor.id, seed.centralNeeds.owningOrganization, seed.centralNeeds.editor.email]);
   assert.equal(owner.rowCount, 1);
   assert.equal((await db.query("SELECT to_regprocedure('public.phoenix_r2_capabilities(uuid)') existing")).rows[0].existing, null);
-  for (const program of programs) {
-    await db.query(program);
+  const targetIdentity = await db.query(`SELECT current_database() database,current_user actor,session_user session_actor,
+    pg_get_userbyid(datdba) database_owner FROM pg_database WHERE datname=current_database()`);
+  report.diagnostics.push({ kind: 'disposable_target_identity', identity: targetIdentity.rows[0] });
+  report.diagnostics.push({ kind: 'prior_seal_before_candidates', breaches: (await db.query('SELECT * FROM phoenix_private.central_needs_capability_breaches_v1()')).rows });
+  for (const [index, program] of programs.entries()) {
+    try { await db.query(program); }
+    catch (error) {
+      await db.query('ROLLBACK');
+      // Diagnostic-only replay: preserve the same failing verification and
+      // rollback; enrich its exception with object/ACL metadata. This is never
+      // accepted execution, and no candidate source file or guard is changed.
+      if (report.candidates[index].name === 'P3A1_annual_catalog_NOT_APPLIED.sql'
+          && error.message?.includes('P3A1_verify_failed: capability seal')) {
+        const failingGuard = "RAISE EXCEPTION 'P3A1_verify_failed: capability seal';";
+        assert(program.includes(failingGuard));
+        const diagnostic = program.replace(failingGuard, "RAISE EXCEPTION 'P3A1_verify_failed: capability seal details %', (SELECT jsonb_agg(breach) FROM phoenix_private.central_needs_capability_breaches_v1() AS t(breach));");
+        try { await db.query(diagnostic); throw new Error('Expected diagnostic verification refusal did not occur'); }
+        catch (diagnosticError) { report.diagnostics.push({ kind: 'failed_candidate_verification_only', message: diagnosticError.message }); }
+        finally { await db.query('ROLLBACK'); }
+      }
+      throw error;
+    }
     assert.equal((await db.query('SELECT * FROM phoenix_private.central_needs_capability_breaches_v1()')).rowCount, 0);
   }
   check('pinned candidates apply only after the synthetic local target proof', true);
