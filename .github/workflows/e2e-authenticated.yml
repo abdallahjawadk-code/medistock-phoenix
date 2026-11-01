@@ -544,6 +544,11 @@ jobs:
           SUPABASE_ANON_KEY: ${{ steps.sb.outputs.anon_key }}
         run: node tools/e2e-acceptance/manual-read-adapters.mjs e2e-seed.json
 
+      - name: Verify actual C4 source review UI and lost acknowledgement recovery (disposable only)
+        env:
+          SUPABASE_ANON_KEY: ${{ steps.sb.outputs.anon_key }}
+        run: node tools/e2e-acceptance/c4-source-ui.mjs http://127.0.0.1:4173 e2e-seed.json
+
       - name: Verify the actual annual-entry monthly proposal UI (disposable only)
         env:
           SUPABASE_ANON_KEY: ${{ steps.sb.outputs.anon_key }}
