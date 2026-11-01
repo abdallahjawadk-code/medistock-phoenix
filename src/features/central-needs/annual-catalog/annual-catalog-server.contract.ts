@@ -352,7 +352,7 @@ function cellAddress(row: number, col: number): string {
   return `${letters}${row + 1}`;
 }
 
-function validateWitnessCell(value: unknown, path: string, boundary: Boundary): JsonObject {
+export function validateWitnessCell(value: unknown, path: string, boundary: Boundary): JsonObject {
   const cell = catalogObject(value, ['coordinate', 'presence', 'rawValue', 'isFormula', 'hasComment'], path, boundary,
     ['valueType', 'errorCode', 'formattedText', 'formula']);
   const coord = catalogObject(cell.coordinate, ['row', 'col', 'a1'], `${path}.coordinate`, boundary);
