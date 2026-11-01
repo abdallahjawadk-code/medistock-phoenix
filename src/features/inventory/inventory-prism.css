@@ -1,0 +1,80 @@
+/* P4-B inventory surface only. Keep all read/mutation owners and semantic
+   status colors; bridge existing component tokens into the accepted palette. */
+html[data-pharma-design][data-phoenix-ui-phase][data-phoenix-visual] .prism-shell[data-pharma-screen='3'] {
+  & .nexus-app-column { background: var(--p4-wash) !important; }
+  & #phoenix-main {
+    background: var(--p4-wash) !important;
+    border-start-start-radius: 0;
+    border-start-end-radius: 0;
+  }
+  & .nexus-inventory-transfers--center {
+    --s: var(--p4-panel); --s2: var(--p4-wash); --surface: var(--p4-panel); --surface2: var(--p4-wash);
+    --t: var(--p4-ink); --t2: var(--p4-muted); --text: var(--p4-ink); --muted: var(--p4-muted);
+    --brd: var(--p4-line); --line: var(--p4-line); --line2: var(--p4-line); --field: var(--p4-panel);
+    --p: var(--p4-accent); --pd: var(--p4-ink); --p2: var(--p4-selected); --chip: var(--p4-selected);
+    --teal: var(--p4-accent); --cyan: var(--p4-accent);
+    --focus-ring: var(--p4-focus); --pharma-brass: var(--p4-accent); --pharma-selected: var(--p4-selected);
+    --phase-a-it-hairline: var(--p4-line); --phase-a-it-central: var(--p4-accent);
+    --inventory-on-accent: #fff;
+    --font-sans: 'Noto Sans Arabic Variable', system-ui, sans-serif;
+    color: var(--p4-ink); font-family: var(--font-sans); line-height: 1.7; min-inline-size: 0;
+
+    &[dir='ltr'] { --font-sans: 'Sora', system-ui, sans-serif; }
+    & :is(h2, h3, h4) { font-family: 'Changa', 'Noto Sans Arabic Variable', system-ui, sans-serif; }
+    &[dir='ltr'] :is(h2, h3, h4) { font-family: 'Sora', system-ui, sans-serif; }
+    & .nexus-it-header {
+      background: var(--p4-panel) !important; border: 1px solid var(--p4-line) !important;
+      border-radius: 16px !important; box-shadow: 0 6px 24px rgb(38 68 122 / 5%) !important;
+    }
+    & .nexus-it-header::after { content: none !important; }
+    & .nexus-it-header__titles::before { background: var(--p4-accent) !important; }
+    & .nexus-it-header__title { color: var(--p4-ink) !important; }
+    & .nexus-it-header__subtitle { color: var(--p4-muted) !important; }
+    & .phoenix-card {
+      background-color: var(--p4-panel) !important; background-image: none !important;
+      border: 1px solid var(--p4-line) !important; border-radius: 16px !important;
+      box-shadow: 0 6px 24px rgb(38 68 122 / 5%) !important;
+    }
+    & .nexus-it-context-bar::before { background: var(--p4-accent) !important; }
+    & .nexus-it-stat--reserved { color: var(--warn); background: var(--warn2); border-color: color-mix(in srgb, var(--warn) 35%, transparent); }
+    & .nexus-it-stat--available { color: var(--ok); background: var(--ok2); border-color: color-mix(in srgb, var(--ok) 35%, transparent); }
+    & .nexus-it-stat--available.nexus-it-stat--zero { color: var(--err); background: var(--err2); border-color: color-mix(in srgb, var(--err) 40%, transparent); }
+    & .nexus-it-tabs {
+      background: var(--p4-panel) !important; border: 1px solid var(--p4-line) !important;
+      border-radius: 12px !important; box-shadow: none !important; mask-image: none;
+      scrollbar-width: thin;
+    }
+    & .nexus-it-tab {
+      min-block-size: 44px; padding: 8px 14px !important;
+      background: var(--p4-wash) !important; color: var(--p4-ink) !important;
+      border: 1px solid var(--p4-line) !important; border-radius: 9px !important;
+      box-shadow: none !important; transition: box-shadow 140ms ease;
+    }
+    & .nexus-it-tab[aria-selected='true'] {
+      background: var(--p4-accent) !important; color: var(--inventory-on-accent) !important;
+      border-color: var(--p4-accent) !important; font-weight: 700;
+    }
+    & .nexus-it-tab[aria-selected='true']::after { content: none; }
+    & .phoenix-button {
+      min-block-size: 44px; max-inline-size: 100%; white-space: normal !important;
+      border-radius: 10px !important; transition: box-shadow 140ms ease !important;
+    }
+    & .phoenix-button[data-variant='primary'] {
+      background: var(--p4-accent) !important; color: var(--inventory-on-accent) !important;
+      border: 1px solid var(--p4-accent) !important; box-shadow: none !important;
+    }
+    & :is(input, select, textarea) { max-inline-size: 100%; }
+    & :is(button, input, select, textarea, a):focus-visible {
+      outline: 3px solid var(--p4-focus) !important; outline-offset: 3px;
+    }
+  }
+}
+html[data-theme='dark'][data-pharma-design][data-phoenix-ui-phase][data-phoenix-visual] .prism-shell[data-pharma-screen='3'] .nexus-inventory-transfers--center {
+  --inventory-on-accent: #07162e;
+}
+@media (prefers-reduced-motion: reduce) {
+  html[data-pharma-design][data-phoenix-ui-phase][data-phoenix-visual] .prism-shell[data-pharma-screen='3'] .nexus-inventory-transfers--center :is(.nexus-it-tab, .phoenix-button) { transition: none !important; }
+}
+@media (forced-colors: active) {
+  .nexus-inventory-transfers--center .nexus-it-tab[aria-selected='true'] { outline: 2px solid Highlight; }
+}

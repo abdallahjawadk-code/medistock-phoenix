@@ -1,0 +1,75 @@
+/* Existing annual workflow only. Source evidence and human decisions retain
+   their owners, order and gates; this bridge changes presentation. */
+html[data-pharma-design][data-phoenix-ui-phase][data-phoenix-visual] .prism-shell[data-pharma-screen='23'] {
+  & .nexus-app-column { background: var(--p4-wash) !important; }
+  & #phoenix-main { background: var(--p4-wash) !important; border-start-start-radius: 0; border-start-end-radius: 0; }
+  & [data-prism-surface='annual'] {
+    --s: var(--p4-panel); --s2: var(--p4-wash); --surface: var(--p4-panel); --surface2: var(--p4-wash);
+    --t: var(--p4-ink); --t2: var(--p4-muted); --fg: var(--p4-ink); --fg-muted: var(--p4-muted);
+    --brd: var(--p4-line); --line: var(--p4-line); --field: var(--p4-panel);
+    --p: var(--p4-accent); --p2: var(--p4-selected); --teal: var(--p4-accent); --cyan: var(--p4-accent);
+    --annual-on-accent: #fff;
+    --font-sans: 'Noto Sans Arabic Variable', system-ui, sans-serif;
+    --font-display: 'Changa', 'Noto Sans Arabic Variable', system-ui, sans-serif;
+    color: var(--p4-ink); font-family: var(--font-sans); line-height: 1.7;
+    &[dir='ltr'] { --font-sans: 'Sora', system-ui, sans-serif; --font-display: 'Sora', system-ui, sans-serif; }
+    & :is(h1, h2, h3, h4) { font-family: var(--font-display); }
+    & .cn2b-simple { max-inline-size: 1180px; }
+    & .cn2b-simple-hero {
+      padding: clamp(16px, 2vw, 24px); border: 1px solid var(--p4-line);
+      border-radius: 16px; background: var(--p4-panel);
+    }
+    & .cn2b-simple-title { color: var(--p4-ink); }
+    & .cn2b-simple-stepper {
+      padding: 16px; border: 1px solid var(--p4-line); border-radius: 12px; background: var(--p4-panel);
+    }
+    & .cn2b-simple-stepper__item[data-state='current'] .cn2b-simple-stepper__bar {
+      background: var(--p4-accent); box-shadow: none;
+    }
+    & .cn2b-simple-stepper__item[data-state='current'] .cn2b-simple-stepper__num {
+      background: var(--p4-accent); color: var(--annual-on-accent);
+    }
+    & .cn2b-simple-card {
+      background: var(--p4-panel); border: 1px solid var(--p4-line); border-radius: 16px;
+      box-shadow: 0 6px 24px rgb(38 68 122 / 5%);
+    }
+    & .cn2b-simple-card--review {
+      display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+      align-items: start; gap: clamp(16px, 2vw, 28px); padding: clamp(16px, 2vw, 24px);
+    }
+    & .cn2b-simple-card--review > .cn2b-simple-evidence {
+      background: #0c2037; border: 1px solid #284866; border-inline-start: 1px solid #284866;
+      border-radius: 12px; color: #edf4ff; padding: clamp(16px, 2vw, 24px);
+      --t: #edf4ff; --t2: #bed0e8; --teal: #9fc5ff; --brd: #284866;
+      --warn: #ffe3a3; --chipW: #392f20; --s: #0c2037; --s2: #122e4c;
+    }
+    & .cn2b-simple-review-decision { display: flex; flex-direction: column; gap: 18px; min-inline-size: 0; }
+    & .cn2b-simple-match { background: var(--p4-wash); border-color: var(--p4-line); }
+    & .cn2b-simple-match--none { border-inline-start-color: var(--warn); }
+    & :is(.cn2b-simple-input, .cn2b-input, .cn2b-select) {
+      min-block-size: 44px; max-inline-size: 100%; background: var(--p4-panel); color: var(--p4-ink);
+      border-color: var(--p4-line); font-family: var(--font-sans);
+    }
+    & .phoenix-button {
+      min-block-size: 44px; max-inline-size: 100%; white-space: normal !important;
+      border-radius: 10px !important; transition: box-shadow 140ms ease !important;
+    }
+    & .phoenix-button[data-variant='primary'] {
+      background: var(--p4-accent) !important; color: var(--annual-on-accent) !important;
+      border: 1px solid var(--p4-accent) !important; box-shadow: none !important;
+    }
+    & :is(button, input, select, textarea, a, summary):focus-visible {
+      outline: 3px solid var(--p4-focus) !important; outline-offset: 3px;
+    }
+    & :is(.cn2b-simple-evidence__value, .cn2b-simple-match__name) { overflow-wrap: anywhere; }
+  }
+}
+html[data-theme='dark'][data-pharma-design][data-phoenix-ui-phase][data-phoenix-visual] .prism-shell[data-pharma-screen='23'] [data-prism-surface='annual'] {
+  --annual-on-accent: #07162e;
+}
+@media (max-width: 760px) {
+  html[data-pharma-design][data-phoenix-ui-phase][data-phoenix-visual] .prism-shell[data-pharma-screen='23'] [data-prism-surface='annual'] .cn2b-simple-card--review { grid-template-columns: minmax(0, 1fr); }
+}
+@media (prefers-reduced-motion: reduce) {
+  html[data-pharma-design][data-phoenix-ui-phase][data-phoenix-visual] .prism-shell[data-pharma-screen='23'] [data-prism-surface='annual'] .phoenix-button { transition: none !important; }
+}

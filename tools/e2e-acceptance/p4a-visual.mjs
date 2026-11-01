@@ -36,7 +36,7 @@ const report = {
   recordedAt: new Date().toISOString(), base: base.href,
   database: 'disposable local Supabase; synthetic fixtures; real Auth/RLS',
   referenceParity: 'HOLD: framed concept references require separate human visual review',
-  checks: [], matrix: [], annualMatrix: [], errors: [],
+  checks: [], matrix: [], annualMatrix: [], reportsMatrix: [], errors: [],
 };
 const check = (name, passed, detail = null) => {
   report.checks.push({ name, passed, detail });
@@ -160,6 +160,16 @@ try {
       check(`${id} document overflow`, measured.overflow <= 1, measured.overflow);
       check(`${id} PRISM topbar palette`, measured.topbar === (theme === 'light' ? 'rgb(255, 255, 255)' : 'rgb(12, 32, 55)'), measured.topbar);
       check(`${id} heading font`, measured.headingFont.includes(lang === 'ar' ? 'Changa' : 'Sora'), measured.headingFont);
+      const statisticsPaint = await page.locator('.rac3').evaluate(el => {
+        const header = el.querySelector('.rac3-header'), panel = el.querySelector('.rac3-panel');
+        return { font: getComputedStyle(el).fontFamily, header: getComputedStyle(header).backgroundColor,
+          panel: getComputedStyle(panel).backgroundColor, foreground: getComputedStyle(panel).color,
+          kpis: [...el.querySelectorAll('.rac3-kpi__label')].map(label => label.textContent) };
+      });
+      check(`${id} statistics PRISM surfaces and font`, statisticsPaint.header === measured.topbar
+        && statisticsPaint.panel === measured.topbar && statisticsPaint.font.includes(lang === 'ar' ? 'Noto Sans Arabic' : 'Sora'), statisticsPaint);
+      check(`${id} statistics panel contrast and labelled KPIs`, contrast(statisticsPaint.foreground, statisticsPaint.panel) >= 4.5
+        && statisticsPaint.kpis.length > 0 && statisticsPaint.kpis.every(label => label.trim().length > 0), statisticsPaint);
       check(`${id} readable title`, measured.headingWidth >= 96 && measured.headingHeight <= measured.headingLineHeight * 2 + 1, { width: measured.headingWidth, height: measured.headingHeight });
       check(`${id} touch controls`, measured.controlSizes.every(s => s.width >= 43.5 && s.height >= 43.5), measured.controlSizes);
       const controlContrast = measured.controlSizes.map(s => ({ label: s.label, ratio: contrast(s.foreground, s.background) }));
@@ -219,6 +229,17 @@ try {
       await page.locator('.nexus-it-context-bar select').selectOption(seed.stageE.whA);
       await page.getByRole('tab', { name: lang === 'ar' ? 'رصيد المخزن' : 'Warehouse stock', exact: true }).click();
       await settleView(page);
+      const inventoryPaint = await page.locator('.nexus-inventory-transfers--center').evaluate(el => {
+        const header = el.querySelector('.nexus-it-header');
+        const tab = el.querySelector('.nexus-it-tab[aria-selected="true"]');
+        return { font: getComputedStyle(el).fontFamily,
+          headerBackground: getComputedStyle(header).backgroundColor,
+          activeBackground: getComputedStyle(tab).backgroundColor,
+          activeForeground: getComputedStyle(tab).color };
+      });
+      check(`${id} real inventory uses PRISM surface`, inventoryPaint.headerBackground === (theme === 'dark' ? 'rgb(12, 32, 55)' : 'rgb(255, 255, 255)'), inventoryPaint);
+      check(`${id} inventory uses approved font`, inventoryPaint.font.includes(lang === 'ar' ? 'Noto Sans Arabic' : 'Sora'), inventoryPaint.font);
+      check(`${id} active inventory tab contrast`, contrast(inventoryPaint.activeForeground, inventoryPaint.activeBackground) >= 4.5, inventoryPaint);
       await page.locator('.nexus-it-stock-list').getByText('E2E Initial Provisioning Material', { exact: true }).waitFor();
       const materialButton = page.locator('.prism-stock-batch-select').filter({ hasText: 'E2E Initial Provisioning Material' });
       await materialButton.focus();
@@ -227,9 +248,19 @@ try {
       await detail.getByRole('heading', { name: 'E2E Initial Provisioning Material', exact: true }).waitFor();
       check(`${id} real batch detail keyboard selection`, await materialButton.getAttribute('aria-pressed') === 'true');
       check(`${id} exactly one selected batch`, await page.locator('.prism-stock-batch-select[aria-pressed="true"]').count() === 1);
+      if (width === 1366 && lang === 'ar' && theme === 'light') {
+        await page.setViewportSize({ width: 390, height: 900 });
+        await page.waitForFunction(() => document.querySelector('.prism-stock-detail h3') === document.activeElement);
+        check('Selected batch focus survives desktop-to-phone resize', await detail.getByRole('button', { name: 'العودة إلى الدفعات', exact: true }).isVisible());
+        await page.setViewportSize({ width: 1366, height: 900 });
+        await materialButton.focus();
+        await settleView(page);
+      }
       if (width <= 1100) {
         check(`${id} narrow detail opens directly with focus`, !(await materialButton.isVisible())
           && await detail.getByRole('heading').evaluate(el => el === document.activeElement));
+        const top = await detail.evaluate(el => el.getBoundingClientRect().top);
+        check(`${id} narrow detail starts in the visible workspace`, top >= 0 && top <= 240, top);
         await page.screenshot({ path: resolve(out, `${id}-material-detail.png`), fullPage: true });
         await detail.getByRole('button', { name: lang === 'ar' ? 'العودة إلى الدفعات' : 'Back to batches', exact: true }).click();
         check(`${id} narrow detail return restores row focus`, await materialButton.isVisible()
@@ -247,6 +278,47 @@ try {
   await page.setViewportSize({ width: 1366, height: 900 });
   const transition = await page.locator('.premium-sidebar .premium-nav-item').first().evaluate(el => getComputedStyle(el).transitionDuration);
   check('Reduced motion removes rail transitions', transition.split(',').every(v => parseFloat(v) === 0), transition);
+  const statisticsMotion = await page.locator('.rac3-refresh').evaluate(el => getComputedStyle(el).transitionDuration);
+  check('Reduced motion removes statistics refresh transition', statisticsMotion.split(',').every(v => parseFloat(v) === 0), statisticsMotion);
+  await navigate(page, 'Inventory Center', false);
+  const inventoryMotion = await page.locator('.nexus-inventory-transfers--center .nexus-it-tab').evaluateAll(elements => elements.map(el => getComputedStyle(el).transitionDuration));
+  check('Reduced motion removes inventory tab transitions', inventoryMotion.length > 0 && inventoryMotion.every(value => value.split(',').every(v => parseFloat(v) === 0)), inventoryMotion);
+  await appearance(page, 'ar', 'light');
+  await navigate(page, 'مركز التقارير والمواقف', false);
+  for (const width of [1366, 1024, 390, 320]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const lang of ['ar', 'en']) for (const theme of ['light', 'dark']) {
+      await appearance(page, lang, theme); await settleView(page);
+      const id = `${width}-${lang}-${theme}`;
+      const tabs = page.locator('.nexus-command-center--reports [role="tab"]');
+      await tabs.first().click(); await settleView(page);
+      const paint = await page.locator('.nexus-command-center--reports').evaluate(el => {
+        const bar = el.querySelector('[role="tablist"]'), selected = bar.querySelector('[aria-selected="true"]');
+        return { font: getComputedStyle(el).fontFamily, background: getComputedStyle(bar).backgroundColor,
+          overflow: document.documentElement.scrollWidth - innerWidth, tabCount: bar.querySelectorAll('[role="tab"]').length,
+          scrollOwner: getComputedStyle(bar).overflowX, scrollWidth: bar.scrollWidth, clientWidth: bar.clientWidth,
+          selected: { foreground: getComputedStyle(selected).color, background: getComputedStyle(selected).backgroundColor,
+            height: selected.getBoundingClientRect().height },
+          panel: el.querySelector('[role="tabpanel"]')?.getAttribute('aria-labelledby') };
+      });
+      check(`${id} reporting PRISM route surface and font`, paint.background === (theme === 'dark' ? 'rgb(12, 32, 55)' : 'rgb(255, 255, 255)')
+        && paint.font.includes(lang === 'ar' ? 'Noto Sans Arabic' : 'Sora') && Boolean(paint.panel), paint);
+      check(`${id} reporting owns horizontal tab overflow`, paint.overflow <= 1 && paint.scrollOwner === 'auto' && paint.tabCount > 1, paint);
+      check(`${id} reporting selected tab contrast and touch size`, contrast(paint.selected.foreground, paint.selected.background) >= 4.5 && paint.selected.height >= 44, paint.selected);
+      await page.screenshot({ path: resolve(out, `${id}-reports.png`), fullPage: true });
+      await tabs.first().press('End'); await settleView(page);
+      const last = await tabs.last().evaluate(el => {
+        const item = el.getBoundingClientRect(), bar = el.parentElement.getBoundingClientRect();
+        return { focused: document.activeElement === el, selected: el.getAttribute('aria-selected') === 'true', visible: item.left >= bar.left - 1 && item.right <= bar.right + 1 };
+      });
+      check(`${id} reporting End preserves visible selected focus`, last.focused && last.selected && last.visible, last);
+      await tabs.last().press('Home'); await settleView(page);
+      check(`${id} reporting Home restores first tab`, await tabs.first().evaluate(el => document.activeElement === el && el.getAttribute('aria-selected') === 'true'));
+      report.reportsMatrix.push({ id, ...paint });
+    }
+  }
+  const reportingMotion = await page.locator('.nexus-command-center--reports [role="tab"]').evaluateAll(elements => elements.map(el => getComputedStyle(el).transitionDuration));
+  check('Reduced motion removes reporting tab transitions', reportingMotion.length > 0 && reportingMotion.every(value => value.split(',').every(v => parseFloat(v) === 0)), reportingMotion);
   await context.close();
   for (const [tier, user] of [['platform-admin', seed.users.fixtureAdmin], ['L3', seed.users.outletOfficerA]]) {
     const s = await login(user);
@@ -274,16 +346,39 @@ try {
         documentOverflow: document.documentElement.scrollWidth - innerWidth,
       }));
       check(`${id} real annual-needs route and viewport`, state.headings.length > 0 && state.documentOverflow <= 1, state);
+      const review = await annual.page.locator('[data-testid="cn2b-simple-institution-card"]').evaluate(card => {
+        const source = card.querySelector('.cn2b-simple-evidence');
+        const decision = card.querySelector('.cn2b-simple-review-decision');
+        const action = card.querySelector('button[data-variant="primary"]');
+        const rect = el => { const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; };
+        return { cardBackground: getComputedStyle(card).backgroundColor, font: getComputedStyle(card).fontFamily,
+          source: rect(source), decision: rect(decision),
+          sourceForeground: getComputedStyle(source).color, sourceBackground: getComputedStyle(source).backgroundColor,
+          sourceFirst: !!(source.compareDocumentPosition(decision) & Node.DOCUMENT_POSITION_FOLLOWING),
+          action: { ...rect(action), foreground: getComputedStyle(action).color, background: getComputedStyle(action).backgroundColor },
+          stepCount: document.querySelectorAll('.cn2b-simple-stepper__item').length,
+        };
+      });
+      check(`${id} annual review PRISM surface and font`, review.cardBackground === (theme === 'dark' ? 'rgb(12, 32, 55)' : 'rgb(255, 255, 255)') && review.font.includes(lang === 'ar' ? 'Noto Sans Arabic' : 'Sora'), review);
+      check(`${id} annual source remains before human decision`, review.sourceFirst && review.stepCount === 6, review.stepCount);
+      check(`${id} annual review responsive panes`, width <= 760
+        ? review.decision.y >= review.source.y + review.source.height - 1
+        : Math.abs(review.decision.y - review.source.y) <= 1 && Math.abs(review.decision.x - review.source.x) > 100, review);
+      check(`${id} annual source evidence contrast`, contrast(review.sourceForeground, review.sourceBackground) >= 4.5, review);
+      check(`${id} annual primary action contrast and touch size`, contrast(review.action.foreground, review.action.background) >= 4.5 && review.action.height >= 44 && review.action.width >= 44, review.action);
       report.annualMatrix.push({ id, ...state });
     }
   }
+  await annual.page.emulateMedia({ reducedMotion: 'reduce' });
+  const annualMotion = await annual.page.locator('.cn2b-simple-card button').evaluateAll(elements => elements.map(el => getComputedStyle(el).transitionDuration));
+  check('Reduced motion removes annual review action transitions', annualMotion.length > 0 && annualMotion.every(value => value.split(',').every(v => parseFloat(v) === 0)), annualMotion);
   await annual.context.close();
   check('No runtime/network/server errors', report.errors.length === 0, report.errors);
 } catch (e) {
   check('capture completed', false, e.message);
 } finally {
   await browser.close();
-  report.passed = report.checks.every(c => c.passed) && report.matrix.length === 16 && report.annualMatrix.length === 16;
+  report.passed = report.checks.every(c => c.passed) && report.matrix.length === 16 && report.annualMatrix.length === 16 && report.reportsMatrix.length === 16;
   writeFileSync(resolve(out, 'report.json'), JSON.stringify(report, null, 2));
   console.log(`P4-A matrix ${report.matrix.length}/16; ${report.checks.filter(c => !c.passed).length} failed checks; reference parity remains HOLD`);
   if (!report.passed) process.exitCode = 1;

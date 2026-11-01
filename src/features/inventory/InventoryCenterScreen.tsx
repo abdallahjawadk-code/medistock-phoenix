@@ -54,6 +54,7 @@ import {
 } from './warehouse-intake.service';
 import type { SuggestionDocumentTarget } from './suggestion-document-navigation';
 import { InventoryBatchWorkbench } from './InventoryBatchWorkbench';
+import './inventory-prism.css';
 import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
 
 /**
