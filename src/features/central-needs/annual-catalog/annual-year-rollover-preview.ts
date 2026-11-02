@@ -76,6 +76,8 @@ const text = (s: unknown): s is string => typeof s === 'string' && s.trim().leng
   && s.length <= 2000 && !/[\u0000-\u001F\u007F]/.test(s);
 // PostgreSQL UUID identity is case-insensitive; preserve original evidence in outputs.
 const uuidKey = (id: string): string => id.toLowerCase();
+const sameUuid = (left: unknown, right: unknown): boolean =>
+  uuid(left) && uuid(right) && uuidKey(left) === uuidKey(right);
 const unique = (xs: readonly string[]) => new Set(xs.map(uuidKey)).size === xs.length;
 const hardLimit = (n: number, max: number) => {
   if (!Number.isSafeInteger(n) || n > max) throw new Error('annual_rollover_input_limit');
@@ -150,12 +152,12 @@ export function prepareAnnualYearRollover(input: RolloverPreviewInput): Rollover
     assertSameAnnualScope(source.scope,item.fieldVersion.scope);
     const id=item.membership.canonicalItemId;
     const reasons:RolloverHoldCode[]=[];
-    if (!uuid(item.membership.annualItemId) || !uuid(item.fieldVersion.fieldVersionId) ||
+    if (!uuid(item.membership.annualItemId) || !uuid(item.fieldVersion.annualItemId) || !uuid(item.fieldVersion.fieldVersionId) ||
         !uuid(item.membership.currentFieldVersionId) || (id !== null && !uuid(id))) {
       reasons.push('source_identity_invalid');
     }
-    if (item.membership.currentFieldVersionId !== item.fieldVersion.fieldVersionId ||
-        item.membership.annualItemId !== item.fieldVersion.annualItemId) {
+    if (!sameUuid(item.membership.currentFieldVersionId, item.fieldVersion.fieldVersionId) ||
+        !sameUuid(item.membership.annualItemId, item.fieldVersion.annualItemId)) {
       reasons.push('source_version_stale');
     }
     if (item.membership.status !== 'active' || !item.selectable || item.selectionBlockers.length > 0 || !id) {
@@ -171,7 +173,7 @@ export function prepareAnnualYearRollover(input: RolloverPreviewInput): Rollover
       reasons.push('canonical_missing_or_inactive');
     } else {
       assertSameAnnualScope(target,preview.scope);
-      if (!id || preview.canonicalItemId !== id || preview.canonicalSnapshot.canonicalItemId !== id ||
+      if (!sameUuid(preview.canonicalItemId, id) || !sameUuid(preview.canonicalSnapshot.canonicalItemId, id) ||
           preview.canonicalSnapshot.status !== 'active' || !preview.eligible || preview.missingRequired.length > 0) {
         reasons.push('canonical_missing_or_inactive');
       }
@@ -181,7 +183,13 @@ export function prepareAnnualYearRollover(input: RolloverPreviewInput): Rollover
       }
     }
     if (reasons.length === 0) {
-      try { prepareAnnualSelection(source.scope,item.membership,item.fieldVersion); }
+      try {
+        // The UUID pairs above are validated and equal. Align their spelling only
+        // for the shared exact-string validator; keep scopes, fields and origins exact.
+        prepareAnnualSelection(source.scope, {...item.membership,
+          annualItemId: item.fieldVersion.annualItemId,
+          currentFieldVersionId: item.fieldVersion.fieldVersionId}, item.fieldVersion);
+      }
       catch { reasons.push('source_field_unresolved'); }
     }
     const classes=material.classifications;
