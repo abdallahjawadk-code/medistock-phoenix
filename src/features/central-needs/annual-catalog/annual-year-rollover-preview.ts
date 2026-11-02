@@ -74,7 +74,9 @@ const uuid = (s: unknown): s is string => typeof s === 'string'
 const sha = (s: unknown): s is string => typeof s === 'string' && /^[0-9a-f]{64}$/.test(s);
 const text = (s: unknown): s is string => typeof s === 'string' && s.trim().length > 0 && s.trim() === s
   && s.length <= 2000 && !/[\u0000-\u001F\u007F]/.test(s);
-const unique = (xs: readonly string[]) => new Set(xs).size === xs.length;
+// PostgreSQL UUID identity is case-insensitive; preserve original evidence in outputs.
+const uuidKey = (id: string): string => id.toLowerCase();
+const unique = (xs: readonly string[]) => new Set(xs.map(uuidKey)).size === xs.length;
 const hardLimit = (n: number, max: number) => {
   if (!Number.isSafeInteger(n) || n > max) throw new Error('annual_rollover_input_limit');
 };
@@ -127,14 +129,14 @@ export function prepareAnnualYearRollover(input: RolloverPreviewInput): Rollover
   }
   if (source.itemsComplete !== true) return hold(target, 'source_items_incomplete');
   hardLimit(source.materials.length, 10_000);
-  const existing = new Set(input.existingTargetCanonicalIds);
+  const existing = new Set(input.existingTargetCanonicalIds.map(uuidKey));
   const canonicalCount = new Map<string,number>();
   const annualCount = new Map<string,number>();
   for (const entry of source.materials) {
     const id=entry.item?.membership?.canonicalItemId;
     const annualId=entry.item?.membership?.annualItemId;
-    if (uuid(annualId)) annualCount.set(annualId,(annualCount.get(annualId)??0)+1);
-    if (id !== null && uuid(id)) canonicalCount.set(id,(canonicalCount.get(id)??0)+1);
+    if (uuid(annualId)) annualCount.set(uuidKey(annualId),(annualCount.get(uuidKey(annualId))??0)+1);
+    if (id !== null && uuid(id)) canonicalCount.set(uuidKey(id),(canonicalCount.get(uuidKey(id))??0)+1);
   }
   const carry: RolloverCarryIdentity[]=[];
   const held: RolloverHeldMaterial[]=[];
@@ -159,9 +161,11 @@ export function prepareAnnualYearRollover(input: RolloverPreviewInput): Rollover
     if (item.membership.status !== 'active' || !item.selectable || item.selectionBlockers.length > 0 || !id) {
       reasons.push('source_not_selectable');
     }
-    if (id && canonicalCount.get(id)! > 1) reasons.push('duplicate_source_canonical');
-    if (annualCount.get(item.membership.annualItemId)! > 1) reasons.push('duplicate_source_annual_item');
-    if (id && existing.has(id)) reasons.push('target_already_contains_material');
+    if (uuid(id) && canonicalCount.get(uuidKey(id))! > 1) reasons.push('duplicate_source_canonical');
+    if (uuid(item.membership.annualItemId) && annualCount.get(uuidKey(item.membership.annualItemId))! > 1) {
+      reasons.push('duplicate_source_annual_item');
+    }
+    if (uuid(id) && existing.has(uuidKey(id))) reasons.push('target_already_contains_material');
     const preview=material.targetCanonical;
     if (!preview || !preview.scope || !preview.canonicalSnapshot) {
       reasons.push('canonical_missing_or_inactive');

@@ -41,6 +41,56 @@ function held(value:RolloverPreviewInput, code:string) {
 }
 
 describe('year rollover identity-only preview (never persists)',()=>{
+  it('preserves source evidence and textual national codes when comparing UUID keys',()=>{
+    const canonical='ABCDEFAB-2222-4222-8222-ABCDEFABCDEF';
+    const i=input();
+    const value={...i,previousYears:[{...i.previousYears[0],materials:[material(2026,canonical)]}]};
+    const before=JSON.stringify(value);
+    const r=previewOnly(value);
+    expect(r.carry).toHaveLength(1);
+    expect(r.carry[0]?.canonicalItemId).toBe(canonical);
+    expect(r.carry[0]?.identity.nationalCode).toBe('00001234');
+    expect(JSON.stringify(value)).toBe(before);
+  });
+  it('holds a target identity regardless of UUID letter case',()=>{
+    const canonical='abcdefab-2222-4222-8222-abcdefabcdef';
+    const i=input();
+    held({...i,existingTargetCanonicalIds:[canonical.toUpperCase()],
+      previousYears:[{...i.previousYears[0],materials:[material(2026,canonical)]}]},
+    'target_already_contains_material');
+  });
+  it('rejects case variants of the same target UUID as duplicate evidence',()=>{
+    const canonical='abcdefab-2222-4222-8222-abcdefabcdef';
+    expect(()=>prepareAnnualYearRollover({...input(),
+      existingTargetCanonicalIds:[canonical,canonical.toUpperCase()]}))
+      .toThrow('annual_rollover_target_memberships_invalid');
+  });
+  it('holds every source row with case variants of the same canonical UUID',()=>{
+    const canonical='abcdefab-2222-4222-8222-abcdefabcdef';
+    const i=input(), first=material(2026,canonical), other=material(2026,canonical.toUpperCase());
+    const second={...other,item:{...other.item,
+      membership:{...other.item.membership,annualItemId:'55555555-5555-4555-8555-555555555555'},
+      fieldVersion:{...other.item.fieldVersion,annualItemId:'55555555-5555-4555-8555-555555555555'}}};
+    const r=previewOnly({...i,previousYears:[{...i.previousYears[0],materials:[first,second]}]});
+    expect(r.carry).toHaveLength(0);
+    expect(r.held).toHaveLength(2);
+    expect(r.held.every(x=>x.reasons.includes('duplicate_source_canonical'))).toBe(true);
+  });
+  it('holds case variants of one annual UUID even across different canonical identities',()=>{
+    const annual='abcdefab-3333-4333-8333-abcdefabcdef';
+    const i=input();
+    const rows=[material(),material(2026,'66666666-6666-4666-8666-666666666666')]
+      .map((row,index)=>{
+        const annualItemId=index===0?annual:annual.toUpperCase();
+        return {...row,item:{...row.item,
+          membership:{...row.item.membership,annualItemId},
+          fieldVersion:{...row.item.fieldVersion,annualItemId}}};
+      });
+    const r=previewOnly({...i,previousYears:[{...i.previousYears[0],materials:rows}]});
+    expect(r.carry).toHaveLength(0);
+    expect(r.held).toHaveLength(2);
+    expect(r.held.every(x=>x.reasons.includes('duplicate_source_annual_item'))).toBe(true);
+  });
   it('copies verified fields including the national code leading zeros, not quantities or quota',()=>{
     const r=previewOnly(input());
     expect(r.sourceScope.planningYear).toBe(2026);
