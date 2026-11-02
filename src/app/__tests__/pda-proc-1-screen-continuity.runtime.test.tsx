@@ -105,8 +105,8 @@ vi.mock('@/features/reports/DecisionIntelligenceReportsScreen', () => ({
 vi.mock('@/features/command-center/CommandCenterScreen', () => ({
   CommandCenterScreen: () => <div data-testid="screen-22" />,
 }));
-vi.mock('@/features/central-needs/CentralNeedsScreen', () => ({
-  CentralNeedsScreen: () => <div data-testid="screen-23" />,
+vi.mock('@/features/central-needs/AnnualNeedsEntryScreen', () => ({
+  AnnualNeedsEntryScreen: () => <div data-testid="screen-23" />,
 }));
 
 import { AuthenticatedApp } from '../AuthenticatedApp';

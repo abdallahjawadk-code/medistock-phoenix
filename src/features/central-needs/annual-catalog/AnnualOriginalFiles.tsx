@@ -3,7 +3,7 @@ import type { ManualLang } from '../manual/manual-needs.i18n';
 import { newManualIdempotencyKey } from '../manual/manual-needs.service';
 import type { AnnualCatalogScope } from './annual-catalog.contract';
 import * as services from './annual-originals.service';
-import type { AnnualOriginalCaptureInput, AnnualOriginalWriteResult, AnnualOriginalUploadsPage } from './annual-originals.contract';
+import type { AnnualOriginal, AnnualOriginalCaptureInput, AnnualOriginalWriteResult, AnnualOriginalUploadsPage } from './annual-originals.contract';
 import { annualOriginalTimestampOrder } from './annual-originals.contract';
 import { ot } from './annual-originals.i18n';
 
@@ -26,6 +26,7 @@ interface Props {
   disabled?: boolean;
   api?: AnnualOriginalsUiApi;
   onScopeLockChange?: (locked: boolean) => void;
+  onReviewOriginal?: (original: AnnualOriginal, trigger: HTMLButtonElement) => void;
 }
 
 type UploadRow = AnnualOriginalUploadsPage['uploads'][number];
@@ -50,7 +51,7 @@ function FileMetadata({ row, lang }: { row: UploadRow; lang: ManualLang }) {
 }
 
 /** One actor/owner/year context. A pending write keeps its exact bytes and key until reconciliation. */
-function ScopedOriginalFiles({ lang, scope, actorId, canWrite, disabled = false, api = realAnnualOriginalsUiApi, onScopeLockChange }: Props) {
+function ScopedOriginalFiles({ lang, scope, actorId, canWrite, disabled = false, api = realAnnualOriginalsUiApi, onScopeLockChange, onReviewOriginal }: Props) {
   const [capability, setCapability] = useState<'loading' | 'ready' | 'absent' | 'failed'>('loading');
   const [history, setHistory] = useState<FileHistory>({ rows: [], cursor: null, loaded: false, busy: false, failure: null });
   const historyRef = useRef(history); historyRef.current = history;
@@ -242,6 +243,9 @@ function ScopedOriginalFiles({ lang, scope, actorId, canWrite, disabled = false,
         {history.loaded && !history.busy && !history.failure && history.rows.length === 0 && <p>{ot('empty', lang)}</p>}
         <ol>{history.rows.map((row) => <li key={row.upload.uploadId} className="prism-original-record"><FileMetadata row={row} lang={lang} />
           <button type="button" disabled={downloading} onClick={() => void download(row)} aria-label={`${ot('download', lang)}: ${row.upload.filename}`}>{ot('download', lang)}</button>
+          {onReviewOriginal && <button type="button" disabled={disabled || locked} onClick={event => onReviewOriginal(row.original, event.currentTarget)} aria-label={`${lang === 'ar' ? 'مراجعة هوية المواد' : 'Review material identity'}: ${row.upload.filename}`}>
+            {lang === 'ar' ? 'مراجعة هوية المواد' : 'Review material identity'}
+          </button>}
         </li>)}</ol>
         {history.cursor && history.failure === null && <button type="button" disabled={history.busy} onClick={() => void loadHistory(true)}>{ot('more', lang)}</button>}
       </section>
