@@ -1,0 +1,291 @@
+import { describe, expect, it } from 'vitest';
+import { prepareAnnualYearRollover, type RolloverPreviewInput, type RolloverSourceMaterial } from '../annual-year-rollover-preview';
+import type { AnnualFieldState } from '../annual-catalog.contract';
+
+const OWNER='11111111-1111-4111-8111-111111111111';
+const CANON='22222222-2222-4222-8222-222222222222';
+const ANNUAL='33333333-3333-4333-8333-333333333333';
+const VERSION='44444444-4444-4444-8444-444444444444';
+const SHA='a'.repeat(64);
+const valid=(s:string):AnnualFieldState=>({state:'known',value:s,origins:[{kind:'manual',decisionReference:'approved-source-version'}]});
+function material(year=2026, canonicalId=CANON):RolloverSourceMaterial {
+  const scope={ownerOrgId:OWNER,planningYear:year};
+  return {
+    item:{scope,membership:{scope,annualItemId:ANNUAL,canonicalItemId:canonicalId,status:'active',currentFieldVersionId:VERSION,occurrenceKeys:[]},
+      fieldVersion:{scope,annualItemId:ANNUAL,fieldVersionId:VERSION,versionNumber:2,
+        fields:{scientificName:valid('Paracetamol'),nameAr:valid('باراسيتامول'),nationalCode:valid('00001234'),
+          barcode:{state:'missing',reason:'none'},dosageForm:valid('tablet'),concentration:valid('500 mg'),unit:valid('tablet')}},
+      canonicalFingerprint:SHA,canonicalDrift:false,selectable:true,selectionBlockers:[],sourceOccurrenceCount:0,sourceAttestation:'client_attested'},
+    targetCanonical:{scope:{ownerOrgId:OWNER,planningYear:year+1},canonicalItemId:canonicalId,
+      canonicalSnapshot:{canonicalItemId:canonicalId,scientificName:'Paracetamol',nameAr:'باراسيتامول',nationalCode:'00001234',
+        barcode:null,dosageForm:'tablet',concentration:'500 mg',unit:'tablet',status:'active'},
+      canonicalFingerprint:SHA,eligible:true,missingRequired:[]},
+    classifications:[{label:'مسكنات',origin:'source',reference:'2026-sheet:3:12'}],
+  };
+}
+function input(year=2027):RolloverPreviewInput {
+  return {targetScope:{ownerOrgId:OWNER,planningYear:year},targetYearStatus:'active',
+    priorYearsComplete:true,targetMembershipsComplete:true,existingTargetCanonicalIds:[],
+    previousYears:[{scope:{ownerOrgId:OWNER,planningYear:year-1},approval:{status:'approved',reference:'annual-final-approved'},
+      itemsComplete:true,materials:[material(year-1)]}]};
+}
+const CASE_CANON='abcdefab-2222-4222-8222-abcdefabcdef';
+const CASE_ANNUAL='abcdefab-3333-4333-8333-abcdefabcdef';
+const CASE_VERSION='abcdefab-4444-4444-8444-abcdefabcdef';
+function caseMaterial():RolloverSourceMaterial {
+  const row=material(2026,CASE_CANON);
+  return {...row,item:{...row.item,
+    membership:{...row.item.membership,annualItemId:CASE_ANNUAL,currentFieldVersionId:CASE_VERSION},
+    fieldVersion:{...row.item.fieldVersion,annualItemId:CASE_ANNUAL,fieldVersionId:CASE_VERSION}}};
+}
+function withMaterial(row:RolloverSourceMaterial):RolloverPreviewInput {
+  const i=input();
+  return {...i,previousYears:[{...i.previousYears[0],materials:[row]}]};
+}
+const uuidComparisons:readonly {
+  name:string; original:string; reason:string;
+  alter:(row:RolloverSourceMaterial,id:string)=>RolloverSourceMaterial;
+}[]=[
+  {name:'current field reference',original:CASE_VERSION,reason:'source_version_stale',
+    alter:(row,id)=>({...row,item:{...row.item,membership:{...row.item.membership,currentFieldVersionId:id}}})},
+  {name:'field version identity',original:CASE_VERSION,reason:'source_version_stale',
+    alter:(row,id)=>({...row,item:{...row.item,fieldVersion:{...row.item.fieldVersion,fieldVersionId:id}}})},
+  {name:'membership annual identity',original:CASE_ANNUAL,reason:'source_version_stale',
+    alter:(row,id)=>({...row,item:{...row.item,membership:{...row.item.membership,annualItemId:id}}})},
+  {name:'field version annual identity',original:CASE_ANNUAL,reason:'source_version_stale',
+    alter:(row,id)=>({...row,item:{...row.item,fieldVersion:{...row.item.fieldVersion,annualItemId:id}}})},
+  {name:'canonical preview identity',original:CASE_CANON,reason:'canonical_missing_or_inactive',
+    alter:(row,id)=>({...row,targetCanonical:{...row.targetCanonical,canonicalItemId:id}})},
+  {name:'canonical snapshot identity',original:CASE_CANON,reason:'canonical_missing_or_inactive',
+    alter:(row,id)=>({...row,targetCanonical:{...row.targetCanonical,
+      canonicalSnapshot:{...row.targetCanonical.canonicalSnapshot,canonicalItemId:id}}})},
+];
+function previewOnly(value:RolloverPreviewInput) {
+  const r=prepareAnnualYearRollover(value);
+  if(r.status!=='PREVIEW_ONLY')throw new Error('unexpected_hold:'+r.reason);
+  return r;
+}
+function held(value:RolloverPreviewInput, code:string) {
+  const r=previewOnly(value);
+  expect(r.carry).toHaveLength(0);
+  expect(r.held[0]?.reasons).toContain(code);
+}
+
+describe('year rollover identity-only preview (never persists)',()=>{
+  it.each(uuidComparisons)('accepts a case-only UUID difference in $name and preserves raw evidence',({original,alter})=>{
+    const row=alter(caseMaterial(),original.toUpperCase());
+    const value=withMaterial(row), before=JSON.stringify(value);
+    const r=previewOnly(value);
+    expect(r.held).toHaveLength(0);
+    expect(r.carry).toHaveLength(1);
+    expect(r.carry[0]).toMatchObject({sourceAnnualItemId:row.item.membership.annualItemId,
+      sourceFieldVersionId:row.item.fieldVersion.fieldVersionId,canonicalItemId:CASE_CANON,
+      identity:{nationalCode:'00001234',scientificName:'Paracetamol',dosageForm:'tablet',concentration:'500 mg'},
+      classifications:[{label:'مسكنات',reference:'2026-sheet:3:12'}]});
+    expect(JSON.stringify(value)).toBe(before);
+  });
+  it.each(uuidComparisons)('holds a genuinely different UUID in $name',({reason,alter})=>{
+    held(withMaterial(alter(caseMaterial(),'ffffffff-ffff-4fff-8fff-ffffffffffff')),reason);
+  });
+  it.each(uuidComparisons)('rejects a malformed UUID in $name',({reason,alter})=>{
+    held(withMaterial(alter(caseMaterial(),'not-a-uuid')),reason);
+  });
+  it('rejects identical non-UUID source and canonical identifiers instead of accepting raw string equality',()=>{
+    const row=caseMaterial();
+    const malformed={...row,item:{...row.item,membership:{...row.item.membership,canonicalItemId:'not-a-uuid'}},
+      targetCanonical:{...row.targetCanonical,canonicalItemId:'not-a-uuid',
+        canonicalSnapshot:{...row.targetCanonical.canonicalSnapshot,canonicalItemId:'not-a-uuid'}}};
+    held(withMaterial(malformed),'source_identity_invalid');
+  });
+  it('accepts simultaneous version, annual and canonical case variants without mutating field origins',()=>{
+    let row=caseMaterial();
+    for(const c of uuidComparisons.filter(x=>['current field reference','field version annual identity',
+      'canonical preview identity','canonical snapshot identity'].includes(x.name))){
+      row=c.alter(row,c.original.toUpperCase());
+    }
+    const value=withMaterial(row), before=JSON.stringify(value);
+    expect(previewOnly(value).carry).toHaveLength(1);
+    expect(JSON.stringify(value)).toBe(before);
+  });
+  it('keeps owner scope exact because the shared scope contract does not require UUID owners',()=>{
+    const row=caseMaterial(), value=withMaterial(row);
+    const source=value.previousYears[0];
+    expect(()=>prepareAnnualYearRollover({...value,
+      targetScope:{...value.targetScope,ownerOrgId:'abcdefab-1111-4111-8111-abcdefabcdef'},
+      previousYears:[{...source,scope:{...source.scope,ownerOrgId:'ABCDEFAB-1111-4111-8111-ABCDEFABCDEF'}}]}))
+      .toThrow('annual_rollover_source_scope_invalid');
+    expect(()=>prepareAnnualYearRollover({...value,targetScope:{...value.targetScope,ownerOrgId:'owner-a'},
+      previousYears:[{...source,scope:{...source.scope,ownerOrgId:'OWNER-A'}}]}))
+      .toThrow('annual_rollover_source_scope_invalid');
+  });
+  it('still rejects invalid source provenance when UUID case variants are aligned for validation',()=>{
+    const row=caseMaterial();
+    const changed={...row,item:{...row.item,
+      membership:{...row.item.membership,currentFieldVersionId:CASE_VERSION.toUpperCase()},
+      fieldVersion:{...row.item.fieldVersion,fields:{...row.item.fieldVersion.fields,
+        nationalCode:{state:'known' as const,value:'00001234',origins:[{kind:'source' as const,
+          occurrenceKey:'unreviewed-source',field:'nationalCode' as const}]}}}}};
+    const value=withMaterial(changed),before=JSON.stringify(value);
+    held(value,'source_field_unresolved');
+    expect(JSON.stringify(value)).toBe(before);
+  });
+  it('still rejects an invalid source version number after matching the UUID references',()=>{
+    const row=caseMaterial();
+    held(withMaterial({...row,item:{...row.item,
+      membership:{...row.item.membership,currentFieldVersionId:CASE_VERSION.toUpperCase()},
+      fieldVersion:{...row.item.fieldVersion,versionNumber:0}}}),'source_field_unresolved');
+  });
+  it('preserves source evidence and textual national codes when comparing UUID keys',()=>{
+    const canonical='ABCDEFAB-2222-4222-8222-ABCDEFABCDEF';
+    const i=input();
+    const value={...i,previousYears:[{...i.previousYears[0],materials:[material(2026,canonical)]}]};
+    const before=JSON.stringify(value);
+    const r=previewOnly(value);
+    expect(r.carry).toHaveLength(1);
+    expect(r.carry[0]?.canonicalItemId).toBe(canonical);
+    expect(r.carry[0]?.identity.nationalCode).toBe('00001234');
+    expect(JSON.stringify(value)).toBe(before);
+  });
+  it('holds a target identity regardless of UUID letter case',()=>{
+    const canonical='abcdefab-2222-4222-8222-abcdefabcdef';
+    const i=input();
+    held({...i,existingTargetCanonicalIds:[canonical.toUpperCase()],
+      previousYears:[{...i.previousYears[0],materials:[material(2026,canonical)]}]},
+    'target_already_contains_material');
+  });
+  it('rejects case variants of the same target UUID as duplicate evidence',()=>{
+    const canonical='abcdefab-2222-4222-8222-abcdefabcdef';
+    expect(()=>prepareAnnualYearRollover({...input(),
+      existingTargetCanonicalIds:[canonical,canonical.toUpperCase()]}))
+      .toThrow('annual_rollover_target_memberships_invalid');
+  });
+  it('holds every source row with case variants of the same canonical UUID',()=>{
+    const canonical='abcdefab-2222-4222-8222-abcdefabcdef';
+    const i=input(), first=material(2026,canonical), other=material(2026,canonical.toUpperCase());
+    const second={...other,item:{...other.item,
+      membership:{...other.item.membership,annualItemId:'55555555-5555-4555-8555-555555555555'},
+      fieldVersion:{...other.item.fieldVersion,annualItemId:'55555555-5555-4555-8555-555555555555'}}};
+    const r=previewOnly({...i,previousYears:[{...i.previousYears[0],materials:[first,second]}]});
+    expect(r.carry).toHaveLength(0);
+    expect(r.held).toHaveLength(2);
+    expect(r.held.every(x=>x.reasons.includes('duplicate_source_canonical'))).toBe(true);
+  });
+  it('holds case variants of one annual UUID even across different canonical identities',()=>{
+    const annual='abcdefab-3333-4333-8333-abcdefabcdef';
+    const i=input();
+    const rows=[material(),material(2026,'66666666-6666-4666-8666-666666666666')]
+      .map((row,index)=>{
+        const annualItemId=index===0?annual:annual.toUpperCase();
+        return {...row,item:{...row.item,
+          membership:{...row.item.membership,annualItemId},
+          fieldVersion:{...row.item.fieldVersion,annualItemId}}};
+      });
+    const r=previewOnly({...i,previousYears:[{...i.previousYears[0],materials:rows}]});
+    expect(r.carry).toHaveLength(0);
+    expect(r.held).toHaveLength(2);
+    expect(r.held.every(x=>x.reasons.includes('duplicate_source_annual_item'))).toBe(true);
+  });
+  it('copies verified fields including the national code leading zeros, not quantities or quota',()=>{
+    const r=previewOnly(input());
+    expect(r.sourceScope.planningYear).toBe(2026);
+    expect(r.targetScope.planningYear).toBe(2027);
+    expect(r.carry).toHaveLength(1);
+    expect(r.carry[0]?.identity.nationalCode).toBe('00001234');
+    expect(r.carry[0]?.identity.dosageForm).toBe('tablet');
+    expect(r.carry[0]?.identity.barcode).toBeNull();
+    expect(r.carry[0]?.classifications).toEqual([{label:'مسكنات',reference:'2026-sheet:3:12'}]);
+    const output=JSON.stringify(r);
+    for(const key of ['quantityText','annualQuantity','monthlyAllocation','beneficiaryOrganizationId','stock','approvedQuota'])
+      expect(output).not.toContain(key);
+  });
+  it('does not silently copy 2027 entries into 2028 from 2026',()=>{
+    const r=previewOnly(input(2028));
+    expect(r.sourceScope.planningYear).toBe(2027);
+    expect(r.targetScope.planningYear).toBe(2028);
+  });
+  it('selects the latest legally approved older year rather than the latest active year',()=>{
+    const i=input();
+    const older={scope:{ownerOrgId:OWNER,planningYear:2025},approval:{status:'approved' as const,reference:'older'},
+      itemsComplete:true,materials:[{...material(2025),targetCanonical:{...material(2025).targetCanonical,scope:{ownerOrgId:OWNER,planningYear:2027}}}]};
+    const newest={scope:{ownerOrgId:OWNER,planningYear:2026},approval:{status:'unapproved' as const},
+      itemsComplete:true,materials:[]};
+    const r=previewOnly({...i,previousYears:[newest,older]});
+    expect(r.sourceScope.planningYear).toBe(2025);
+    expect(r.carry).toHaveLength(1);
+    expect(r.held).toHaveLength(0);
+  });
+  it('holds year with missing or archived target, incomplete source/target census and missing approval',()=>{
+    expect(prepareAnnualYearRollover({...input(),targetYearStatus:'missing'})).toMatchObject({status:'HOLD',reason:'target_year_not_active'});
+    expect(prepareAnnualYearRollover({...input(),targetYearStatus:'archived'})).toMatchObject({status:'HOLD',reason:'target_year_not_active'});
+    expect(prepareAnnualYearRollover({...input(),priorYearsComplete:false})).toMatchObject({status:'HOLD',reason:'year_index_incomplete'});
+    expect(prepareAnnualYearRollover({...input(),targetMembershipsComplete:false})).toMatchObject({status:'HOLD',reason:'target_memberships_incomplete'});
+    expect(prepareAnnualYearRollover({...input(),previousYears:[]})).toMatchObject({status:'HOLD',reason:'source_year_unapproved'});
+    const a=input();expect(prepareAnnualYearRollover({...a,previousYears:[{...a.previousYears[0],itemsComplete:false}]})).toMatchObject({status:'HOLD',reason:'source_items_incomplete'});
+  });
+  it('holds all rows with duplicate canonical identities instead of choosing one',()=>{
+    const i=input();const row=material();
+    const alternateAnnualId='55555555-5555-4555-8555-555555555555';
+    const other:RolloverSourceMaterial={...row,item:{...row.item,
+      membership:{...row.item.membership,annualItemId:alternateAnnualId},
+      fieldVersion:{...row.item.fieldVersion,annualItemId:alternateAnnualId}}};
+    const r=previewOnly({...i,previousYears:[{...i.previousYears[0],materials:[row,other]}]});
+    expect(r.carry).toHaveLength(0);expect(r.held).toHaveLength(2);
+    expect(r.held.every(x=>x.reasons.includes('duplicate_source_canonical'))).toBe(true);
+  });
+  it('holds duplicate annual records even when canonical identities differ',()=>{
+    const i=input(),a=material();
+    const alternative='66666666-6666-4666-8666-666666666666';
+    const b:RolloverSourceMaterial={...a,
+      item:{...a.item,membership:{...a.item.membership,canonicalItemId:alternative}},
+      targetCanonical:{...a.targetCanonical,canonicalItemId:alternative,
+        canonicalSnapshot:{...a.targetCanonical.canonicalSnapshot,canonicalItemId:alternative}}};
+    const r=previewOnly({...i,previousYears:[{...i.previousYears[0],materials:[a,b]}]});
+    expect(r.carry).toHaveLength(0);
+    expect(r.held.every(x=>x.reasons.includes('duplicate_source_annual_item'))).toBe(true);
+  });
+  it('does not create duplicate target membership after an existing successful transaction',()=>{
+    held({...input(),existingTargetCanonicalIds:[CANON]},'target_already_contains_material');
+  });
+  it('holds changed legal identity or fingerprint drift',()=>{
+    const i=input();const m=material();
+    held({...i,previousYears:[{...i.previousYears[0],materials:[{...m,targetCanonical:{...m.targetCanonical,canonicalFingerprint:'b'.repeat(64)}}]}]},'canonical_fingerprint_drift');
+    held({...i,previousYears:[{...i.previousYears[0],materials:[{...m,item:{...m.item,canonicalDrift:true}}]}]},'canonical_fingerprint_drift');
+  });
+  it('refuses retired, preparing, unresolved, and legally inactive materials',()=>{
+    for(const status of ['retired','preparing'] as const){
+      const m=material();held({...input(),previousYears:[{...input().previousYears[0],materials:[{...m,item:{...m.item,membership:{...m.item.membership,status}}}]}]},'source_not_selectable');
+    }
+    const m=material();held({...input(),previousYears:[{...input().previousYears[0],materials:[{...m,targetCanonical:{...m.targetCanonical,eligible:false,canonicalSnapshot:{...m.targetCanonical.canonicalSnapshot,status:'retired'}}}]}]},'canonical_missing_or_inactive');
+  });
+  it('holds stale annual field snapshots and missing mandatory source identity',()=>{
+    const m=material();
+    held({...input(),previousYears:[{...input().previousYears[0],materials:[{...m,item:{...m.item,fieldVersion:{...m.item.fieldVersion,fieldVersionId:'55555555-5555-4555-8555-555555555555'}}}]}]},'source_version_stale');
+    const original=material();
+    const next:RolloverSourceMaterial={...original,item:{...original.item,
+      fieldVersion:{...original.item.fieldVersion,
+        fields:{...original.item.fieldVersion.fields,unit:{state:'missing',reason:'unknown'}}}}};
+    held({...input(),previousYears:[{...input().previousYears[0],materials:[next]}]},'source_field_unresolved');
+  });
+  it('requires reviewed source classification and unchanged reference',()=>{
+    const m=material();
+    held({...input(),previousYears:[{...input().previousYears[0],materials:[{...m,classifications:[]}]}]},'source_classification_unreviewed');
+    held({...input(),previousYears:[{...input().previousYears[0],materials:[{...m,classifications:[{label:'new',origin:'proposed',reference:'no-reviewed-source'}]}]}]},'source_classification_unreviewed');
+  });
+  it('does not cross owner, future year or canonical target preview scope',()=>{
+    const i=input();const a=material();
+    expect(()=>prepareAnnualYearRollover({...i,previousYears:[{...i.previousYears[0],scope:{ownerOrgId:'99999999-9999-4999-8999-999999999999',planningYear:2026}}]})).toThrow('annual_rollover_source_scope_invalid');
+    expect(()=>prepareAnnualYearRollover({...i,previousYears:[{...i.previousYears[0],scope:{ownerOrgId:OWNER,planningYear:2028}}]})).toThrow('annual_rollover_source_scope_invalid');
+    expect(()=>prepareAnnualYearRollover({...i,previousYears:[{...i.previousYears[0],materials:[{...a,targetCanonical:{...a.targetCanonical,scope:{...a.targetCanonical.scope,planningYear:2028}}}]}]})).toThrow('annual_catalog_scope_mismatch');
+  });
+  it('holds missing or colliding annual year evidence and malformed target memberships',()=>{
+    const i=input();expect(prepareAnnualYearRollover({...i,previousYears:[...i.previousYears,...i.previousYears]})).toMatchObject({status:'HOLD',reason:'duplicate_year_evidence'});
+    expect(()=>prepareAnnualYearRollover({...i,existingTargetCanonicalIds:[CANON,CANON]})).toThrow('annual_rollover_target_memberships_invalid');
+    expect(()=>prepareAnnualYearRollover({...i,existingTargetCanonicalIds:['not-a-uuid']})).toThrow('annual_rollover_target_memberships_invalid');
+  });
+  it('bounds untrusted input and never infers approval from active status',()=>{
+    const i=input();
+    expect(()=>prepareAnnualYearRollover({...i,previousYears:Array(102).fill(i.previousYears[0])})).toThrow('annual_rollover_input_limit');
+    expect(prepareAnnualYearRollover({...i,previousYears:[{...i.previousYears[0],approval:{status:'unapproved'}}]})).toMatchObject({status:'HOLD',reason:'source_year_unapproved'});
+    expect(prepareAnnualYearRollover({...i,previousYears:[{...i.previousYears[0],approval:{status:'approved',reference:''}}]})).toMatchObject({status:'HOLD',reason:'source_year_unapproved'});
+  });
+});
