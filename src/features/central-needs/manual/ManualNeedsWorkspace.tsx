@@ -22,8 +22,11 @@ import { checkManualQuantityText, proposeAsciiDigits } from './manual-quantity';
 import { mt, annualNeedsErrorText, manualUnitText, quantityReasonText, type ManualLang } from './manual-needs.i18n';
 import { AnnualCatalogContractError, type AnnualCatalogItemResult } from '../annual-catalog/annual-catalog-server.contract';
 import type { AnnualNeedBinding } from '../annual-catalog/annual-needs.contract';
+import { MonthlyProposalPanel } from '../allocation/MonthlyProposalPanel';
+import type { getMonthlyPolicyReference } from '../allocation/monthly-policy.service';
 
 export interface ManualNeedsApi {
+  getMonthlyPolicyReference?: typeof getMonthlyPolicyReference;
   getManualCatalogLabels?: typeof getManualCatalogLabels;
   getManualCapabilities: typeof realApi.getManualCapabilities;
   listManualNeedEvents: typeof realApi.listManualNeedEvents;
@@ -362,6 +365,16 @@ export function ManualNeedsWorkspace({ lang, organizationId, planRevisionId, rev
           )}
           {(!pending || pending.kind !== 'void') && <p id="manual-qty-hint" className="prism-field-hint">{mt('quantityHint', lang)}</p>}
           <p id="manual-qty-error" role="alert" className="prism-field-error">{quantityError}</p>
+          {annualMode && selectedAnnualItem && selectedAnnualItem.scope.ownerOrgId === organizationId
+            && selectedAnnualItem.membership.canonicalItemId === editorItemId
+            && selectedAnnualItem.fieldVersion.fields.unit.state === 'known'
+            && (editingRow?.beneficiaryOrganizationId ?? beneficiary) && pending?.kind !== 'void'
+            && <MonthlyProposalPanel key={planRevisionId} lang={lang} annualQuantity={quantity}
+              readReference={api.getMonthlyPolicyReference} context={{ ownerOrgId: organizationId,
+                planningYear: selectedAnnualItem.scope.planningYear, annualItemId: selectedAnnualItem.membership.annualItemId,
+                fieldVersionId: selectedAnnualItem.fieldVersion.fieldVersionId, canonicalItemId: editorItemId,
+                unit: selectedAnnualItem.fieldVersion.fields.unit.value,
+                beneficiaryOrganizationId: editingRow?.beneficiaryOrganizationId ?? beneficiary }} />}
           <label>{mt('reason', lang)}
             <input ref={pending?.kind === 'void' ? editorInput : undefined} value={reason} disabled={scopeLocked} onChange={(e) => setReason(e.target.value)} />
           </label>

@@ -34,8 +34,8 @@ export async function getNeedsFeatures(): Promise<NeedsFeatures> {
     dossiers: data.dossiers === true, workbookIntake: data.workbook_intake === true && data.workbook_matrix_v2 === true };
 }
 
-export async function listNeedsDossiers(organizationId: string, year: number): Promise<NeedsDossier[]> {
-  const { data, error } = await supabase.rpc('phoenix_central_needs_list_dossiers', { p_organization_id: organizationId, p_plan_year: year });
+export async function listNeedsDossiers(organizationId: string, year: number, transactionSafe = false): Promise<NeedsDossier[]> {
+  const { data, error } = await supabase.rpc(transactionSafe ? 'phoenix_manual_read_dossiers_v1' : 'phoenix_central_needs_list_dossiers', { p_organization_id: organizationId, p_plan_year: year });
   if (error) throw centralNeedsErrorFromPostgrest(error);
   return (data ?? []).map((r: Record<string, unknown>) => ({ id: r.id as string, key: r.key as string, name: r.name as string,
     latestRevisionId: r.latest_revision_id as string | null, latestStatus: r.latest_status as string | null,
@@ -59,8 +59,8 @@ export async function openNeedsDossierCorrection(organizationId: string, year: n
   return {planRevisionId:data.plan_revision_id as string};
 }
 
-export async function readAnnualNeeds(organizationId: string, year: number): Promise<AnnualNeedRow[]> {
-  const { data, error } = await supabase.rpc('phoenix_central_needs_annual_summary', { p_organization_id: organizationId, p_plan_year: year });
+export async function readAnnualNeeds(organizationId: string, year: number, transactionSafe = false): Promise<AnnualNeedRow[]> {
+  const { data, error } = await supabase.rpc(transactionSafe ? 'phoenix_manual_read_annual_summary_v1' : 'phoenix_central_needs_annual_summary', { p_organization_id: organizationId, p_plan_year: year });
   if (error) throw centralNeedsErrorFromPostgrest(error);
   return (data ?? []).map((r: Record<string, unknown>) => {
     const row: AnnualNeedRow = { dossierId: r.dossier_id as string, dossierName: r.dossier_name as string,

@@ -448,7 +448,8 @@ describe('CN-2B — navigation authorization', () => {
   });
 
   it('the route and the nav entry both name the constant screen id', () => {
-    expect(read('src/app/AuthenticatedApp.tsx')).toContain('case 23: return <CentralNeedsScreen />');
+    expect(read('src/app/AuthenticatedApp.tsx')).toContain('case 23: return <AnnualNeedsEntryScreen />');
+    expect(read('src/features/central-needs/AnnualNeedsEntryScreen.tsx')).toContain('<CentralNeedsScreen />');
     expect(read('src/shared/ui/PhoenixSidebar.tsx')).toContain("{ screen: 23, icon: 'reports', labelKey: 'cn2b_nav' }");
   });
 });
