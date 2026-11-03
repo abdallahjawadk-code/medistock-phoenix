@@ -4,6 +4,7 @@ import { useIsMobileViewport } from '@/shared/ui/useResponsiveViewport';
 import { t } from '@/shared/i18n/strings';
 import { PhoenixSidebar } from './PhoenixSidebar';
 import './prism/prism-shell.css';
+import './prism/production-parity.css';
 import { PhoenixMobileDrawer } from './PhoenixMobileDrawer';
 import { PhoenixTopbar } from './PhoenixTopbar';
 import { PwaInstallPrompt } from '@/shared/pwa/PwaInstallPrompt';
@@ -90,7 +91,7 @@ function PhoenixAppShellInner({ children, currentScreen, onNavigate, onLogout }:
   const title = t(SCREEN_TITLE_KEYS[currentScreen] ?? 'nav_decision_reports', lang);
 
   return (
-    <div dir={dir} data-pharma-screen={currentScreen} className="premium-shell nexus-shell prism-shell" style={{
+    <div dir={dir} data-pharma-screen={currentScreen} className="premium-shell nexus-shell prism-shell ui-production-parity" style={{
       display: 'flex',
       flexDirection: 'row',
       minHeight: '100dvh',

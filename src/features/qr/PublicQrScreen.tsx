@@ -9,6 +9,7 @@ import { PhoenixLoadingState } from '@/shared/ui/PhoenixLoadingState';
 import { PhoenixErrorState } from '@/shared/ui/PhoenixErrorState';
 import { PhoenixStatusBadge } from '@/shared/ui/PhoenixStatusBadge';
 import { getExpiryBucketStyle } from '@/features/alerts/materialAlertEngine';
+import '@/shared/ui/prism/production-parity.css';
 
 /**
  * AVAILABILITY-ALERTS-QR-POLISH-D
@@ -239,6 +240,7 @@ export function PublicQrScreen({ publicId }: Props) {
   return (
     <div
       className="premium-qr-public-shell nexus-qr-public"
+      data-ui-production-parity="public"
       style={{
         minHeight: '100dvh',
         display: 'flex',

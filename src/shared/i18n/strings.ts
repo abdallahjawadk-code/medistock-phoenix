@@ -1899,6 +1899,7 @@ export const T: Dict = {
   cn2b_revstatus_approved: { ar: 'معتمدة', en: 'Approved' },
   cn2b_revstatus_superseded: { ar: 'مستبدلة', en: 'Superseded' },
   cn2b_revstatus_rejected: { ar: 'مرفوضة', en: 'Rejected' },
+  cn2b_revstatus_withdrawn: { ar: 'مسحوبة', en: 'Withdrawn' },
   cn2b_choose_file: { ar: 'اختر ملف XLS/XLSX/CSV/ZIP', en: 'Choose an XLS/XLSX/CSV/ZIP file' },
   cn2b_kind_file: { ar: 'ملف مفرد', en: 'Single workbook' },
   cn2b_kind_zip: { ar: 'أرشيف مضغوط', en: 'ZIP archive' },

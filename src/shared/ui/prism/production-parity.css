@@ -1,0 +1,250 @@
+/* UI-PRODUCTION-PARITY. Existing interaction, route, data and semantic-status
+   owners are unchanged. Scope beats the historical Molecular paint without
+   rewriting its frozen files or replacing global design tokens. */
+@import './prism-fonts.css';
+
+html[data-pharma-design][data-phoenix-ui-phase][data-phoenix-visual] .prism-shell.ui-production-parity {
+  --bg: var(--p4-wash);
+  --surface: var(--p4-panel);
+  --surface2: var(--p4-wash);
+  --field: var(--p4-panel);
+  --line: var(--p4-line);
+  --text: var(--p4-ink);
+  --muted: var(--p4-muted);
+  --cyan: var(--p4-accent);
+  --cyanDim: var(--p4-accent);
+  --chip: var(--p4-selected);
+  --hover: var(--p4-selected);
+  --s: var(--p4-panel);
+  --s2: var(--p4-wash);
+  --sh: var(--p4-panel);
+  --t: var(--p4-ink);
+  --t2: var(--p4-muted);
+  --t3: var(--p4-muted);
+  --p: var(--p4-accent);
+  --pd: var(--p4-accent);
+  --p2: var(--p4-selected);
+  --brd: var(--p4-line);
+  --font-sans: 'Noto Sans Arabic Variable', system-ui, sans-serif;
+  --font-display: 'Changa', 'Noto Sans Arabic Variable', system-ui, sans-serif;
+  --pharma-canvas-top: var(--p4-wash);
+  --pharma-selected: var(--p4-selected);
+  --pharma-brass: var(--p4-accent);
+  --pharma-pine: #1554f5;
+  --pharma-pine-soft: #1554f5;
+  --pharma-header-line: var(--p4-line);
+  background: var(--p4-wash) !important;
+  font-family: var(--font-sans);
+  color: var(--p4-ink);
+
+  & .nexus-app-column { background: var(--p4-wash) !important; }
+  & #phoenix-main {
+    background: var(--p4-wash) !important;
+    border-start-start-radius: 0;
+    padding: 24px !important;
+    scrollbar-color: var(--p4-muted) transparent;
+  }
+  & #phoenix-main > div { min-inline-size: 0; }
+  & #phoenix-main :is(.nexus-it-header, .nexus-a5-header, .nexus-a6-header, .rac3-header, .cn2b-header) {
+    background: var(--p4-panel) !important;
+    border: 1px solid var(--p4-line) !important;
+    border-radius: 16px !important;
+    box-shadow: none !important;
+  }
+  & #phoenix-main :is(h1, h2, h3) { font-family: var(--font-display) !important; text-wrap: balance; }
+  & #phoenix-main :is(.phoenix-card, .premium-card, .premium-kpi-card, .rac3-kpi) {
+    background: var(--p4-panel) !important;
+    border-color: var(--p4-line) !important;
+    border-radius: 16px !important;
+    box-shadow: 0 4px 18px rgb(17 29 66 / 4%) !important;
+  }
+  & #phoenix-main :is([role='tablist'], .nexus-it-tabs, .nexus-a6-tabs) {
+    background: var(--p4-panel) !important;
+    border: 1px solid var(--p4-line) !important;
+    border-radius: 12px !important;
+    box-shadow: none !important;
+    padding: 5px !important;
+    gap: 5px !important;
+    max-inline-size: 100%;
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+  & #phoenix-main :is([role='tab'], .nexus-it-tab) {
+    min-block-size: 44px;
+    flex-shrink: 0;
+    border-radius: 8px !important;
+    font-family: inherit;
+  }
+  & #phoenix-main :is([role='tab'][aria-selected='true'], .nexus-it-tab[data-active='true']) {
+    background: #1554f5 !important;
+    color: #fff !important;
+    border-color: #1554f5 !important;
+    box-shadow: none !important;
+  }
+  & #phoenix-main .phoenix-button[data-variant='primary'] {
+    background: #1554f5 !important;
+    color: #fff !important;
+    border-color: #1554f5 !important;
+    border-radius: 10px !important;
+    box-shadow: none !important;
+  }
+  & #phoenix-main :is(.nexus-field__control, .premium-field, .nexus-select) {
+    background: var(--p4-panel) !important;
+    color: var(--p4-ink);
+    border-color: var(--p4-line) !important;
+    border-radius: 10px !important;
+    min-block-size: 44px;
+  }
+  & #phoenix-main :is(button, a, input, select, textarea, summary, [tabindex]):focus-visible {
+    outline: 3px solid var(--p4-focus) !important;
+    outline-offset: 2px;
+  }
+  & > aside.premium-sidebar[data-pharma-nav='rail'] {
+    padding-inline: 8px;
+    & .pharma-nav__masthead { min-height: 80px !important; }
+    & .premium-nav-item {
+      min-block-size: 48px !important;
+      margin-block: 4px;
+      border-radius: 9px !important;
+    }
+    & .premium-nav-item[data-active='true'] {
+      background: #153453 !important;
+      border-inline-start: 3px solid #1554f5 !important;
+      box-shadow: none !important;
+      color: #fff !important;
+    }
+    & .nexus-nav-icon svg { inline-size: 22px; block-size: 22px; }
+  }
+  & .premium-topbar {
+    background: var(--p4-panel) !important;
+    min-block-size: 76px !important;
+    box-shadow: none !important;
+    & .nexus-topbar-heading { font-size: 20px; }
+  }
+  & .prism-topbar-brand {
+    color: var(--p4-ink);
+    font-family: 'Sora', system-ui, sans-serif;
+    font-size: 16px;
+    font-weight: 650;
+    white-space: nowrap;
+    & span { color: var(--p4-accent); font-weight: 450; }
+  }
+  & .prism-command-search { max-inline-size: 580px; }
+  & #phoenix-mobile-drawer .premium-mobile-drawer { border-radius: 0 !important; }
+  &[dir='ltr'] { --font-sans: 'Sora', system-ui, sans-serif; --font-display: 'Sora', system-ui, sans-serif; }
+}
+
+/* External Phoenix identity stays distinct from internal PRISM. Existing hero,
+   exact gold/teal emblems, form fields and authentication actions are retained. */
+html[data-pharma-design][data-phoenix-ui-phase][data-phoenix-visual][data-theme] [data-ui-production-parity='public']:is(.nexus-login, .nexus-welcome, .nexus-qr-public) {
+  --public-bg: #f2f7fe;
+  --public-surface: #fff;
+  --public-ink: #122335;
+  --public-muted: #546b82;
+  --public-line: #d5e2f5;
+  --entry-paper: var(--public-bg);
+  --entry-surface: var(--public-surface);
+  --entry-ink: var(--public-ink);
+  --entry-muted: var(--public-muted);
+  --entry-line: var(--public-line);
+  --entry-field-line: var(--public-muted);
+  --entry-field: var(--public-bg);
+  --entry-pine: #0d4f6d;
+  --entry-gold: #ddba63;
+  --entry-ring: #0e7ea6;
+  --entry-shadow: 0 16px 40px rgb(18 35 53 / 8%);
+  --surface: var(--public-surface);
+  --surface2: var(--public-bg);
+  --field: var(--public-bg);
+  --text: var(--public-ink);
+  --muted: var(--public-muted);
+  --line: var(--public-line);
+  --s: var(--public-surface);
+  --s2: var(--public-bg);
+  --t: var(--public-ink);
+  --t2: var(--public-muted);
+  --brd: var(--public-line);
+  --pharma-pine: #0a2034;
+  --pharma-pine-deep: #061625;
+  --pharma-pine-soft: #14384d;
+  --pharma-on-pine: #f5f8fc;
+  --pharma-on-pine-muted: #c0d3e5;
+  --pharma-brass: #ddba63;
+  --pharma-header-line: #29465c;
+  --pharma-selected: #eaf1ff;
+  --font-sans: 'Noto Sans Arabic Variable', system-ui, sans-serif;
+  --font-display: 'Changa', 'Noto Sans Arabic Variable', system-ui, sans-serif;
+  font-family: var(--font-sans) !important;
+  background: var(--public-bg) !important;
+  color: var(--public-ink) !important;
+
+  &.nexus-login { margin: 0; inline-size: 100%; min-block-size: 100svh; border: 0; border-radius: 0; }
+
+  & :is(.pharma-login-sculpture, .pharma-welcome-sculpture) { display: none; }
+  & :is(.nexus-login__card, .nexus-login__brand) { max-inline-size: 460px; inline-size: 100%; }
+  & .nexus-login__auth { background: var(--public-bg) !important; }
+  & .nexus-login__card {
+    background: var(--public-surface) !important;
+    color: var(--public-ink) !important;
+    border: 1px solid var(--public-line) !important;
+    border-radius: 18px !important;
+    padding: 28px !important;
+  }
+  & :is(.nexus-login__brand-name, .nexus-login__card h2, .nexus-login__card label) {
+    color: var(--public-ink) !important;
+    font-family: var(--font-sans) !important;
+  }
+  & :is(.nexus-login__card h2) { font-family: var(--font-display) !important; }
+  & :is(.nexus-login__brand-department, .nexus-login__card p) { color: var(--public-muted) !important; }
+  & .nexus-login__card input {
+    background: transparent !important;
+    color: var(--public-ink) !important;
+    font-family: var(--font-sans) !important;
+    border-radius: 10px !important;
+  }
+  & .nexus-login__submit {
+    background: #0d4f6d !important;
+    border-color: #0d4f6d !important;
+    color: #fff !important;
+    border-radius: 10px !important;
+    min-block-size: 48px;
+  }
+  & .nexus-login__art { background: #061625 !important; }
+  & .nexus-welcome__stage { background: #061625 !important; }
+  & .nexus-welcome__scrim { background: linear-gradient(155deg, rgb(6 22 37 / 8%), rgb(6 22 37 / 66%)) !important; }
+  & .pharma-auth__edition { background: rgb(6 22 37 / 84%) !important; color: #f5f8fc; }
+  & .pharma-auth__wash { background: linear-gradient(180deg, rgb(6 22 37 / 8%), rgb(6 22 37 / 90%)) !important; }
+  & :is(.nexus-login__art-caption, .nexus-login__art-caption h1, .nexus-login__art-lede) { color: #f5f8fc !important; }
+  & :is(.nexus-login__trust-row, .nexus-login__kicker) { color: #ddba63 !important; }
+  & .nexus-login__brand-name { font-family: 'Sora', system-ui, sans-serif !important; }
+  & :is(button, input, a):focus-visible { outline: 3px solid var(--cyan) !important; outline-offset: 3px; }
+}
+html[data-pharma-design][data-phoenix-ui-phase][data-phoenix-visual][data-theme='dark'] [data-ui-production-parity='public']:is(.nexus-login, .nexus-welcome, .nexus-qr-public) {
+  --public-bg: #07111f;
+  --public-surface: #0a1729;
+  --public-ink: #f5f8fc;
+  --public-muted: #b1c5e4;
+  --public-line: #29465c;
+  --entry-pine: #80cfff;
+  --entry-ring: #62e9ff;
+}
+html[lang='en'][data-pharma-design][data-phoenix-ui-phase][data-phoenix-visual][data-theme] [data-ui-production-parity='public']:is(.nexus-login, .nexus-welcome, .nexus-qr-public) {
+  --font-sans: 'Sora', system-ui, sans-serif;
+  --font-display: 'Sora', system-ui, sans-serif;
+}
+@media (max-width: 1279px) {
+  .ui-production-parity .prism-topbar-brand { display: none; }
+}
+@media (max-width: 767px) {
+  html[data-pharma-design][data-phoenix-ui-phase][data-phoenix-visual] .prism-shell.ui-production-parity {
+    & #phoenix-main { padding: 16px 12px calc(24px + env(safe-area-inset-bottom, 0px)) !important; }
+    & .premium-topbar { min-block-size: 0 !important; gap: 8px !important; }
+    & .premium-topbar .nexus-topbar-heading { font-size: 18px; }
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ui-production-parity :is(button, a) { transition: none !important; }
+}
+@media (forced-colors: active) {
+  .ui-production-parity [role='tab'][aria-selected='true'] { outline: 2px solid Highlight !important; }
+}

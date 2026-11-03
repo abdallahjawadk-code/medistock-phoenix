@@ -14,7 +14,7 @@ export function c4Record(value: unknown): Record<string, unknown> | null {
 }
 function exact(value: unknown, fields: string[]): value is Record<string, unknown> {
   const record = c4Record(value);
-  return !!record && Object.keys(record).length === fields.length && fields.every(key => Object.hasOwn(record, key));
+  return !!record && Object.keys(record).length === fields.length && fields.every(key => Object.prototype.hasOwnProperty.call(record, key));
 }
 export async function readC4MembershipInput(request: Request): Promise<C4MembershipInput> {
   if (!request.headers.get('content-type')?.toLowerCase().startsWith('application/json')) throw new Error('invalid_request');

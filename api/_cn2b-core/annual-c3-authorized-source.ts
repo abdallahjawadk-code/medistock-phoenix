@@ -41,7 +41,7 @@ function reject(name: string): never { throw new Error('annual_c3_' + name); }
 function object(value: unknown, fields: readonly string[], label: string): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return reject(label);
   const record = value as Record<string, unknown>;
-  if (Object.keys(record).length !== fields.length || fields.some(k => !Object.hasOwn(record, k))) {
+  if (Object.keys(record).length !== fields.length || fields.some(k => !Object.prototype.hasOwnProperty.call(record, k))) {
     return reject(label);
   }
   return record;
