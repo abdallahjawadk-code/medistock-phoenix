@@ -210,6 +210,8 @@ html[data-pharma-design][data-phoenix-ui-phase][data-phoenix-visual][data-theme]
     min-block-size: 48px;
   }
   & .nexus-login__art { background: #061625 !important; }
+  & .nexus-welcome__stage { background: #061625 !important; }
+  & .nexus-welcome__scrim { background: linear-gradient(155deg, rgb(6 22 37 / 8%), rgb(6 22 37 / 66%)) !important; }
   & .pharma-auth__edition { background: rgb(6 22 37 / 84%) !important; color: #f5f8fc; }
   & .pharma-auth__wash { background: linear-gradient(180deg, rgb(6 22 37 / 8%), rgb(6 22 37 / 90%)) !important; }
   & :is(.nexus-login__art-caption, .nexus-login__art-caption h1, .nexus-login__art-lede) { color: #f5f8fc !important; }
