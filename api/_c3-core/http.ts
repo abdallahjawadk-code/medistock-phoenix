@@ -24,7 +24,7 @@ const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 const MAX_BODY_BYTES = 16_384;
 function exact(value: unknown, fields: string[]): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value)
-    && Object.keys(value).length === fields.length && fields.every(key => Object.hasOwn(value, key)));
+    && Object.keys(value).length === fields.length && fields.every(key => Object.prototype.hasOwnProperty.call(value, key)));
 }
 async function inputFrom(request: Request): Promise<Input> {
   if (!request.headers.get('content-type')?.toLowerCase().startsWith('application/json')) throw new Error('invalid_request');

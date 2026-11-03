@@ -64,6 +64,8 @@ export function PhoenixTopbar({ title, isMobile, menuOpen, onMenuClick, onSearch
         <kbd dir="ltr">Ctrl K</kbd>
       </button>}
 
+      <span className="prism-topbar-brand" dir="ltr">MediStock Phoenix <span>/ PRISM</span></span>
+
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0, marginInlineStart: 'auto' }}>
         <span {...guideAnchor(GUIDE_ANCHORS.shellTopbarNotifications)} style={{ display: 'inline-flex' }}>
           <NotificationBell />

@@ -5,6 +5,7 @@ import { MediStockMark } from '@/shared/ui/MediStockMark';
 import { AuthSupplyHero } from '@/shared/ui/AuthSupplyHero';
 import { PharmaSculpture } from '@/shared/ui/PharmaSculpture';
 import '@/shared/lib/pharma-auth.css';
+import '@/shared/ui/prism/production-parity.css';
 
 interface Props {
   onComplete: () => void;
@@ -54,6 +55,7 @@ export function PhoenixWelcomeExperience({ onComplete }: Props) {
   return (
     <div
       className="nexus-welcome pharma-arrival"
+      data-ui-production-parity="public"
       data-phase={phase}
       role="dialog"
       aria-modal="true"
