@@ -42,6 +42,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import '@/shared/ui/prism/prism-fonts.css';
 import './annual-prism.css';
+import { NeedsWorkspaceFrame, NeedsPrinciples } from './ui/NeedsWorkspaceFrame';
 import { useApp } from '@/app/AppContext';
 import { t } from '@/shared/i18n/strings';
 import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
@@ -2066,6 +2067,8 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
   };
 
   return (
+    <NeedsWorkspaceFrame lang={lang} legacy title={t('cn2b_title', lang)} description={t('cn2b_subtitle', lang)}>
+    <NeedsPrinciples lang={lang} />
     <div className="cn2b" dir={dir} data-mode={mode} data-prism-surface="annual">
       {mode === 'simple' ? (
         /*
@@ -2130,7 +2133,7 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
       */}
       <header className="cn2b-header">
         <div className="cn2b-header__identity">
-          <h1 className="cn2b-title">{t('cn2b_title', lang)}</h1>
+          <h2 className="cn2b-title">{t('cn2b_title', lang)}</h2>
           <p className="cn2b-subtitle">{t('cn2b_subtitle', lang)}</p>
         </div>
         <div className="cn2b-header__state">
@@ -2243,6 +2246,7 @@ export function CentralNeedsScreen({ initialMode = 'simple' }: CentralNeedsScree
       </>
       )}
     </div>
+    </NeedsWorkspaceFrame>
   );
 }
 

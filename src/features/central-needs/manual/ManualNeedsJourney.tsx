@@ -9,7 +9,9 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PhoenixIcon } from '@/shared/ui/PhoenixIcon';
-import { PrismWorkspace } from '@/shared/ui/prism/PrismWorkspace';
+import '@/shared/ui/prism/prism-workspace.css';
+import { NeedsWorkspaceFrame, NeedsPrinciples } from '../ui/NeedsWorkspaceFrame';
+import { NeedsWorkspaceTabs } from '../ui/NeedsWorkspaceTabs';
 import { CentralNeedsError, type ReviewReadiness } from '../central-needs.service';
 import { CentralNeedsRevisionHistory } from '../CentralNeedsRevisionHistory';
 import { useCentralNeedsPreview } from '../useCentralNeedsPreview';
@@ -265,18 +267,22 @@ export function ManualNeedsJourney({ lang, organizationId, actorId, api = realJo
   const statusText = (s: string) => jt(`status_${s}` as JourneyKey, lang);
 
   return (
-    <PrismWorkspace lang={lang} title={jt('title', lang)} headingId="journey-title" data-testid="manual-needs-journey"
+    <NeedsWorkspaceFrame lang={lang} title={jt('title', lang)}
       description={jt('workspace_description', lang)}
       context={year !== null ? <>
         <span className="prism-context-chip"><PhoenixIcon name="clock" size={16} aria-hidden="true" />{jt('opened_year', lang)} <bdi dir="ltr">{year}</bdi></span>
         {latest && <span className="prism-context-chip"><PhoenixIcon name={latest.status === 'approved' ? 'check' : 'file'} size={16} aria-hidden="true" />{statusText(latest.status)}</span>}
       </> : undefined}>
+      <div data-testid="manual-needs-journey" className="needs-journey" lang={lang} dir={lang === 'ar' ? 'rtl' : 'ltr'}>
+      <NeedsPrinciples lang={lang} />
       <div role="status" aria-live="polite" className="prism-notice prism-notice--success">{notice}</div>
       {errorText && <p role="alert" className="prism-notice prism-notice--error">{errorText}</p>}
       {benefFailed && <p role="alert" className="prism-notice prism-notice--error">{jt('beneficiaries_failed', lang)}</p>}
       {annualMode === 'unavailable' && <p role="alert" className="prism-notice prism-notice--error">{mt('annualCapabilityFailed', lang)}</p>}
       {annualMode === 'checking' && <p role="status" className="prism-loading">{mt('annualCapabilityChecking', lang)}</p>}
 
+      <NeedsWorkspaceTabs lang={lang} tabs={[
+        { id: 'entry', label: lang === 'ar' ? 'الاحتياج والمواد' : 'Needs & materials', content: <>
       <section className="prism-panel prism-scope-panel" aria-labelledby="step-year">
         <h3 id="step-year">{jt('step_year', lang)}</h3>
         <form className="prism-scope-form" onSubmit={(e) => { e.preventDefault(); openYear(); }}>
@@ -373,6 +379,12 @@ export function ManualNeedsJourney({ lang, organizationId, actorId, api = realJo
           </section>
           </fieldset>
 
+        </>
+      )}
+        </> },
+        { id: 'review', label: lang === 'ar' ? 'المراجعة والاعتماد' : 'Review & approval', content: <>
+          {!(year !== null && latest && latest.sourceMode === 'manual' && caps) && <p className="prism-notice">{lang === 'ar' ? 'افتح السنة والإصدار لعرض إجراءات المراجعة المتاحة.' : 'Open a year and revision to see available review actions.'}</p>}
+          {year !== null && latest && latest.sourceMode === 'manual' && caps && <>
           {isManualDraft && caps.edit && (
             <section className="prism-panel" aria-labelledby="step-review">
               <h3 id="step-review">{jt('step_review', lang)}</h3>
@@ -419,9 +431,11 @@ export function ManualNeedsJourney({ lang, organizationId, actorId, api = realJo
               )}
             </section>
           )}
-        </>
-      )}
+        </>}
 
+        </> },
+        { id: 'history', label: lang === 'ar' ? 'سجل الإصدارات' : 'Revision history', content: <>
+      {year === null && <p className="prism-notice">{lang === 'ar' ? 'اختر سنة من تبويب الاحتياج لعرض سجلها.' : 'Choose a year in Needs to view its history.'}</p>}
       {year !== null && (
         <section className="prism-panel" aria-labelledby="step-history">
           <h3 id="step-history">{jt('step_history', lang)}</h3>
@@ -429,6 +443,9 @@ export function ManualNeedsJourney({ lang, organizationId, actorId, api = realJo
             planId={features?.dossiers ? selectedDossier || undefined : undefined} />
         </section>
       )}
-    </PrismWorkspace>
+        </> },
+      ]} />
+      </div>
+    </NeedsWorkspaceFrame>
   );
 }

@@ -4,6 +4,7 @@ import { useManualNeedsTabGate } from './manual/manual-needs-gate';
 import { getAnnualNeedsContract } from './annual-catalog/annual-needs.service';
 import { CentralNeedsScreen } from './CentralNeedsScreen';
 import './annual-needs-entry.css';
+import { NeedsWorkspaceFrame } from './ui/NeedsWorkspaceFrame';
 
 const ManualNeedsTab = lazy(() => import('./manual/ManualNeedsTab').then(module => ({ default: module.ManualNeedsTab })));
 type ContractState = { key: string; status: 'checking' | 'ready' | 'absent' | 'failed' };
@@ -22,7 +23,7 @@ export function AnnualNeedsEntryScreen() {
       .catch(() => { if (current) setState({ key, status: 'failed' }); });
     return () => { current = false; };
   }, [key, gate, attempt]);
-  const loading = <p role="status" className="annual-entry-notice">{ar ? 'جارٍ التحقق من التخطيط السنوي…' : 'Checking annual planning…'}</p>;
+  const loading = <NeedsWorkspaceFrame lang={ar ? 'ar' : 'en'} title={ar ? 'الاحتياج السنوي' : 'Annual needs'} description={ar ? 'التحقق من توفر التخطيط وصلاحيات الوصول.' : 'Checking planning availability and access.'}><p role="status" className="annual-entry-notice">{ar ? 'جارٍ التحقق من التخطيط السنوي…' : 'Checking annual planning…'}</p></NeedsWorkspaceFrame>;
   const legacy = <><p className="annual-entry-notice" role="note">{ar ? 'أنت تعرض واجهة الملفات والسجل السابق.' : 'Previous files and history view.'}</p><CentralNeedsScreen /></>;
   if (gate === 'off') return legacy;
   if (gate === 'checking' || state.key !== key || state.status === 'checking') return loading;

@@ -1,0 +1,62 @@
+/* R35 UI-A1: bounded annual / monthly workbench. No global shell overrides. */
+.needs-studio {
+  --ns-bg: #f2f5fa; --ns-panel: #fff; --ns-ink: #142b46; --ns-muted: #53677e;
+  --ns-line: #cdd8e6; --ns-accent: #1554d8; --ns-tint: #eaf1ff;
+  --s: var(--ns-panel); --s2: var(--ns-bg); --t: var(--ns-ink); --t2: var(--ns-muted);
+  --brd: var(--ns-line); --p: var(--ns-accent);
+  inline-size: 100%; min-inline-size: 0; color: var(--ns-ink); background: var(--ns-bg);
+  border: 1px solid var(--ns-line); border-radius: 16px; overflow-wrap: anywhere;
+  font-family: 'Noto Sans Arabic Variable', sans-serif; line-height: 1.65;
+}
+.needs-studio[dir='ltr'] { font-family: 'Sora', system-ui, sans-serif; }
+.prism-workspace.needs-studio { padding: 0; border-radius: 16px; }
+html[data-theme='dark'] .needs-studio {
+  --ns-bg: #0b1728; --ns-panel: #12243a; --ns-ink: #e6eefb; --ns-muted: #b1c2d9;
+  --ns-line: #344d68; --ns-accent: #91b8ff; --ns-tint: #1b3557;
+}
+.needs-studio__header { display: flex; justify-content: space-between; align-items: center; gap: 24px; padding: 28px; border-block-end: 1px solid var(--ns-line); background: var(--ns-panel); border-radius: 16px 16px 0 0; }
+.needs-studio__header h1 { font-size: clamp(24px, 2.4vw, 34px); margin: 4px 0 8px; color: var(--ns-ink); line-height: 1.45; }
+.needs-studio__eyebrow { font: 600 11px/1.5 'Sora', sans-serif; letter-spacing: .14em; color: var(--ns-muted); margin: 0; }
+.needs-studio__eyebrow span { color: var(--ns-accent); margin-inline: 8px; }
+.needs-studio__description { margin: 0; max-inline-size: 68ch; font-size: 14px; color: var(--ns-muted); }
+.needs-studio__context { display: flex; flex-wrap: wrap; gap: 8px; }
+.needs-studio__body { padding: 24px; min-inline-size: 0; }
+.needs-principles { list-style: none; padding: 0; margin: 0 0 24px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border: 1px solid var(--ns-line); border-radius: 12px; background: var(--ns-panel); }
+.needs-principles li { display: flex; gap: 12px; padding: 16px; min-inline-size: 0; }
+.needs-principles li + li { border-inline-start: 1px solid var(--ns-line); }
+.needs-principles li > span { color: var(--ns-accent); font: 600 13px/2 'Sora', sans-serif; flex-shrink: 0; white-space: nowrap; }
+.needs-principles strong { font-size: 14px; }
+.needs-principles p { font-size: 12px; color: var(--ns-muted); margin: 4px 0 0; }
+.needs-tabs__list { display: flex; flex-wrap: wrap; gap: 4px; border-block-end: 1px solid var(--ns-line); margin-block-end: 20px; padding: 4px; background: var(--ns-panel); border-radius: 10px 10px 0 0; }
+.needs-studio .needs-tabs__list > button { background: transparent; border: 0; border-radius: 6px; padding: 12px 20px; min-block-size: 48px; color: var(--ns-muted); font: inherit; font-weight: 600; box-shadow: none; }
+.needs-studio .needs-tabs__list > button[aria-selected='true'] { background: var(--ns-tint); color: var(--ns-accent); box-shadow: inset 0 -3px var(--ns-accent); }
+.needs-tabs > [hidden] { display: none !important; }
+.needs-studio :is(button,input,select,textarea,summary,a,[tabindex]):focus-visible { outline: 3px solid var(--ns-accent); outline-offset: 3px; }
+.needs-studio :is(.prism-panel,.prism-scope-panel,.cn2b-simple-card,.cn2b-panel) { background: var(--ns-panel); color: var(--ns-ink); border: 1px solid var(--ns-line); border-radius: 12px; padding: 20px; box-shadow: none; margin-block-end: 20px; min-inline-size: 0; }
+.needs-studio :is(.prism-scope-form,.prism-dossier-tools) { display: flex; flex-wrap: wrap; align-items: end; gap: 16px; }
+.needs-studio :is(input,select,textarea) { max-inline-size: 100%; min-inline-size: 0; min-block-size: 44px; background: var(--ns-panel); color: var(--ns-ink); border: 1px solid var(--ns-line); border-radius: 8px; font: inherit; padding: 10px 12px; }
+.needs-studio label { display: grid; gap: 8px; color: var(--ns-ink); font-size: 14px; }
+.needs-studio :is(button,summary) { min-block-size: 44px; white-space: normal; }
+.needs-studio :is(.prism-annual-needs,.prism-opened-workspace,.prism-entry-grid,.prism-needs-workspace,.prism-line-form,.cn2b-simple) { min-inline-size: 0; max-inline-size: 100%; }
+.needs-studio .prism-entry-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 24px; align-items: start; }
+.needs-studio .prism-annual-beneficiary { padding: 16px; margin-block: 16px; background: var(--ns-tint); border-inline-start: 3px solid var(--ns-accent); border-radius: 8px; }
+.needs-studio .prism-entry-grid__catalog { background: var(--ns-bg); padding: 16px; border: 1px solid var(--ns-line); border-radius: 12px; }
+.needs-studio .prism-line-form__quantity { background: var(--ns-tint); padding: 20px; border-radius: 10px; }
+.needs-studio .prism-quantity-input { font-size: 28px; font-weight: 600; inline-size: 100%; }
+.needs-studio .prism-line-form__fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: 16px; }
+.needs-studio :is(.prism-table-scroll,.prism-dossier-tools > details) { max-inline-size: 100%; overflow-x: auto; }
+.needs-studio .cn2b-simple { padding: 0; margin: 0; }
+.needs-studio .cn2b-simple-hero { padding: 0 0 16px; border: 0; background: transparent; }
+.needs-studio .cn2b-simple-title { font-size: 20px; }
+.needs-studio .cn2b-simple-stepper { margin-block: 16px 24px; }
+.needs-monthly { border: 1px solid var(--ns-line, var(--brd)); border-radius: 12px; padding: 20px; margin-block: 20px; background: var(--ns-panel, var(--s)); }
+.needs-monthly__header { display: flex; justify-content: space-between; align-items: start; gap: 12px; }
+.needs-monthly__header h4 { font-size: 18px; margin: 0; }
+.needs-monthly__badge { padding: 4px 10px; border: 1px solid var(--ns-line, var(--brd)); border-radius: 6px; font-size: 12px; white-space: nowrap; }
+.needs-monthly__calendar { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; padding: 0; list-style: none; }
+.needs-monthly__calendar li { display: grid; gap: 4px; border: 1px solid var(--ns-line, var(--brd)); padding: 12px; border-radius: 8px; }
+.needs-monthly__calendar strong { font-size: 20px; color: var(--ns-accent, var(--p)); }
+.needs-monthly__calendar small { color: var(--ns-muted, var(--t2)); }
+.needs-monthly__total { display: flex; justify-content: space-between; gap: 12px; padding: 12px; background: var(--ns-tint, var(--s2)); border-radius: 8px; }
+@media(max-width: 900px) { .needs-studio .prism-entry-grid { grid-template-columns: minmax(0, 1fr); } .needs-principles { grid-template-columns: minmax(0, 1fr); } .needs-principles li + li { border-inline-start: 0; border-block-start: 1px solid var(--ns-line); } }
+@media(max-width: 540px) { .needs-studio__header { padding: 20px 16px; flex-direction: column; align-items: start; gap: 12px; } .needs-studio__body { padding: 12px; } .needs-studio :is(.prism-panel,.cn2b-simple-card,.cn2b-panel) { padding: 12px; } .needs-studio .needs-tabs__list > button { flex: 1 1 40%; padding: 10px 8px; font-size: 13px; } .needs-monthly { padding: 12px; } .needs-monthly__calendar { grid-template-columns: repeat(2,minmax(0,1fr)); } }

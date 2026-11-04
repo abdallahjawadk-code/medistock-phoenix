@@ -152,7 +152,7 @@ describe('CentralNeedsScreen — Simple Mode is the first and default paint', ()
   it('the Simple page carries the title, the six-step indicator and ONE task card', async () => {
     const { container } = render(<CentralNeedsScreen />);
     await waitFor(() => expect(listBeneficiaryColumns).toHaveBeenCalledWith(REV));
-    expect(container.querySelectorAll('div.cn2b h1')).toHaveLength(1);
+    expect(container.querySelectorAll('.needs-studio h1')).toHaveLength(1);
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('الاحتياج السنوي');
     expect(container.querySelectorAll('.cn2b-simple-stepper__item')).toHaveLength(6);
     expect(container.querySelectorAll('.cn2b-simple-stepper__item[data-state="current"]')).toHaveLength(1);

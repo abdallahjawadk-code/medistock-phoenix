@@ -462,7 +462,7 @@ export function CentralNeedsSimpleWorkspace({
       {/* The page identity. Simple Mode owns the screen's h1 — the Advanced
           command header is not rendered around this view. */}
       <header className="cn2b-simple-hero">
-        <h1 className="cn2b-simple-title">{t('cn2b_simple_title', lang)}</h1>
+        <h2 className="cn2b-simple-title">{t('cn2b_simple_title', lang)}</h2>
         <p className="cn2b-simple-tagline">{t('cn2b_simple_tagline', lang)}</p>
         {/*
           C1 — WHICH plan and revision every action on this page affects,

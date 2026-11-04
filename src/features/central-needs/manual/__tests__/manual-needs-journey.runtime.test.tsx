@@ -55,6 +55,11 @@ function make(initial: YearRevision[], c: ManualCapabilities = caps()) {
 const mount = (m: ReturnType<typeof make>, o: Partial<React.ComponentProps<typeof ManualNeedsJourney>> = {}) =>
   render(<ManualNeedsJourney lang="en" organizationId="org-1" actorId="u-maker" api={m.api} workspaceApi={m.workspaceApi as never} registrationApi={m.registrationApi as never}
     preview={m.preview} initialYear={2027} {...o} />);
+const reviewTab = () => fireEvent.click(screen.getByRole('tab', { name: 'Review & approval' }));
+const entryTab = () => fireEvent.click(screen.getByRole('tab', { name: 'Needs & materials' }));
+const reviewButton = async (name: string) => { reviewTab(); return screen.findByRole('button', { name }); };
+const queryReviewControl = (name: string) => { reviewTab(); return screen.queryByRole('button', { name }); };
+const reviewControl = (name: string) => { reviewTab(); return screen.getByRole('button', { name }); };
 const open = async () => { fireEvent.click(await screen.findByRole('button', { name: 'Open year' })); };
 
 beforeEach(() => { supabaseRpc.mockReset(); supabaseFrom.mockReset(); });
@@ -146,6 +151,7 @@ describe('steps 2-4 — lines, review, submit', () => {
     fireEvent.change(benef, { target: { value: 'b1' } }); fireEvent.change(itemSelect, { target: { value: 'i-zol' } });
     fireEvent.change(within(form).getByLabelText('Annual quantity'), { target: { value: '12.5' } });
     fireEvent.change(within(form).getByLabelText('Reason'), { target: { value: 'planned' } });
+    entryTab();
     fireEvent.click(within(form).getByRole('button', { name: 'Add line' }));
     await waitFor(() => expect(m.workspaceApi.addManualNeedLine).toHaveBeenCalledTimes(1));
     expect((m.workspaceApi.addManualNeedLine.mock.calls[0] as unknown[])[1]).toBe('12.5');
@@ -166,27 +172,31 @@ describe('steps 2-4 — lines, review, submit', () => {
     fireEvent.change(within(form).getByLabelText('Item'), { target: { value: 'i-zol' } });
     fireEvent.change(within(form).getByLabelText('Annual quantity'), { target: { value: '12.5' } });
     fireEvent.change(within(form).getByLabelText('Reason'), { target: { value: 'planned' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Check readiness' }));
+    fireEvent.click(reviewControl('Check readiness'));
     fireEvent.click(await screen.findByRole('button', { name: 'Submit for independent review' }));
     expect(screen.getByRole('button', { name: 'Confirm submission' })).toBeInTheDocument();
+    entryTab();
     fireEvent.click(within(form).getByRole('button', { name: 'Add line' }));
     expect(screen.getByRole('button', { name: 'Open year' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Search' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Remove Zolpidem' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Check readiness' })).toBeDisabled();
-    expect(screen.queryByRole('button', { name: 'Confirm submission' })).toBeNull();
+    expect(reviewControl('Check readiness')).toBeDisabled();
+    expect(queryReviewControl('Confirm submission')).toBeNull();
+    entryTab();
     failWrite(centralNeedsErrorFromPostgrest({ message: 'TypeError: Failed to fetch', code: '' }));
     await screen.findByText(/The request outcome is not confirmed/);
+    entryTab();
     expect(within(form).getByRole('button', { name: 'Add line' })).toBeEnabled();
     expect(within(form).getByLabelText('Annual quantity')).toHaveValue('12.5');
     expect(screen.getByRole('button', { name: 'Remove Zolpidem' })).toBeDisabled();
+    entryTab();
     fireEvent.click(within(form).getByRole('button', { name: 'Add line' }));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Open year' })).toBeEnabled());
     expect(m.workspaceApi.addManualNeedLine).toHaveBeenCalledTimes(2);
     expect(m.workspaceApi.newManualIdempotencyKey).toHaveBeenCalledTimes(1);
     const calls = m.workspaceApi.addManualNeedLine.mock.calls as unknown as unknown[][];
     expect(calls[1]).toEqual(calls[0]);
-    expect(screen.queryByRole('button', { name: 'Submit for independent review' })).toBeNull();
+    expect(queryReviewControl('Submit for independent review')).toBeNull();
     expect(m.api.submit).not.toHaveBeenCalled();
   });
 
@@ -218,11 +228,11 @@ describe('steps 2-4 — lines, review, submit', () => {
       .mockResolvedValue({ planRevisionId: 'r1', status: 'draft', ready: true, blockers: [] });
     mount(m);
     await open();
-    expect(screen.queryByRole('button', { name: 'Submit for independent review' })).toBeNull();           // not before readiness
-    fireEvent.click(await screen.findByRole('button', { name: 'Check readiness' }));
+    expect(queryReviewControl('Submit for independent review')).toBeNull();           // not before readiness
+    fireEvent.click(await reviewButton('Check readiness'));
     expect(await screen.findByText('The revision has no lines.')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Submit for independent review' })).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Check readiness' }));
+    expect(queryReviewControl('Submit for independent review')).toBeNull();
+    fireEvent.click(reviewControl('Check readiness'));
     fireEvent.click(await screen.findByRole('button', { name: 'Submit for independent review' }));
     expect(m.api.submit).not.toHaveBeenCalled();                                                          // a confirmation step first
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
@@ -231,7 +241,7 @@ describe('steps 2-4 — lines, review, submit', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Confirm submission' }));
     await waitFor(() => expect(m.api.submit).toHaveBeenCalledTimes(1));
     expect(await screen.findByText('Revision 1 — submitted')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Check readiness' })).toBeNull();                          // the draft-only steps are gone
+    expect(queryReviewControl('Check readiness')).toBeNull();                          // the draft-only steps are gone
   });
 });
 
@@ -243,8 +253,8 @@ describe('step 5 — the independent decision', () => {
     mount(m);
     await open();
     expect(await screen.findByText('Your account cannot decide on this revision.')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Reject' })).toBeNull();
+    expect(queryReviewControl('Approve')).toBeNull();
+    expect(queryReviewControl('Reject')).toBeNull();
   });
 
   it('a user without the approve key sees an explanation and no controls', async () => {
@@ -252,14 +262,14 @@ describe('step 5 — the independent decision', () => {
     mount(m);
     await open();
     expect(await screen.findByText('You do not have the right to decide on this revision.')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull();
+    expect(queryReviewControl('Approve')).toBeNull();
   });
 
   it('an INDEPENDENT approver approves (server call, then re-read to the server state)', async () => {
     const m = submitted(caps({ approve: true, approveExcludedForRevision: false }));
     mount(m, { actorId: 'u-checker' });
     await open();
-    fireEvent.click(await screen.findByRole('button', { name: 'Approve' }));
+    fireEvent.click(await reviewButton('Approve'));
     await waitFor(() => expect(m.api.approve).toHaveBeenCalledWith('r1'));
     expect(await screen.findByText('Revision 1 — approved')).toBeInTheDocument();
   });
@@ -268,7 +278,7 @@ describe('step 5 — the independent decision', () => {
     const m = submitted(caps({ approve: true }));
     mount(m);
     await open();
-    const reject = await screen.findByRole('button', { name: 'Reject' });
+    const reject = await reviewButton('Reject');
     expect(reject).toBeDisabled();
     fireEvent.change(screen.getByLabelText('Reason for rejection'), { target: { value: 'quantities look wrong' } });
     fireEvent.click(reject);
@@ -280,7 +290,7 @@ describe('step 5 — the independent decision', () => {
     m.api.approve = vi.fn(async () => { throw new CentralNeedsError('central_needs_separation_of_duties_violation'); });
     mount(m);
     await open();
-    fireEvent.click(await screen.findByRole('button', { name: 'Approve' }));
+    fireEvent.click(await reviewButton('Approve'));
     expect(await screen.findByText('You cannot decide on what you entered or submitted yourself.')).toBeInTheDocument();
     expect(screen.getByText('Revision 1 — submitted')).toBeInTheDocument();
   });
@@ -290,7 +300,7 @@ describe('step 5 — the independent decision', () => {
     m.api.approve = vi.fn(async () => { throw new CentralNeedsError('central_needs_revision_stale'); });
     mount(m);
     await open();
-    fireEvent.click(await screen.findByRole('button', { name: 'Approve' }));
+    fireEvent.click(await reviewButton('Approve'));
     expect((await screen.findAllByText(/state changed on the server/i)).length).toBeGreaterThan(0);
     expect((m.api.listYearRevisions as unknown as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThanOrEqual(2);
   });
@@ -324,7 +334,7 @@ describe('scope, language, network', () => {
     const m = make([rev({ id: 'r1', status: 'submitted' })], caps({ approve: true }));
     mount(m);
     await open();
-    fireEvent.click(await screen.findByRole('button', { name: 'Approve' }));
+    fireEvent.click(await reviewButton('Approve'));
     await waitFor(() => expect(m.api.approve).toHaveBeenCalled());
     expect(supabaseRpc).not.toHaveBeenCalled();
     expect(supabaseFrom).not.toHaveBeenCalled();
@@ -335,20 +345,21 @@ describe('separation of duties in the UI - the independent approver is NOT an en
   const approverCaps = caps({ edit: false, manualSet: false, approve: true });
   const entrantCaps = caps({ edit: true, manualSet: true, approve: false });
   const forbiddenEntry = () => {
+    entryTab();
     expect(screen.queryByRole('button', { name: 'Start a new plan' })).toBeNull();
     expect(screen.queryByLabelText('Search a registered material')).toBeNull();
     expect(screen.queryByRole('form', { name: 'Add line' })).toBeNull();
     expect(screen.queryByText('Optional medicine-identity help from a workbook')).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Check readiness' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Submit for independent review' })).toBeNull();
+    expect(queryReviewControl('Check readiness')).toBeNull();
+    expect(queryReviewControl('Submit for independent review')).toBeNull();
   };
   it('approver on a SUBMITTED plan: can approve/reject; sees no entry control', async () => {
     const m = make([rev({ id: 'r1', status: 'submitted', createdBy: 'u-maker' })], approverCaps);
     mount(m, { actorId: 'u-approver' }); await open();
-    expect(await screen.findByRole('button', { name: 'Approve' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Reject' })).toBeInTheDocument();
+    expect(await reviewButton('Approve')).toBeInTheDocument();
+    expect(reviewControl('Reject')).toBeInTheDocument();
     forbiddenEntry();
-    fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+    fireEvent.click(reviewControl('Approve'));
     await waitFor(() => expect(m.api.approve).toHaveBeenCalledTimes(1));
   });
   it('approver on a DRAFT plan or with NO plan: read-only - no picker, no workbook assistant, no registration, no add-line, no start', async () => {
@@ -373,13 +384,13 @@ describe('separation of duties in the UI - the independent approver is NOT an en
     const m = make([rev({ id: 'r1', status: 'submitted' })], entrantCaps);
     mount(m); await open();
     await screen.findByText('Revision 1 — submitted');
-    expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Reject' })).toBeNull();
+    expect(queryReviewControl('Approve')).toBeNull();
+    expect(queryReviewControl('Reject')).toBeNull();
   });
   it('a holder of BOTH keys who made the revision is still excluded by the server flag (approve_excluded_for_revision) - no decision controls', async () => {
     const m = make([rev({ id: 'r1', status: 'submitted' })], caps({ approve: true, approveExcludedForRevision: true }));
     mount(m); await open();
     await screen.findByText('Revision 1 — submitted');
-    expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull();
+    expect(queryReviewControl('Approve')).toBeNull();
   });
 });

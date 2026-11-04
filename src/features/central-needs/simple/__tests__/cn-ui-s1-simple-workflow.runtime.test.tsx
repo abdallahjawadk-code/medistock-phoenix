@@ -261,7 +261,8 @@ describe('CN-UI-S1 · accessibility structure (S1-15)', () => {
   it('one h1; every task card titled by an h2 it is labelled by; the need lines a titled h3 subsection', () => {
     for (const over of FIXTURES) {
       const { container } = renderWorkspace(reviewed(over));
-      expect(container.querySelectorAll('h1')).toHaveLength(1);
+      // The composed page's h1 now belongs to NeedsWorkspaceFrame; this isolated body has a section heading.
+      expect(container.querySelectorAll('h2.cn2b-simple-title')).toHaveLength(1);
       for (const section of container.querySelectorAll('section.cn2b-simple-card[aria-labelledby]')) {
         const title = container.querySelector(`#${section.getAttribute('aria-labelledby')}`);
         expect(title, section.getAttribute('data-testid') ?? '').not.toBeNull();

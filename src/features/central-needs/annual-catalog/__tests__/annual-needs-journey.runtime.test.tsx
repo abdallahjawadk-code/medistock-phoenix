@@ -301,10 +301,13 @@ describe('annual capability and complete employee journey', () => {
     vi.mocked(f.journeyApi.getCaps).mockResolvedValue(reviewer); f.manualApi.getManualCapabilities.mockResolvedValue(reviewer);
     vi.mocked(f.journeyApi.listYearRevisions).mockResolvedValue([{ ...REV, status: 'submitted' }]);
     mount(f); fireEvent.click(screen.getByRole('button', { name: 'Open year' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Review & approval' }));
     const approve = await screen.findByRole('button', { name: 'Approve' });
     expect(approve).toBeEnabled();
+    fireEvent.click(screen.getByRole('tab', { name: 'Needs & materials' }));
     expect(screen.getByRole('table', { name: 'Recorded need lines' })).toHaveTextContent('Current registered label, not a saved historical snapshot');
     expect(f.manualApi.getManualCatalogLabels).toHaveBeenCalledWith([ID.canonical]);
+    fireEvent.click(screen.getByRole('tab', { name: 'Review & approval' }));
     fireEvent.change(screen.getByLabelText('Reason for rejection'), { target: { value: 'Reviewed reason' } });
     expect(screen.getByRole('button', { name: 'Reject' })).toBeEnabled();
     fireEvent.click(approve); await waitFor(() => expect(f.journeyApi.approve).toHaveBeenCalledWith(ID.revision));
@@ -322,6 +325,7 @@ describe('annual capability and complete employee journey', () => {
     mount(f); fireEvent.click(screen.getByRole('button', { name: 'Open year' }));
     await screen.findByRole('table', { name: 'Recorded need lines' });
     await waitFor(() => expect(f.manualApi.getManualCatalogLabels).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole('tab', { name: 'Review & approval' }));
     expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull();
     expect(screen.queryByText('Unrelated material')).toBeNull();
     expect(screen.getByText('Wait for material names before making a decision.')).toBeInTheDocument();
