@@ -29,3 +29,11 @@ Reviewer: separate read-only review agent. Baseline: `d5b6236bbac117077dcb47c71c
 ## Evidence limits
 
 This is source-level review, not independent hosted RLS/ACL execution or approval of Production activation. Staging interactions and test-run totals are supplied by the implementation agent and must be cited from its evidence artifacts. The monthly synthetic fixture is component acceptance only, not proof of a real approved monthly policy or R2 executable approval workflow. A−C/C−D, SEND/RECEIVE and FEFO remain unchanged; their full operational acceptance is not established by this visual batch. PR295 remains HOLD; W05 remains 22 NOT_RUN.
+
+## PR298 browser-test follow-up
+
+Reviewed only `tests/simple-annual-needs.visual.test.ts` and `tools/e2e-acceptance/monthly-proposal-ui.mjs` after CI exposed old selectors. The heading adaptation correctly asserts one frame h1, zero inner h1 and one inner h2; no accessibility assertion was removed. Opening Detailed table before retaining the existing exact quantity, nonbinding and no-approval assertions matches the new default calendar UI without weakening those guards.
+
+One new assertion initially expected twelve calendar rows, which conflicts with this E2E policy's fixed January and eligible February/April/June. The unchanged proposal algorithm returns exactly months 1, 2, 4 and 6. Requested correction: assert that exact month list, preserving fixed January 2.5 and no initial table. Do not manufacture twelve months or change the policy/calculation to satisfy this test. Closure of this test correction is recorded separately after reinspection.
+
+**Closed on source reinspection:** the calendar check now compares the actual `data-month` list exactly with `['1', '2', '4', '6']`, still checks January `2.5`, and still requires no initial table. The pre-existing detailed-table assertions for January `2.5`, February `2.75`, total `10.25`, responsive behavior and no effective approval control remain. No outstanding security-review finding in these two test-only changes. Implementation reports 21/21 legacy visual retest PASS and JavaScript syntax PASS; this reviewer verified source, not those executions. Scoped `PASS_SOURCE_SECURITY_REVIEW` remains valid.

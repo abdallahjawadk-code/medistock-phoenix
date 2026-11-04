@@ -177,7 +177,7 @@ describe('Simple Annual Needs — the default entry', () => {
       expect(await page.locator('.cn2b-workflow').count()).toBe(0);
       expect(await page.locator('header.cn2b-header').count()).toBe(0);
       // The page identity and the six-step indicator are on screen.
-      expect(await page.locator('h1.cn2b-simple-title').innerText()).toBe('الاحتياج السنوي');
+      expect(await page.locator('h2.cn2b-simple-title').innerText()).toBe('الاحتياج السنوي');
       expect(await page.locator('.cn2b-simple-stepper__item').count()).toBe(6);
       expect(await page.locator('.cn2b-simple-stepper__item[data-state="current"]').count()).toBe(1);
       expect(await page.locator('div.cn2b').first().evaluate(el => getComputedStyle(el).direction)).toBe('rtl');
@@ -509,7 +509,7 @@ describe('Simple Annual Needs — English LTR and dark theme', () => {
     const { context, page } = await open({ lang: 'en', variant: 'institution' });
     try {
       expect(await page.locator('div.cn2b').first().evaluate(el => getComputedStyle(el).direction)).toBe('ltr');
-      expect(await page.locator('h1.cn2b-simple-title').innerText()).toBe('Annual Needs');
+      expect(await page.locator('h2.cn2b-simple-title').innerText()).toBe('Annual Needs');
       await expect.poll(() => stepOf(page), { timeout: 20000 }).toBe('review-institution');
       expect(await page.locator('[data-testid="cn2b-simple-step-count"]').innerText()).toBe('Step 3 of 6');
       expect(await page.getByRole('button', { name: 'Correct', exact: true }).count()).toBe(1);
@@ -539,7 +539,9 @@ describe('Simple Annual Needs — accessibility basics', () => {
     try {
       await expect.poll(() => stepOf(page), { timeout: 20000 }).toBe('upload');
       // The screen contributes exactly one h1 (the app shell owns its own brand heading outside .cn2b).
-      expect(await page.locator('div.cn2b h1').count()).toBe(1);
+      expect(await page.locator('.needs-studio h1').count()).toBe(1);
+      expect(await page.locator('div.cn2b h1').count()).toBe(0);
+      expect(await page.locator('h2.cn2b-simple-title').count()).toBe(1);
       expect(await page.locator('[data-testid="cn2b-simple-workspace"] h2').count()).toBeGreaterThan(0);
       // Every button carries an accessible name; every input a label.
       const unnamed = await page.evaluate(() => {
