@@ -369,7 +369,7 @@ describe('Simple Mode shell — six steps, one task, Advanced demoted (visual co
 
   it('the workspace owns the page heading and renders the six-step progress indicator on every step', () => {
     const src = code(workspacePath);
-    expect(src).toMatch(/<h1 className="cn2b-simple-title">/);
+    expect(src).toMatch(/<h2 className="cn2b-simple-title">/); // page h1 belongs to the common frame
     expect(src).toMatch(/<SimpleStepper lang=\{lang\} step=\{step\} \/>/);
     const stepper = code(`${SIMPLE_DIR}/SimpleStepper.tsx`);
     // CN-UI-S1: the summary step is gone; the need lines are a step of their own.

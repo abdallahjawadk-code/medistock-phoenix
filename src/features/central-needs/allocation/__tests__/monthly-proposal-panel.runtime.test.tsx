@@ -24,6 +24,8 @@ describe('real monthly proposal panel; read-only current reference', () => {
     expect(await screen.findByText('Enter the annual quantity to see the proposal.')).toBeVisible();
     expect(screen.queryByRole('table')).toBeNull();
     rerender(<MonthlyProposalPanel lang="en" context={context} annualQuantity="10.25" readReference={read} />);
+    expect(await screen.findByRole('list', { name: 'Nonbinding proposal calendar' })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Detailed table' }));
     const table = await screen.findByRole('table', { name: 'Monthly distribution proposal' });
     expect(within(table).getAllByRole('row')).toHaveLength(6);
     expect(within(table).getByText('2.75')).toBeVisible(); expect(within(table).getByText('10.25')).toBeVisible();
@@ -52,6 +54,7 @@ describe('real monthly proposal panel; read-only current reference', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('The distribution policy could not be read. Check your access or retry.');
     expect(screen.queryByText('Awaiting distribution policy')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Reload distribution policy' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Detailed table' }));
     expect(await screen.findByRole('table')).toBeVisible(); expect(read).toHaveBeenCalledTimes(2);
   });
 });

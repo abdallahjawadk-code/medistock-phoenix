@@ -1,0 +1,8 @@
+* { box-sizing: border-box; }
+body { margin: 0; font-family: system-ui, sans-serif; }
+.ui-a1-fixture { max-width: 1160px; margin: auto; padding: 24px; }
+.ui-a1-fixture > aside { padding: 12px; background: #fff1c9; color: #503600; font-size: 12px; }
+.ui-a1-fixture > nav { display: flex; gap: 12px; padding-block: 12px; }
+.ui-a1-fixture > nav button { padding: 12px; }
+[data-theme='dark'] .needs-studio { --ns-bg:#0b1728;--ns-panel:#12243a;--ns-ink:#e6eefb;--ns-muted:#b1c2d9;--ns-line:#344d68;--ns-accent:#91b8ff;--ns-tint:#1b3557; }
+@media(max-width:540px) { .ui-a1-fixture { padding: 12px; } }

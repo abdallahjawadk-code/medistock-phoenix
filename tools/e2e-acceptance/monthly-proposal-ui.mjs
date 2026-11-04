@@ -139,7 +139,14 @@ try {
   await page.screenshot({ path: resolve(output, 'autofilled-identity-before-quantity-en-light.png') });
   check('actual quantity field starts blank after beneficiary and multiple material choices', await quantity().inputValue() === '');
   await quantity().fill('10.25');
-  const panel = page.getByTestId('monthly-proposal'); await panel.getByRole('table').waitFor();
+  const panel = page.getByTestId('monthly-proposal');
+  await panel.locator('li[data-month="1"]').waitFor();
+  check('calendar is the initial view and preserves the fixed allocation',
+    JSON.stringify(await panel.locator('li[data-month]').evaluateAll(rows => rows.map(row => row.getAttribute('data-month')))) === JSON.stringify(['1', '2', '4', '6'])
+    && await panel.locator('li[data-month="1"] strong').textContent() === '2.5'
+    && await panel.getByRole('table').count() === 0);
+  await panel.getByRole('button', { name: 'Detailed table', exact: true }).click();
+  await panel.getByRole('table').waitFor();
   check('automatic proposal preserves fixed January and exact annual sum before any annual save',
     await panel.locator('tr[data-month="1"] td').first().textContent() === '2.5'
     && await panel.locator('tr[data-month="2"] td').first().textContent() === '2.75'
@@ -213,7 +220,7 @@ try {
     writeFileSync(resolve(output, 'failure-visible-text.txt'), await page.locator('body').innerText().catch(() => 'Unavailable')); }
 } finally {
   if (browser) await browser.close(); await employee.auth.signOut(); await db.end();
-  report.passed = report.checks.length === 123 && report.checks.every(row => row.passed) && report.errors.length === 0;
+  report.passed = report.checks.length === 124 && report.checks.every(row => row.passed) && report.errors.length === 0;
   writeFileSync(resolve(output, 'report.json'), JSON.stringify(report, null, 2));
   console.log(JSON.stringify({ phase: 'monthly_ui', passed: report.passed, checks: report.checks.length, errors: report.errors }));
   if (!report.passed) process.exitCode = 1;
