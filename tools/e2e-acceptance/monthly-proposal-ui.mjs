@@ -220,7 +220,7 @@ try {
     writeFileSync(resolve(output, 'failure-visible-text.txt'), await page.locator('body').innerText().catch(() => 'Unavailable')); }
 } finally {
   if (browser) await browser.close(); await employee.auth.signOut(); await db.end();
-  report.passed = report.checks.length === 123 && report.checks.every(row => row.passed) && report.errors.length === 0;
+  report.passed = report.checks.length === 124 && report.checks.every(row => row.passed) && report.errors.length === 0;
   writeFileSync(resolve(output, 'report.json'), JSON.stringify(report, null, 2));
   console.log(JSON.stringify({ phase: 'monthly_ui', passed: report.passed, checks: report.checks.length, errors: report.errors }));
   if (!report.passed) process.exitCode = 1;
